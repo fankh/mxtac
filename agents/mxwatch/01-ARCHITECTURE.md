@@ -24,21 +24,21 @@
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
 flowchart TB
-    subgraph Network[\"Network Traffic\"]
+    subgraph Network["Network Traffic"]
         style Network fill:#e3f2fd,stroke:#1565c0
         PACKETS[Network Packets]
     end
 
-    subgraph Agent[\"MxWatch Agent\"]
+    subgraph Agent["MxWatch Agent"]
         style Agent fill:#e8f5e9,stroke:#2e7d32
 
-        subgraph Capture[\"Packet Capture\"]
+        subgraph Capture["Packet Capture"]
             style Capture fill:#fff3e0,stroke:#ef6c00
             PCAP[libpcap Interface]
             FILTER[BPF Filter]
         end
 
-        subgraph Parsers[\"Protocol Parsers\"]
+        subgraph Parsers["Protocol Parsers"]
             style Parsers fill:#f3e5f5,stroke:#7b1fa2
             HTTP[HTTP/HTTPS Parser]
             DNS[DNS Parser]
@@ -46,7 +46,7 @@ flowchart TB
             TCP[TCP Analyzer]
         end
 
-        subgraph Detection[\"Detection Engine\"]
+        subgraph Detection["Detection Engine"]
             style Detection fill:#e0f2f1,stroke:#00695c
             C2[C2 Beacon Detector]
             SCAN[Port Scan Detector]
@@ -54,20 +54,20 @@ flowchart TB
             LATERAL[Lateral Movement]
         end
 
-        subgraph Core[\"Core Engine\"]
+        subgraph Core["Core Engine"]
             style Core fill:#fce4ec,stroke:#ad1457
             BUILDER[OCSF Event Builder]
             ENRICH[Enrichment]
             BUFFER[Event Buffer]
         end
 
-        subgraph Output[\"Output\"]
+        subgraph Output["Output"]
             style Output fill:#fff9c4,stroke:#f57f17
             HTTP_OUT[HTTP Sender]
         end
     end
 
-    subgraph Platform[\"MxTac Platform\"]
+    subgraph Platform["MxTac Platform"]
         style Platform fill:#fff3e0,stroke:#ef6c00
         API[Ingestion API]
     end
@@ -724,10 +724,321 @@ func (psd *PortScanDetector) TrackConnection(conn Connection) {
 
 ### 5.1 Packet Capture Optimization
 
+**Standard libpcap**:
 - Use BPF filters to reduce packet processing
 - Zero-copy capture where supported
 - Packet buffers to handle bursts
 - Drop packets under extreme load (rather than crash)
+- Performance: ~100K-500K packets/second
+
+**High-Performance: PF_RING** (Recommended for 10+ Gbps networks):
+
+PF_RING is a Linux kernel module providing zero-copy packet capture with 100x better performance than libpcap.
+
+**Key Benefits**:
+- **Throughput**: 10M+ packets/second (vs 100K for libpcap)
+- **Zero-copy**: Direct NIC-to-userspace packet delivery
+- **Multi-core**: Linear scaling across CPU cores
+- **Hardware offload**: NIC-level filtering support
+- **Low latency**: Sub-microsecond packet processing
+
+**Performance Comparison**:
+
+| Engine | Throughput | CPU Usage | Packet Loss | Use Case |
+|--------|------------|-----------|-------------|----------|
+| **libpcap** | 100K pps | 80-100% | 10-30% | < 1 Gbps |
+| **AF_PACKET + MMAP** | 1M pps | 40-60% | 1-5% | 1-5 Gbps |
+| **PF_RING** | 10M+ pps | 10-20% | < 0.1% | 10-100 Gbps |
+| **PF_RING + ZC** | 14.8M pps | 5-10% | 0% | 100+ Gbps |
+
+**Rust Implementation** (FFI to PF_RING C library):
+
+```rust
+use pfring_sys::*;
+use std::ffi::CString;
+
+pub struct PFRingCapture {
+    ring: *mut pfring,
+    interface: String,
+    cluster_id: u16,
+}
+
+impl PFRingCapture {
+    pub fn new(interface: &str, cluster_id: u16) -> Result<Self, Error> {
+        unsafe {
+            let iface = CString::new(interface)?;
+
+            // Open PF_RING with zero-copy and timestamping
+            let ring = pfring_open(
+                iface.as_ptr(),
+                1536,           // snaplen (Ethernet MTU)
+                PF_RING_PROMISC |
+                PF_RING_TIMESTAMP |
+                PF_RING_DNA |
+                PF_RING_ZC
+            );
+
+            if ring.is_null() {
+                return Err(Error::PFRingOpen("Failed to open PF_RING"));
+            }
+
+            // Enable ring
+            pfring_enable_ring(ring);
+
+            // Set application name (for monitoring)
+            let app_name = CString::new("mxwatch")?;
+            pfring_set_application_name(ring, app_name.as_ptr());
+
+            Ok(Self {
+                ring,
+                interface: interface.to_string(),
+                cluster_id
+            })
+        }
+    }
+
+    pub async fn recv_packet(&mut self) -> Result<Packet, Error> {
+        unsafe {
+            let mut hdr: pfring_pkthdr = std::mem::zeroed();
+            let mut buffer = vec![0u8; 65535];
+
+            loop {
+                let rc = pfring_recv(
+                    self.ring,
+                    buffer.as_mut_ptr(),
+                    buffer.len() as u32,
+                    &mut hdr,
+                    1  // wait_for_packet
+                );
+
+                match rc {
+                    1 => {
+                        return Ok(Packet {
+                            data: buffer[..hdr.caplen as usize].to_vec(),
+                            timestamp: hdr.ts.tv_sec as i64,
+                            length: hdr.len as usize,
+                            hash: hdr.extended_hdr.pkt_hash,
+                        });
+                    }
+                    0 => tokio::task::yield_now().await,
+                    _ => return Err(Error::RecvError("PF_RING recv error")),
+                }
+            }
+        }
+    }
+
+    pub fn set_cluster(&mut self, cluster_type: pfring_cluster_type) -> Result<(), Error> {
+        unsafe {
+            let rc = pfring_set_cluster(
+                self.ring,
+                self.cluster_id,
+                cluster_type
+            );
+            if rc < 0 {
+                return Err(Error::ClusterError("Failed to set cluster"));
+            }
+            Ok(())
+        }
+    }
+
+    pub fn add_bpf_filter(&mut self, filter: &str) -> Result<(), Error> {
+        unsafe {
+            let filter_str = CString::new(filter)?;
+            let rc = pfring_set_bpf_filter(self.ring, filter_str.as_ptr());
+            if rc < 0 {
+                return Err(Error::FilterError("Failed to set BPF filter"));
+            }
+            Ok(())
+        }
+    }
+
+    pub fn enable_hw_timestamp(&mut self) -> Result<(), Error> {
+        unsafe {
+            let rc = pfring_enable_hw_timestamp(
+                self.ring,
+                std::ptr::null_mut(),
+                1  // enable
+            );
+            if rc < 0 {
+                return Err(Error::TimestampError("Failed to enable HW timestamp"));
+            }
+            Ok(())
+        }
+    }
+}
+
+impl Drop for PFRingCapture {
+    fn drop(&mut self) {
+        unsafe {
+            pfring_close(self.ring);
+        }
+    }
+}
+```
+
+**Multi-Core Load Balancing**:
+
+```rust
+pub struct MultiCoreCapture {
+    cores: usize,
+    cluster_id: u16,
+    workers: Vec<tokio::task::JoinHandle<()>>,
+}
+
+impl MultiCoreCapture {
+    pub fn new(interface: &str, cores: usize) -> Result<Self, Error> {
+        let cluster_id = 1;
+        let mut workers = Vec::new();
+
+        for core_id in 0..cores {
+            let iface = interface.to_string();
+
+            let worker = tokio::spawn(async move {
+                // Set CPU affinity
+                set_cpu_affinity(core_id);
+
+                // Open PF_RING on this core
+                let mut capture = PFRingCapture::new(&iface, cluster_id).unwrap();
+
+                // Configure per-flow load balancing
+                capture.set_cluster(pfring_cluster_type::cluster_per_flow).unwrap();
+
+                // Start packet processing
+                loop {
+                    if let Ok(packet) = capture.recv_packet().await {
+                        process_packet_on_core(packet, core_id);
+                    }
+                }
+            });
+
+            workers.push(worker);
+        }
+
+        Ok(Self { cores, cluster_id, workers })
+    }
+}
+
+fn set_cpu_affinity(core_id: usize) {
+    use nix::sched::{sched_setaffinity, CpuSet};
+    use nix::unistd::Pid;
+
+    let mut cpu_set = CpuSet::new();
+    cpu_set.set(core_id).unwrap();
+    sched_setaffinity(Pid::from_raw(0), &cpu_set).unwrap();
+}
+```
+
+**Hardware Filtering** (offload to NIC):
+
+```rust
+impl PFRingCapture {
+    pub fn add_hw_filter(&mut self, rule: &HardwareFilterRule) -> Result<(), Error> {
+        unsafe {
+            let mut hw_rule: hw_filtering_rule = std::mem::zeroed();
+
+            // Configure rule
+            hw_rule.rule_id = rule.id as u16;
+            hw_rule.rule_action = hw_filter_rule_command::forward_packet_and_stop_rule_evaluation;
+
+            // Match criteria
+            hw_rule.core_fields.src_ip = rule.src_ip;
+            hw_rule.core_fields.dst_ip = rule.dst_ip;
+            hw_rule.core_fields.src_port = rule.src_port;
+            hw_rule.core_fields.dst_port = rule.dst_port;
+            hw_rule.core_fields.proto = rule.protocol as u8;
+
+            // Add rule to NIC
+            let rc = pfring_add_hw_rule(self.ring, &mut hw_rule);
+            if rc < 0 {
+                return Err(Error::HWFilterError("Failed to add hardware filter"));
+            }
+
+            Ok(())
+        }
+    }
+}
+
+pub struct HardwareFilterRule {
+    pub id: u32,
+    pub src_ip: u32,
+    pub dst_ip: u32,
+    pub src_port: u16,
+    pub dst_port: u16,
+    pub protocol: u8, // TCP=6, UDP=17
+}
+```
+
+**Configuration**:
+
+```yaml
+capture:
+  engine: pfring  # Options: libpcap, afpacket, pfring
+
+  # PF_RING specific settings
+  pfring:
+    cluster_id: 1
+    cluster_type: per_flow  # Options: per_flow, round_robin, per_flow_5_tuple
+    enable_hw_timestamp: true
+    enable_zero_copy: true
+    ring_slots: 32768
+
+    # Multi-core configuration
+    workers: 8  # Number of CPU cores to use
+    cpu_affinity: true
+
+    # Hardware filtering (offload to NIC)
+    hw_filters:
+      - id: 1
+        src_port: 443
+        protocol: tcp
+        action: forward
+
+      - id: 2
+        dst_port: 53
+        protocol: udp
+        action: forward
+```
+
+**Installation**:
+
+```bash
+# Install PF_RING kernel module
+git clone https://github.com/ntop/PF_RING.git
+cd PF_RING/kernel
+make && sudo make install
+sudo modprobe pf_ring
+
+# Install PF_RING userspace library
+cd ../userland/lib
+./configure && make && sudo make install
+
+# Add Rust bindings to Cargo.toml
+[dependencies]
+pfring-sys = "0.1"  # FFI bindings to PF_RING C library
+nix = "0.27"        # For CPU affinity
+```
+
+**Performance Targets**:
+
+| Network Speed | Workers | Expected Throughput | CPU Usage | Memory |
+|---------------|---------|---------------------|-----------|--------|
+| **1 Gbps** | 2 | 150K pps | 5-10% | 40 MB |
+| **10 Gbps** | 4 | 1.5M pps | 10-15% | 60 MB |
+| **40 Gbps** | 8 | 6M pps | 20-30% | 120 MB |
+| **100 Gbps** | 16 | 14.8M pps | 40-50% | 240 MB |
+
+**When to Use PF_RING**:
+- ✅ Network traffic > 1 Gbps
+- ✅ Packet rate > 500K pps
+- ✅ Multiple CPU cores available (4+)
+- ✅ Linux servers with compatible NICs
+- ✅ Zero packet loss requirement
+
+**When to Use libpcap**:
+- ✅ Network traffic < 1 Gbps
+- ✅ Cross-platform deployment (Windows, macOS)
+- ✅ Simple deployment requirements
+- ✅ Limited CPU resources
 
 ### 5.2 Memory Management
 
