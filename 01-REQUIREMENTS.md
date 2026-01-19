@@ -347,43 +347,74 @@ MxTac addresses these challenges by providing:
 
 ### SR-1: Authentication
 
-| ID | Requirement | Implementation |
-|----|-------------|----------------|
-| SR-1.1 | Local authentication | bcrypt password hashing |
-| SR-1.2 | SSO - OIDC | Keycloak, Okta, Azure AD |
-| SR-1.3 | SSO - SAML 2.0 | Enterprise IdP support |
-| SR-1.4 | Multi-factor authentication | TOTP, WebAuthn |
-| SR-1.5 | Session management | JWT with refresh tokens |
-| SR-1.6 | Session timeout | Configurable (default 8h) |
+| ID | Requirement | Implementation | Enterprise Compliance |
+|----|-------------|----------------|----------------------|
+| SR-1.1 | Local authentication | bcrypt password hashing (12 rounds) | ✅ bcrypt > SHA-256 |
+| SR-1.2 | SSO - OIDC | Keycloak, Okta, Azure AD | ✅ Enterprise SSO |
+| SR-1.3 | SSO - SAML 2.0 | Enterprise IdP support | ✅ Enterprise SSO |
+| SR-1.4 | Multi-factor authentication | TOTP, WebAuthn | Future phase |
+| SR-1.5 | Session management | JWT with refresh tokens | ✅ 30 min timeout |
+| SR-1.6 | Session timeout | **30 minutes** (enterprise requirement) | ✅ Compliant |
+| SR-1.7 | **Account lockout** | **5 failed attempts → 30 min lock** | ✅ **NEW** |
+| SR-1.8 | **Concurrent session control** | **Single session per user** | ✅ **NEW** |
+| SR-1.9 | **Inactive account locking** | **Auto-lock after 90 days** | ✅ **NEW** |
 
-### SR-2: Authorization
+### SR-2: Password Policy
 
-| ID | Requirement | Implementation |
-|----|-------------|----------------|
-| SR-2.1 | Role-based access control | Predefined + custom roles |
-| SR-2.2 | Granular permissions | Per-feature permissions |
-| SR-2.3 | Data-level access control | Team/tenant isolation |
-| SR-2.4 | API key management | Scoped API keys |
+| ID | Requirement | Implementation | Enterprise Compliance |
+|----|-------------|----------------|----------------------|
+| SR-2.1 | **Password complexity** | **3 char types + 8 chars OR 2 types + 10 chars** | ✅ **NEW** |
+| SR-2.2 | **No consecutive chars** | **Max 3 identical consecutive characters** | ✅ **NEW** |
+| SR-2.3 | **Password expiration** | **90 days, forced change** | ✅ **NEW** |
+| SR-2.4 | **Password history** | **Cannot reuse last 2 passwords** | ✅ **NEW** |
+| SR-2.5 | **Initial password change** | **Force change on first login** | ✅ **NEW** |
+| SR-2.6 | Password masking | Masked input (type=password) | ✅ Standard |
+| SR-2.7 | No default accounts | Prevent admin/root/test usernames | ✅ Validated |
 
-### SR-3: Data Protection
+### SR-3: Authorization
 
-| ID | Requirement | Implementation |
-|----|-------------|----------------|
-| SR-3.1 | Encryption at rest | AES-256 |
-| SR-3.2 | Encryption in transit | TLS 1.3 |
-| SR-3.3 | Secret management | Vault / K8s Secrets |
-| SR-3.4 | Data masking | PII/sensitive field masking |
-| SR-3.5 | Secure deletion | Crypto-shred on delete |
+| ID | Requirement | Implementation | Enterprise Compliance |
+|----|-------------|----------------|----------------------|
+| SR-3.1 | Role-based access control | Predefined + custom roles | ✅ Enhanced |
+| SR-3.2 | **Granular permissions** | **Per-resource:action permissions** | ✅ **NEW** |
+| SR-3.3 | Data-level access control | Team/tenant isolation | ✅ Standard |
+| SR-3.4 | API key management | Scoped API keys | ✅ Standard |
+| SR-3.5 | **IP whitelisting** | **Admin access from allowed IPs only** | ✅ **NEW** |
+| SR-3.6 | **Admin panel isolation** | **Internal network only or 2FA** | ✅ **NEW** |
+| SR-3.7 | Least privilege | Role-appropriate permissions only | ✅ RBAC |
 
-### SR-4: Audit & Logging
+### SR-4: Data Protection
 
-| ID | Requirement | Implementation |
-|----|-------------|----------------|
-| SR-4.1 | Authentication logging | All auth events logged |
-| SR-4.2 | Administrative actions | Full admin audit trail |
-| SR-4.3 | Data access logging | Query audit (optional) |
-| SR-4.4 | Response action logging | All response actions logged |
-| SR-4.5 | Log integrity | Tamper-evident logging |
+| ID | Requirement | Implementation | Enterprise Compliance |
+|----|-------------|----------------|----------------------|
+| SR-4.1 | Encryption at rest | AES-256 | ✅ Standard |
+| SR-4.2 | **Encryption in transit** | **TLS 1.2+ only (disable 1.0/1.1)** | ✅ **UPDATED** |
+| SR-4.3 | Secret management | Vault / K8s Secrets | ✅ Standard |
+| SR-4.4 | Data masking | PII/sensitive field masking | ✅ Standard |
+| SR-4.5 | Secure deletion | Crypto-shred on delete | ✅ Standard |
+
+### SR-5: Audit & Logging
+
+| ID | Requirement | Implementation | Enterprise Compliance |
+|----|-------------|----------------|----------------------|
+| SR-5.1 | **Authentication logging** | **All login attempts (success/fail)** | ✅ **ENHANCED** |
+| SR-5.2 | **User activity logging** | **All user actions logged** | ✅ **NEW** |
+| SR-5.3 | **Permission change logging** | **RBAC changes with 3-year retention** | ✅ **NEW** |
+| SR-5.4 | Administrative actions | Full admin audit trail | ✅ Standard |
+| SR-5.5 | Data access logging | Query audit (optional) | ✅ Standard |
+| SR-5.6 | Response action logging | All response actions logged | ✅ Standard |
+| SR-5.7 | Log integrity | Tamper-evident logging | ✅ Standard |
+| SR-5.8 | **Log retention** | **3 years for compliance logs** | ✅ **NEW** |
+
+### SR-6: Secure Development
+
+| ID | Requirement | Implementation | Enterprise Compliance |
+|----|-------------|----------------|----------------------|
+| SR-6.1 | Generic login errors | "Invalid credentials" (no user enumeration) | ✅ Implemented |
+| SR-6.2 | Input validation | All inputs validated/sanitized | ✅ Standard |
+| SR-6.3 | SQL injection prevention | Parameterized queries (SQLAlchemy) | ✅ ORM |
+| SR-6.4 | XSS prevention | Content Security Policy + sanitization | ✅ React |
+| SR-6.5 | CSRF protection | CSRF tokens on state-changing ops | ✅ FastAPI |
 
 ---
 
