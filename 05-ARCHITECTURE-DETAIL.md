@@ -847,4 +847,253 @@ paths:
 
 ---
 
+## Additional Architecture Diagrams
+
+> **Note**: This section contains detailed visual architecture references merged from ARCHITECTURE-DIAGRAMS.md
+
+### Complete System Overview
+
+#### High-Level Architecture
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph External["External Systems"]
+        style External fill:#e3f2fd,stroke:#1565c0
+        WAZ[Wazuh Manager]
+        ZEEK[Zeek Sensor]
+        SURI[Suricata IDS]
+        PROW[Prowler Scanner]
+    end
+
+    subgraph Ingestion["Ingestion Layer"]
+        style Ingestion fill:#e8f5e9,stroke:#2e7d32
+        WC[Wazuh Connector]
+        ZC[Zeek Connector]
+        SC[Suricata Connector]
+        PC[Prowler Connector]
+    end
+
+    subgraph Queue["Message Queue"]
+        style Queue fill:#fff3e0,stroke:#ef6c00
+        RS[Redis Streams]
+    end
+
+    subgraph Processing["Processing Layer"]
+        style Processing fill:#f3e5f5,stroke:#7b1fa2
+        NORM[OCSF Normalizer]
+        SIGMA[Sigma Engine]
+        CORR[Correlation Engine]
+        ALERT[Alert Manager]
+    end
+
+    subgraph Storage["Storage Layer"]
+        style Storage fill:#e0f2f1,stroke:#00695c
+        OS[OpenSearch]
+        PG[PostgreSQL]
+        REDIS[Redis Cache]
+    end
+
+    subgraph Presentation["Presentation Layer"]
+        style Presentation fill:#fce4ec,stroke:#ad1457
+        API[FastAPI Gateway]
+        UI[React Frontend]
+    end
+
+    External --> Ingestion --> Queue
+    Queue --> Processing --> Storage
+    Storage --> Presentation
+    Processing --> Presentation
+```
+
+### Data Flow Diagrams
+
+#### Event Ingestion to Alert Flow
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart LR
+    subgraph Source["Source"]
+        style Source fill:#e3f2fd,stroke:#1565c0
+        W[Wazuh Alert]
+    end
+
+    subgraph Conn["Connector"]
+        style Conn fill:#e8f5e9,stroke:#2e7d32
+        WC[Wazuh Connector<br/>Pull API]
+    end
+
+    subgraph Q1["Raw Queue"]
+        style Q1 fill:#fff3e0,stroke:#ef6c00
+        RAW[mxtac:raw:wazuh]
+    end
+
+    subgraph Norm["Normalize"]
+        style Norm fill:#f3e5f5,stroke:#7b1fa2
+        PARSE[Parse Wazuh]
+        TRANS[Transform OCSF]
+        VALID[Validate Schema]
+    end
+
+    subgraph Q2["Normalized Queue"]
+        style Q2 fill:#fff3e0,stroke:#ef6c00
+        NORM_Q[mxtac:normalized]
+    end
+
+    subgraph Detect["Detection"]
+        style Detect fill:#ffebee,stroke:#c62828
+        ROUTE[Route by Class]
+        MATCH[Match Rules]
+        GEN[Generate Alert]
+    end
+
+    subgraph Q3["Alert Queue"]
+        style Q3 fill:#fff3e0,stroke:#ef6c00
+        ALERT_Q[mxtac:alerts]
+    end
+
+    subgraph Store["Storage"]
+        style Store fill:#e0f2f1,stroke:#00695c
+        OS[OpenSearch]
+        PG[PostgreSQL]
+    end
+
+    Source --> Conn --> Q1
+    Q1 --> Norm
+    Norm --> Q2
+    Q2 --> Detect
+    Q2 --> Store
+    Detect --> Q3
+    Q3 --> Store
+```
+
+### Sequence Diagrams
+
+#### Alert Detection Sequence
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+sequenceDiagram
+    participant W as Wazuh
+    participant C as Connector
+    participant Q as Redis Streams
+    participant N as Normalizer
+    participant S as Sigma Engine
+    participant A as Alert Manager
+    participant U as UI
+
+    W->>C: Alert (rule 550)
+    C->>Q: Publish to mxtac:raw:wazuh
+    Q->>N: Consume raw event
+    N->>N: Parse Wazuh JSON
+    N->>N: Transform to OCSF
+    N->>Q: Publish to mxtac:normalized
+    Q->>S: Consume OCSF event
+    S->>S: Route by class_uid
+    S->>S: Match against rules
+    S->>S: Rule matched!
+    S->>Q: Publish to mxtac:alerts
+    Q->>A: Consume alert
+    A->>A: Deduplicate
+    A->>A: Enrich with threat intel
+    A->>A: Calculate risk score
+    A->>U: Send alert (WebSocket)
+    U->>U: Display notification
+```
+
+#### User Search Sequence
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+sequenceDiagram
+    participant U as User
+    participant UI as React UI
+    participant API as API Gateway
+    participant S as Search Service
+    participant OS as OpenSearch
+
+    U->>UI: Enter search query
+    UI->>UI: Build query DSL
+    UI->>API: POST /api/v1/events/search
+    API->>API: Validate JWT
+    API->>API: Check rate limit
+    API->>S: Forward request
+    S->>S: Parse query
+    S->>OS: Execute search
+    OS->>S: Return results (50 events)
+    S->>S: Format response
+    S->>API: Return formatted results
+    API->>UI: JSON response
+    UI->>UI: Render results table
+    UI->>U: Display results
+```
+
+### Deployment Architectures
+
+#### Production Kubernetes
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Internet["Internet"]
+        style Internet fill:#e3f2fd,stroke:#1565c0
+        USER[Users]
+    end
+
+    subgraph K8s["Kubernetes Cluster"]
+        style K8s fill:#e8f5e9,stroke:#2e7d32
+
+        subgraph Ingress["Ingress"]
+            LB[Cloud LB]
+            NGINX[Nginx Ingress]
+        end
+
+        subgraph UI_NS["ui namespace"]
+            UI1[ui-pod-1]
+            UI2[ui-pod-2]
+            UI3[ui-pod-3]
+        end
+
+        subgraph API_NS["api namespace"]
+            API1[api-pod-1]
+            API2[api-pod-2]
+            API3[api-pod-3]
+        end
+
+        subgraph Engine_NS["engine namespace"]
+            SIG1[sigma-pod-1]
+            SIG2[sigma-pod-2]
+            SIG3[sigma-pod-3]
+            CORR1[corr-pod-1]
+            NORM1[norm-pod-1]
+        end
+
+        subgraph Data_NS["data namespace"]
+            OS1[opensearch-1]
+            OS2[opensearch-2]
+            OS3[opensearch-3]
+            PG1[postgres-primary]
+            PG2[postgres-replica]
+            RD1[redis-master]
+            RD2[redis-replica]
+        end
+
+        subgraph Storage["Persistent Storage"]
+            PV1[PV: opensearch-data]
+            PV2[PV: postgres-data]
+        end
+    end
+
+    USER --> LB
+    LB --> NGINX
+    NGINX --> UI_NS
+    UI_NS --> API_NS
+    API_NS --> Engine_NS
+    Engine_NS --> Data_NS
+    Data_NS --> Storage
+```
+
+---
+
 *Document maintained by MxTac Project*
+*Architecture diagrams updated: 2026-01-19*

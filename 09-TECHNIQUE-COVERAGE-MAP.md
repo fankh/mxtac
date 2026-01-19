@@ -1022,4 +1022,173 @@ Use this matrix to determine which solutions your organization needs:
 
 ---
 
+## Coverage Gap Analysis - Achieving 90-100% Coverage
+
+> **Current Coverage**: 75-85% (Full Platform)
+> **Target Coverage**: 90-100%
+> **Gap**: 15-25% (90-150 techniques)
+> **Analysis Date**: 2026-01-19
+
+### Gap Breakdown by Category
+
+Based on the full platform deployment (Wazuh + Zeek + Suricata + Prowler + OpenCTI), the coverage gaps fall into 4 main categories:
+
+| Category | % of Gap | Estimated Techniques | Difficulty |
+|----------|----------|---------------------|------------|
+| **Pre-Compromise** | 60% | 90 techniques | Very Hard |
+| **Detection Evasion** | 20% | 30 techniques | Hard |
+| **Physical/Supply Chain** | 10% | 15 techniques | Impossible (out of scope) |
+| **Emerging Techniques** | 10% | 15 techniques | Medium |
+
+### Why 100% Coverage is Nearly Impossible
+
+**1. Pre-Compromise Techniques (Reconnaissance, Resource Development)**
+- **Reason**: Occur outside your network
+- **Examples**:
+  - T1589: Gather Victim Identity Information (external OSINT)
+  - T1583: Acquire Infrastructure (adversary registers domains)
+  - T1585: Establish Accounts (adversary creates fake accounts)
+- **Detection**: Requires external monitoring (Censys, Shodan, Certificate Transparency logs)
+
+**2. Physical Attacks**
+- **Reason**: Require hardware/physical sensors
+- **Examples**:
+  - T1200: Hardware Additions (USB implants)
+  - T1091: Replication Through Removable Media
+- **Detection**: Requires USB device control (osquery), physical access logs
+
+**3. Detection Evasion**
+- **Reason**: Specifically designed to bypass detection
+- **Examples**:
+  - T1027: Obfuscated Files or Information
+  - T1070: Indicator Removal
+  - T1562: Impair Defenses
+- **Detection**: Requires advanced behavioral analytics, ML models
+
+### Strategies to Reach 90-95% Coverage
+
+#### Phase 1: Quick Wins (3-6 months, +11% coverage)
+
+**1. Add YARA Scanning for Malware Detection**
+- **Coverage Gain**: +5%
+- **Cost**: Low ($0 - OSS)
+- **Effort**: Medium (2-4 weeks)
+- **Detects**:
+  - T1027: Obfuscated Files
+  - T1055: Process Injection
+  - T1486: Data Encrypted for Impact (ransomware)
+- **Integration**: YARA + Wazuh FIM
+
+**2. Deploy Honeypots for Pre-Compromise Detection**
+- **Coverage Gain**: +3%
+- **Cost**: Low ($0 - OpenCanary)
+- **Effort**: Low (1 week)
+- **Detects**:
+  - T1595: Active Scanning
+  - T1046: Network Service Discovery
+  - T1087: Account Discovery
+- **Integration**: OpenCanary → Syslog → Wazuh
+
+**3. Add Behavioral Analytics Module**
+- **Coverage Gain**: +3%
+- **Cost**: Medium (ML infrastructure)
+- **Effort**: High (8-12 weeks)
+- **Detects**:
+  - T1078: Valid Accounts (anomalous login patterns)
+  - T1071: Application Layer Protocol (C2 detection)
+  - T1048: Exfiltration Over Alternative Protocol
+- **Integration**: Custom ML models on OpenSearch data
+
+**Phase 1 Result**: 75-85% → **86-91% coverage**
+
+#### Phase 2: Advanced Integrations (6-12 months, +8% coverage)
+
+**4. External Attack Surface Monitoring**
+- **Coverage Gain**: +4%
+- **Cost**: Medium ($1K-5K/year for API access)
+- **Effort**: Medium (4-6 weeks)
+- **Tools**: Censys, Shodan, Certificate Transparency
+- **Detects**:
+  - T1583: Acquire Infrastructure
+  - T1584: Compromise Infrastructure
+  - T1598: Phishing for Information (external)
+- **Integration**: API polling → MxTac alerts
+
+**5. Memory Forensics Integration**
+- **Coverage Gain**: +2%
+- **Cost**: Low ($0 - Volatility OSS)
+- **Effort**: High (8-10 weeks)
+- **Detects**:
+  - T1055: Process Injection (in-memory)
+  - T1003: OS Credential Dumping (LSASS)
+  - T1620: Reflective Code Loading
+- **Integration**: Volatility + Wazuh agent triggers
+
+**6. Container/Cloud-Native Security**
+- **Coverage Gain**: +2%
+- **Cost**: Low ($0 - Falco OSS)
+- **Effort**: Medium (4-6 weeks)
+- **Detects**:
+  - T1610: Deploy Container
+  - T1611: Escape to Host
+  - T1613: Container API
+- **Integration**: Falco → MxTac OCSF pipeline
+
+**Phase 2 Result**: 86-91% → **94-99% coverage**
+
+### Additional Integrations Needed
+
+| Integration | Coverage Gain | Cost | Effort | Priority |
+|-------------|---------------|------|--------|----------|
+| **YARA Scanning** | +5% | Free | Medium | P0 |
+| **Honeypots (OpenCanary)** | +3% | Free | Low | P0 |
+| **Behavioral Analytics** | +3% | Medium | High | P1 |
+| **External Monitoring** | +4% | $1K-5K/yr | Medium | P1 |
+| **Memory Forensics** | +2% | Free | High | P2 |
+| **Container Security (Falco)** | +2% | Free | Medium | P2 |
+| **USB Device Control** | +1% | Free | Low | P3 |
+| **Threat Hunting Platform** | +2% | Free | High | P3 |
+
+### Realistic Coverage Target: 90%
+
+**Recommended Approach:**
+1. **MVP (Current)**: 50-60% coverage with Wazuh + Sigma
+2. **Phase 1 (3-6 months)**: Add Zeek, Suricata → 75-85%
+3. **Phase 2 (6-12 months)**: Add YARA, Honeypots, Behavioral → 86-91%
+4. **Phase 3 (12-24 months)**: Add external monitoring, advanced tools → 94-99%
+
+**Investment Required:**
+- **Time**: 12-24 months of development
+- **Cost**: $50K-$250K (mostly infrastructure and API subscriptions)
+- **Team**: 2-4 engineers + 1 data scientist (for ML)
+
+**Acceptance Criteria:**
+- **90% coverage** with **95% accuracy** (low false positive rate)
+- **Better than 100% with 50% accuracy**
+
+### Detection Engineering Best Practices
+
+To maximize coverage with existing tools:
+
+**1. Sigma Rule Optimization**
+- Curate and test SigmaHQ rules (currently 3,000+ rules)
+- Create custom rules for organizational threats
+- Regularly update rules (weekly sync from SigmaHQ)
+
+**2. Correlation Rules**
+- Build sequence detection for attack chains
+- Example: Exploit → Process Spawn → C2 Beacon
+
+**3. Threat Intelligence Integration**
+- Use OpenCTI for IOC matching
+- Enrich alerts with STIX data
+
+**4. Continuous Improvement**
+- Purple team exercises (red team + blue team)
+- Measure detection efficacy with VECTR or Caldera
+- Track coverage metrics in MxTac Navigator
+
+---
+
+*Coverage gap analysis updated: 2026-01-19*
 *Document maintained by MxTac Project*

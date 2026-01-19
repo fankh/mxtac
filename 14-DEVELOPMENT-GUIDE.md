@@ -1,8 +1,9 @@
-# MxTac MVP - Sprint Planning & Development Guide
+# MxTac - Development Guide & Sprint Planning
 
+> **Document Type**: Development Guide
 > **Version**: 1.0
 > **Timeline**: 18 weeks (Q2 2026)
-> **Target**: 50-60% ATT&CK Coverage
+> **Target**: 50-60% ATT&CK Coverage (MVP)
 > **Team Size**: 2-4 developers
 
 ---
