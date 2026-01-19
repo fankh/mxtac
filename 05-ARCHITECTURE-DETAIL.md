@@ -72,252 +72,249 @@ flowchart TB
 
 ### Layer 1: Presentation Layer
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Presentation["Presentation Layer"]
+        style Presentation fill:#e3f2fd,stroke:#1565c0
+        subgraph WebApp["Web Application - React"]
+            style WebApp fill:#e8f5e9,stroke:#2e7d32
+            DASH[Dashboard Module]
+            ALERTS[Alerts Module]
+            HUNT[Hunting Module]
+            CONFIG[Config Module]
+        end
+        subgraph WebApp2["Web Application - React (cont.)"]
+            style WebApp2 fill:#e8f5e9,stroke:#2e7d32
+            ATTCK[ATT&CK Navigator]
+            REPORTS[Reports Module]
+            RESP[Response Module]
+            ADMIN[Admin Module]
+        end
+    end
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         PRESENTATION LAYER                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                      Web Application (React)                     │   │
-│  │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐       │   │
-│  │  │ Dashboard │ │  Alerts   │ │  Hunting  │ │  Config   │       │   │
-│  │  │   Module  │ │  Module   │ │  Module   │ │  Module   │       │   │
-│  │  └───────────┘ └───────────┘ └───────────┘ └───────────┘       │   │
-│  │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐       │   │
-│  │  │  ATT&CK   │ │  Reports  │ │ Response  │ │  Admin    │       │   │
-│  │  │ Navigator │ │  Module   │ │  Module   │ │  Module   │       │   │
-│  │  └───────────┘ └───────────┘ └───────────┘ └───────────┘       │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  Technology: React 18+, TypeScript, TailwindCSS, Recharts              │
-│  State Management: Zustand or Redux Toolkit                            │
-│  API Client: React Query + Axios                                        │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+
+**Technology:** React 18+, TypeScript, TailwindCSS, Recharts  
+**State Management:** Zustand or Redux Toolkit  
+**API Client:** React Query + Axios
 
 ### Layer 2: API Gateway
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Gateway["API Gateway - Kong/Traefik"]
+        style Gateway fill:#e8f5e9,stroke:#2e7d32
+        AUTH[Auth & AuthZ<br/>JWT/OIDC]
+        RATE[Rate Limiting]
+        ROUTE[Request Routing]
+    end
+    
+    subgraph Gateway2["API Gateway Features"]
+        style Gateway2 fill:#e8f5e9,stroke:#2e7d32
+        AUDIT[Audit Logging]
+        CIRCUIT[Circuit Breaker]
+        SSL[SSL Termination]
+    end
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           API GATEWAY                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    Kong / Traefik / Custom                       │   │
-│  │                                                                   │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │   │
-│  │  │   Auth &    │  │    Rate     │  │   Request   │              │   │
-│  │  │   AuthZ     │  │  Limiting   │  │   Routing   │              │   │
-│  │  │  (JWT/OIDC) │  │             │  │             │              │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘              │   │
-│  │                                                                   │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │   │
-│  │  │   Audit     │  │   Circuit   │  │    SSL      │              │   │
-│  │  │  Logging    │  │   Breaker   │  │ Termination │              │   │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘              │   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  Endpoints:                                                             │
-│  - /api/v1/alerts      - Alert management                              │
-│  - /api/v1/events      - Event search                                  │
-│  - /api/v1/rules       - Sigma rule management                         │
-│  - /api/v1/coverage    - ATT&CK coverage                               │
-│  - /api/v1/connectors  - Integration management                        │
-│  - /api/v1/response    - Response actions                              │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+
+**Endpoints:**
+| Endpoint | Purpose |
+|----------|---------|
+| `/api/v1/alerts` | Alert management |
+| `/api/v1/events` | Event search |
+| `/api/v1/rules` | Sigma rule management |
+| `/api/v1/coverage` | ATT&CK coverage |
+| `/api/v1/connectors` | Integration management |
+| `/api/v1/response` | Response actions |
 
 ### Layer 3: Core Services
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph CoreServices["Core Services"]
+        style CoreServices fill:#fff3e0,stroke:#ef6c00
+        subgraph Row1["Detection Services"]
+            style Row1 fill:#e3f2fd,stroke:#1565c0
+            SIGMA[Sigma Engine<br/>Parser, Matcher, Alert]
+            CORR[Correlation Engine<br/>Buffer, Rules, Chain]
+        end
+        subgraph Row2["Management Services"]
+            style Row2 fill:#e8f5e9,stroke:#2e7d32
+            ALERT[Alert Manager<br/>Dedup, Enrich, Score]
+            ATTCK[ATT&CK Mapper<br/>Map, Coverage, Gaps]
+        end
+    end
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          CORE SERVICES                                  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────────────────┐  ┌──────────────────────┐                    │
-│  │    Sigma Engine      │  │  Correlation Engine  │                    │
-│  │  ┌────────────────┐  │  │  ┌────────────────┐  │                    │
-│  │  │  Rule Parser   │  │  │  │  Event Buffer  │  │                    │
-│  │  │  Rule Matcher  │  │  │  │  Rule Engine   │  │                    │
-│  │  │  Alert Creator │  │  │  │  Chain Detect  │  │                    │
-│  │  └────────────────┘  │  │  └────────────────┘  │                    │
-│  └──────────────────────┘  └──────────────────────┘                    │
-│                                                                         │
-│  ┌──────────────────────┐  ┌──────────────────────┐                    │
-│  │    Alert Manager     │  │    ATT&CK Mapper     │                    │
-│  │  ┌────────────────┐  │  │  ┌────────────────┐  │                    │
-│  │  │  Deduplication │  │  │  │ Technique Map  │  │                    │
-│  │  │  Enrichment    │  │  │  │ Coverage Calc  │  │                    │
-│  │  │  Scoring       │  │  │  │ Gap Analysis   │  │                    │
-│  │  └────────────────┘  │  │  └────────────────┘  │                    │
-│  └──────────────────────┘  └──────────────────────┘                    │
-│                                                                         │
-│  ┌──────────────────────┐  ┌──────────────────────┐                    │
-│  │   Search Service     │  │  Enrichment Service  │                    │
-│  │  ┌────────────────┐  │  │  ┌────────────────┐  │                    │
-│  │  │ Query Builder  │  │  │  │  Threat Intel  │  │                    │
-│  │  │ Aggregations   │  │  │  │  GeoIP         │  │                    │
-│  │  │ Pagination     │  │  │  │  Asset Context │  │                    │
-│  │  └────────────────┘  │  │  └────────────────┘  │                    │
-│  └──────────────────────┘  └──────────────────────┘                    │
-│                                                                         │
-│  ┌──────────────────────┐  ┌──────────────────────┐                    │
-│  │  Response Service    │  │   Report Service     │                    │
-│  │  ┌────────────────┐  │  │  ┌────────────────┐  │                    │
-│  │  │ Action Execute │  │  │  │ Report Builder │  │                    │
-│  │  │ Playbook Run   │  │  │  │ Scheduler      │  │                    │
-│  │  │ Audit Log      │  │  │  │ Export         │  │                    │
-│  │  └────────────────┘  │  │  └────────────────┘  │                    │
-│  └──────────────────────┘  └──────────────────────┘                    │
-│                                                                         │
-│  Technology: Python 3.11+, FastAPI, asyncio                            │
-│  Communication: gRPC (internal), REST (external)                        │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph CoreServices2["Core Services (cont.)"]
+        style CoreServices2 fill:#fff3e0,stroke:#ef6c00
+        subgraph Row3["Query Services"]
+            style Row3 fill:#f3e5f5,stroke:#7b1fa2
+            SEARCH[Search Service<br/>Query, Aggregations]
+            ENRICH[Enrichment Service<br/>TI, GeoIP, Asset]
+        end
+        subgraph Row4["Action Services"]
+            style Row4 fill:#e0f2f1,stroke:#00796b
+            RESP[Response Service<br/>Execute, Playbook, Audit]
+            REPORT[Report Service<br/>Builder, Scheduler, Export]
+        end
+    end
 ```
+
+**Technology:** Python 3.11+, FastAPI, asyncio  
+**Communication:** gRPC (internal), REST (external)
 
 ### Layer 4: Data Processing
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph DataProcessing["Data Processing Layer"]
+        style DataProcessing fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph Normalization["OCSF Normalization Engine"]
+            style Normalization fill:#e3f2fd,stroke:#1565c0
+            
+            subgraph Parsers["Input Parsers"]
+                style Parsers fill:#e8f5e9,stroke:#2e7d32
+                P1[Wazuh Parser]
+                P2[Zeek Parser]
+                P3[Suricata Parser]
+            end
+            
+            subgraph Parsers2["Input Parsers (cont.)"]
+                style Parsers2 fill:#e8f5e9,stroke:#2e7d32
+                P4[Prowler Parser]
+                P5[Generic Parser]
+            end
+            
+            TRANS["OCSF Transformer<br/>Field Mapping | Type Coercion<br/>Validation | Enrichment"]
+            OCSF["OCSF Events<br/>(Normalized)"]
+        end
+        
+        subgraph MQ["Message Queue - Kafka"]
+            style MQ fill:#f3e5f5,stroke:#7b1fa2
+            T1["oap.raw.wazuh"]
+            T2["oap.raw.zeek"]
+            T3["oap.raw.suricata"]
+            T4["oap.normalized"]
+            T5["oap.alerts"]
+            T6["oap.enriched"]
+        end
+    end
+    
+    P1 --> TRANS
+    P2 --> TRANS
+    P3 --> TRANS
+    P4 --> TRANS
+    P5 --> TRANS
+    TRANS --> OCSF
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       DATA PROCESSING LAYER                             │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                 OCSF Normalization Engine                        │   │
-│  │                                                                   │   │
-│  │  Input Parsers:                                                   │   │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │   │
-│  │  │  Wazuh  │ │  Zeek   │ │Suricata │ │ Prowler │ │ Generic │   │   │
-│  │  │ Parser  │ │ Parser  │ │ Parser  │ │ Parser  │ │ Parser  │   │   │
-│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘   │   │
-│  │       │           │           │           │           │         │   │
-│  │       └───────────┴─────┬─────┴───────────┴───────────┘         │   │
-│  │                         │                                        │   │
-│  │                         ▼                                        │   │
-│  │              ┌─────────────────────┐                            │   │
-│  │              │  OCSF Transformer   │                            │   │
-│  │              │  - Field Mapping    │                            │   │
-│  │              │  - Type Coercion    │                            │   │
-│  │              │  - Validation       │                            │   │
-│  │              │  - Enrichment       │                            │   │
-│  │              └──────────┬──────────┘                            │   │
-│  │                         │                                        │   │
-│  │                         ▼                                        │   │
-│  │              ┌─────────────────────┐                            │   │
-│  │              │   OCSF Events       │                            │   │
-│  │              │   (Normalized)      │                            │   │
-│  │              └─────────────────────┘                            │   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    Message Queue (Kafka)                         │   │
-│  │                                                                   │   │
-│  │  Topics:                                                          │   │
-│  │  - oap.raw.wazuh         (raw events from Wazuh)                 │   │
-│  │  - oap.raw.zeek          (raw events from Zeek)                  │   │
-│  │  - oap.raw.suricata      (raw events from Suricata)              │   │
-│  │  - oap.normalized        (OCSF normalized events)                │   │
-│  │  - oap.alerts            (detection alerts)                      │   │
-│  │  - oap.enriched          (enriched alerts)                       │   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  Technology: Kafka (or Redis Streams for smaller deployments)          │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+
+**Technology:** Kafka (or Redis Streams for smaller deployments)
 
 ### Layer 5: Data Storage
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         DATA STORAGE LAYER                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌───────────────────────────────┐  ┌───────────────────────────────┐  │
-│  │        OpenSearch             │  │         PostgreSQL            │  │
-│  │       (Event Store)           │  │        (Metadata DB)          │  │
-│  │                               │  │                               │  │
-│  │  Indices:                     │  │  Tables:                      │  │
-│  │  - oap-events-YYYY.MM.DD     │  │  - users                      │  │
-│  │  - oap-alerts-YYYY.MM.DD     │  │  - roles                      │  │
-│  │  - oap-investigations        │  │  - rules                      │  │
-│  │                               │  │  - connectors                 │  │
-│  │  Retention: Configurable      │  │  - investigations            │  │
-│  │  (Default: 90 days events,    │  │  - playbooks                 │  │
-│  │   365 days alerts)            │  │  - settings                  │  │
-│  │                               │  │  - audit_logs                │  │
-│  └───────────────────────────────┘  └───────────────────────────────┘  │
-│                                                                         │
-│  ┌───────────────────────────────┐  ┌───────────────────────────────┐  │
-│  │           Redis               │  │        Object Storage         │  │
-│  │          (Cache)              │  │        (MinIO / S3)           │  │
-│  │                               │  │                               │  │
-│  │  Use Cases:                   │  │  Use Cases:                   │  │
-│  │  - Session cache              │  │  - Report exports             │  │
-│  │  - Rate limiting              │  │  - PCAP storage               │  │
-│  │  - Real-time metrics          │  │  - Long-term archives         │  │
-│  │  - Pub/sub (alerts)           │  │  - Backup storage             │  │
-│  │                               │  │                               │  │
-│  └───────────────────────────────┘  └───────────────────────────────┘  │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Storage["Data Storage Layer"]
+        style Storage fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph Row1["Primary Stores"]
+            style Row1 fill:#e3f2fd,stroke:#1565c0
+            
+            subgraph OS["OpenSearch (Event Store)"]
+                style OS fill:#e8f5e9,stroke:#2e7d32
+                OS1["Indices:<br/>- oap-events-YYYY.MM.DD<br/>- oap-alerts-YYYY.MM.DD<br/>- oap-investigations"]
+                OS2["Retention: Configurable<br/>(90 days events, 365 days alerts)"]
+            end
+            
+            subgraph PG["PostgreSQL (Metadata DB)"]
+                style PG fill:#f3e5f5,stroke:#7b1fa2
+                PG1["Tables:<br/>- users, roles<br/>- rules, connectors<br/>- investigations"]
+                PG2["Tables (cont.):<br/>- playbooks, settings<br/>- audit_logs"]
+            end
+        end
+        
+        subgraph Row2["Support Stores"]
+            style Row2 fill:#e0f2f1,stroke:#00796b
+            
+            subgraph RD["Redis (Cache)"]
+                style RD fill:#fce4ec,stroke:#c2185b
+                RD1["Use Cases:<br/>- Session cache<br/>- Rate limiting<br/>- Real-time metrics<br/>- Pub/sub (alerts)"]
+            end
+            
+            subgraph S3["Object Storage (MinIO/S3)"]
+                style S3 fill:#fff8e1,stroke:#f57f17
+                S31["Use Cases:<br/>- Report exports<br/>- PCAP storage<br/>- Long-term archives<br/>- Backup storage"]
+            end
+        end
+    end
 ```
 
 ### Layer 6: Integration Connectors
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Connectors["Integration Connectors"]
+        style Connectors fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph Inbound1["Data Source Connectors (Inbound) - Row 1"]
+            style Inbound1 fill:#e3f2fd,stroke:#1565c0
+            WAZ["Wazuh Connector<br/>- API Pull<br/>- Filebeat<br/>- Webhook"]
+            ZEK["Zeek Connector<br/>- File Watch<br/>- Kafka<br/>- Redis"]
+            SUR["Suricata Connector<br/>- File Watch<br/>- Kafka<br/>- Redis"]
+        end
+        
+        subgraph Inbound2["Data Source Connectors (Inbound) - Row 2"]
+            style Inbound2 fill:#e8f5e9,stroke:#2e7d32
+            PRW["Prowler Connector<br/>- API Pull<br/>- Scheduled"]
+            CTI["OpenCTI Connector<br/>- GraphQL<br/>- STIX/TAXII"]
+            MISP["MISP Connector<br/>- REST API<br/>- PyMISP"]
+        end
+    end
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      INTEGRATION CONNECTORS                             │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Data Source Connectors (Inbound):                                      │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐   │
-│  │    Wazuh     │ │    Zeek      │ │  Suricata    │ │   Prowler    │   │
-│  │  Connector   │ │  Connector   │ │  Connector   │ │  Connector   │   │
-│  │              │ │              │ │              │ │              │   │
-│  │ - API Pull   │ │ - File Watch │ │ - File Watch │ │ - API Pull   │   │
-│  │ - Filebeat   │ │ - Kafka      │ │ - Kafka      │ │ - Scheduled  │   │
-│  │ - Webhook    │ │ - Redis      │ │ - Redis      │ │              │   │
-│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘   │
-│                                                                         │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐   │
-│  │   OpenCTI    │ │    MISP      │ │  Velociraptor│ │   osquery    │   │
-│  │  Connector   │ │  Connector   │ │  Connector   │ │  Connector   │   │
-│  │              │ │              │ │              │ │              │   │
-│  │ - GraphQL    │ │ - REST API   │ │ - gRPC       │ │ - TLS API    │   │
-│  │ - STIX/TAXII │ │ - PyMISP     │ │ - Websocket  │ │              │   │
-│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘   │
-│                                                                         │
-│  Response Connectors (Outbound):                                        │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐   │
-│  │   Wazuh      │ │   Firewall   │ │    Cloud     │ │   Shuffle    │   │
-│  │  Response    │ │  Response    │ │  Response    │ │    SOAR      │   │
-│  │              │ │              │ │              │ │              │   │
-│  │ - Isolate    │ │ - Block IP   │ │ - Disable    │ │ - Playbooks  │   │
-│  │ - Kill proc  │ │ - Block Port │ │ - Revoke     │ │ - Workflows  │   │
-│  │ - Restart    │ │ - Allowlist  │ │ - Quarantine │ │              │   │
-│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘   │
-│                                                                         │
-│  Connector Interface (Abstract):                                        │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  class Connector(ABC):                                           │   │
-│  │      @abstractmethod                                             │   │
-│  │      async def connect(self) -> bool                             │   │
-│  │      @abstractmethod                                             │   │
-│  │      async def pull_events(self) -> List[RawEvent]               │   │
-│  │      @abstractmethod                                             │   │
-│  │      async def push_action(self, action: Action) -> Result       │   │
-│  │      @abstractmethod                                             │   │
-│  │      def get_ocsf_mapping(self) -> OCSFMapping                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Connectors2["Integration Connectors (cont.)"]
+        style Connectors2 fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph Inbound3["Data Source Connectors - Row 3"]
+            style Inbound3 fill:#f3e5f5,stroke:#7b1fa2
+            VEL["Velociraptor Connector<br/>- gRPC<br/>- Websocket"]
+            OSQ["osquery Connector<br/>- TLS API"]
+        end
+        
+        subgraph Outbound["Response Connectors (Outbound)"]
+            style Outbound fill:#e0f2f1,stroke:#00796b
+            WRESP["Wazuh Response<br/>- Isolate<br/>- Kill proc<br/>- Restart"]
+            FWRESP["Firewall Response<br/>- Block IP<br/>- Block Port<br/>- Allowlist"]
+            CLDRESP["Cloud Response<br/>- Disable<br/>- Revoke<br/>- Quarantine"]
+        end
+    end
+```
+
+**Connector Interface (Abstract):**
+
+```python
+class Connector(ABC):
+    @abstractmethod
+    async def connect(self) -> bool
+    @abstractmethod
+    async def pull_events(self) -> List[RawEvent]
+    @abstractmethod
+    async def push_action(self, action: Action) -> Result
+    @abstractmethod
+    def get_ocsf_mapping(self) -> OCSFMapping
 ```
 
 ---
@@ -326,66 +323,64 @@ flowchart TB
 
 ### Engine Design
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph SigmaEngine["Sigma Engine"]
+        style SigmaEngine fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph Repo["Rule Repository"]
+            style Repo fill:#e3f2fd,stroke:#1565c0
+            SHQ["SigmaHQ<br/>(Git Sync)"]
+            CUST["Custom<br/>Rules"]
+            IMP["Imported<br/>Rules"]
+        end
+        
+        subgraph Compiler["Rule Compiler"]
+            style Compiler fill:#e8f5e9,stroke:#2e7d32
+            C1["1. Parse YAML"]
+            C2["2. Validate structure"]
+            C3["3. Compile detection logic"]
+            C4["4. Map to OCSF fields"]
+            C5["5. Generate optimized matcher"]
+            C6["6. Cache compiled rule"]
+        end
+        
+        Repo --> Compiler
+    end
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        SIGMA ENGINE                                     │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                      Rule Repository                             │   │
-│  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐        │   │
-│  │  │    SigmaHQ    │  │    Custom     │  │   Imported    │        │   │
-│  │  │    (Git Sync) │  │    Rules      │  │    Rules      │        │   │
-│  │  └───────────────┘  └───────────────┘  └───────────────┘        │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                    │                                    │
-│                                    ▼                                    │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                      Rule Compiler                               │   │
-│  │                                                                   │   │
-│  │  1. Parse YAML ─────────────────────────────────────────────────│   │
-│  │  2. Validate structure ─────────────────────────────────────────│   │
-│  │  3. Compile detection logic ────────────────────────────────────│   │
-│  │  4. Map to OCSF fields ─────────────────────────────────────────│   │
-│  │  5. Generate optimized matcher ─────────────────────────────────│   │
-│  │  6. Cache compiled rule ────────────────────────────────────────│   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                    │                                    │
-│                                    ▼                                    │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                     Rule Index                                   │   │
-│  │                                                                   │   │
-│  │  Indexed by:                                                      │   │
-│  │  - logsource.category (process_creation, network_connection)     │   │
-│  │  - logsource.product (windows, linux, aws)                       │   │
-│  │  - ATT&CK technique (T1059, T1003, etc.)                         │   │
-│  │  - Severity (critical, high, medium, low)                        │   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                    │                                    │
-│                                    ▼                                    │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    Detection Pipeline                            │   │
-│  │                                                                   │   │
-│  │     OCSF Event                                                    │   │
-│  │         │                                                         │   │
-│  │         ▼                                                         │   │
-│  │  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐        │   │
-│  │  │   Route     │ ──► │   Match     │ ──► │  Generate   │        │   │
-│  │  │  (by class) │     │  (parallel) │     │   Alert     │        │   │
-│  │  └─────────────┘     └─────────────┘     └─────────────┘        │   │
-│  │                                                                   │   │
-│  │  Optimization:                                                    │   │
-│  │  - Rules grouped by logsource for O(1) routing                   │   │
-│  │  - Parallel evaluation within groups                              │   │
-│  │  - Short-circuit on first match (configurable)                   │   │
-│  │  - Bloom filter pre-check for keyword rules                      │   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph SigmaEngine2["Sigma Engine (cont.)"]
+        style SigmaEngine2 fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph Index["Rule Index"]
+            style Index fill:#f3e5f5,stroke:#7b1fa2
+            IDX1["Indexed by:<br/>- logsource.category<br/>- logsource.product"]
+            IDX2["Indexed by:<br/>- ATT&CK technique<br/>- Severity level"]
+        end
+        
+        subgraph Pipeline["Detection Pipeline"]
+            style Pipeline fill:#e0f2f1,stroke:#00796b
+            EVT["OCSF Event"]
+            ROUTE["Route<br/>(by class)"]
+            MATCH["Match<br/>(parallel)"]
+            GEN["Generate<br/>Alert"]
+            
+            EVT --> ROUTE --> MATCH --> GEN
+        end
+        
+        Index --> Pipeline
+    end
 ```
+
+**Optimization Strategies:**
+- Rules grouped by logsource for O(1) routing
+- Parallel evaluation within groups
+- Short-circuit on first match (configurable)
+- Bloom filter pre-check for keyword rules
 
 ### Sigma to OCSF Field Mapping
 
@@ -441,91 +436,55 @@ logsource_mappings:
 
 ### Attack Chain Detection
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph CorrEngine["Correlation Engine"]
+        style CorrEngine fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph Buffer["Event Buffer (Redis)"]
+            style Buffer fill:#e3f2fd,stroke:#1565c0
+            KEY1["Key Structure:<br/>entity:{type}:{value}:events<br/>→ Sorted Set (by timestamp)"]
+            KEY2["Examples:<br/>- entity:ip:192.168.1.50:events<br/>- entity:host:web-server-01:events<br/>- entity:user:admin:events"]
+            TTL["TTL: Configurable<br/>(default 24 hours)"]
+        end
+        
+        subgraph RuleEngine["Correlation Rule Engine"]
+            style RuleEngine fill:#e8f5e9,stroke:#2e7d32
+            RT1["1. Sequence Detection<br/>(A then B then C)"]
+            RT2["2. Threshold Detection<br/>(N events in time window)"]
+            RT3["3. Statistical Anomaly<br/>(deviation from baseline)"]
+        end
+        
+        Buffer --> RuleEngine
+    end
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     CORRELATION ENGINE                                  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    Event Buffer (Redis)                          │   │
-│  │                                                                   │   │
-│  │  Key Structure:                                                   │   │
-│  │  - entity:{type}:{value}:events → Sorted Set (by timestamp)      │   │
-│  │  - entity:ip:192.168.1.50:events                                 │   │
-│  │  - entity:host:web-server-01:events                              │   │
-│  │  - entity:user:admin:events                                       │   │
-│  │                                                                   │   │
-│  │  TTL: Configurable (default 24 hours)                            │   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                    │                                    │
-│                                    ▼                                    │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                  Correlation Rule Engine                         │   │
-│  │                                                                   │   │
-│  │  Rule Types:                                                      │   │
-│  │                                                                   │   │
-│  │  1. Sequence Detection (A then B then C)                         │   │
-│  │     ┌─────────────────────────────────────────────────────┐     │   │
-│  │     │  name: "Initial Access to C2"                        │     │   │
-│  │     │  sequence:                                           │     │   │
-│  │     │    - technique: T1190    # Exploit                   │     │   │
-│  │     │    - technique: T1059    # Execution                 │     │   │
-│  │     │    - technique: T1071    # C2                        │     │   │
-│  │     │  within: 1h                                          │     │   │
-│  │     │  group_by: [dst_endpoint.hostname]                   │     │   │
-│  │     └─────────────────────────────────────────────────────┘     │   │
-│  │                                                                   │   │
-│  │  2. Threshold Detection (N events in time window)                │   │
-│  │     ┌─────────────────────────────────────────────────────┐     │   │
-│  │     │  name: "Brute Force Detection"                       │     │   │
-│  │     │  condition:                                          │     │   │
-│  │     │    event: authentication_failure                     │     │   │
-│  │     │    count: ">= 10"                                    │     │   │
-│  │     │    within: 5m                                        │     │   │
-│  │     │    group_by: [src_endpoint.ip, dst_endpoint.user]   │     │   │
-│  │     └─────────────────────────────────────────────────────┘     │   │
-│  │                                                                   │   │
-│  │  3. Statistical Anomaly (deviation from baseline)                │   │
-│  │     ┌─────────────────────────────────────────────────────┐     │   │
-│  │     │  name: "Unusual Outbound Data"                       │     │   │
-│  │     │  condition:                                          │     │   │
-│  │     │    metric: bytes_out                                 │     │   │
-│  │     │    baseline: 7d_average                              │     │   │
-│  │     │    threshold: "> 3 * stddev"                         │     │   │
-│  │     │    group_by: [src_endpoint.hostname]                │     │   │
-│  │     └─────────────────────────────────────────────────────┘     │   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                    │                                    │
-│                                    ▼                                    │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                 ATT&CK Chain Detector                            │   │
-│  │                                                                   │   │
-│  │  Pre-defined Attack Patterns:                                     │   │
-│  │                                                                   │   │
-│  │  ┌─────────────────────────────────────────────────────────────┐│   │
-│  │  │  Ransomware Pattern:                                        ││   │
-│  │  │  T1566 → T1204 → T1059 → T1486                              ││   │
-│  │  │  (Phishing → User Exec → Script → Encrypt)                  ││   │
-│  │  └─────────────────────────────────────────────────────────────┘│   │
-│  │                                                                   │   │
-│  │  ┌─────────────────────────────────────────────────────────────┐│   │
-│  │  │  APT Lateral Movement:                                      ││   │
-│  │  │  T1078 → T1003 → T1021 → T1071                              ││   │
-│  │  │  (Valid Acct → Cred Dump → Remote Svc → C2)                 ││   │
-│  │  └─────────────────────────────────────────────────────────────┘│   │
-│  │                                                                   │   │
-│  │  ┌─────────────────────────────────────────────────────────────┐│   │
-│  │  │  Data Exfiltration:                                         ││   │
-│  │  │  T1083 → T1560 → T1048                                      ││   │
-│  │  │  (File Discovery → Archive → Exfil Alt Protocol)            ││   │
-│  │  └─────────────────────────────────────────────────────────────┘│   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph ChainDetector["ATT&CK Chain Detector"]
+        style ChainDetector fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph Patterns["Pre-defined Attack Patterns"]
+            style Patterns fill:#f3e5f5,stroke:#7b1fa2
+            
+            RANSOM["Ransomware Pattern<br/>T1566 → T1204 → T1059 → T1486<br/>(Phishing → User Exec → Script → Encrypt)"]
+            
+            APT["APT Lateral Movement<br/>T1078 → T1003 → T1021 → T1071<br/>(Valid Acct → Cred Dump → Remote Svc → C2)"]
+            
+            EXFIL["Data Exfiltration<br/>T1083 → T1560 → T1048<br/>(File Discovery → Archive → Exfil Alt Protocol)"]
+        end
+    end
 ```
+
+**Correlation Rule Examples:**
+
+| Rule Type | Example | Parameters |
+|-----------|---------|------------|
+| Sequence | Initial Access to C2 | T1190 → T1059 → T1071 within 1h |
+| Threshold | Brute Force Detection | 10+ auth failures in 5m by IP/user |
+| Statistical | Unusual Outbound Data | bytes_out > 3x stddev from 7d baseline |
 
 ---
 
@@ -641,55 +600,53 @@ metadata:
 
 ### Authentication & Authorization
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Security["Security Architecture"]
+        style Security fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph Auth["Authentication"]
+            style Auth fill:#e3f2fd,stroke:#1565c0
+            LOCAL["Local<br/>(bcrypt)"]
+            OIDC["OIDC<br/>(Keycloak)"]
+            SAML["SAML<br/>(Okta)"]
+            JWT["JWT Issuer<br/>(RS256 signed)"]
+            
+            LOCAL --> JWT
+            OIDC --> JWT
+            SAML --> JWT
+        end
+        
+        subgraph RBAC["Authorization (RBAC)"]
+            style RBAC fill:#e8f5e9,stroke:#2e7d32
+            R1["Viewer: Read alerts, events, dashboards"]
+            R2["Analyst: + Manage alerts, investigations"]
+            R3["Hunter: + Run queries, create rules"]
+        end
+    end
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    SECURITY ARCHITECTURE                                │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Authentication:                                                        │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                                                                   │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │   │
-│  │  │   Local     │  │    OIDC     │  │    SAML     │              │   │
-│  │  │  (bcrypt)   │  │  (Keycloak) │  │   (Okta)    │              │   │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘              │   │
-│  │         │                │                │                       │   │
-│  │         └────────────────┼────────────────┘                       │   │
-│  │                          ▼                                        │   │
-│  │                 ┌─────────────────┐                               │   │
-│  │                 │   JWT Issuer    │                               │   │
-│  │                 │  (RS256 signed) │                               │   │
-│  │                 └─────────────────┘                               │   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  Authorization (RBAC):                                                  │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                                                                   │   │
-│  │  Roles:                                                           │   │
-│  │  ┌────────────┬──────────────────────────────────────────────┐  │   │
-│  │  │ Role       │ Permissions                                   │  │   │
-│  │  ├────────────┼──────────────────────────────────────────────┤  │   │
-│  │  │ Viewer     │ Read alerts, events, dashboards              │  │   │
-│  │  │ Analyst    │ + Manage alerts, create investigations       │  │   │
-│  │  │ Hunter     │ + Run queries, create rules                  │  │   │
-│  │  │ Engineer   │ + Manage rules, connectors                   │  │   │
-│  │  │ Admin      │ + Manage users, settings, all                │  │   │
-│  │  └────────────┴──────────────────────────────────────────────┘  │   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  Data Protection:                                                       │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                                                                   │   │
-│  │  - Encryption at rest: AES-256 (OpenSearch, PostgreSQL)          │   │
-│  │  - Encryption in transit: TLS 1.3 (all connections)              │   │
-│  │  - Secret management: HashiCorp Vault or K8s Secrets             │   │
-│  │  - Audit logging: All admin actions logged to immutable store    │   │
-│  │                                                                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Security2["Security Architecture (cont.)"]
+        style Security2 fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph RBAC2["Authorization (RBAC) - cont."]
+            style RBAC2 fill:#e8f5e9,stroke:#2e7d32
+            R4["Engineer: + Manage rules, connectors"]
+            R5["Admin: + Manage users, settings, all"]
+        end
+        
+        subgraph DataProt["Data Protection"]
+            style DataProt fill:#f3e5f5,stroke:#7b1fa2
+            ENC1["Encryption at rest:<br/>AES-256 (OpenSearch, PostgreSQL)"]
+            ENC2["Encryption in transit:<br/>TLS 1.3 (all connections)"]
+            SEC1["Secret management:<br/>HashiCorp Vault or K8s Secrets"]
+            AUD["Audit logging:<br/>All admin actions to immutable store"]
+        end
+    end
 ```
 
 ---
@@ -801,33 +758,49 @@ paths:
 
 ### Optimization Strategies
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph PerfOpt["Performance Optimizations"]
+        style PerfOpt fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph Sigma["1. Sigma Engine"]
+            style Sigma fill:#e3f2fd,stroke:#1565c0
+            S1["Rule compilation at load time"]
+            S2["Bloom filter pre-check"]
+            S3["Rule indexing by logsource O(1)"]
+            S4["Parallel evaluation"]
+        end
+        
+        subgraph Pipeline["2. Data Pipeline"]
+            style Pipeline fill:#e8f5e9,stroke:#2e7d32
+            P1["Kafka partitioning by entity hash"]
+            P2["Batch normalization (100/batch)"]
+            P3["Async I/O throughout"]
+        end
+    end
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    PERFORMANCE OPTIMIZATIONS                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  1. Sigma Engine                                                        │
-│     - Rule compilation at load time (not runtime)                       │
-│     - Bloom filter pre-check for keyword matches                        │
-│     - Rule indexing by logsource for O(1) routing                      │
-│     - Parallel evaluation across rule groups                            │
-│                                                                         │
-│  2. Data Pipeline                                                       │
-│     - Kafka partitioning by entity hash (locality)                     │
-│     - Batch normalization (100 events per batch)                       │
-│     - Async I/O throughout                                              │
-│                                                                         │
-│  3. Storage                                                             │
-│     - OpenSearch index templates optimized for time-series             │
-│     - Hot-warm-cold architecture for retention                         │
-│     - Query result caching in Redis                                    │
-│                                                                         │
-│  4. API                                                                 │
-│     - Connection pooling                                                │
-│     - Response compression (gzip)                                       │
-│     - Pagination with cursors (not offset)                             │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph PerfOpt2["Performance Optimizations (cont.)"]
+        style PerfOpt2 fill:#fff3e0,stroke:#ef6c00
+        
+        subgraph Storage["3. Storage"]
+            style Storage fill:#f3e5f5,stroke:#7b1fa2
+            ST1["OpenSearch templates for time-series"]
+            ST2["Hot-warm-cold architecture"]
+            ST3["Query result caching in Redis"]
+        end
+        
+        subgraph API["4. API"]
+            style API fill:#e0f2f1,stroke:#00796b
+            A1["Connection pooling"]
+            A2["Response compression (gzip)"]
+            A3["Cursor-based pagination"]
+        end
+    end
 ```
 
 ---

@@ -200,72 +200,62 @@ flowchart LR
 
 ### Detailed Data Flow
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Stage1["1. Ingestion"]
+        style Stage1 fill:#e3f2fd,stroke:#1565c0
+        W[Wazuh]
+        Z[Zeek]
+        S[Suricata]
+        K1[Kafka Raw Topics]
+    end
+
+    subgraph Stage2["2. Normalization"]
+        style Stage2 fill:#e8f5e9,stroke:#2e7d32
+        OCSF[OCSF Normalizer]
+        K2[Kafka Normalized]
+    end
+
+    subgraph Stage3["3. Detection"]
+        style Stage3 fill:#fff3e0,stroke:#ef6c00
+        SIGMA[Sigma Engine]
+    end
+
+    W --> K1
+    Z --> K1
+    S --> K1
+    K1 --> OCSF
+    OCSF --> K2
+    K2 --> SIGMA
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         EVENT PROCESSING FLOW                           │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  1. INGESTION                                                          │
-│     ┌─────────┐    ┌─────────┐    ┌─────────┐                         │
-│     │  Wazuh  │    │  Zeek   │    │Suricata │                         │
-│     └────┬────┘    └────┬────┘    └────┬────┘                         │
-│          │              │              │                               │
-│          └──────────────┼──────────────┘                               │
-│                         ▼                                               │
-│              ┌─────────────────────┐                                   │
-│              │  Kafka (Raw Topics) │                                   │
-│              │  mxtac.raw.*        │                                   │
-│              └──────────┬──────────┘                                   │
-│                         │                                               │
-│  2. NORMALIZATION       │                                               │
-│                         ▼                                               │
-│              ┌─────────────────────┐                                   │
-│              │   OCSF Normalizer   │                                   │
-│              │  - Field mapping    │                                   │
-│              │  - Type coercion    │                                   │
-│              │  - Validation       │                                   │
-│              └──────────┬──────────┘                                   │
-│                         │                                               │
-│                         ▼                                               │
-│              ┌─────────────────────┐                                   │
-│              │  Kafka (Normalized) │                                   │
-│              │  mxtac.normalized   │                                   │
-│              └──────────┬──────────┘                                   │
-│                         │                                               │
-│  3. DETECTION           │                                               │
-│                         ▼                                               │
-│              ┌─────────────────────┐                                   │
-│              │    Sigma Engine     │                                   │
-│              │  - Rule matching    │                                   │
-│              │  - ATT&CK tagging   │                                   │
-│              └──────────┬──────────┘                                   │
-│                         │                                               │
-│          ┌──────────────┼──────────────┐                               │
-│          │              │              │                               │
-│          ▼              ▼              ▼                               │
-│     ┌─────────┐   ┌─────────────┐  ┌─────────┐                        │
-│     │ OpenSearch│   │Correlation │  │  Kafka  │                        │
-│     │ (Storage) │   │  Engine    │  │(Alerts) │                        │
-│     └─────────┘   └──────┬──────┘  └────┬────┘                        │
-│                          │              │                               │
-│  4. ENRICHMENT           │              │                               │
-│                          ▼              ▼                               │
-│              ┌─────────────────────────────────┐                       │
-│              │      Alert Manager              │                       │
-│              │  - Deduplication                │                       │
-│              │  - Enrichment (TI, GeoIP)       │                       │
-│              │  - Scoring                      │                       │
-│              └──────────────┬──────────────────┘                       │
-│                             │                                           │
-│  5. OUTPUT                  ▼                                           │
-│              ┌─────────────────────────────────┐                       │
-│              │  ┌─────────┐  ┌─────────────┐  │                       │
-│              │  │   UI    │  │  Response   │  │                       │
-│              │  │ (Alerts)│  │ Orchestrator│  │                       │
-│              │  └─────────┘  └─────────────┘  │                       │
-│              └─────────────────────────────────┘                       │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Stage3["3. Detection (cont.)"]
+        style Stage3 fill:#fff3e0,stroke:#ef6c00
+        SIGMA2[Sigma Engine]
+    end
+
+    subgraph Stage4["4. Enrichment"]
+        style Stage4 fill:#f3e5f5,stroke:#7b1fa2
+        OS[OpenSearch]
+        CORR[Correlation Engine]
+        AM[Alert Manager]
+    end
+
+    subgraph Stage5["5. Output"]
+        style Stage5 fill:#e0f2f1,stroke:#00796b
+        UI[UI Alerts]
+        RESP[Response Orchestrator]
+    end
+
+    SIGMA2 --> OS
+    SIGMA2 --> CORR
+    CORR --> AM
+    AM --> UI
+    AM --> RESP
 ```
 
 ### Message Flow

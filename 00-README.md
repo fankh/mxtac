@@ -35,44 +35,66 @@ MxTac = Full ATT&CK Coverage
 
 ### Why Not Just Use Existing Tools?
 
-```
-Current State (Fragmented):
-┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
-│  Wazuh  │ │  Zeek   │ │Suricata │ │ Prowler │
-│  (EDR)  │ │  (NDR)  │ │  (IDS)  │ │ (Cloud) │
-└────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘
-     │           │           │           │
-     ▼           ▼           ▼           ▼
-  Separate   Separate    Separate    Separate
-  Dashboard  Dashboard   Dashboard   Dashboard
-  
-  ❌ No unified ATT&CK view
-  ❌ No cross-tool correlation
-  ❌ Different data formats
-  ❌ Manual rule conversion
+**Current State (Fragmented):**
 
-Future State (Unified with MxTac):
-┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
-│  Wazuh  │ │  Zeek   │ │Suricata │ │ Prowler │
-└────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘
-     │           │           │           │
-     └───────────┴─────┬─────┴───────────┘
-                       │
-              ┌────────▼────────┐
-              │      MxTac      │
-              │   Matrix+Tactic │
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │ Unified ATT&CK  │
-              │   Dashboard     │
-              └─────────────────┘
-              
-  ✅ Single ATT&CK coverage view
-  ✅ Cross-tool attack chain detection
-  ✅ OCSF normalized data
-  ✅ Native Sigma execution
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Tools["Security Tools (Siloed)"]
+        style Tools fill:#ffebee,stroke:#c62828
+        W[Wazuh<br/>EDR]
+        Z[Zeek<br/>NDR]
+        S[Suricata<br/>IDS]
+        P[Prowler<br/>Cloud]
+    end
+
+    subgraph Dashboards["Separate Dashboards"]
+        style Dashboards fill:#fff3e0,stroke:#ef6c00
+        WD[Wazuh Dashboard]
+        ZD[Zeek Dashboard]
+        SD[Suricata Dashboard]
+        PD[Prowler Dashboard]
+    end
+
+    W --> WD
+    Z --> ZD
+    S --> SD
+    P --> PD
 ```
+
+**Problems:** No unified ATT&CK view | No cross-tool correlation | Different data formats | Manual rule conversion
+
+**Future State (Unified with MxTac):**
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Tools["Security Tools"]
+        style Tools fill:#e3f2fd,stroke:#1565c0
+        W[Wazuh]
+        Z[Zeek]
+        S[Suricata]
+        P[Prowler]
+    end
+
+    subgraph Platform["MxTac Platform"]
+        style Platform fill:#e8f5e9,stroke:#2e7d32
+        MX[MxTac<br/>Matrix + Tactic]
+    end
+
+    subgraph Output["Unified View"]
+        style Output fill:#f3e5f5,stroke:#7b1fa2
+        DASH[Unified ATT&CK<br/>Dashboard]
+    end
+
+    W --> MX
+    Z --> MX
+    S --> MX
+    P --> MX
+    MX --> DASH
+```
+
+**Benefits:** Single ATT&CK coverage view | Cross-tool attack chain detection | OCSF normalized data | Native Sigma execution
 
 ### Core Principles
 

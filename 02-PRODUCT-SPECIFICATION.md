@@ -218,70 +218,78 @@ MxTac addresses these problems by providing:
 
 ### High-Level Architecture
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph UI["User Interface"]
+        style UI fill:#e3f2fd,stroke:#1565c0
+        DASH[Dashboard]
+        ALERTS[Alerts]
+        HUNT[Hunting]
+        SETTINGS[Settings]
+    end
+
+    subgraph Gateway["API Gateway"]
+        style Gateway fill:#e8f5e9,stroke:#2e7d32
+        AUTH[Auth]
+        RATE[Rate Limit]
+        ROUTE[Routing]
+        LOG[Logging]
+    end
+
+    subgraph Core["Core Services"]
+        style Core fill:#fff3e0,stroke:#ef6c00
+        SIGMA[Sigma Engine]
+        CORR[Correlation Engine]
+        ALERTM[Alert Manager]
+        ATTCK[ATT&CK Mapper]
+    end
+
+    subgraph Core2["Core Services (cont.)"]
+        style Core2 fill:#fff3e0,stroke:#ef6c00
+        SEARCH[Search Service]
+        REPORT[Report Service]
+        RESP[Response Orchestrator]
+        ENRICH[Enrichment Service]
+    end
+
+    UI --> Gateway
+    Gateway --> Core
+    Gateway --> Core2
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           USER INTERFACE                                │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐       │
-│  │  Dashboard  │ │   Alerts    │ │   Hunting   │ │  Settings   │       │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘       │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                            API GATEWAY                                  │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐       │
-│  │    Auth     │ │ Rate Limit  │ │   Routing   │ │   Logging   │       │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘       │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          CORE SERVICES                                  │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐   │
-│  │    Sigma     │ │ Correlation  │ │    Alert     │ │   ATT&CK     │   │
-│  │   Engine     │ │   Engine     │ │   Manager    │ │   Mapper     │   │
-│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘   │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐   │
-│  │    Search    │ │   Report     │ │  Response    │ │   Enrichment │   │
-│  │   Service    │ │   Service    │ │  Orchestrator│ │   Service    │   │
-│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       DATA PROCESSING LAYER                             │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                    OCSF Normalization Engine                      │  │
-│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐         │  │
-│  │  │ Wazuh  │ │  Zeek  │ │Suricata│ │Prowler │ │ Generic│         │  │
-│  │  │ Parser │ │ Parser │ │ Parser │ │ Parser │ │ Parser │         │  │
-│  │  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘         │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │                    Message Queue (Kafka/Redis)                    │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         DATA STORAGE LAYER                              │
-│  ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐        │
-│  │   OpenSearch /   │ │    PostgreSQL    │ │      Redis       │        │
-│  │     Elastic      │ │   (Metadata)     │ │     (Cache)      │        │
-│  │   (Event Store)  │ │                  │ │                  │        │
-│  └──────────────────┘ └──────────────────┘ └──────────────────┘        │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       INTEGRATION CONNECTORS                            │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐          │
-│  │  Wazuh  │ │  Zeek   │ │Suricata │ │ Prowler │ │ OpenCTI │          │
-│  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘          │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐          │
-│  │Velocirap│ │ Shuffle │ │  MISP   │ │ osquery │ │ Webhook │          │
-│  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘          │
-└─────────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Processing["Data Processing Layer"]
+        style Processing fill:#f3e5f5,stroke:#7b1fa2
+        subgraph Normalizer["OCSF Normalization Engine"]
+            style Normalizer fill:#fce4ec,stroke:#c2185b
+            WP[Wazuh Parser]
+            ZP[Zeek Parser]
+            SP[Suricata Parser]
+        end
+        KAFKA[Message Queue<br/>Kafka/Redis]
+    end
+
+    subgraph Storage["Data Storage Layer"]
+        style Storage fill:#e0f2f1,stroke:#00796b
+        OS[OpenSearch<br/>Event Store]
+        PG[PostgreSQL<br/>Metadata]
+        RD[Redis<br/>Cache]
+    end
+
+    subgraph Connectors["Integration Connectors"]
+        style Connectors fill:#fafafa,stroke:#616161
+        C1[Wazuh]
+        C2[Zeek]
+        C3[Suricata]
+        C4[Prowler]
+        C5[OpenCTI]
+    end
+
+    Connectors --> Processing
+    Processing --> Storage
 ```
 
 ### Technology Stack
@@ -521,36 +529,38 @@ use_cases:
 
 ### Execution Flow
 
-```
-┌─────────────────┐
-│  Incoming Event │
-│     (OCSF)      │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Field Mapping  │ ← Map OCSF fields to Sigma logsource
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Rule Selection  │ ← Select applicable rules by logsource
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Rule Evaluation │ ← Evaluate detection conditions
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    │ Match?  │
-    └────┬────┘
-    Yes  │  No
-    │    └──► Discard
-    ▼
-┌─────────────────┐
-│ Generate Alert  │ ← Create alert with ATT&CK mapping
-└─────────────────┘
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph Input["Input"]
+        style Input fill:#e3f2fd,stroke:#1565c0
+        EVT[Incoming Event<br/>OCSF]
+    end
+
+    subgraph Process["Processing"]
+        style Process fill:#fff3e0,stroke:#ef6c00
+        MAP[Field Mapping]
+        SEL[Rule Selection]
+        EVAL[Rule Evaluation]
+    end
+
+    subgraph Decision["Decision"]
+        style Decision fill:#f3e5f5,stroke:#7b1fa2
+        MATCH{Match?}
+    end
+
+    subgraph Output["Output"]
+        style Output fill:#e8f5e9,stroke:#2e7d32
+        ALERT[Generate Alert]
+        DISC[Discard]
+    end
+
+    EVT --> MAP
+    MAP -->|Map OCSF to Sigma| SEL
+    SEL -->|Select by logsource| EVAL
+    EVAL -->|Evaluate conditions| MATCH
+    MATCH -->|Yes| ALERT
+    MATCH -->|No| DISC
 ```
 
 ### Example: Sigma to OCSF Mapping
@@ -594,124 +604,106 @@ logsource_mappings:
 
 #### 1. ATT&CK Coverage Dashboard
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  ATT&CK Coverage Dashboard                              [Export] [Edit] │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Overall Coverage: 72%    ████████████████████░░░░░░░░                 │
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │              ATT&CK Navigator Heatmap                            │   │
-│  │  ┌────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────┐  │   │
-│  │  │REC │RES │INI │EXE │PER │PRV │DEF │CRD │DIS │LAT │COL │C2  │  │   │
-│  │  │ 20%│ 10%│ 85%│ 90%│ 80%│ 75%│ 65%│ 70%│ 80%│ 75%│ 60%│ 70%│  │   │
-│  │  └────┴────┴────┴────┴────┴────┴────┴────┴────┴────┴────┴────┘  │   │
-│  │  [Color scale: Red=0%, Yellow=50%, Green=100%]                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  Coverage by Data Source:                                               │
-│  ┌──────────────┬────────────┬────────────┐                            │
-│  │ Wazuh (EDR)  │ Zeek (NDR) │ Prowler    │                            │
-│  │    45%       │    15%     │    12%     │                            │
-│  └──────────────┴────────────┴────────────┘                            │
-│                                                                         │
-│  Top Coverage Gaps:                                                     │
-│  1. T1055 - Process Injection (Defense Evasion) - No detection         │
-│  2. T1027 - Obfuscated Files (Defense Evasion) - Partial               │
-│  3. T1562 - Impair Defenses (Defense Evasion) - No detection           │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+**Layout:** Header with export/edit buttons, main content area with coverage metrics
+
+**Components:**
+- Overall coverage progress bar (72%)
+- ATT&CK Navigator heatmap (14 tactics)
+- Coverage by data source breakdown
+- Top coverage gaps list
+
+| Tactic | Coverage |
+|--------|----------|
+| Reconnaissance | 20% |
+| Resource Dev | 10% |
+| Initial Access | 85% |
+| Execution | 90% |
+| Persistence | 80% |
+| Privilege Esc | 75% |
+| Defense Evasion | 65% |
+| Credential Access | 70% |
+| Discovery | 80% |
+| Lateral Movement | 75% |
+| Collection | 60% |
+| C2 | 70% |
+
+**Coverage by Source:** Wazuh (45%) | Zeek (15%) | Prowler (12%)
 
 #### 2. Unified Alert Queue
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Alerts                    [Filters ▼] [Time: Last 24h ▼] [Refresh]    │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌─────┬──────────┬──────────────────────┬────────┬────────┬────────┐  │
-│  │ Sev │   Time   │        Title         │ Source │ ATT&CK │ Status │  │
-│  ├─────┼──────────┼──────────────────────┼────────┼────────┼────────┤  │
-│  │ CRI │ 10:30:22 │ Mimikatz detected    │ Wazuh  │ T1003  │  New   │  │
-│  │ HIG │ 10:28:15 │ C2 beacon detected   │ Zeek   │ T1071  │  New   │  │
-│  │ HIG │ 10:25:00 │ Lateral movement     │ Wazuh  │ T1021  │ Assign │  │
-│  │ MED │ 10:20:33 │ Port scan detected   │Suricat │ T1046  │ Closed │  │
-│  │ MED │ 10:15:00 │ S3 bucket public     │Prowler │ T1530  │  New   │  │
-│  └─────┴──────────┴──────────────────────┴────────┴────────┴────────┘  │
-│                                                                         │
-│  [◀ Prev] Page 1 of 24 [Next ▶]                     Total: 472 alerts  │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+**Layout:** Filter bar, data table with pagination
+
+| Severity | Time | Title | Source | ATT&CK | Status |
+|----------|------|-------|--------|--------|--------|
+| CRITICAL | 10:30:22 | Mimikatz detected | Wazuh | T1003 | New |
+| HIGH | 10:28:15 | C2 beacon detected | Zeek | T1071 | New |
+| HIGH | 10:25:00 | Lateral movement | Wazuh | T1021 | Assigned |
+| MEDIUM | 10:20:33 | Port scan detected | Suricata | T1046 | Closed |
+| MEDIUM | 10:15:00 | S3 bucket public | Prowler | T1530 | New |
+
+**Pagination:** Page 1 of 24 | Total: 472 alerts
 
 #### 3. Investigation Timeline
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Investigation: Host web-server-01                    [Export] [Share] │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Entity: 192.168.1.50 (web-server-01)                                  │
-│  Time Range: 2026-01-11 09:00 - 11:00                                  │
-│                                                                         │
-│  Timeline:                                                              │
-│  ──────────────────────────────────────────────────────────────────    │
-│  09:15 │ [Suricata] Exploit attempt detected (T1190)                   │
-│        │ └─► CVE-2024-XXXX targeting Apache                            │
-│  09:16 │ [Wazuh] New process: /tmp/shell.sh (T1059.004)               │
-│        │ └─► Spawned by www-data user                                  │
-│  09:17 │ [Zeek] Outbound connection to 45.33.x.x:443 (T1071.001)      │
-│        │ └─► JA3: abc123... (known C2 fingerprint)                     │
-│  09:20 │ [Wazuh] Credential dump attempt (T1003)                       │
-│        │ └─► /proc/*/maps access detected                              │
-│  09:25 │ [Zeek] DNS query: evil-domain.com (T1568.002)                │
-│        │ └─► DGA pattern detected                                      │
-│  09:30 │ [Wazuh] Lateral movement to 192.168.1.60 (T1021.002)         │
-│        │ └─► SSH connection with stolen key                            │
-│  ──────────────────────────────────────────────────────────────────    │
-│                                                                         │
-│  ATT&CK Chain Detected:                                                │
-│  [Initial Access] → [Execution] → [C2] → [Cred Access] → [Lateral]    │
-│      T1190            T1059        T1071     T1003          T1021      │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+**Entity:** 192.168.1.50 (web-server-01) | **Time Range:** 2026-01-11 09:00 - 11:00
+
+| Time | Source | Event | Technique |
+|------|--------|-------|-----------|
+| 09:15 | Suricata | Exploit attempt - CVE-2024-XXXX | T1190 |
+| 09:16 | Wazuh | New process: /tmp/shell.sh | T1059.004 |
+| 09:17 | Zeek | Outbound to 45.33.x.x:443 (C2) | T1071.001 |
+| 09:20 | Wazuh | Credential dump attempt | T1003 |
+| 09:25 | Zeek | DNS query: evil-domain.com (DGA) | T1568.002 |
+| 09:30 | Wazuh | Lateral movement via SSH | T1021.002 |
+
+**ATT&CK Chain Detected:**
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart LR
+    subgraph Chain["Attack Chain"]
+        style Chain fill:#ffebee,stroke:#c62828
+        T1[Initial Access<br/>T1190]
+        T2[Execution<br/>T1059]
+        T3[C2<br/>T1071]
+        T4[Credential Access<br/>T1003]
+        T5[Lateral Movement<br/>T1021]
+    end
+
+    T1 --> T2 --> T3 --> T4 --> T5
 ```
 
 ---
 
 ## Deployment Models
 
-### Model 1: All-in-One (Small)
+| Model | Infrastructure | Scale | Endpoints | Resources |
+|-------|---------------|-------|-----------|-----------|
+| **Small (All-in-One)** | Docker Compose | 5,000 EPS | 500 | 16 CPU, 64GB RAM, 1TB SSD |
+| **Medium (Distributed)** | Kubernetes (3+ nodes) | 25,000 EPS | 5,000 | 3x (8 CPU, 32GB RAM, 500GB SSD) |
+| **Large (Enterprise)** | Kubernetes (10+ nodes) | 100,000+ EPS | 50,000+ | Custom sizing |
 
-```
-Single Server Deployment
-├── Docker Compose
-├── All services on one host
-├── Scale: Up to 5,000 EPS
-├── Endpoints: Up to 500
-└── Recommended: 16 CPU, 64GB RAM, 1TB SSD
-```
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart LR
+    subgraph Small["Small Deployment"]
+        style Small fill:#e8f5e9,stroke:#2e7d32
+        S1[Single Server<br/>Docker Compose]
+    end
 
-### Model 2: Distributed (Medium)
+    subgraph Medium["Medium Deployment"]
+        style Medium fill:#fff3e0,stroke:#ef6c00
+        M1[Node 1]
+        M2[Node 2]
+        M3[Node 3]
+    end
 
-```
-Multi-Node Deployment
-├── Kubernetes (3+ nodes)
-├── Separate data and processing
-├── Scale: Up to 25,000 EPS
-├── Endpoints: Up to 5,000
-└── Recommended: 3x (8 CPU, 32GB RAM, 500GB SSD)
-```
-
-### Model 3: Enterprise (Large)
-
-```
-Full Kubernetes Cluster
-├── Kubernetes (10+ nodes)
-├── Dedicated search cluster
-├── Multi-zone for HA
-├── Scale: 100,000+ EPS
-├── Endpoints: 50,000+
-└── Recommended: Custom sizing
+    subgraph Large["Enterprise Deployment"]
+        style Large fill:#e3f2fd,stroke:#1565c0
+        L1[K8s Cluster<br/>10+ Nodes]
+        L2[Search Cluster]
+        L3[Multi-Zone HA]
+    end
 ```
 
 ---
