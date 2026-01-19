@@ -127,39 +127,52 @@ flowchart TB
 
 **Architecture**:
 
-```
-┌─────────────────────────────────────────────┐
-│         Network Interface Card (NIC)        │
-│  ┌────────────────────────────────────┐    │
-│  │    Hardware Filters (Offload)      │    │
-│  │  • Port filtering (TCP/UDP)        │    │
-│  │  • Protocol filtering              │    │
-│  │  • IP address filtering            │    │
-│  └────────────┬───────────────────────┘    │
-└───────────────┼────────────────────────────┘
-                │ Zero-Copy DMA
-                ▼
-┌─────────────────────────────────────────────┐
-│         PF_RING Kernel Module               │
-│  ┌────────────────────────────────────┐    │
-│  │   Circular Buffer (Ring)           │    │
-│  │   • 32K-256K slots                 │    │
-│  │   • Lock-free                      │    │
-│  │   • Per-CPU rings                  │    │
-│  └────────────┬───────────────────────┘    │
-└───────────────┼────────────────────────────┘
-                │ mmap()
-                ▼
-┌─────────────────────────────────────────────┐
-│         MxWatch Agent (Userspace)           │
-│  ┌────────────────────────────────────┐    │
-│  │   Multi-Core Workers (8 cores)     │    │
-│  │   Core 0  Core 1  Core 2  Core 3   │    │
-│  │   Core 4  Core 5  Core 6  Core 7   │    │
-│  │   • CPU affinity pinning           │    │
-│  │   • Per-flow load balancing        │    │
-│  └────────────────────────────────────┘    │
-└─────────────────────────────────────────────┘
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph NIC["Network Interface Card"]
+        style NIC fill:#e3f2fd,stroke:#1565c0
+
+        subgraph HWFilter["Hardware Filters"]
+            style HWFilter fill:#fff3e0,stroke:#ef6c00
+            PORT[Port Filtering<br/>TCP/UDP]
+            PROTO[Protocol Filtering]
+            IP[IP Address Filtering]
+        end
+    end
+
+    subgraph Kernel["PF_RING Kernel Module"]
+        style Kernel fill:#e8f5e9,stroke:#2e7d32
+
+        subgraph Ring["Circular Buffer"]
+            style Ring fill:#f3e5f5,stroke:#7b1fa2
+            SLOTS[32K-256K slots]
+            LOCKFREE[Lock-free]
+            PERCPU[Per-CPU rings]
+        end
+    end
+
+    subgraph Agent["MxWatch Agent - Userspace"]
+        style Agent fill:#fff9c4,stroke:#f57f17
+
+        subgraph Workers["Multi-Core Workers"]
+            style Workers fill:#fce4ec,stroke:#ad1457
+            CORE0[Core 0]
+            CORE1[Core 1]
+            CORE2[Core 2]
+            CORE3[Core 3]
+        end
+
+        subgraph Features["Worker Features"]
+            style Features fill:#e0f2f1,stroke:#00695c
+            AFFINITY[CPU Affinity Pinning]
+            BALANCE[Per-Flow Load Balancing]
+        end
+    end
+
+    HWFilter -->|Zero-Copy DMA| Ring
+    Ring -->|mmap| Workers
+    Workers --> Features
 ```
 
 **Implementation**:

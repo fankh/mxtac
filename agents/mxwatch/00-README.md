@@ -121,53 +121,62 @@ sudo mxwatch --config /etc/mxwatch/config.yaml
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────┐
-│             Network Interface Card (NIC)             │
-│   • Hardware Filters (Port 53, 80, 443)             │
-│   • 10M+ packets/second                             │
-└─────────────────┬────────────────────────────────────┘
-                  │ Zero-Copy DMA
-                  ▼
-┌──────────────────────────────────────────────────────┐
-│            PF_RING Kernel Module                     │
-│   • Circular buffer (lock-free)                     │
-│   • Per-CPU rings                                   │
-└─────────────────┬────────────────────────────────────┘
-                  │ mmap()
-                  ▼
-┌──────────────────────────────────────────────────────┐
-│               MxWatch Agent (Rust)                   │
-│  ┌────────────────────────────────────────────────┐ │
-│  │  Multi-Core Workers (8 cores)                  │ │
-│  │  Core0  Core1  Core2  Core3                    │ │
-│  │  Core4  Core5  Core6  Core7                    │ │
-│  └────────────────┬───────────────────────────────┘ │
-│                   │                                  │
-│  ┌────────────────▼───────────────────────────────┐ │
-│  │  Protocol Parsers                              │ │
-│  │  • HTTP/HTTPS  • DNS  • TLS                    │ │
-│  └────────────────┬───────────────────────────────┘ │
-│                   │                                  │
-│  ┌────────────────▼───────────────────────────────┐ │
-│  │  Detection Engine                              │ │
-│  │  • C2 Beacons  • Port Scans  • Exfiltration   │ │
-│  └────────────────┬───────────────────────────────┘ │
-│                   │                                  │
-│  ┌────────────────▼───────────────────────────────┐ │
-│  │  OCSF Event Builder                            │ │
-│  └────────────────┬───────────────────────────────┘ │
-│                   │                                  │
-│  ┌────────────────▼───────────────────────────────┐ │
-│  │  HTTP Sender (HTTPS/TLS)                       │ │
-│  └────────────────┬───────────────────────────────┘ │
-└───────────────────┼──────────────────────────────────┘
-                    │ OCSF Events
-                    ▼
-        ┌───────────────────────┐
-        │   MxTac Platform      │
-        │   Ingestion API       │
-        └───────────────────────┘
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '14px' }, 'flowchart': { 'useMaxWidth': true }}}%%
+flowchart TB
+    subgraph NIC["Network Interface Card"]
+        style NIC fill:#e3f2fd,stroke:#1565c0
+        HWFILTER[Hardware Filters<br/>Port 53, 80, 443]
+        THROUGHPUT[10M+ packets/second]
+    end
+
+    subgraph Kernel["PF_RING Kernel Module"]
+        style Kernel fill:#e8f5e9,stroke:#2e7d32
+        BUFFER[Circular Buffer<br/>Lock-free]
+        PERCPU[Per-CPU Rings]
+    end
+
+    subgraph Agent["MxWatch Agent - Rust"]
+        style Agent fill:#fff3e0,stroke:#ef6c00
+
+        subgraph Workers["Multi-Core Workers"]
+            style Workers fill:#f3e5f5,stroke:#7b1fa2
+            C0[Core 0]
+            C1[Core 1]
+            C2[Core 2]
+            C3[Core 3]
+        end
+
+        subgraph Parsers["Protocol Parsers"]
+            style Parsers fill:#e0f2f1,stroke:#00695c
+            HTTP[HTTP/HTTPS]
+            DNS[DNS]
+            TLS[TLS]
+        end
+
+        subgraph Detection["Detection Engine"]
+            style Detection fill:#fce4ec,stroke:#ad1457
+            C2[C2 Beacons]
+            SCAN[Port Scans]
+            EXFIL[Exfiltration]
+        end
+
+        BUILDER[OCSF Event Builder]
+        SENDER[HTTP Sender]
+    end
+
+    subgraph Platform["MxTac Platform"]
+        style Platform fill:#fff9c4,stroke:#f57f17
+        API[Ingestion API]
+    end
+
+    NIC -->|Zero-Copy DMA| Kernel
+    Kernel -->|mmap| Workers
+    Workers --> Parsers
+    Parsers --> Detection
+    Detection --> BUILDER
+    BUILDER --> SENDER
+    SENDER -->|HTTPS/TLS<br/>OCSF Events| API
 ```
 
 ## Documentation
