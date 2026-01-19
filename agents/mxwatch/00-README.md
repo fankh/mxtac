@@ -1,7 +1,7 @@
 # MxWatch - Lightweight Network Detection & Response Agent
 
 > **Type**: Lightweight NDR Agent
-> **Language**: Go 1.21+
+> **Language**: Rust 1.75+
 > **Platform**: Linux, Windows, macOS
 > **License**: Apache 2.0
 > **Status**: Design Phase
@@ -13,8 +13,8 @@
 **MxWatch** is a lightweight network detection and response (NDR) agent specifically designed for seamless integration with the MxTac platform. Unlike heavyweight NDR solutions, MxWatch focuses on:
 
 - **Native OCSF output** - No normalization layer needed
-- **Minimal resource footprint** - 30-60 MB RAM, 2-5% CPU
-- **Single binary deployment** - No external dependencies
+- **Minimal resource footprint** - 15-40 MB RAM, 1-3% CPU
+- **Single binary deployment** - Statically linked (libpcap required)
 - **High-value detections** - 15 core capabilities covering 10-15% ATT&CK
 - **Cross-platform** - Linux, Windows, macOS support
 
@@ -120,9 +120,9 @@ sudo mxwatch --config /etc/mxwatch/config.yaml
 
 | Feature | Zeek | MxWatch |
 |---------|------|---------|
-| **Binary Size** | ~50 MB | ~12 MB |
-| **Memory Usage** | 300-800 MB | 30-60 MB |
-| **CPU Usage** | 10-20% | 2-5% |
+| **Binary Size** | ~50 MB | ~8 MB |
+| **Memory Usage** | 300-800 MB | 15-40 MB |
+| **CPU Usage** | 10-20% | 1-3% |
 | **Deployment** | Cluster/Standalone | Single Binary |
 | **Output Format** | Zeek Logs | OCSF Native |
 | **Protocol Coverage** | 100+ protocols | 10-15 protocols (focused) |
@@ -131,16 +131,16 @@ sudo mxwatch --config /etc/mxwatch/config.yaml
 
 ## Development Roadmap
 
-### Phase 1: Core Agent (8 weeks)
+### Phase 1: Core Agent (10 weeks)
 
 - [x] Project setup and structure
-- [ ] Packet capture (libpcap)
-- [ ] HTTP/HTTPS protocol parser
-- [ ] DNS protocol parser
+- [ ] Packet capture (pcap crate)
+- [ ] HTTP/HTTPS protocol parser (custom)
+- [ ] DNS protocol parser (trust-dns-proto)
 - [ ] OCSF event builder
-- [ ] HTTP output handler
+- [ ] HTTP output handler (reqwest)
 
-### Phase 2: Advanced Detection (6 weeks)
+### Phase 2: Advanced Detection (8 weeks)
 
 - [ ] TLS/SSL certificate analysis
 - [ ] C2 beacon detection

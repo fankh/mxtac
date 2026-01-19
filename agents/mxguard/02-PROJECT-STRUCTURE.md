@@ -2,7 +2,7 @@
 
 > **Version**: 1.0
 > **Date**: 2026-01-19
-> **Language**: Go 1.21+
+> **Language**: Rust 1.75+
 
 ---
 
@@ -10,376 +10,632 @@
 
 ```
 mxguard/
-├── cmd/
-│   └── mxguard/
-│       └── main.go                    # Entry point
-│
-├── internal/
+├── src/
+│   ├── main.rs                        # Entry point
+│   ├── lib.rs                         # Library root
+│   │
 │   ├── agent/
-│   │   ├── agent.go                   # Main agent orchestrator
-│   │   ├── config.go                  # Configuration loader
-│   │   └── lifecycle.go               # Startup/shutdown
+│   │   ├── mod.rs                     # Agent orchestrator
+│   │   ├── config.rs                  # Configuration loader
+│   │   └── lifecycle.rs               # Startup/shutdown
 │   │
 │   ├── collectors/
-│   │   ├── collector.go               # Base collector interface
+│   │   ├── mod.rs                     # Collector trait
 │   │   ├── file/
-│   │   │   ├── monitor.go            # File monitoring implementation
-│   │   │   ├── monitor_linux.go      # Linux-specific (inotify)
-│   │   │   ├── monitor_windows.go    # Windows-specific (ReadDirectoryChangesW)
-│   │   │   ├── monitor_darwin.go     # macOS-specific (FSEvents)
-│   │   │   └── hash.go               # File hashing utilities
+│   │   │   ├── mod.rs                 # File monitoring
+│   │   │   ├── monitor_linux.rs       # Linux (inotify)
+│   │   │   ├── monitor_windows.rs     # Windows (ReadDirectoryChangesW)
+│   │   │   ├── monitor_macos.rs       # macOS (FSEvents)
+│   │   │   └── hash.rs                # File hashing
 │   │   │
 │   │   ├── process/
-│   │   │   ├── monitor.go            # Process monitoring implementation
-│   │   │   ├── monitor_linux.go      # /proc filesystem parsing
-│   │   │   ├── monitor_windows.go    # WMI integration
-│   │   │   ├── monitor_darwin.go     # kqueue integration
-│   │   │   └── tree.go               # Process tree tracking
+│   │   │   ├── mod.rs                 # Process monitoring
+│   │   │   ├── monitor_linux.rs       # /proc parsing
+│   │   │   ├── monitor_windows.rs     # WMI integration
+│   │   │   ├── monitor_macos.rs       # kqueue/sysctl
+│   │   │   └── tree.rs                # Process tree tracking
 │   │   │
 │   │   ├── network/
-│   │   │   ├── monitor.go            # Network monitoring implementation
-│   │   │   ├── monitor_linux.go      # /proc/net/tcp parsing
-│   │   │   ├── monitor_windows.go    # GetExtendedTcpTable API
-│   │   │   ├── monitor_darwin.go     # lsof wrapper
-│   │   │   └── connection.go         # Connection tracking
+│   │   │   ├── mod.rs                 # Network monitoring
+│   │   │   ├── monitor_linux.rs       # /proc/net/tcp
+│   │   │   ├── monitor_windows.rs     # GetExtendedTcpTable
+│   │   │   ├── monitor_macos.rs       # lsof wrapper
+│   │   │   └── connection.rs          # Connection tracking
 │   │   │
 │   │   └── logs/
-│   │       ├── monitor.go            # Log monitoring implementation
-│   │       ├── tailer.go             # Log file tailer
-│   │       ├── journald.go           # Systemd journal reader (Linux)
-│   │       ├── eventlog.go           # Windows Event Log reader
-│   │       └── oslog.go              # macOS Unified Logging
+│   │       ├── mod.rs                 # Log monitoring
+│   │       ├── tailer.rs              # Log file tailer
+│   │       ├── journald.rs            # Systemd journal (Linux)
+│   │       ├── eventlog.rs            # Windows Event Log
+│   │       └── oslog.rs               # macOS Unified Logging
 │   │
 │   ├── ocsf/
-│   │   ├── builder.go                 # OCSF event builder
-│   │   ├── models.go                  # OCSF data structures
-│   │   ├── file_activity.go           # File System Activity (1001)
-│   │   ├── process_activity.go        # Process Activity (1007)
-│   │   ├── network_activity.go        # Network Activity (4001)
-│   │   ├── auth_activity.go           # Authentication (3002)
-│   │   ├── enrichment.go              # Event enrichment
-│   │   └── severity.go                # Severity calculation
+│   │   ├── mod.rs                     # OCSF module root
+│   │   ├── builder.rs                 # Event builder
+│   │   ├── models.rs                  # Data structures
+│   │   ├── file_activity.rs           # File Activity (1001)
+│   │   ├── process_activity.rs        # Process Activity (1007)
+│   │   ├── network_activity.rs        # Network Activity (4001)
+│   │   ├── auth_activity.rs           # Authentication (3002)
+│   │   ├── enrichment.rs              # Event enrichment
+│   │   └── severity.rs                # Severity calculation
 │   │
 │   ├── buffer/
-│   │   ├── buffer.go                  # Event buffer
-│   │   ├── queue.go                   # Ring buffer implementation
-│   │   ├── batcher.go                 # Batch processor
-│   │   └── priority.go                # Event prioritization
+│   │   ├── mod.rs                     # Event buffer
+│   │   ├── queue.rs                   # Ring buffer
+│   │   ├── batcher.rs                 # Batch processor
+│   │   └── priority.rs                # Priority queue
 │   │
 │   ├── output/
-│   │   ├── output.go                  # Output handler interface
-│   │   ├── http.go                    # HTTP/HTTPS output
-│   │   ├── file.go                    # File output
-│   │   ├── syslog.go                  # Syslog output
-│   │   └── retry.go                   # Retry logic with backoff
+│   │   ├── mod.rs                     # Output trait
+│   │   ├── http.rs                    # HTTP/HTTPS output
+│   │   ├── file.rs                    # File output
+│   │   ├── syslog.rs                  # Syslog output
+│   │   └── retry.rs                   # Retry logic
 │   │
 │   ├── filter/
-│   │   ├── filter.go                  # Event filtering
-│   │   ├── rules.go                   # Filter rules
-│   │   └── patterns.go                # Pattern matching
+│   │   ├── mod.rs                     # Event filtering
+│   │   ├── rules.rs                   # Filter rules
+│   │   └── patterns.rs                # Pattern matching
 │   │
 │   └── utils/
-│       ├── system.go                  # System information
-│       ├── crypto.go                  # Hashing, encryption
-│       ├── network.go                 # Network utilities
-│       └── errors.go                  # Error handling
-│
-├── pkg/
-│   └── api/
-│       └── types.go                   # Public API types
+│       ├── mod.rs                     # Utilities module
+│       ├── system.rs                  # System information
+│       ├── crypto.rs                  # Hashing
+│       └── error.rs                   # Error types
 │
 ├── configs/
-│   ├── config.yaml                    # Default configuration
-│   ├── config.linux.yaml             # Linux-specific config
-│   ├── config.windows.yaml           # Windows-specific config
-│   └── config.darwin.yaml            # macOS-specific config
+│   ├── config.toml                    # Default configuration
+│   ├── config.linux.toml              # Linux-specific
+│   ├── config.windows.toml            # Windows-specific
+│   └── config.macos.toml              # macOS-specific
 │
 ├── scripts/
 │   ├── build.sh                       # Build script
-│   ├── install.sh                     # Installation script
-│   ├── package.sh                     # Package creation
+│   ├── install.sh                     # Installation
 │   └── test.sh                        # Test runner
 │
 ├── deployments/
 │   ├── systemd/
-│   │   └── mxguard.service           # Systemd unit file
+│   │   └── mxguard.service            # Systemd unit
 │   ├── launchd/
-│   │   └── com.mxtac.mxguard.plist   # macOS launchd plist
-│   ├── windows/
-│   │   └── install-service.ps1       # Windows service installer
-│   └── docker/
-│       └── Dockerfile                 # Docker image
-│
-├── docs/
-│   ├── README.md
-│   ├── ARCHITECTURE.md
-│   ├── CONFIGURATION.md
-│   ├── DEPLOYMENT.md
-│   └── API.md
+│   │   └── com.mxtac.mxguard.plist    # macOS launchd
+│   └── windows/
+│       └── install-service.ps1        # Windows service
 │
 ├── tests/
 │   ├── integration/
-│   │   ├── file_test.go
-│   │   ├── process_test.go
-│   │   └── network_test.go
-│   ├── unit/
-│   │   ├── ocsf_test.go
-│   │   ├── buffer_test.go
-│   │   └── output_test.go
-│   └── fixtures/
-│       └── events.json
+│   │   ├── file_tests.rs
+│   │   ├── process_tests.rs
+│   │   └── network_tests.rs
+│   └── common/
+│       └── mod.rs                     # Test utilities
 │
-├── .github/
-│   └── workflows/
-│       ├── build.yml                  # Build workflow
-│       ├── test.yml                   # Test workflow
-│       └── release.yml                # Release workflow
+├── benches/
+│   ├── ocsf_builder.rs                # OCSF benchmarks
+│   └── buffer.rs                      # Buffer benchmarks
 │
-├── go.mod                             # Go modules
-├── go.sum                             # Dependency checksums
-├── Makefile                           # Build automation
-├── LICENSE                            # Apache 2.0
-└── README.md                          # Project README
+├── Cargo.toml                         # Rust dependencies
+├── Cargo.lock                         # Dependency lock
+├── build.rs                           # Build script
+├── .cargo/
+│   └── config.toml                    # Cargo config
+├── LICENSE
+└── README.md
 ```
 
 ---
 
 ## Core Modules
 
-### 1. Agent Orchestrator (`internal/agent/`)
+### 1. Agent Orchestrator (`src/agent/mod.rs`)
 
-```go
-// agent.go
-package agent
+```rust
+// src/agent/mod.rs
+use tokio::sync::mpsc;
+use crate::collectors::Collector;
+use crate::buffer::EventBuffer;
+use crate::output::OutputHandler;
 
-type Agent struct {
-    config      *Config
-    collectors  []collector.Collector
-    buffer      *buffer.EventBuffer
-    output      output.Handler
-    shutdown    chan struct{}
+pub struct Agent {
+    config: Config,
+    collectors: Vec<Box<dyn Collector>>,
+    buffer: EventBuffer,
+    output: Box<dyn OutputHandler>,
 }
 
-func New(configPath string) (*Agent, error) {
-    config, err := LoadConfig(configPath)
-    if err != nil {
-        return nil, err
+impl Agent {
+    pub fn new(config_path: &str) -> Result<Self, Error> {
+        let config = Config::from_file(config_path)?;
+
+        Ok(Self {
+            config,
+            collectors: Vec::new(),
+            buffer: EventBuffer::new(10000),
+            output: Box::new(HttpOutput::new(&config.output)),
+        })
     }
 
-    return &Agent{
-        config:   config,
-        shutdown: make(chan struct{}),
-    }, nil
-}
+    pub async fn start(&mut self) -> Result<(), Error> {
+        // Initialize collectors
+        self.init_collectors()?;
 
-func (a *Agent) Start() error {
-    // Initialize collectors
-    a.initCollectors()
+        // Create event channel
+        let (tx, mut rx) = mpsc::channel(10000);
 
-    // Start collectors
-    for _, c := range a.collectors {
-        go c.Start()
-    }
+        // Start collectors
+        for collector in &mut self.collectors {
+            let tx_clone = tx.clone();
+            tokio::spawn(async move {
+                collector.start(tx_clone).await
+            });
+        }
 
-    // Start buffer
-    go a.buffer.Start()
-
-    // Wait for shutdown signal
-    <-a.shutdown
-    return a.Stop()
-}
-
-func (a *Agent) Stop() error {
-    // Stop collectors
-    for _, c := range a.collectors {
-        c.Stop()
-    }
-
-    // Flush buffer
-    a.buffer.Flush()
-
-    return nil
-}
-```
-
-### 2. Collector Interface (`internal/collectors/collector.go`)
-
-```go
-package collector
-
-type Collector interface {
-    Start() error
-    Stop() error
-    Events() <-chan Event
-}
-
-type Event struct {
-    Type      EventType
-    Timestamp time.Time
-    Data      interface{}
-    Severity  int
-}
-
-type EventType int
-
-const (
-    EventTypeFile EventType = iota
-    EventTypeProcess
-    EventTypeNetwork
-    EventTypeAuth
-)
-```
-
-### 3. OCSF Builder (`internal/ocsf/builder.go`)
-
-```go
-package ocsf
-
-type Builder struct {
-    product Product
-    device  Device
-}
-
-type Product struct {
-    Name    string
-    Vendor  string
-    Version string
-}
-
-type Device struct {
-    Hostname string
-    IP       string
-    OS       OSInfo
-}
-
-func (b *Builder) BuildFileActivity(
-    activity string,
-    activityID int,
-    file FileInfo,
-    actor ActorInfo,
-) *FileSystemActivity {
-    return &FileSystemActivity{
-        Metadata: Metadata{
-            Version: "1.1.0",
-            Product: b.product,
-        },
-        Time:        time.Now().Unix(),
-        ClassUID:    1001,
-        CategoryUID: 1,
-        Activity:    activity,
-        ActivityID:  activityID,
-        SeverityID:  calculateSeverity(file),
-        File:        file,
-        Actor:       actor,
-        Device:      b.device,
-    }
-}
-```
-
-### 4. Event Buffer (`internal/buffer/buffer.go`)
-
-```go
-package buffer
-
-type EventBuffer struct {
-    queue     chan Event
-    batchSize int
-    timeout   time.Duration
-    output    output.Handler
-    shutdown  chan struct{}
-}
-
-func New(batchSize int, timeout time.Duration, out output.Handler) *EventBuffer {
-    return &EventBuffer{
-        queue:     make(chan Event, 10000),
-        batchSize: batchSize,
-        timeout:   timeout,
-        output:    out,
-        shutdown:  make(chan struct{}),
-    }
-}
-
-func (eb *EventBuffer) Add(event Event) {
-    eb.queue <- event
-}
-
-func (eb *EventBuffer) Start() {
-    batch := make([]Event, 0, eb.batchSize)
-    ticker := time.NewTicker(eb.timeout)
-
-    for {
-        select {
-        case event := <-eb.queue:
-            batch = append(batch, event)
-
-            // Send immediately if critical or batch full
-            if event.SeverityID >= 5 || len(batch) >= eb.batchSize {
-                eb.flush(batch)
-                batch = batch[:0]
+        // Start event processing
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                self.buffer.add(event).await;
             }
+        });
 
-        case <-ticker.C:
-            if len(batch) > 0 {
-                eb.flush(batch)
-                batch = batch[:0]
+        // Wait for shutdown signal
+        tokio::signal::ctrl_c().await?;
+        self.stop().await
+    }
+
+    async fn stop(&mut self) -> Result<(), Error> {
+        // Stop collectors
+        for collector in &mut self.collectors {
+            collector.stop().await?;
+        }
+
+        // Flush buffer
+        self.buffer.flush().await?;
+
+        Ok(())
+    }
+
+    fn init_collectors(&mut self) -> Result<(), Error> {
+        if self.config.collectors.file.enabled {
+            self.collectors.push(Box::new(FileCollector::new(&self.config.collectors.file)?));
+        }
+
+        if self.config.collectors.process.enabled {
+            self.collectors.push(Box::new(ProcessCollector::new(&self.config.collectors.process)?));
+        }
+
+        if self.config.collectors.network.enabled {
+            self.collectors.push(Box::new(NetworkCollector::new(&self.config.collectors.network)?));
+        }
+
+        Ok(())
+    }
+}
+```
+
+### 2. Collector Trait (`src/collectors/mod.rs`)
+
+```rust
+// src/collectors/mod.rs
+use async_trait::async_trait;
+use tokio::sync::mpsc::Sender;
+
+#[async_trait]
+pub trait Collector: Send + Sync {
+    /// Start collecting events
+    async fn start(&mut self, tx: Sender<Event>) -> Result<(), Error>;
+
+    /// Stop the collector
+    async fn stop(&mut self) -> Result<(), Error>;
+
+    /// Get collector name
+    fn name(&self) -> &str;
+
+    /// Get collector status
+    fn status(&self) -> CollectorStatus;
+}
+
+#[derive(Debug, Clone)]
+pub struct Event {
+    pub event_type: EventType,
+    pub timestamp: i64,
+    pub data: EventData,
+    pub severity: u8,
+}
+
+#[derive(Debug, Clone)]
+pub enum EventType {
+    File,
+    Process,
+    Network,
+    Auth,
+}
+
+#[derive(Debug, Clone)]
+pub enum EventData {
+    File(FileEvent),
+    Process(ProcessEvent),
+    Network(NetworkEvent),
+    Auth(AuthEvent),
+}
+
+#[derive(Debug)]
+pub struct CollectorStatus {
+    pub running: bool,
+    pub event_count: u64,
+    pub error_count: u64,
+}
+```
+
+### 3. File Collector (`src/collectors/file/mod.rs`)
+
+```rust
+// src/collectors/file/mod.rs
+use notify::{Watcher, RecursiveMode, watcher, DebouncedEvent};
+use std::sync::mpsc::channel;
+use std::time::Duration;
+use tokio::sync::mpsc::Sender;
+
+pub struct FileCollector {
+    paths: Vec<String>,
+    exclude: Vec<String>,
+    hash_files: bool,
+    watcher: Option<notify::RecommendedWatcher>,
+    event_count: u64,
+}
+
+impl FileCollector {
+    pub fn new(config: &FileConfig) -> Result<Self, Error> {
+        Ok(Self {
+            paths: config.paths.clone(),
+            exclude: config.exclude.clone(),
+            hash_files: config.hash_files,
+            watcher: None,
+            event_count: 0,
+        })
+    }
+
+    fn should_monitor(&self, path: &str) -> bool {
+        // Check if path matches exclude patterns
+        for pattern in &self.exclude {
+            if glob::Pattern::new(pattern)
+                .unwrap()
+                .matches(path) {
+                return false;
             }
+        }
+        true
+    }
 
-        case <-eb.shutdown:
-            eb.flush(batch)
-            return
+    fn hash_file(&self, path: &str) -> Result<String, Error> {
+        use sha2::{Sha256, Digest};
+        use std::fs::File;
+        use std::io::Read;
+
+        let mut file = File::open(path)?;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0u8; 4096];
+
+        loop {
+            let n = file.read(&mut buffer)?;
+            if n == 0 { break; }
+            hasher.update(&buffer[..n]);
+        }
+
+        Ok(format!("{:x}", hasher.finalize()))
+    }
+
+    fn is_suspicious(&self, path: &str) -> bool {
+        let suspicious_patterns = vec![
+            "mimikatz", "nc", "ncat", ".exe", ".ps1", ".bat", ".vbs"
+        ];
+
+        let path_lower = path.to_lowercase();
+        suspicious_patterns.iter().any(|p| path_lower.contains(p))
+    }
+}
+
+#[async_trait]
+impl Collector for FileCollector {
+    async fn start(&mut self, tx: Sender<Event>) -> Result<(), Error> {
+        let (notify_tx, notify_rx) = channel();
+
+        let mut watcher = watcher(notify_tx, Duration::from_secs(1))?;
+
+        // Watch all configured paths
+        for path in &self.paths {
+            watcher.watch(path, RecursiveMode::Recursive)?;
+        }
+
+        self.watcher = Some(watcher);
+
+        // Process events
+        loop {
+            match notify_rx.recv() {
+                Ok(event) => {
+                    match event {
+                        DebouncedEvent::Create(path) |
+                        DebouncedEvent::Write(path) |
+                        DebouncedEvent::Remove(path) => {
+                            let path_str = path.to_str().unwrap();
+
+                            if !self.should_monitor(path_str) {
+                                continue;
+                            }
+
+                            // Calculate hash if configured
+                            let hash = if self.hash_files && path.exists() {
+                                self.hash_file(path_str).ok()
+                            } else {
+                                None
+                            };
+
+                            // Determine severity
+                            let severity = if self.is_suspicious(path_str) {
+                                4 // High
+                            } else {
+                                2 // Low
+                            };
+
+                            let file_event = FileEvent {
+                                path: path_str.to_string(),
+                                action: self.event_to_action(&event),
+                                hash,
+                                size: path.metadata().ok().map(|m| m.len()),
+                            };
+
+                            let event = Event {
+                                event_type: EventType::File,
+                                timestamp: chrono::Utc::now().timestamp(),
+                                data: EventData::File(file_event),
+                                severity,
+                            };
+
+                            tx.send(event).await?;
+                            self.event_count += 1;
+                        }
+                        _ => {}
+                    }
+                }
+                Err(e) => {
+                    log::error!("File watcher error: {}", e);
+                }
+            }
+        }
+    }
+
+    async fn stop(&mut self) -> Result<(), Error> {
+        self.watcher = None;
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "file-collector"
+    }
+
+    fn status(&self) -> CollectorStatus {
+        CollectorStatus {
+            running: self.watcher.is_some(),
+            event_count: self.event_count,
+            error_count: 0,
         }
     }
 }
 ```
 
-### 5. HTTP Output (`internal/output/http.go`)
+### 4. OCSF Builder (`src/ocsf/builder.rs`)
 
-```go
-package output
+```rust
+// src/ocsf/builder.rs
+use serde::{Serialize, Deserialize};
+use chrono::Utc;
 
-type HTTPOutput struct {
-    client  *http.Client
-    url     string
-    apiKey  string
-    retries int
+pub struct OCSFBuilder {
+    product: Product,
+    device: Device,
 }
 
-func NewHTTPOutput(url, apiKey string) *HTTPOutput {
-    return &HTTPOutput{
-        client: &http.Client{
-            Timeout: 30 * time.Second,
-            Transport: &http.Transport{
-                MaxIdleConns:        10,
-                IdleConnTimeout:     90 * time.Second,
-                TLSHandshakeTimeout: 10 * time.Second,
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Product {
+    pub name: String,
+    pub vendor: String,
+    pub version: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Device {
+    pub hostname: String,
+    pub ip: String,
+    pub os: OSInfo,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct OSInfo {
+    pub name: String,
+    pub version: String,
+}
+
+impl OCSFBuilder {
+    pub fn new(product: Product, device: Device) -> Self {
+        Self { product, device }
+    }
+
+    pub fn build_file_activity(
+        &self,
+        activity: &str,
+        activity_id: u32,
+        file: FileInfo,
+        actor: ActorInfo,
+        severity: u8,
+    ) -> FileSystemActivity {
+        FileSystemActivity {
+            metadata: Metadata {
+                version: "1.1.0".to_string(),
+                product: self.product.clone(),
             },
-        },
-        url:     url,
-        apiKey:  apiKey,
-        retries: 3,
+            time: Utc::now().timestamp(),
+            class_uid: 1001,
+            category_uid: 1,
+            activity: activity.to_string(),
+            activity_id,
+            severity_id: severity,
+            severity: self.severity_to_string(severity),
+            file,
+            actor,
+            device: self.device.clone(),
+        }
+    }
+
+    pub fn build_process_activity(
+        &self,
+        activity: &str,
+        activity_id: u32,
+        process: ProcessInfo,
+        severity: u8,
+    ) -> ProcessActivity {
+        ProcessActivity {
+            metadata: Metadata {
+                version: "1.1.0".to_string(),
+                product: self.product.clone(),
+            },
+            time: Utc::now().timestamp(),
+            class_uid: 1007,
+            category_uid: 1,
+            activity: activity.to_string(),
+            activity_id,
+            severity_id: severity,
+            severity: self.severity_to_string(severity),
+            process,
+            device: self.device.clone(),
+        }
+    }
+
+    fn severity_to_string(&self, severity: u8) -> String {
+        match severity {
+            1 => "Informational".to_string(),
+            2 => "Low".to_string(),
+            3 => "Medium".to_string(),
+            4 => "High".to_string(),
+            5 => "Critical".to_string(),
+            _ => "Unknown".to_string(),
+        }
     }
 }
 
-func (h *HTTPOutput) Send(events []Event) error {
-    payload, err := json.Marshal(events)
-    if err != nil {
-        return err
+#[derive(Serialize, Deserialize)]
+pub struct FileSystemActivity {
+    pub metadata: Metadata,
+    pub time: i64,
+    pub class_uid: u32,
+    pub category_uid: u32,
+    pub activity: String,
+    pub activity_id: u32,
+    pub severity_id: u8,
+    pub severity: String,
+    pub file: FileInfo,
+    pub actor: ActorInfo,
+    pub device: Device,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Metadata {
+    pub version: String,
+    pub product: Product,
+}
+```
+
+### 5. HTTP Output (`src/output/http.rs`)
+
+```rust
+// src/output/http.rs
+use reqwest::{Client, header};
+use serde::Serialize;
+use async_trait::async_trait;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use std::io::Write;
+
+pub struct HttpOutput {
+    client: Client,
+    url: String,
+    api_key: String,
+    retries: u32,
+}
+
+impl HttpOutput {
+    pub fn new(config: &HttpConfig) -> Self {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap();
+
+        Self {
+            client,
+            url: config.url.clone(),
+            api_key: config.api_key.clone(),
+            retries: config.retry_attempts,
+        }
     }
 
-    // Compress
-    var buf bytes.Buffer
-    gz := gzip.NewWriter(&buf)
-    gz.Write(payload)
-    gz.Close()
+    fn compress(&self, data: &[u8]) -> Result<Vec<u8>, Error> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(data)?;
+        Ok(encoder.finish()?)
+    }
 
-    // Build request
-    req, _ := http.NewRequest("POST", h.url, &buf)
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Content-Encoding", "gzip")
-    req.Header.Set("Authorization", "Bearer "+h.apiKey)
+    async fn send_with_retry(&self, payload: Vec<u8>) -> Result<(), Error> {
+        let mut attempt = 0;
 
-    // Send with retry
-    return h.sendWithRetry(req)
+        loop {
+            attempt += 1;
+
+            match self.send_request(&payload).await {
+                Ok(_) => return Ok(()),
+                Err(e) if attempt >= self.retries => return Err(e),
+                Err(e) => {
+                    log::warn!("Request failed (attempt {}): {}", attempt, e);
+                    tokio::time::sleep(std::time::Duration::from_secs(
+                        2u64.pow(attempt - 1) // Exponential backoff
+                    )).await;
+                }
+            }
+        }
+    }
+
+    async fn send_request(&self, payload: &[u8]) -> Result<(), Error> {
+        let response = self.client
+            .post(&self.url)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::CONTENT_ENCODING, "gzip")
+            .header(header::AUTHORIZATION, format!("Bearer {}", self.api_key))
+            .body(payload.to_vec())
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::HttpError(response.status().as_u16()));
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl OutputHandler for HttpOutput {
+    async fn send(&self, events: Vec<Event>) -> Result<(), Error> {
+        // Serialize events to JSON
+        let json = serde_json::to_vec(&events)?;
+
+        // Compress
+        let compressed = self.compress(&json)?;
+
+        // Send with retry
+        self.send_with_retry(compressed).await
+    }
+
+    fn name(&self) -> &str {
+        "http-output"
+    }
 }
 ```
 
@@ -387,64 +643,119 @@ func (h *HTTPOutput) Send(events []Event) error {
 
 ## Configuration Structure
 
-```yaml
-# config.yaml
-agent:
-  name: "mxguard-agent"
-  version: "1.0.0"
-  log_level: "info"
-  log_file: "/var/log/mxguard/agent.log"
+```toml
+# config.toml
+[agent]
+name = "mxguard-agent"
+version = "1.0.0"
+log_level = "info"
+log_file = "/var/log/mxguard/agent.log"
 
-collectors:
-  file:
-    enabled: true
-    paths:
-      - /etc/
-      - /usr/bin/
-      - /tmp/
-    exclude:
-      - "*.log"
-      - "*.tmp"
-    hash_files: true
-    hash_threshold: 10485760  # 10MB
+[collectors.file]
+enabled = true
+paths = ["/etc", "/usr/bin", "/tmp"]
+exclude = ["*.log", "*.tmp"]
+hash_files = true
+hash_threshold = 10485760  # 10 MB
 
-  process:
-    enabled: true
-    scan_interval: 2s
-    track_children: true
+[collectors.process]
+enabled = true
+scan_interval = "2s"
+track_children = true
 
-  network:
-    enabled: true
-    scan_interval: 5s
-    track_established: true
+[collectors.network]
+enabled = true
+scan_interval = "5s"
+track_established = true
 
-  logs:
-    enabled: true
-    sources:
-      - /var/log/auth.log
-      - /var/log/syslog
+[buffer]
+size = 10000
+batch_size = 100
+batch_timeout = "5s"
 
-buffer:
-  size: 10000
-  batch_size: 100
-  batch_timeout: 5s
+[output.http]
+enabled = true
+url = "https://mxtac.example.com/api/v1/ingest/ocsf"
+api_key = "${MXGUARD_API_KEY}"
+retry_attempts = 3
+retry_backoff = "1s"
+```
 
-output:
-  http:
-    enabled: true
-    url: "https://mxtac.example.com/api/v1/ingest/ocsf"
-    api_key: "${MXGUARD_API_KEY}"
-    retry_attempts: 3
-    retry_backoff: 1s
+---
 
-  file:
-    enabled: false
-    path: "/var/log/mxguard/events.json"
+## Dependencies (Cargo.toml)
 
-  syslog:
-    enabled: false
-    host: "localhost"
-    port: 514
+```toml
+[package]
+name = "mxguard"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.75"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+
+# File monitoring
+notify = "6.1"
+
+# Process monitoring
+sysinfo = "0.30"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "gzip"] }
+
+# Hashing
+sha2 = "0.10"
+
+# Compression
+flate2 = "1.0"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Pattern matching
+glob = "0.3"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Platform-specific (conditional compilation)
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.52", features = [
+    "Win32_System_Registry",
+    "Win32_System_EventLog",
+    "Win32_Foundation",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.9"
+
+[dev-dependencies]
+tokio-test = "0.4"
+criterion = "0.5"
+
+[[bench]]
+name = "ocsf_builder"
+harness = false
+
+[[bench]]
+name = "buffer"
+harness = false
 ```
 
 ---
@@ -457,63 +768,52 @@ output:
 .PHONY: build test clean install
 
 VERSION := $(shell git describe --tags --always --dirty)
-BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
-LDFLAGS := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)
 
 build:
-	go build -ldflags="$(LDFLAGS)" -o bin/mxguard cmd/mxguard/main.go
+\tcargo build --release
 
 build-linux:
-	GOOS=linux GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o bin/mxguard-linux-amd64 cmd/mxguard/main.go
+\tcargo build --release --target x86_64-unknown-linux-gnu
+\tcargo build --release --target aarch64-unknown-linux-gnu
 
 build-windows:
-	GOOS=windows GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o bin/mxguard-windows-amd64.exe cmd/mxguard/main.go
+\tcargo build --release --target x86_64-pc-windows-gnu
 
 build-darwin:
-	GOOS=darwin GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o bin/mxguard-darwin-amd64 cmd/mxguard/main.go
-	GOOS=darwin GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o bin/mxguard-darwin-arm64 cmd/mxguard/main.go
+\tcargo build --release --target x86_64-apple-darwin
+\tcargo build --release --target aarch64-apple-darwin
 
 build-all: build-linux build-windows build-darwin
 
 test:
-	go test -v -race -coverprofile=coverage.out ./...
+\tcargo test --all-features
 
 test-integration:
-	go test -v -tags=integration ./tests/integration/...
+\tcargo test --test '*' -- --ignored
+
+bench:
+\tcargo bench
 
 clean:
-	rm -rf bin/
-	rm -f coverage.out
+\tcargo clean
 
 install:
-	cp bin/mxguard /usr/local/bin/
-	mkdir -p /etc/mxguard
-	cp configs/config.yaml /etc/mxguard/
+\tcp target/release/mxguard /usr/local/bin/
+\tmkdir -p /etc/mxguard
+\tcp configs/config.toml /etc/mxguard/
+
+# Cross-compilation setup
+setup-cross:
+\tcargo install cross
+
+# Build with cross for all targets
+cross-build:
+\tcross build --release --target x86_64-unknown-linux-gnu
+\tcross build --release --target x86_64-pc-windows-gnu
+\tcross build --release --target x86_64-apple-darwin
 ```
 
 ---
 
-## Dependencies (go.mod)
-
-```go
-module github.com/mxtac/mxguard
-
-go 1.21
-
-require (
-    github.com/fsnotify/fsnotify v1.7.0
-    github.com/hpcloud/tail v1.0.0
-    github.com/shirou/gopsutil/v3 v3.23.12
-    gopkg.in/yaml.v3 v3.0.1
-)
-
-require (
-    golang.org/x/sys v0.16.0
-    golang.org/x/net v0.20.0
-)
-```
-
----
-
-*Project structure designed for maintainability and scalability*
+*Project structure designed for Rust implementation*
 *Next: See 03-CONFIGURATION.md for configuration details*

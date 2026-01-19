@@ -2,7 +2,7 @@
 
 > **Version**: 1.0
 > **Date**: 2026-01-19
-> **Language**: Go 1.21+
+> **Language**: Rust 1.75+
 
 ---
 
@@ -10,608 +10,776 @@
 
 ```
 mxwatch/
-├── cmd/
-│   └── mxwatch/
-│       └── main.go                    # Entry point
-│
-├── internal/
+├── src/
+│   ├── main.rs                        # Entry point
+│   ├── lib.rs                         # Library root
+│   │
 │   ├── agent/
-│   │   ├── agent.go                   # Main agent orchestrator
-│   │   ├── config.go                  # Configuration loader
-│   │   └── lifecycle.go               # Startup/shutdown
+│   │   ├── mod.rs                     # Agent orchestrator
+│   │   ├── config.rs                  # Configuration
+│   │   └── lifecycle.rs               # Lifecycle management
 │   │
 │   ├── capture/
-│   │   ├── capture.go                 # Packet capture interface
-│   │   ├── capture_linux.go           # Linux-specific (AF_PACKET)
-│   │   ├── capture_windows.go         # Windows-specific (Npcap)
-│   │   ├── capture_darwin.go          # macOS-specific (BPF)
-│   │   └── bpf_filter.go              # BPF filter management
+│   │   ├── mod.rs                     # Packet capture trait
+│   │   ├── pcap.rs                    # libpcap wrapper
+│   │   ├── capture_linux.rs           # Linux optimizations
+│   │   ├── capture_windows.rs         # Windows (Npcap)
+│   │   ├── capture_macos.rs           # macOS optimizations
+│   │   └── bpf_filter.rs              # BPF filter builder
 │   │
 │   ├── parsers/
-│   │   ├── parser.go                  # Base parser interface
+│   │   ├── mod.rs                     # Parser trait
 │   │   ├── http/
-│   │   │   ├── parser.go              # HTTP/HTTPS parser
-│   │   │   ├── request.go             # HTTP request parsing
-│   │   │   ├── response.go            # HTTP response parsing
-│   │   │   └── patterns.go            # Suspicious pattern matching
+│   │   │   ├── mod.rs                 # HTTP parser
+│   │   │   ├── request.rs             # Request parsing
+│   │   │   ├── response.rs            # Response parsing
+│   │   │   └── patterns.rs            # Suspicious patterns
 │   │   │
 │   │   ├── dns/
-│   │   │   ├── parser.go              # DNS parser
-│   │   │   ├── query.go               # DNS query parsing
-│   │   │   ├── response.go            # DNS response parsing
-│   │   │   ├── tunneling.go           # DNS tunneling detection
-│   │   │   └── dga.go                 # DGA detection
+│   │   │   ├── mod.rs                 # DNS parser
+│   │   │   ├── query.rs               # Query parsing
+│   │   │   ├── response.rs            # Response parsing
+│   │   │   ├── tunneling.rs           # Tunneling detection
+│   │   │   └── dga.rs                 # DGA detection
 │   │   │
 │   │   ├── tls/
-│   │   │   ├── parser.go              # TLS/SSL parser
-│   │   │   ├── handshake.go           # TLS handshake parsing
-│   │   │   ├── certificate.go         # Certificate parsing
-│   │   │   └── sni.go                 # SNI extraction
+│   │   │   ├── mod.rs                 # TLS parser
+│   │   │   ├── handshake.rs           # Handshake parsing
+│   │   │   ├── certificate.rs         # Certificate parsing
+│   │   │   └── sni.rs                 # SNI extraction
 │   │   │
 │   │   └── tcp/
-│   │       ├── analyzer.go            # TCP stream analysis
-│   │       ├── flags.go               # TCP flag analysis
-│   │       └── reassembly.go          # TCP stream reassembly
+│   │       ├── mod.rs                 # TCP analyzer
+│   │       ├── flags.rs               # Flag analysis
+│   │       └── reassembly.rs          # Stream reassembly
 │   │
 │   ├── detectors/
-│   │   ├── detector.go                # Base detector interface
+│   │   ├── mod.rs                     # Detector trait
 │   │   ├── c2beacon/
-│   │   │   ├── detector.go            # C2 beacon detector
-│   │   │   ├── interval.go            # Interval analysis
-│   │   │   └── signatures.go          # Known C2 signatures
+│   │   │   ├── mod.rs                 # C2 beacon detector
+│   │   │   ├── interval.rs            # Interval analysis
+│   │   │   └── signatures.rs          # Known signatures
 │   │   │
 │   │   ├── portscan/
-│   │   │   ├── detector.go            # Port scan detector
-│   │   │   ├── vertical.go            # Vertical scan detection
-│   │   │   └── horizontal.go          # Horizontal scan detection
+│   │   │   ├── mod.rs                 # Port scan detector
+│   │   │   ├── vertical.rs            # Vertical scan
+│   │   │   └── horizontal.rs          # Horizontal scan
 │   │   │
 │   │   ├── exfiltration/
-│   │   │   ├── detector.go            # Data exfiltration detector
-│   │   │   ├── volume.go              # Volume-based detection
-│   │   │   └── protocol.go            # Protocol-based detection
+│   │   │   ├── mod.rs                 # Exfiltration detector
+│   │   │   ├── volume.rs              # Volume-based
+│   │   │   └── protocol.rs            # Protocol-based
 │   │   │
 │   │   └── lateral/
-│   │       ├── detector.go            # Lateral movement detector
-│   │       └── patterns.go            # Known lateral movement patterns
+│   │       ├── mod.rs                 # Lateral movement
+│   │       └── patterns.rs            # Movement patterns
 │   │
 │   ├── ocsf/
-│   │   ├── builder.go                 # OCSF event builder
-│   │   ├── models.go                  # OCSF data structures
-│   │   ├── network_activity.go        # Network Activity (4001)
-│   │   ├── enrichment.go              # Event enrichment
-│   │   └── severity.go                # Severity calculation
+│   │   ├── mod.rs                     # OCSF module
+│   │   ├── builder.rs                 # Event builder
+│   │   ├── models.rs                  # Data structures
+│   │   ├── network_activity.rs        # Network Activity (4001)
+│   │   ├── enrichment.rs              # Enrichment
+│   │   └── severity.rs                # Severity calc
 │   │
 │   ├── buffer/
-│   │   ├── buffer.go                  # Event buffer
-│   │   ├── queue.go                   # Ring buffer implementation
-│   │   └── batcher.go                 # Batch processor
+│   │   ├── mod.rs                     # Event buffer
+│   │   ├── queue.rs                   # Ring buffer
+│   │   └── batcher.rs                 # Batch processor
 │   │
 │   ├── output/
-│   │   ├── output.go                  # Output handler interface
-│   │   ├── http.go                    # HTTP/HTTPS output
-│   │   ├── file.go                    # File output
-│   │   └── retry.go                   # Retry logic with backoff
+│   │   ├── mod.rs                     # Output trait
+│   │   ├── http.rs                    # HTTP output
+│   │   ├── file.rs                    # File output
+│   │   └── retry.rs                   # Retry logic
 │   │
 │   └── utils/
-│       ├── network.go                 # Network utilities
-│       ├── crypto.go                  # Hashing utilities
-│       ├── stats.go                   # Statistical functions
-│       └── errors.go                  # Error handling
-│
-├── pkg/
-│   └── api/
-│       └── types.go                   # Public API types
+│       ├── mod.rs                     # Utilities
+│       ├── network.rs                 # Network utils
+│       ├── stats.rs                   # Statistics
+│       └── error.rs                   # Error types
 │
 ├── configs/
-│   ├── config.yaml                    # Default configuration
-│   ├── config.linux.yaml              # Linux-specific config
-│   ├── config.windows.yaml            # Windows-specific config
-│   └── config.darwin.yaml             # macOS-specific config
+│   ├── config.toml                    # Default config
+│   ├── config.linux.toml              # Linux-specific
+│   ├── config.windows.toml            # Windows-specific
+│   └── config.macos.toml              # macOS-specific
 │
 ├── scripts/
 │   ├── build.sh                       # Build script
-│   ├── install.sh                     # Installation script
-│   ├── package.sh                     # Package creation
+│   ├── install.sh                     # Installation
 │   └── test.sh                        # Test runner
 │
 ├── deployments/
 │   ├── systemd/
-│   │   └── mxwatch.service            # Systemd unit file
+│   │   └── mxwatch.service            # Systemd unit
 │   ├── launchd/
-│   │   └── com.mxtac.mxwatch.plist    # macOS launchd plist
-│   ├── windows/
-│   │   └── install-service.ps1        # Windows service installer
-│   └── docker/
-│       └── Dockerfile                  # Docker image
-│
-├── docs/
-│   ├── README.md
-│   ├── ARCHITECTURE.md
-│   ├── CONFIGURATION.md
-│   ├── DEPLOYMENT.md
-│   └── API.md
+│   │   └── com.mxtac.mxwatch.plist    # macOS launchd
+│   └── windows/
+│       └── install-service.ps1        # Windows service
 │
 ├── tests/
 │   ├── integration/
-│   │   ├── http_test.go
-│   │   ├── dns_test.go
-│   │   └── c2beacon_test.go
-│   ├── unit/
-│   │   ├── parsers_test.go
-│   │   ├── detectors_test.go
-│   │   └── ocsf_test.go
+│   │   ├── http_tests.rs
+│   │   ├── dns_tests.rs
+│   │   └── c2beacon_tests.rs
+│   ├── common/
+│   │   └── mod.rs                     # Test utilities
 │   └── fixtures/
-│       ├── pcaps/                     # Sample PCAP files
-│       └── events.json
+│       └── pcaps/                     # Sample PCAPs
 │
-├── .github/
-│   └── workflows/
-│       ├── build.yml                  # Build workflow
-│       ├── test.yml                   # Test workflow
-│       └── release.yml                # Release workflow
+├── benches/
+│   ├── packet_parsing.rs              # Parser benchmarks
+│   └── detection.rs                   # Detector benchmarks
 │
-├── go.mod                             # Go modules
-├── go.sum                             # Dependency checksums
-├── Makefile                           # Build automation
-├── LICENSE                            # Apache 2.0
-└── README.md                          # Project README
+├── Cargo.toml                         # Dependencies
+├── Cargo.lock                         # Dependency lock
+├── build.rs                           # Build script
+├── .cargo/
+│   └── config.toml                    # Cargo config
+├── LICENSE
+└── README.md
 ```
 
 ---
 
 ## Core Modules
 
-### 1. Agent Orchestrator (`internal/agent/`)
+### 1. Agent Orchestrator (`src/agent/mod.rs`)
 
-```go
-// agent.go
-package agent
+```rust
+// src/agent/mod.rs
+use tokio::sync::mpsc;
+use crate::capture::PacketCapture;
+use crate::parsers::Parser;
+use crate::detectors::Detector;
 
-type Agent struct {
-    config      *Config
-    capture     capture.PacketCapture
-    parsers     []parser.Parser
-    detectors   []detector.Detector
-    buffer      *buffer.EventBuffer
-    output      output.Handler
-    shutdown    chan struct{}
+pub struct Agent {
+    config: Config,
+    capture: Box<dyn PacketCapture>,
+    parsers: Vec<Box<dyn Parser>>,
+    detectors: Vec<Box<dyn Detector>>,
+    buffer: EventBuffer,
+    output: Box<dyn OutputHandler>,
 }
 
-func New(configPath string) (*Agent, error) {
-    config, err := LoadConfig(configPath)
-    if err != nil {
-        return nil, err
+impl Agent {
+    pub fn new(config_path: &str) -> Result<Self, Error> {
+        let config = Config::from_file(config_path)?;
+
+        Ok(Self {
+            config: config.clone(),
+            capture: Box::new(PcapCapture::new(&config.capture)?),
+            parsers: Vec::new(),
+            detectors: Vec::new(),
+            buffer: EventBuffer::new(10000),
+            output: Box::new(HttpOutput::new(&config.output)?),
+        })
     }
 
-    return &Agent{
-        config:   config,
-        shutdown: make(chan struct{}),
-    }, nil
-}
+    pub async fn start(&mut self) -> Result<(), Error> {
+        // Initialize parsers and detectors
+        self.init_parsers()?;
+        self.init_detectors()?;
 
-func (a *Agent) Start() error {
-    // Initialize packet capture
-    a.capture = capture.New(a.config.Capture.Interface)
+        // Create packet channel
+        let (pkt_tx, mut pkt_rx) = mpsc::channel(10000);
 
-    // Start packet capture
-    go a.capture.Start()
+        // Start packet capture
+        let mut capture = self.capture.clone();
+        tokio::spawn(async move {
+            capture.start(pkt_tx).await
+        });
 
-    // Start parsers
-    for _, p := range a.parsers {
-        go p.Start(a.capture.Packets())
-    }
+        // Create event channel
+        let (evt_tx, mut evt_rx) = mpsc::channel(10000);
 
-    // Start detectors
-    for _, d := range a.detectors {
-        go d.Start()
-    }
+        // Start parsers
+        for parser in &mut self.parsers {
+            let pkt_rx_clone = pkt_rx.clone();
+            let evt_tx_clone = evt_tx.clone();
+            tokio::spawn(async move {
+                parser.parse(pkt_rx_clone, evt_tx_clone).await
+            });
+        }
 
-    // Start buffer
-    go a.buffer.Start()
+        // Start detectors
+        for detector in &mut self.detectors {
+            let evt_rx_clone = evt_rx.clone();
+            tokio::spawn(async move {
+                detector.detect(evt_rx_clone).await
+            });
+        }
 
-    // Wait for shutdown signal
-    <-a.shutdown
-    return a.Stop()
-}
-
-func (a *Agent) Stop() error {
-    // Stop capture
-    a.capture.Stop()
-
-    // Stop parsers
-    for _, p := range a.parsers {
-        p.Stop()
-    }
-
-    // Flush buffer
-    a.buffer.Flush()
-
-    return nil
-}
-```
-
-### 2. Packet Capture (`internal/capture/capture.go`)
-
-```go
-package capture
-
-type PacketCapture interface {
-    Start() error
-    Stop() error
-    Packets() <-chan gopacket.Packet
-    Stats() CaptureStats
-}
-
-type Capture struct {
-    handle      *pcap.Handle
-    interface   string
-    snaplen     int32
-    promiscuous bool
-    filter      string
-    packets     chan gopacket.Packet
-}
-
-type CaptureStats struct {
-    PacketsReceived uint64
-    PacketsDropped  uint64
-    PacketsIfDropped uint64
-}
-
-func New(iface string) *Capture {
-    return &Capture{
-        interface:   iface,
-        snaplen:     65535,
-        promiscuous: true,
-        packets:     make(chan gopacket.Packet, 10000),
-    }
-}
-
-func (c *Capture) Start() error {
-    handle, err := pcap.OpenLive(
-        c.interface,
-        c.snaplen,
-        c.promiscuous,
-        pcap.BlockForever,
-    )
-    if err != nil {
-        return err
-    }
-
-    // Set BPF filter
-    if err := handle.SetBPFFilter(c.filter); err != nil {
-        return err
-    }
-
-    c.handle = handle
-
-    // Start packet processing
-    packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-
-    for packet := range packetSource.Packets() {
-        c.packets <- packet
-    }
-
-    return nil
-}
-```
-
-### 3. HTTP Parser (`internal/parsers/http/parser.go`)
-
-```go
-package http
-
-type HTTPParser struct {
-    packets   <-chan gopacket.Packet
-    events    chan ocsf.NetworkActivity
-    requests  map[string]*HTTPRequest
-}
-
-func (hp *HTTPParser) Start(packets <-chan gopacket.Packet) {
-    hp.packets = packets
-
-    for packet := range packets {
-        hp.parsePacket(packet)
-    }
-}
-
-func (hp *HTTPParser) parsePacket(packet gopacket.Packet) {
-    if httpLayer := packet.Layer(layers.LayerTypeHTTP); httpLayer != nil {
-        http := httpLayer.(*layers.HTTP)
-
-        if len(http.Method) > 0 {
-            // Parse HTTP request
-            req := &HTTPRequest{
-                Method:    string(http.Method),
-                URI:       string(http.RequestURI),
-                Host:      string(http.Host),
-                UserAgent: hp.extractUserAgent(http.Headers),
-                Headers:   hp.parseHeaders(http.Headers),
-                Timestamp: packet.Metadata().Timestamp,
+        // Process events
+        tokio::spawn(async move {
+            while let Some(event) = evt_rx.recv().await {
+                self.buffer.add(event).await;
             }
+        });
 
-            // Check for suspicious patterns
-            if hp.isSuspicious(req) {
-                event := hp.buildOCSFEvent(req)
-                hp.events <- event
+        // Wait for shutdown
+        tokio::signal::ctrl_c().await?;
+        self.stop().await
+    }
+
+    async fn stop(&mut self) -> Result<(), Error> {
+        self.capture.stop().await?;
+        self.buffer.flush().await?;
+        Ok(())
+    }
+}
+```
+
+### 2. Packet Capture (`src/capture/pcap.rs`)
+
+```rust
+// src/capture/pcap.rs
+use pcap::{Device, Capture, Active};
+use tokio::sync::mpsc::Sender;
+use pnet::packet::Packet;
+
+pub struct PcapCapture {
+    interface: String,
+    snaplen: i32,
+    promiscuous: bool,
+    filter: String,
+    handle: Option<Capture<Active>>,
+}
+
+impl PcapCapture {
+    pub fn new(config: &CaptureConfig) -> Result<Self, Error> {
+        Ok(Self {
+            interface: config.interface.clone(),
+            snaplen: config.snaplen,
+            promiscuous: config.promiscuous,
+            filter: config.bpf_filter.clone(),
+            handle: None,
+        })
+    }
+
+    pub async fn start(&mut self, tx: Sender<RawPacket>) -> Result<(), Error> {
+        // Open capture device
+        let mut cap = Capture::from_device(self.interface.as_str())?
+            .promisc(self.promiscuous)
+            .snaplen(self.snaplen)
+            .open()?;
+
+        // Set BPF filter
+        cap.filter(&self.filter, true)?;
+
+        self.handle = Some(cap);
+
+        // Capture packets
+        loop {
+            match self.handle.as_mut().unwrap().next_packet() {
+                Ok(packet) => {
+                    let raw_packet = RawPacket {
+                        timestamp: packet.header.ts.tv_sec as i64,
+                        data: packet.data.to_vec(),
+                        length: packet.header.len as usize,
+                    };
+
+                    if tx.send(raw_packet).await.is_err() {
+                        break;
+                    }
+                }
+                Err(pcap::Error::TimeoutExpired) => continue,
+                Err(e) => {
+                    log::error!("Packet capture error: {}", e);
+                    break;
+                }
             }
         }
+
+        Ok(())
+    }
+
+    pub async fn stop(&mut self) -> Result<(), Error> {
+        self.handle = None;
+        Ok(())
     }
 }
 
-func (hp *HTTPParser) isSuspicious(req *HTTPRequest) bool {
-    // Command injection
-    if strings.ContainsAny(req.URI, ";|&") {
-        return true
-    }
-
-    // SQL injection
-    if strings.Contains(strings.ToUpper(req.URI), " OR 1=1") {
-        return true
-    }
-
-    // Directory traversal
-    if strings.Contains(req.URI, "../") {
-        return true
-    }
-
-    return false
+#[derive(Clone, Debug)]
+pub struct RawPacket {
+    pub timestamp: i64,
+    pub data: Vec<u8>,
+    pub length: usize,
 }
 ```
 
-### 4. C2 Beacon Detector (`internal/detectors/c2beacon/detector.go`)
+### 3. HTTP Parser (`src/parsers/http/mod.rs`)
 
-```go
-package c2beacon
+```rust
+// src/parsers/http/mod.rs
+use pnet::packet::tcp::TcpPacket;
+use pnet::packet::Packet;
+use httparse::{Request, Response};
 
-type C2BeaconDetector struct {
-    connections map[string]*ConnectionTracker
-    events      chan ocsf.NetworkActivity
+pub struct HttpParser {
+    suspicious_patterns: Vec<String>,
 }
 
-type ConnectionTracker struct {
-    DstIP       string
-    DstPort     int
-    Timestamps  []time.Time
-    BytesSent   []int64
-    BytesRecv   []int64
-}
-
-func (cbd *C2BeaconDetector) TrackConnection(conn Connection) {
-    key := fmt.Sprintf("%s:%d", conn.DstIP, conn.DstPort)
-
-    tracker, exists := cbd.connections[key]
-    if !exists {
-        tracker = &ConnectionTracker{
-            DstIP:      conn.DstIP,
-            DstPort:    conn.DstPort,
-            Timestamps: make([]time.Time, 0),
-        }
-        cbd.connections[key] = tracker
-    }
-
-    tracker.Timestamps = append(tracker.Timestamps, conn.Timestamp)
-    tracker.BytesSent = append(tracker.BytesSent, conn.BytesSent)
-
-    // Analyze after sufficient data
-    if len(tracker.Timestamps) >= 10 {
-        if cbd.isBeaconing(tracker) {
-            event := cbd.buildOCSFEvent(tracker)
-            cbd.events <- event
+impl HttpParser {
+    pub fn new(config: &HttpParserConfig) -> Self {
+        Self {
+            suspicious_patterns: config.suspicious_patterns.clone(),
         }
     }
+
+    pub fn parse_request(&self, data: &[u8]) -> Option<HttpRequest> {
+        let mut headers = [httparse::EMPTY_HEADER; 64];
+        let mut req = Request::new(&mut headers);
+
+        match req.parse(data) {
+            Ok(httparse::Status::Complete(_)) => {
+                Some(HttpRequest {
+                    method: req.method?.to_string(),
+                    path: req.path?.to_string(),
+                    version: req.version?,
+                    headers: req.headers.iter()
+                        .map(|h| (h.name.to_string(), String::from_utf8_lossy(h.value).to_string()))
+                        .collect(),
+                })
+            }
+            _ => None,
+        }
+    }
+
+    pub fn is_suspicious(&self, req: &HttpRequest) -> bool {
+        // Command injection
+        if req.path.contains(';') || req.path.contains('|') {
+            return true;
+        }
+
+        // SQL injection
+        if req.path.to_uppercase().contains(" OR 1=1") {
+            return true;
+        }
+
+        // Directory traversal
+        if req.path.contains("../") {
+            return true;
+        }
+
+        // Check configured patterns
+        for pattern in &self.suspicious_patterns {
+            if req.path.contains(pattern) {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
-func (cbd *C2BeaconDetector) isBeaconing(tracker *ConnectionTracker) bool {
-    // Calculate intervals
-    intervals := make([]float64, 0)
-    for i := 1; i < len(tracker.Timestamps); i++ {
-        interval := tracker.Timestamps[i].Sub(tracker.Timestamps[i-1]).Seconds()
-        intervals = append(intervals, interval)
+#[async_trait]
+impl Parser for HttpParser {
+    async fn parse(
+        &mut self,
+        mut pkt_rx: Receiver<RawPacket>,
+        evt_tx: Sender<NetworkEvent>,
+    ) -> Result<(), Error> {
+        while let Some(packet) = pkt_rx.recv().await {
+            // Parse Ethernet -> IP -> TCP
+            if let Some(ethernet) = EthernetPacket::new(&packet.data) {
+                if let Some(ipv4) = Ipv4Packet::new(ethernet.payload()) {
+                    if let Some(tcp) = TcpPacket::new(ipv4.payload()) {
+                        let payload = tcp.payload();
+
+                        // Try to parse HTTP
+                        if let Some(request) = self.parse_request(payload) {
+                            if self.is_suspicious(&request) {
+                                let event = NetworkEvent {
+                                    timestamp: packet.timestamp,
+                                    event_type: NetworkEventType::Http,
+                                    severity: 4, // High
+                                    data: EventData::Http(request),
+                                };
+
+                                evt_tx.send(event).await?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
+}
 
-    // Calculate statistics
-    mean := cbd.mean(intervals)
-    stddev := cbd.stddev(intervals, mean)
-
-    // Check for regular interval (low coefficient of variation)
-    cv := stddev / mean
-    if cv < 0.2 && mean > 5 && mean < 3600 {
-        return true
-    }
-
-    return false
+#[derive(Debug, Clone)]
+pub struct HttpRequest {
+    pub method: String,
+    pub path: String,
+    pub version: u8,
+    pub headers: Vec<(String, String)>,
 }
 ```
 
-### 5. OCSF Builder (`internal/ocsf/builder.go`)
+### 4. DNS Parser (`src/parsers/dns/mod.rs`)
 
-```go
-package ocsf
+```rust
+// src/parsers/dns/mod.rs
+use trust_dns_proto::op::Message;
+use trust_dns_proto::rr::RecordType;
 
-type Builder struct {
-    product Product
-    device  Device
+pub struct DnsParser {
+    entropy_threshold: f64,
 }
 
-type Product struct {
-    Name    string
-    Vendor  string
-    Version string
+impl DnsParser {
+    pub fn new(config: &DnsParserConfig) -> Self {
+        Self {
+            entropy_threshold: config.entropy_threshold,
+        }
+    }
+
+    pub fn parse_query(&self, data: &[u8]) -> Option<Message> {
+        Message::from_vec(data).ok()
+    }
+
+    pub fn is_tunneling(&self, query: &str) -> bool {
+        // Check length
+        if query.len() > 100 {
+            return true;
+        }
+
+        // Check entropy
+        let entropy = self.calculate_entropy(query);
+        if entropy > self.entropy_threshold {
+            return true;
+        }
+
+        // Check label count
+        let labels = query.matches('.').count();
+        if labels > 10 {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn is_dga(&self, domain: &str) -> bool {
+        // High entropy check
+        let entropy = self.calculate_entropy(domain);
+        if entropy > 4.0 {
+            return true;
+        }
+
+        // Suspicious TLDs
+        let suspicious_tlds = vec![".tk", ".ml", ".ga", ".cf", ".gq"];
+        for tld in suspicious_tlds {
+            if domain.ends_with(tld) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn calculate_entropy(&self, s: &str) -> f64 {
+        use std::collections::HashMap;
+
+        let mut freq = HashMap::new();
+        for c in s.chars() {
+            *freq.entry(c).or_insert(0) += 1;
+        }
+
+        let len = s.len() as f64;
+        let mut entropy = 0.0;
+
+        for count in freq.values() {
+            let p = *count as f64 / len;
+            entropy -= p * p.log2();
+        }
+
+        entropy
+    }
 }
 
-type Device struct {
-    Hostname string
-    IP       string
+#[async_trait]
+impl Parser for DnsParser {
+    async fn parse(
+        &mut self,
+        mut pkt_rx: Receiver<RawPacket>,
+        evt_tx: Sender<NetworkEvent>,
+    ) -> Result<(), Error> {
+        while let Some(packet) = pkt_rx.recv().await {
+            if let Some(ethernet) = EthernetPacket::new(&packet.data) {
+                if let Some(ipv4) = Ipv4Packet::new(ethernet.payload()) {
+                    if let Some(udp) = UdpPacket::new(ipv4.payload()) {
+                        // DNS typically on port 53
+                        if udp.get_destination() == 53 || udp.get_source() == 53 {
+                            if let Some(msg) = self.parse_query(udp.payload()) {
+                                for query in msg.queries() {
+                                    let domain = query.name().to_string();
+
+                                    if self.is_tunneling(&domain) || self.is_dga(&domain) {
+                                        let event = NetworkEvent {
+                                            timestamp: packet.timestamp,
+                                            event_type: NetworkEventType::Dns,
+                                            severity: 4,
+                                            data: EventData::Dns(DnsQuery {
+                                                domain,
+                                                query_type: query.query_type().to_string(),
+                                            }),
+                                        };
+
+                                        evt_tx.send(event).await?;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+```
+
+### 5. C2 Beacon Detector (`src/detectors/c2beacon/mod.rs`)
+
+```rust
+// src/detectors/c2beacon/mod.rs
+use std::collections::HashMap;
+use std::time::Duration;
+
+pub struct C2BeaconDetector {
+    connections: HashMap<String, ConnectionTracker>,
+    min_connections: usize,
+    cv_threshold: f64,
 }
 
-func (b *Builder) BuildNetworkActivity(
-    activity string,
-    activityID int,
-    conn ConnectionInfo,
-    http *HTTPInfo,
-    tls *TLSInfo,
-) *NetworkActivity {
-    return &NetworkActivity{
-        Metadata: Metadata{
-            Version: "1.1.0",
-            Product: b.product,
-        },
-        Time:        time.Now().Unix(),
-        ClassUID:    4001,
-        CategoryUID: 4,
-        Activity:    activity,
-        ActivityID:  activityID,
-        SeverityID:  calculateSeverity(conn, http),
-        ConnectionInfo: conn,
-        HTTPRequest:    http,
-        TLS:            tls,
-        Device:         b.device,
+struct ConnectionTracker {
+    dst_ip: String,
+    dst_port: u16,
+    timestamps: Vec<i64>,
+    bytes_sent: Vec<u64>,
+}
+
+impl C2BeaconDetector {
+    pub fn new(config: &C2Config) -> Self {
+        Self {
+            connections: HashMap::new(),
+            min_connections: config.min_connections,
+            cv_threshold: config.interval_threshold,
+        }
+    }
+
+    pub fn track_connection(&mut self, conn: &Connection) -> Option<Alert> {
+        let key = format!("{}:{}", conn.dst_ip, conn.dst_port);
+
+        let tracker = self.connections
+            .entry(key.clone())
+            .or_insert_with(|| ConnectionTracker {
+                dst_ip: conn.dst_ip.clone(),
+                dst_port: conn.dst_port,
+                timestamps: Vec::new(),
+                bytes_sent: Vec::new(),
+            });
+
+        tracker.timestamps.push(conn.timestamp);
+        tracker.bytes_sent.push(conn.bytes_sent);
+
+        // Analyze after sufficient data
+        if tracker.timestamps.len() >= self.min_connections {
+            if self.is_beaconing(tracker) {
+                return Some(Alert {
+                    alert_type: AlertType::C2Beacon,
+                    severity: 5, // Critical
+                    description: format!("C2 beacon detected to {}:{}", tracker.dst_ip, tracker.dst_port),
+                    evidence: self.build_evidence(tracker),
+                });
+            }
+        }
+
+        None
+    }
+
+    fn is_beaconing(&self, tracker: &ConnectionTracker) -> bool {
+        // Calculate intervals
+        let mut intervals = Vec::new();
+        for i in 1..tracker.timestamps.len() {
+            let interval = (tracker.timestamps[i] - tracker.timestamps[i-1]) as f64;
+            intervals.push(interval);
+        }
+
+        // Calculate statistics
+        let mean = self.mean(&intervals);
+        let stddev = self.stddev(&intervals, mean);
+
+        // Coefficient of variation
+        let cv = stddev / mean;
+
+        // Low CV indicates regular beaconing
+        cv < self.cv_threshold && mean > 5.0 && mean < 3600.0
+    }
+
+    fn mean(&self, values: &[f64]) -> f64 {
+        values.iter().sum::<f64>() / values.len() as f64
+    }
+
+    fn stddev(&self, values: &[f64], mean: f64) -> f64 {
+        let variance: f64 = values.iter()
+            .map(|v| (v - mean).powi(2))
+            .sum::<f64>() / values.len() as f64;
+        variance.sqrt()
     }
 }
 ```
 
 ---
 
-## Configuration Structure
+## Configuration
 
-```yaml
-# config.yaml
-agent:
-  name: "mxwatch-agent"
-  version: "1.0.0"
-  log_level: "info"
-  log_file: "/var/log/mxwatch/agent.log"
+```toml
+# config.toml
+[agent]
+name = "mxwatch-agent"
+version = "1.0.0"
+log_level = "info"
 
-capture:
-  interface: "eth0"
-  snaplen: 65535
-  promiscuous: true
-  bpf_filter: "tcp or udp"
-  buffer_size: 10000
+[capture]
+interface = "eth0"
+snaplen = 65535
+promiscuous = true
+bpf_filter = "tcp or udp"
+buffer_size = 10000
 
-parsers:
-  http:
-    enabled: true
-    track_responses: true
-    suspicious_patterns:
-      - "'; DROP TABLE"
-      - "../"
-      - "; ls"
+[parsers.http]
+enabled = true
+suspicious_patterns = ["'; DROP TABLE", "../", "; ls"]
 
-  dns:
-    enabled: true
-    detect_tunneling: true
-    detect_dga: true
-    entropy_threshold: 4.5
+[parsers.dns]
+enabled = true
+detect_tunneling = true
+detect_dga = true
+entropy_threshold = 4.5
 
-  tls:
-    enabled: true
-    extract_sni: true
-    detect_weak_ciphers: true
+[detectors.c2beacon]
+enabled = true
+min_connections = 10
+interval_threshold = 0.2
 
-detectors:
-  c2beacon:
-    enabled: true
-    min_connections: 10
-    interval_threshold: 0.2  # CV threshold
+[buffer]
+size = 10000
+batch_size = 100
+batch_timeout = "5s"
 
-  portscan:
-    enabled: true
-    port_threshold: 10
-    time_window: 60s
+[output.http]
+enabled = true
+url = "https://mxtac.example.com/api/v1/ingest/ocsf"
+api_key = "${MXWATCH_API_KEY}"
+retry_attempts = 3
+```
 
-  exfiltration:
-    enabled: true
-    volume_threshold: 100MB
-    time_window: 300s
+---
 
-buffer:
-  size: 10000
-  batch_size: 100
-  batch_timeout: 5s
+## Dependencies (Cargo.toml)
 
-output:
-  http:
-    enabled: true
-    url: "https://mxtac.example.com/api/v1/ingest/ocsf"
-    api_key: "${MXWATCH_API_KEY}"
-    retry_attempts: 3
-    retry_backoff: 1s
+```toml
+[package]
+name = "mxwatch"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.75"
 
-  file:
-    enabled: false
-    path: "/var/log/mxwatch/events.json"
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+
+# Packet capture
+pcap = "1.1"
+pnet = "0.34"
+
+# DNS parsing
+trust-dns-proto = "0.23"
+
+# HTTP parsing
+httparse = "1.8"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "gzip"] }
+
+# Compression
+flate2 = "1.0"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Statistics
+statistical = "1.0"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+[dev-dependencies]
+tokio-test = "0.4"
+criterion = "0.5"
+
+[[bench]]
+name = "packet_parsing"
+harness = false
 ```
 
 ---
 
 ## Build System
 
-### Makefile
-
 ```makefile
 .PHONY: build test clean install
 
-VERSION := $(shell git describe --tags --always --dirty)
-BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
-LDFLAGS := -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)
-
 build:
-\tgo build -ldflags="$(LDFLAGS)" -o bin/mxwatch cmd/mxwatch/main.go
+\tcargo build --release
 
 build-linux:
-\tGOOS=linux GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o bin/mxwatch-linux-amd64 cmd/mxwatch/main.go
+\tcargo build --release --target x86_64-unknown-linux-gnu
 
 build-windows:
-\tGOOS=windows GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o bin/mxwatch-windows-amd64.exe cmd/mxwatch/main.go
+\tcargo build --release --target x86_64-pc-windows-gnu
 
 build-darwin:
-\tGOOS=darwin GOARCH=amd64 go build -ldflags="$(LDFLAGS)" -o bin/mxwatch-darwin-amd64 cmd/mxwatch/main.go
-\tGOOS=darwin GOARCH=arm64 go build -ldflags="$(LDFLAGS)" -o bin/mxwatch-darwin-arm64 cmd/mxwatch/main.go
+\tcargo build --release --target x86_64-apple-darwin
 
 build-all: build-linux build-windows build-darwin
 
 test:
-\tgo test -v -race -coverprofile=coverage.out ./...
+\tcargo test --all-features
 
-test-integration:
-\tgo test -v -tags=integration ./tests/integration/...
+bench:
+\tcargo bench
 
 clean:
-\trm -rf bin/
-\trm -f coverage.out
+\tcargo clean
 
 install:
-\tcp bin/mxwatch /usr/local/bin/
+\tcp target/release/mxwatch /usr/local/bin/
 \tmkdir -p /etc/mxwatch
-\tcp configs/config.yaml /etc/mxwatch/
+\tcp configs/config.toml /etc/mxwatch/
+
+# Requires libpcap-dev
+setup-deps:
+\tsudo apt-get install libpcap-dev  # Debian/Ubuntu
 ```
 
 ---
 
-## Dependencies (go.mod)
-
-```go
-module github.com/mxtac/mxwatch
-
-go 1.21
-
-require (
-    github.com/google/gopacket v1.1.19
-    gopkg.in/yaml.v3 v3.0.1
-)
-
-require (
-    golang.org/x/net v0.20.0
-    golang.org/x/sys v0.16.0
-)
-```
-
-**Key Dependencies**:
-- **gopacket**: Packet decoding and protocol parsing
-- **libpcap**: Packet capture (system dependency)
-
----
-
-*Project structure designed for maintainability and scalability*
+*Project structure designed for Rust implementation*
 *Next: See 03-CONFIGURATION.md for configuration details*

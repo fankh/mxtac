@@ -1,7 +1,7 @@
 # MxGuard - Lightweight Endpoint Detection & Response Agent
 
 > **Type**: Lightweight EDR Agent
-> **Language**: Go 1.21+
+> **Language**: Rust 1.75+
 > **Platform**: Linux, Windows, macOS
 > **License**: Apache 2.0
 > **Status**: Design Phase
@@ -13,8 +13,8 @@
 **MxGuard** is a lightweight endpoint detection and response (EDR) agent specifically designed for seamless integration with the MxTac platform. Unlike heavyweight EDR solutions, MxGuard focuses on:
 
 - **Native OCSF output** - No normalization layer needed
-- **Minimal resource footprint** - 20-50 MB RAM, 1-2% CPU
-- **Single binary deployment** - No external dependencies
+- **Minimal resource footprint** - 10-30 MB RAM, 0.5-1% CPU
+- **Single binary deployment** - Statically linked, no runtime dependencies
 - **High-value detections** - 20 core capabilities covering 30-40% ATT&CK
 - **Cross-platform** - Linux, Windows, macOS support
 
@@ -117,9 +117,9 @@ sudo mxguard --config /etc/mxguard/config.yaml
 
 | Feature | Wazuh Agent | MxGuard |
 |---------|-------------|---------|
-| **Binary Size** | ~100 MB | ~10 MB |
-| **Memory Usage** | 200-500 MB | 20-50 MB |
-| **CPU Usage** | 5-10% | 1-2% |
+| **Binary Size** | ~100 MB | ~5 MB |
+| **Memory Usage** | 200-500 MB | 10-30 MB |
+| **CPU Usage** | 5-10% | 0.5-1% |
 | **Deployment** | Manager + Agent | Single Binary |
 | **Output Format** | Wazuh JSON | OCSF Native |
 | **ATT&CK Coverage** | 60-70% | 30-40% |
@@ -127,16 +127,16 @@ sudo mxguard --config /etc/mxguard/config.yaml
 
 ## Development Roadmap
 
-### Phase 1: Core Agent (8 weeks)
+### Phase 1: Core Agent (10 weeks)
 
 - [x] Project setup and structure
-- [ ] File monitoring (inotify/fsnotify)
-- [ ] Process monitoring
+- [ ] File monitoring (notify-rs/inotify)
+- [ ] Process monitoring (sysinfo)
 - [ ] OCSF event builder
-- [ ] HTTP output handler
-- [ ] Basic configuration
+- [ ] HTTP output handler (reqwest)
+- [ ] Configuration (serde/toml)
 
-### Phase 2: Enhanced Monitoring (6 weeks)
+### Phase 2: Enhanced Monitoring (8 weeks)
 
 - [ ] Network connection tracking
 - [ ] Log file monitoring
