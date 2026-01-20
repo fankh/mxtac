@@ -27,17 +27,17 @@ flowchart TB
     subgraph Network["Network Traffic"]
         style Network fill:#e3f2fd,stroke:#1565c0
         NIC[Network Interface Card]
-        PACKETS[10M+ pps]
+        PACKETS[1-5M pps]
     end
 
     subgraph Agent["MxWatch Agent"]
         style Agent fill:#e8f5e9,stroke:#2e7d32
 
-        subgraph Capture["High-Performance Capture"]
+        subgraph Capture["Packet Capture"]
             style Capture fill:#fff3e0,stroke:#ef6c00
-            PFRING[PF_RING Zero-Copy]
-            HWFILTER[Hardware Filters]
-            CLUSTER[Multi-Core Cluster]
+            AFPACKET[AF_PACKET + MMAP]
+            BPF[BPF Filter]
+            FANOUT[PACKET_FANOUT]
         end
 
         subgraph Parsers["Protocol Parsers"]
@@ -72,10 +72,10 @@ flowchart TB
         API[Ingestion API]
     end
 
-    NIC --> HWFILTER
-    HWFILTER --> PFRING
-    PFRING --> CLUSTER
-    CLUSTER --> Parsers
+    NIC --> BPF
+    BPF --> AFPACKET
+    AFPACKET --> FANOUT
+    FANOUT --> Parsers
     Parsers --> Detection
     Detection --> Core
     Core --> Output
@@ -86,7 +86,7 @@ flowchart TB
 
 | Layer | Components | Responsibility |
 |-------|------------|----------------|
-| **Capture** | PF_RING, Hardware Filters, Multi-Core Cluster | Zero-copy packet capture at 10M+ pps |
+| **Capture** | AF_PACKET + MMAP, BPF Filter, PACKET_FANOUT | Zero-copy packet capture at 1-5M pps |
 | **Parsing** | HTTP, DNS, TLS Parsers | Extract protocol data |
 | **Detection** | C2, Port Scan, Exfiltration Detectors | Identify threats |
 | **Processing** | OCSF Builder, Enrichment | Transform to OCSF |
