@@ -18,7 +18,7 @@
 - **Multi-core scalability** - PACKET_FANOUT load balancing
 - **Minimal resource footprint** - 15-60 MB RAM, 1-3% CPU per core
 - **Single binary deployment** - Statically linked, pure Rust
-- **High-value detections** - 15 core capabilities covering 10-15% ATT&CK
+- **High-value detections** - 12+ protocols + 3 detection engines covering 20+ ATT&CK techniques
 - **Cross-platform** - Linux (AF_PACKET), Windows/macOS (libpcap)
 
 ## Quick Start
@@ -89,16 +89,23 @@ sudo mxwatch --config /etc/mxwatch/config.yaml
 
 ### Core Capabilities
 
-| Capability | Status | ATT&CK Coverage |
-|------------|--------|--------------------|
-| **Packet Capture** | ✅ Planned | T1040 (Network Sniffing) |
-| **HTTP/HTTPS Protocol Analysis** | ✅ Planned | T1071.001 (Web Protocols) |
-| **DNS Query Monitoring** | ✅ Planned | T1071.004 (DNS), T1568 (DNS Tunneling) |
-| **TLS/SSL Certificate Analysis** | ✅ Planned | T1573 (Encrypted Channel) |
+| Protocol/Capability | Status | ATT&CK Coverage |
+|---------------------|--------|--------------------|
+| **HTTP/HTTPS** | ✅ Planned | T1071.001 (Web Protocols) |
+| **DNS** | ✅ Planned | T1071.004 (DNS), T1568 (DNS Tunneling) |
+| **TLS/SSL** | ✅ Planned | T1573 (Encrypted Channel) |
+| **SMB/CIFS** | ✅ Planned | T1021.002 (SMB), T1570 (Lateral Movement) |
+| **SSH** | ✅ Planned | T1021.004 (SSH), T1110 (Brute Force) |
+| **FTP/SFTP** | ✅ Planned | T1071.002 (File Protocols), T1048 (Exfiltration) |
+| **SMTP** | ✅ Planned | T1071.003 (Mail Protocols), T1566 (Phishing) |
+| **LDAP** | ✅ Planned | T1087 (Account Discovery) |
+| **RDP** | ✅ Planned | T1021.001 (RDP) |
+| **DHCP** | ✅ Planned | T1557 (MITM) |
+| **NTP** | ✅ Planned | T1498 (Network DoS) |
+| **ICMP** | ✅ Planned | T1018 (Remote System Discovery) |
 | **C2 Beacon Detection** | ✅ Planned | T1071 (Application Layer Protocol) |
 | **Port Scan Detection** | ✅ Planned | T1046 (Network Service Scanning) |
 | **Data Exfiltration Detection** | ✅ Planned | T1041 (Exfiltration Over C2) |
-| **Lateral Movement Detection** | ✅ Planned | T1021 (Remote Services) |
 
 ### Key Differentiators
 
@@ -139,11 +146,18 @@ flowchart TB
             C3[Core 3]
         end
 
-        subgraph Parsers["Protocol Parsers"]
+        subgraph Parsers["Protocol Parsers - 12+"]
             style Parsers fill:#e0f2f1,stroke:#00695c
             HTTP[HTTP/HTTPS]
             DNS[DNS]
-            TLS[TLS]
+            TLS[TLS/SSL]
+            SMB[SMB]
+            SSH[SSH]
+            FTP[FTP]
+            SMTP[SMTP]
+            LDAP[LDAP]
+            RDP[RDP]
+            MORE[+ DHCP, NTP, ICMP]
         end
 
         subgraph Detection["Detection Engine"]
@@ -217,7 +231,7 @@ flowchart TB
 | **Deployment** | Cluster/Standalone | Single Binary |
 | **Dependencies** | Many (libpcap, Python, etc.) | None (built into Linux kernel) |
 | **Output Format** | Zeek Logs | OCSF Native |
-| **Protocol Coverage** | 100+ protocols | 10-15 protocols (focused) |
+| **Protocol Coverage** | 100+ protocols | 12+ protocols (focused on threats) |
 | **Configuration** | Zeek Scripts | YAML |
 | **Installation** | Complex | Simple (single binary) |
 

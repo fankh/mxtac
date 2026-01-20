@@ -42,9 +42,18 @@ flowchart TB
 
         subgraph Parsers["Protocol Parsers"]
             style Parsers fill:#f3e5f5,stroke:#7b1fa2
-            HTTP[HTTP/HTTPS Parser]
-            DNS[DNS Parser]
-            TLS[TLS Parser]
+            HTTP[HTTP/HTTPS]
+            DNS[DNS]
+            TLS[TLS/SSL]
+            SMB[SMB/CIFS]
+            SSH[SSH]
+            FTP[FTP/SFTP]
+            SMTP[SMTP]
+            LDAP[LDAP]
+            RDP[RDP]
+            DHCP[DHCP]
+            NTP[NTP]
+            ICMP[ICMP]
         end
 
         subgraph Detection["Detection Engine"]
@@ -87,7 +96,7 @@ flowchart TB
 | Layer | Components | Responsibility |
 |-------|------------|----------------|
 | **Capture** | AF_PACKET + MMAP, BPF Filter, PACKET_FANOUT | Zero-copy packet capture at 1-5M pps |
-| **Parsing** | HTTP, DNS, TLS Parsers | Extract protocol data |
+| **Parsing** | HTTP/HTTPS, DNS, TLS/SSL, SMB, SSH, FTP, SMTP, LDAP, RDP, DHCP, NTP, ICMP | Extract protocol data |
 | **Detection** | C2, Port Scan, Exfiltration Detectors | Identify threats |
 | **Processing** | OCSF Builder, Enrichment | Transform to OCSF |
 | **Buffering** | Event Buffer | Optimize output |
@@ -470,6 +479,33 @@ serde = "1.0"           # Serialization
 serde_yaml = "0.9"      # YAML config parsing
 ```
 
+## 2. Component Design
+
+### 2.1 Protocol Coverage
+
+MxWatch supports parsing of 12+ network protocols covering the most common attack vectors:
+
+| Protocol | Port(s) | Priority | ATT&CK Coverage | Use Case |
+|----------|---------|----------|-----------------|----------|
+| **HTTP/HTTPS** | 80, 443, 8080 | P0 | T1071.001 (Web Protocols) | Web traffic, API calls, C2 |
+| **DNS** | 53 | P0 | T1071.004 (DNS), T1568 (Tunneling) | Name resolution, tunneling, DGA |
+| **TLS/SSL** | 443, 8443 | P0 | T1573 (Encrypted Channel) | Certificate analysis, weak ciphers |
+| **SMB/CIFS** | 445, 139 | P1 | T1021.002 (SMB), T1570 (Lateral) | File sharing, lateral movement |
+| **SSH** | 22 | P1 | T1021.004 (SSH), T1110 (Brute Force) | Remote access, tunneling |
+| **FTP/SFTP** | 21, 22 | P2 | T1071.002 (File Protocols) | File transfer, data exfiltration |
+| **SMTP** | 25, 587, 465 | P2 | T1071.003 (Mail Protocols) | Email traffic, phishing, exfiltration |
+| **LDAP** | 389, 636 | P2 | T1087 (Account Discovery) | Directory queries, reconnaissance |
+| **RDP** | 3389 | P1 | T1021.001 (RDP) | Remote desktop, lateral movement |
+| **DHCP** | 67, 68 | P3 | T1557 (MITM) | Network discovery, rogue DHCP |
+| **NTP** | 123 | P3 | T1108 (Time-based Evasion) | Time sync, DDoS amplification |
+| **ICMP** | - | P2 | T1018 (Remote System Discovery) | Network recon, covert channels |
+
+**Priority Levels**:
+- **P0**: Critical for detection (always parsed)
+- **P1**: High-value (parsed by default)
+- **P2**: Medium-value (configurable)
+- **P3**: Low-value (optional)
+
 ### 2.2 HTTP/HTTPS Parser
 
 **Monitored Fields**:
@@ -760,7 +796,158 @@ func (tp *TLSParser) isWeakCipher(cipher uint16) bool {
 }
 ```
 
-### 2.5 C2 Beacon Detector
+### 2.5 SMB/CIFS Parser
+
+**Monitored Fields**:
+- SMB version (v1, v2, v3)
+- Command types (open, read, write, delete)
+- File/share access patterns
+- Authentication attempts (NTLM, Kerberos)
+- Named pipes
+
+**Key Features**:
+- Lateral movement detection
+- Ransomware activity (mass file operations)
+- Credential abuse detection
+- Suspicious file access patterns
+
+**ATT&CK Coverage**: T1021.002 (SMB/Windows Admin Shares), T1570 (Lateral Tool Transfer)
+
+### 2.6 SSH Parser
+
+**Monitored Fields**:
+- SSH version
+- Authentication methods (password, key)
+- Authentication attempts (success/failure)
+- User accounts
+- Session duration
+
+**Key Features**:
+- Brute force detection
+- Suspicious login patterns
+- Tunnel detection
+- Weak algorithm detection
+
+**ATT&CK Coverage**: T1021.004 (SSH), T1110 (Brute Force), T1572 (Protocol Tunneling)
+
+### 2.7 FTP/SFTP Parser
+
+**Monitored Fields**:
+- Commands (USER, PASS, RETR, STOR, LIST)
+- File transfers (upload/download)
+- Authentication attempts
+- Data channel connections
+
+**Key Features**:
+- Data exfiltration detection
+- Anonymous FTP usage
+- Credential brute forcing
+- Suspicious file transfers
+
+**ATT&CK Coverage**: T1071.002 (File Transfer Protocols), T1048 (Exfiltration)
+
+### 2.8 SMTP Parser
+
+**Monitored Fields**:
+- SMTP commands (HELO, MAIL FROM, RCPT TO)
+- Sender/recipient addresses
+- Message size
+- Attachment indicators
+- Authentication
+
+**Key Features**:
+- Phishing detection
+- Data exfiltration via email
+- SPAM detection
+- Malicious attachment indicators
+
+**ATT&CK Coverage**: T1071.003 (Mail Protocols), T1566 (Phishing), T1048.003 (Exfiltration Over Email)
+
+### 2.9 LDAP Parser
+
+**Monitored Fields**:
+- LDAP queries (search, bind)
+- Query filters
+- Attributes requested
+- Authentication attempts
+- Response sizes
+
+**Key Features**:
+- Account enumeration detection
+- LDAP injection detection
+- Reconnaissance activity
+- Credential dumping indicators
+
+**ATT&CK Coverage**: T1087 (Account Discovery), T1069 (Permission Groups Discovery)
+
+### 2.10 RDP Parser
+
+**Monitored Fields**:
+- Connection attempts
+- Authentication status
+- User accounts
+- Client information
+- Encryption level
+
+**Key Features**:
+- Brute force detection
+- Lateral movement tracking
+- Suspicious remote access
+- Session anomalies
+
+**ATT&CK Coverage**: T1021.001 (Remote Desktop Protocol), T1110 (Brute Force)
+
+### 2.11 DHCP Parser
+
+**Monitored Fields**:
+- DHCP message types (DISCOVER, OFFER, REQUEST, ACK)
+- Client MAC addresses
+- Assigned IP addresses
+- DHCP server identity
+- Lease information
+
+**Key Features**:
+- Rogue DHCP server detection
+- Network mapping
+- Device fingerprinting
+- DHCP spoofing detection
+
+**ATT&CK Coverage**: T1557 (Adversary-in-the-Middle), T1018 (Remote System Discovery)
+
+### 2.12 NTP Parser
+
+**Monitored Fields**:
+- NTP version
+- Mode (client, server)
+- Stratum level
+- Time offset
+- Packet rates
+
+**Key Features**:
+- NTP amplification attack detection
+- Time synchronization anomalies
+- Rogue NTP server detection
+
+**ATT&CK Coverage**: T1498 (Network DoS)
+
+### 2.13 ICMP Parser
+
+**Monitored Fields**:
+- ICMP type/code
+- Payload size
+- Source/destination
+- Packet rate
+- Payload patterns
+
+**Key Features**:
+- Covert channel detection
+- Network reconnaissance
+- Ping sweeps
+- ICMP tunneling
+
+**ATT&CK Coverage**: T1018 (Remote System Discovery), T1095 (Non-Application Layer Protocol)
+
+### 2.14 C2 Beacon Detector
 
 **Detection Methods**:
 - Fixed interval beaconing
