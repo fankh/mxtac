@@ -13,49 +13,40 @@
 **MxWatch** is a high-performance network detection and response (NDR) agent specifically designed for seamless integration with the MxTac platform. Unlike heavyweight NDR solutions, MxWatch focuses on:
 
 - **Native OCSF output** - No normalization layer needed
-- **High-performance capture** - 10M+ pps with PF_RING (Linux), libpcap fallback
-- **Zero-copy architecture** - Direct NIC-to-userspace packet delivery
-- **Multi-core scalability** - Linear scaling across CPU cores
-- **Minimal resource footprint** - 15-120 MB RAM, 1-3% CPU per core
-- **Single binary deployment** - Statically linked (PF_RING/libpcap)
+- **High-performance capture** - 1-5M pps with AF_PACKET + MMAP (Linux)
+- **Zero-copy architecture** - Memory-mapped ring buffer (no kernel module)
+- **Multi-core scalability** - PACKET_FANOUT load balancing
+- **Minimal resource footprint** - 15-60 MB RAM, 1-3% CPU per core
+- **Single binary deployment** - Statically linked, pure Rust
 - **High-value detections** - 15 core capabilities covering 10-15% ATT&CK
-- **Cross-platform** - Linux (PF_RING), Windows/macOS (libpcap)
+- **Cross-platform** - Linux (AF_PACKET), Windows/macOS (libpcap)
 
 ## Quick Start
 
-### Linux (PF_RING - High Performance)
+### Linux (AF_PACKET + MMAP - High Performance)
 
 ```bash
-# 1. Install PF_RING kernel module
-git clone https://github.com/ntop/PF_RING.git
-cd PF_RING/kernel
-make && sudo make install
-sudo modprobe pf_ring
-
-# Verify PF_RING loaded
-lsmod | grep pf_ring
-
-# 2. Install PF_RING userspace library
-cd ../userland/lib
-./configure && make && sudo make install
-sudo ldconfig
-
-# 3. Download and install MxWatch
+# 1. Download and install MxWatch (single binary, no dependencies)
 wget https://github.com/mxtac/mxwatch/releases/latest/mxwatch-linux-amd64
 chmod +x mxwatch-linux-amd64
 sudo mv mxwatch-linux-amd64 /usr/local/bin/mxwatch
 
-# 4. Create configuration
+# 2. Create configuration
 sudo mkdir -p /etc/mxwatch
 sudo tee /etc/mxwatch/config.yaml > /dev/null <<EOF
 capture:
   interface: eth0
-  engine: pfring
-  pfring:
-    workers: 8
-    cluster_id: 1
-    enable_hw_timestamp: true
-    enable_zero_copy: true
+  engine: afpacket       # AF_PACKET + MMAP (built into Linux kernel)
+
+  afpacket:
+    workers: 8           # CPU cores to use
+    block_size: 4096
+    frame_size: 2048
+    block_count: 256
+    fanout_group: 1
+
+    # BPF filter (kernel-level)
+    bpf_filter: "tcp port 80 or tcp port 443 or udp port 53"
 
 output:
   http:
@@ -63,11 +54,11 @@ output:
     batch_size: 1000
 EOF
 
-# 5. Start agent (requires root for PF_RING)
+# 3. Start agent (requires CAP_NET_RAW capability)
 sudo mxwatch --config /etc/mxwatch/config.yaml
 
-# 6. Verify capture performance
-cat /proc/net/pf_ring/info
+# 4. Verify capture is working
+sudo mxwatch --config /etc/mxwatch/config.yaml --stats
 ```
 
 ### Windows/macOS (libpcap - Standard)
@@ -112,11 +103,12 @@ sudo mxwatch --config /etc/mxwatch/config.yaml
 ### Key Differentiators
 
 - **OCSF Native**: Network events generated in OCSF format (no transformation needed)
-- **High Performance**: 100x faster than Zeek on packet capture (10M+ pps vs 100K)
-- **Zero-Copy**: PF_RING kernel module for direct NIC access
-- **Multi-Core**: Linear scaling across 8-16 CPU cores
-- **Hardware Offload**: NIC-level filtering for efficiency
-- **Simple Deployment**: Single binary, YAML config, no cluster required
+- **High Performance**: 10x faster than libpcap (1-5M pps vs 100K pps)
+- **Zero-Copy**: AF_PACKET + MMAP (no kernel modules required)
+- **Multi-Core**: PACKET_FANOUT for automatic load balancing
+- **Kernel BPF**: Filtering at kernel level for efficiency
+- **Simple Deployment**: Single binary, YAML config, no dependencies
+- **Pure Rust**: Memory-safe implementation with tokio async
 - **MxTac-First**: Designed specifically for MxTac platform integration
 
 ## Architecture
@@ -126,14 +118,14 @@ sudo mxwatch --config /etc/mxwatch/config.yaml
 flowchart TB
     subgraph NIC["Network Interface Card"]
         style NIC fill:#e3f2fd,stroke:#1565c0
-        HWFILTER[Hardware Filters<br/>Port 53, 80, 443]
-        THROUGHPUT[10M+ packets/second]
+        PACKETS[Network Packets<br/>1-5M pps]
     end
 
-    subgraph Kernel["PF_RING Kernel Module"]
+    subgraph Kernel["Linux Kernel - AF_PACKET"]
         style Kernel fill:#e8f5e9,stroke:#2e7d32
-        BUFFER[Circular Buffer<br/>Lock-free]
-        PERCPU[Per-CPU Rings]
+        BPF[BPF Filter<br/>Port 53, 80, 443]
+        RING[PACKET_MMAP<br/>Zero-Copy Ring]
+        FANOUT[PACKET_FANOUT<br/>Load Balancing]
     end
 
     subgraph Agent["MxWatch Agent - Rust"]
@@ -170,8 +162,10 @@ flowchart TB
         API[Ingestion API]
     end
 
-    NIC -->|Zero-Copy DMA| Kernel
-    Kernel -->|mmap| Workers
+    PACKETS --> BPF
+    BPF --> RING
+    RING --> FANOUT
+    FANOUT -->|mmap<br/>Zero-Copy| Workers
     Workers --> Parsers
     Parsers --> Detection
     Detection --> BUILDER
@@ -191,49 +185,50 @@ flowchart TB
 
 ## Resource Requirements
 
-| Resource | Minimum | Recommended (10 Gbps) | High-Performance (100 Gbps) |
-|----------|---------|----------------------|----------------------------|
-| **CPU** | 2 cores | 8 cores | 16 cores |
-| **Memory** | 60 MB | 120 MB | 240 MB |
-| **Disk** | 100 MB (binary) | 1 GB (with logs) | 10 GB (with logs) |
-| **Network Throughput** | 100 Mbps | 10 Gbps | 100 Gbps |
-| **Packet Rate** | 10K pps | 1.5M pps | 14.8M pps |
-| **Privileges** | CAP_NET_RAW | root (PF_RING) | root (PF_RING ZC) |
+| Resource | Minimum | Recommended | High-Performance |
+|----------|---------|-------------|------------------|
+| **CPU** | 2 cores | 4 cores | 8 cores |
+| **Memory** | 40 MB | 60 MB | 120 MB |
+| **Disk** | 50 MB (binary) | 1 GB (with logs) | 10 GB (with logs) |
+| **Network Throughput** | 100 Mbps | 1 Gbps | 10 Gbps |
+| **Packet Rate** | 10K pps | 150K pps | 1.5M pps |
+| **Privileges** | CAP_NET_RAW | CAP_NET_RAW | CAP_NET_RAW |
 
 ## Platform Support
 
 | Platform | Architecture | Capture Engine | Performance | Status |
 |----------|--------------|----------------|-------------|--------|
-| **Linux** | amd64, arm64 | **PF_RING** | 10M+ pps | ✅ Planned (Primary) |
+| **Linux** | amd64, arm64 | **AF_PACKET + MMAP** | 1-5M pps | ✅ Planned (Primary) |
 | **Windows** | amd64 | libpcap/Npcap | 100K pps | ✅ Planned (Fallback) |
 | **macOS** | amd64, arm64 | libpcap/BPF | 100K pps | ✅ Planned (Fallback) |
 
 ## Comparison with Zeek
 
-| Feature | Zeek | MxWatch (PF_RING) |
-|---------|------|-------------------|
-| **Binary Size** | ~50 MB | ~8 MB |
-| **Memory Usage** | 300-800 MB | 15-120 MB (scales with cores) |
-| **CPU Usage** | 10-20% (single core) | 10-20% (8 cores) |
-| **Packet Capture** | libpcap (100K pps) | PF_RING (10M+ pps) |
-| **Max Throughput** | ~1 Gbps | 100 Gbps |
-| **Packet Loss** | 10-30% @ 1 Gbps | < 0.1% @ 10 Gbps |
-| **Multi-Core Support** | Limited | Native (linear scaling) |
-| **Hardware Offload** | No | Yes (NIC filtering) |
+| Feature | Zeek | MxWatch (AF_PACKET) |
+|---------|------|---------------------|
+| **Binary Size** | ~50 MB | ~5 MB |
+| **Memory Usage** | 300-800 MB | 40-120 MB (scales with cores) |
+| **CPU Usage** | 10-20% (single core) | 5-15% (4-8 cores) |
+| **Packet Capture** | libpcap (100K pps) | AF_PACKET + MMAP (1-5M pps) |
+| **Max Throughput** | ~1 Gbps | 10 Gbps |
+| **Packet Loss** | 10-30% @ 1 Gbps | 1-5% @ 10 Gbps |
+| **Multi-Core Support** | Limited | Native (PACKET_FANOUT) |
+| **Kernel BPF** | Yes | Yes |
 | **Deployment** | Cluster/Standalone | Single Binary |
+| **Dependencies** | Many (libpcap, Python, etc.) | None (built into Linux kernel) |
 | **Output Format** | Zeek Logs | OCSF Native |
 | **Protocol Coverage** | 100+ protocols | 10-15 protocols (focused) |
-| **Dependencies** | Many | PF_RING kernel module |
 | **Configuration** | Zeek Scripts | YAML |
+| **Installation** | Complex | Simple (single binary) |
 
 ## Development Roadmap
 
-### Phase 1: Core Agent with PF_RING (12 weeks)
+### Phase 1: Core Agent with AF_PACKET (10 weeks)
 
 - [x] Project setup and structure
-- [ ] PF_RING FFI bindings (Rust → C library)
-- [ ] Multi-core packet capture with CPU affinity
-- [ ] Hardware filter configuration
+- [ ] AF_PACKET + MMAP implementation (pure Rust)
+- [ ] PACKET_FANOUT multi-core load balancing
+- [ ] BPF filter integration
 - [ ] libpcap fallback for non-Linux platforms
 - [ ] HTTP/HTTPS protocol parser (custom)
 - [ ] DNS protocol parser (trust-dns-proto)
@@ -249,12 +244,11 @@ flowchart TB
 - [ ] Lateral movement detection (east-west traffic)
 - [ ] DNS tunneling detection (entropy analysis)
 
-### Phase 3: Production Ready (6 weeks)
+### Phase 3: Production Ready (4 weeks)
 
-- [ ] PF_RING kernel module packaging
 - [ ] Cross-platform builds (Linux/Windows/macOS)
 - [ ] Installer packages (DEB, RPM, MSI)
-- [ ] Performance benchmarks (1/10/40/100 Gbps)
+- [ ] Performance benchmarks (100M/1G/10G)
 - [ ] Documentation (deployment, tuning)
 - [ ] Testing suite
 - [ ] Deployment automation
