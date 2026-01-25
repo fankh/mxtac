@@ -27,24 +27,33 @@ flowchart TB
     subgraph Network["Network Traffic"]
         style Network fill:#e3f2fd,stroke:#1565c0
         NIC[Network Interface Card]
-        PACKETS[10M+ pps]
+        PACKETS[1-5M pps]
     end
 
     subgraph Agent["MxWatch Agent"]
         style Agent fill:#e8f5e9,stroke:#2e7d32
 
-        subgraph Capture["High-Performance Capture"]
+        subgraph Capture["Packet Capture"]
             style Capture fill:#fff3e0,stroke:#ef6c00
-            PFRING[PF_RING Zero-Copy]
-            HWFILTER[Hardware Filters]
-            CLUSTER[Multi-Core Cluster]
+            AFPACKET[AF_PACKET + MMAP]
+            BPF[BPF Filter]
+            FANOUT[PACKET_FANOUT]
         end
 
         subgraph Parsers["Protocol Parsers"]
             style Parsers fill:#f3e5f5,stroke:#7b1fa2
-            HTTP[HTTP/HTTPS Parser]
-            DNS[DNS Parser]
-            TLS[TLS Parser]
+            HTTP[HTTP/HTTPS]
+            DNS[DNS]
+            TLS[TLS/SSL]
+            SMB[SMB/CIFS]
+            SSH[SSH]
+            FTP[FTP/SFTP]
+            SMTP[SMTP]
+            LDAP[LDAP]
+            RDP[RDP]
+            DHCP[DHCP]
+            NTP[NTP]
+            ICMP[ICMP]
         end
 
         subgraph Detection["Detection Engine"]
@@ -72,10 +81,10 @@ flowchart TB
         API[Ingestion API]
     end
 
-    NIC --> HWFILTER
-    HWFILTER --> PFRING
-    PFRING --> CLUSTER
-    CLUSTER --> Parsers
+    NIC --> BPF
+    BPF --> AFPACKET
+    AFPACKET --> FANOUT
+    FANOUT --> Parsers
     Parsers --> Detection
     Detection --> Core
     Core --> Output
@@ -86,8 +95,8 @@ flowchart TB
 
 | Layer | Components | Responsibility |
 |-------|------------|----------------|
-| **Capture** | PF_RING, Hardware Filters, Multi-Core Cluster | Zero-copy packet capture at 10M+ pps |
-| **Parsing** | HTTP, DNS, TLS Parsers | Extract protocol data |
+| **Capture** | AF_PACKET + MMAP, BPF Filter, PACKET_FANOUT | Zero-copy packet capture at 1-5M pps |
+| **Parsing** | HTTP/HTTPS, DNS, TLS/SSL, SMB, SSH, FTP, SMTP, LDAP, RDP, DHCP, NTP, ICMP | Extract protocol data |
 | **Detection** | C2, Port Scan, Exfiltration Detectors | Identify threats |
 | **Processing** | OCSF Builder, Enrichment | Transform to OCSF |
 | **Buffering** | Event Buffer | Optimize output |
@@ -97,33 +106,33 @@ flowchart TB
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| **Throughput** | 10M+ pps | With PF_RING on 8-core system |
-| **Network Speed** | Up to 100 Gbps | Hardware-dependent |
-| **Packet Loss** | < 0.1% | Under normal conditions |
-| **Latency** | < 1 μs | Per-packet processing |
-| **CPU Usage** | 10-20% | 8 cores @ 10 Gbps |
-| **Memory** | 15-120 MB | Scales with throughput |
+| **Throughput** | 1-5M pps | With AF_PACKET on 4-8 core system |
+| **Network Speed** | Up to 10 Gbps | Kernel-dependent |
+| **Packet Loss** | 1-5% | Under normal conditions @ 10 Gbps |
+| **Latency** | < 10 μs | Per-packet processing |
+| **CPU Usage** | 5-15% | 4-8 cores @ 1-10 Gbps |
+| **Memory** | 40-120 MB | Scales with cores and buffer size |
 
 ---
 
 ## 2. Component Design
 
-### 2.1 Packet Capture (PF_RING)
+### 2.1 Packet Capture (AF_PACKET + MMAP)
 
-**Technology**: PF_RING (Linux), fallback to libpcap (Windows/macOS)
+**Technology**: AF_PACKET + MMAP (Linux), libpcap (Windows/macOS)
 
 **Capture Architecture**:
-- **Primary**: PF_RING zero-copy kernel module (Linux)
-- **Fallback**: libpcap for non-Linux platforms
-- **Performance**: 10M+ packets/second vs 100K for libpcap
+- **Primary**: AF_PACKET with PACKET_MMAP (Linux kernel built-in)
+- **Fallback**: libpcap for Windows/macOS
+- **Performance**: 1-5M packets/second (10x better than libpcap)
 
 **Key Features**:
-- Zero-copy packet delivery (NIC → userspace)
-- Hardware filtering offload to NIC
-- Multi-core load balancing (per-flow clustering)
-- Sub-microsecond latency
-- Hardware timestamping
-- DNA/ZC mode for wire-speed capture
+- Zero-copy packet delivery via memory-mapped ring buffer
+- Built into Linux kernel (no modules to install)
+- Multi-core load balancing with PACKET_FANOUT
+- BPF filtering at kernel level
+- High-resolution timestamps
+- Pure Rust implementation (no FFI)
 
 **Architecture**:
 
@@ -132,27 +141,21 @@ flowchart TB
 flowchart TB
     subgraph NIC["Network Interface Card"]
         style NIC fill:#e3f2fd,stroke:#1565c0
-
-        subgraph HWFilter["Hardware Filters"]
-            style HWFilter fill:#fff3e0,stroke:#ef6c00
-            PORT[Port Filtering<br/>TCP/UDP]
-            PROTO[Protocol Filtering]
-            IP[IP Address Filtering]
-        end
+        PACKETS[Network Packets<br/>1-5M pps]
     end
 
-    subgraph Kernel["PF_RING Kernel Module"]
+    subgraph Kernel["Linux Kernel - AF_PACKET"]
         style Kernel fill:#e8f5e9,stroke:#2e7d32
 
-        subgraph Ring["Circular Buffer"]
+        subgraph Ring["PACKET_MMAP Ring Buffer"]
             style Ring fill:#f3e5f5,stroke:#7b1fa2
-            SLOTS[32K-256K slots]
-            LOCKFREE[Lock-free]
-            PERCPU[Per-CPU rings]
+            RINGBUF[Circular Buffer<br/>Zero-Copy]
+            BPF[BPF Filter]
+            FANOUT[PACKET_FANOUT<br/>Load Balancing]
         end
     end
 
-    subgraph Agent["MxWatch Agent - Userspace"]
+    subgraph Agent["MxWatch Agent - Rust"]
         style Agent fill:#fff9c4,stroke:#f57f17
 
         subgraph Workers["Multi-Core Workers"]
@@ -162,67 +165,60 @@ flowchart TB
             CORE2[Core 2]
             CORE3[Core 3]
         end
-
-        subgraph Features["Worker Features"]
-            style Features fill:#e0f2f1,stroke:#00695c
-            AFFINITY[CPU Affinity Pinning]
-            BALANCE[Per-Flow Load Balancing]
-        end
     end
 
-    HWFilter -->|Zero-Copy DMA| Ring
-    Ring -->|mmap| Workers
-    Workers --> Features
+    PACKETS --> Ring
+    Ring -->|mmap<br/>Zero-Copy| Workers
 ```
 
 **Implementation**:
 
 ```rust
-use pfring_sys::*;
-use std::ffi::CString;
+use nix::sys::socket::*;
+use nix::libc::{self, ETH_P_ALL};
+use std::os::unix::io::RawFd;
 use tokio::sync::mpsc;
 
 pub struct PacketCapture {
-    rings: Vec<PFRingWorker>,
+    workers: Vec<AfPacketWorker>,
     config: CaptureConfig,
     packet_tx: mpsc::Sender<RawPacket>,
 }
 
-pub struct PFRingWorker {
-    ring: *mut pfring,
+pub struct AfPacketWorker {
+    socket_fd: RawFd,
+    ring_buffer: *mut u8,
+    ring_size: usize,
     core_id: usize,
     interface: String,
-    cluster_id: u16,
 }
 
 pub struct CaptureConfig {
     pub interface: String,
-    pub workers: usize,
-    pub snaplen: u32,
-    pub cluster_id: u16,
-    pub enable_hw_timestamp: bool,
-    pub enable_zero_copy: bool,
-    pub ring_slots: u32,
+    pub workers: usize,           // Number of CPU cores
+    pub block_size: u32,          // MMAP block size (4096)
+    pub frame_size: u32,          // Frame size (2048)
+    pub block_count: u32,         // Number of blocks (256)
+    pub fanout_group: u16,        // PACKET_FANOUT group ID
 }
 
 impl PacketCapture {
     pub fn new(config: CaptureConfig) -> Result<Self, Error> {
         let (packet_tx, _) = mpsc::channel(100000);
-        let mut rings = Vec::new();
+        let mut workers = Vec::new();
 
-        // Create one PF_RING per CPU core
+        // Create one AF_PACKET socket per CPU core
         for core_id in 0..config.workers {
-            let worker = PFRingWorker::new(
+            let worker = AfPacketWorker::new(
                 &config.interface,
                 core_id,
-                config.cluster_id,
-                config.snaplen,
+                &config,
             )?;
-            rings.push(worker);
+            workers.push(worker);
         }
 
         Ok(Self {
-            rings,
+            workers,
             config,
             packet_tx,
         })
@@ -232,7 +228,7 @@ impl PacketCapture {
         let mut handles = Vec::new();
 
         // Spawn one tokio task per core
-        for mut worker in self.rings.drain(..) {
+        for mut worker in self.workers.drain(..) {
             let tx = self.packet_tx.clone();
 
             let handle = tokio::spawn(async move {
@@ -251,141 +247,174 @@ impl PacketCapture {
     }
 }
 
-impl PFRingWorker {
+impl AfPacketWorker {
     pub fn new(
         interface: &str,
         core_id: usize,
-        cluster_id: u16,
-        snaplen: u32,
+        config: &CaptureConfig,
     ) -> Result<Self, Error> {
         unsafe {
-            let iface = CString::new(interface)?;
-
-            // Open PF_RING with high-performance flags
-            let ring = pfring_open(
-                iface.as_ptr(),
-                snaplen,
-                PF_RING_PROMISC |           // Promiscuous mode
-                PF_RING_TIMESTAMP |         // Hardware timestamps
-                PF_RING_DNA |               // Direct NIC Access
-                PF_RING_ZC |                // Zero Copy
-                PF_RING_HW_TIMESTAMP        // NIC-level timestamps
+            // Create raw AF_PACKET socket
+            let socket_fd = libc::socket(
+                libc::AF_PACKET,
+                libc::SOCK_RAW,
+                (ETH_P_ALL as u16).to_be() as i32
             );
 
-            if ring.is_null() {
-                return Err(Error::PFRingOpen(
-                    format!("Failed to open PF_RING on {}", interface)
-                ));
+            if socket_fd < 0 {
+                return Err(Error::SocketError("Failed to create AF_PACKET socket"));
             }
 
-            // Set application name
-            let app_name = CString::new("mxwatch")?;
-            pfring_set_application_name(ring, app_name.as_ptr());
+            // Get interface index
+            let if_index = Self::get_interface_index(interface)?;
 
-            // Configure clustering (per-flow load balancing)
-            pfring_set_cluster(
-                ring,
-                cluster_id,
-                pfring_cluster_type::cluster_per_flow_5_tuple
+            // Setup PACKET_MMAP ring buffer
+            let req = libc::tpacket_req {
+                tp_block_size: config.block_size,
+                tp_frame_size: config.frame_size,
+                tp_block_nr: config.block_count,
+                tp_frame_nr: (config.block_count * config.block_size) / config.frame_size,
+            };
+
+            // Set socket options for PACKET_MMAP (version 2)
+            let version = libc::TPACKET_V2;
+            libc::setsockopt(
+                socket_fd,
+                libc::SOL_PACKET,
+                libc::PACKET_VERSION,
+                &version as *const _ as *const libc::c_void,
+                std::mem::size_of::<i32>() as u32,
             );
 
-            // Set socket mode to recv-only (no send)
-            pfring_set_socket_mode(ring, recv_only_mode);
+            // Configure ring buffer
+            libc::setsockopt(
+                socket_fd,
+                libc::SOL_PACKET,
+                libc::PACKET_RX_RING,
+                &req as *const _ as *const libc::c_void,
+                std::mem::size_of::<libc::tpacket_req>() as u32,
+            );
 
-            // Enable ring
-            pfring_enable_ring(ring);
+            // Setup PACKET_FANOUT for load balancing across cores
+            let fanout_arg = (config.fanout_group as u32) |
+                            (libc::PACKET_FANOUT_HASH << 16);
+            libc::setsockopt(
+                socket_fd,
+                libc::SOL_PACKET,
+                libc::PACKET_FANOUT,
+                &fanout_arg as *const _ as *const libc::c_void,
+                std::mem::size_of::<u32>() as u32,
+            );
+
+            // Memory-map the ring buffer (zero-copy)
+            let ring_size = (req.tp_block_size * req.tp_block_nr) as usize;
+            let ring_buffer = libc::mmap(
+                std::ptr::null_mut(),
+                ring_size,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_SHARED,
+                socket_fd,
+                0,
+            ) as *mut u8;
+
+            if ring_buffer == libc::MAP_FAILED as *mut u8 {
+                libc::close(socket_fd);
+                return Err(Error::MmapError("Failed to mmap ring buffer"));
+            }
+
+            // Bind socket to interface
+            let sll = libc::sockaddr_ll {
+                sll_family: libc::AF_PACKET as u16,
+                sll_protocol: (ETH_P_ALL as u16).to_be(),
+                sll_ifindex: if_index,
+                sll_hatype: 0,
+                sll_pkttype: 0,
+                sll_halen: 0,
+                sll_addr: [0; 8],
+            };
+
+            libc::bind(
+                socket_fd,
+                &sll as *const _ as *const libc::sockaddr,
+                std::mem::size_of::<libc::sockaddr_ll>() as u32,
+            );
 
             Ok(Self {
-                ring,
+                socket_fd,
+                ring_buffer,
+                ring_size,
                 core_id,
                 interface: interface.to_string(),
-                cluster_id,
             })
         }
     }
 
+    fn get_interface_index(interface: &str) -> Result<i32, Error> {
+        use std::ffi::CString;
+        unsafe {
+            let iface = CString::new(interface)?;
+            let mut ifr: libc::ifreq = std::mem::zeroed();
+            libc::strcpy(ifr.ifr_name.as_mut_ptr(), iface.as_ptr());
+
+            let sock = libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0);
+            libc::ioctl(sock, libc::SIOCGIFINDEX, &mut ifr);
+            libc::close(sock);
+
+            Ok(ifr.ifr_ifru.ifru_ivalue)
+        }
+    }
+
     pub async fn run(&mut self, tx: mpsc::Sender<RawPacket>) {
-        // Pin this thread to specific CPU core
-        self.set_cpu_affinity();
+        let mut frame_offset = 0;
+        let frame_size = 2048; // tp_frame_size
 
-        unsafe {
-            let mut hdr: pfring_pkthdr = std::mem::zeroed();
-            let mut buffer = vec![0u8; 65535];
+        loop {
+            unsafe {
+                let frame_ptr = self.ring_buffer.add(frame_offset);
+                let hdr = frame_ptr as *mut libc::tpacket2_hdr;
 
-            loop {
-                // Non-blocking receive
-                let rc = pfring_recv(
-                    self.ring,
-                    buffer.as_mut_ptr(),
-                    buffer.len() as u32,
-                    &mut hdr,
-                    1  // wait_for_packet
-                );
-
-                match rc {
-                    1 => {
-                        // Packet received
-                        let packet = RawPacket {
-                            data: buffer[..hdr.caplen as usize].to_vec(),
-                            timestamp: hdr.ts.tv_sec as i64,
-                            timestamp_ns: hdr.ts.tv_usec as i64 * 1000,
-                            length: hdr.len as usize,
-                            core_id: self.core_id,
-                            hash: hdr.extended_hdr.pkt_hash,
-                        };
-
-                        if tx.send(packet).await.is_err() {
-                            break; // Channel closed
-                        }
-                    }
-                    0 => {
-                        // No packet, yield to tokio runtime
-                        tokio::task::yield_now().await;
-                    }
-                    _ => {
-                        eprintln!("PF_RING recv error on core {}", self.core_id);
-                        break;
-                    }
+                // Check if frame is ready (TP_STATUS_USER bit set)
+                while (*hdr).tp_status & libc::TP_STATUS_USER == 0 {
+                    tokio::task::yield_now().await;
                 }
+
+                // Extract packet data
+                let packet_data = frame_ptr.add((*hdr).tp_mac as usize);
+                let packet_len = (*hdr).tp_snaplen as usize;
+
+                let packet = RawPacket {
+                    data: std::slice::from_raw_parts(packet_data, packet_len).to_vec(),
+                    timestamp: (*hdr).tp_sec as i64,
+                    timestamp_ns: (*hdr).tp_nsec as i64,
+                    length: (*hdr).tp_len as usize,
+                    core_id: self.core_id,
+                };
+
+                if tx.send(packet).await.is_err() {
+                    break; // Channel closed
+                }
+
+                // Mark frame as kernel-owned (release for reuse)
+                (*hdr).tp_status = libc::TP_STATUS_KERNEL;
+
+                // Move to next frame
+                frame_offset = (frame_offset + frame_size) % self.ring_size;
             }
         }
     }
 
-    fn set_cpu_affinity(&self) {
-        use nix::sched::{sched_setaffinity, CpuSet};
-        use nix::unistd::Pid;
-
-        let mut cpu_set = CpuSet::new();
-        cpu_set.set(self.core_id).unwrap();
-        sched_setaffinity(Pid::from_raw(0), &cpu_set).unwrap();
-    }
-
-    pub fn add_hw_filter(&mut self, rule: HWFilterRule) -> Result<(), Error> {
-        unsafe {
-            let mut hw_rule: hw_filtering_rule = std::mem::zeroed();
-
-            hw_rule.rule_id = rule.id as u16;
-            hw_rule.rule_action = hw_filter_rule_command::forward_packet_and_stop_rule_evaluation;
-
-            // Set filter fields
-            hw_rule.core_fields.proto = rule.protocol as u8;
-            hw_rule.core_fields.sport = rule.src_port;
-            hw_rule.core_fields.dport = rule.dst_port;
-
-            let rc = pfring_add_hw_rule(self.ring, &mut hw_rule);
-            if rc < 0 {
-                return Err(Error::HWFilterError("Failed to add HW filter"));
-            }
-
-            Ok(())
-        }
+    pub fn set_bpf_filter(&self, filter: &str) -> Result<(), Error> {
+        // Compile and attach BPF filter
+        // (Implementation uses libpcap for BPF compilation, then attaches to socket)
+        Ok(())
     }
 }
 
-impl Drop for PFRingWorker {
+impl Drop for AfPacketWorker {
     fn drop(&mut self) {
         unsafe {
-            pfring_close(self.ring);
+            libc::munmap(self.ring_buffer as *mut libc::c_void, self.ring_size);
+            libc::close(self.socket_fd);
         }
     }
 }
@@ -396,50 +425,19 @@ pub struct RawPacket {
     pub timestamp_ns: i64,   // Nanosecond precision
     pub length: usize,
     pub core_id: usize,      // Which core received this
-    pub hash: u32,           // Hardware hash (for flow tracking)
-}
-
-pub struct HWFilterRule {
-    pub id: u32,
-    pub protocol: u8,    // 6=TCP, 17=UDP
-    pub src_port: u16,
-    pub dst_port: u16,
 }
 ```
 
-**Hardware Filter Configuration**:
+**BPF Filter Configuration**:
 
 ```rust
 impl PacketCapture {
-    pub fn configure_hw_filters(&mut self) -> Result<(), Error> {
-        // Filter 1: HTTPS traffic (port 443)
-        for worker in &mut self.rings {
-            worker.add_hw_filter(HWFilterRule {
-                id: 1,
-                protocol: 6,  // TCP
-                src_port: 0,  // Any
-                dst_port: 443,
-            })?;
-        }
+    pub fn configure_bpf_filters(&mut self) -> Result<(), Error> {
+        // BPF filter for HTTP/HTTPS/DNS traffic only
+        let filter = "tcp port 80 or tcp port 443 or udp port 53";
 
-        // Filter 2: DNS traffic (port 53)
-        for worker in &mut self.rings {
-            worker.add_hw_filter(HWFilterRule {
-                id: 2,
-                protocol: 17, // UDP
-                src_port: 0,
-                dst_port: 53,
-            })?;
-        }
-
-        // Filter 3: HTTP traffic (port 80)
-        for worker in &mut self.rings {
-            worker.add_hw_filter(HWFilterRule {
-                id: 3,
-                protocol: 6,  // TCP
-                src_port: 0,
-                dst_port: 80,
-            })?;
+        for worker in &mut self.workers {
+            worker.set_bpf_filter(filter)?;
         }
 
         Ok(())
@@ -452,40 +450,61 @@ impl PacketCapture {
 ```yaml
 capture:
   interface: eth0
-  engine: pfring
+  engine: afpacket        # AF_PACKET + MMAP (Linux)
 
-  pfring:
-    workers: 8              # CPU cores to use
-    snaplen: 1536           # Bytes per packet
-    cluster_id: 1
-    cluster_type: per_flow_5_tuple
-    enable_hw_timestamp: true
-    enable_zero_copy: true
-    ring_slots: 65536       # Circular buffer size
+  afpacket:
+    workers: 8            # CPU cores to use
+    block_size: 4096      # MMAP block size
+    frame_size: 2048      # Frame size
+    block_count: 256      # Number of blocks
+    fanout_group: 1       # PACKET_FANOUT group ID
 
-    # Hardware filters (NIC offload)
-    hw_filters:
-      - id: 1
-        protocol: tcp
-        dst_port: 443
+    # BPF filter (kernel-level filtering)
+    bpf_filter: "tcp port 80 or tcp port 443 or udp port 53"
 
-      - id: 2
-        protocol: udp
-        dst_port: 53
-
-      - id: 3
-        protocol: tcp
-        dst_port: 80
+output:
+  http:
+    url: https://mxtac.example.com/api/v1/events
+    batch_size: 1000
 ```
 
 **Dependencies** (`Cargo.toml`):
 
 ```toml
 [dependencies]
-pfring-sys = "0.1"      # FFI bindings to PF_RING C library
-nix = "0.27"            # CPU affinity, POSIX APIs
+nix = "0.27"            # POSIX APIs (socket, mmap, ioctl)
+libc = "0.2"            # Linux syscalls
 tokio = { version = "1.35", features = ["full"] }
+serde = "1.0"           # Serialization
+serde_yaml = "0.9"      # YAML config parsing
 ```
+
+## 2. Component Design
+
+### 2.1 Protocol Coverage
+
+MxWatch supports parsing of 12+ network protocols covering the most common attack vectors:
+
+| Protocol | Port(s) | Priority | ATT&CK Coverage | Use Case |
+|----------|---------|----------|-----------------|----------|
+| **HTTP/HTTPS** | 80, 443, 8080 | P0 | T1071.001 (Web Protocols) | Web traffic, API calls, C2 |
+| **DNS** | 53 | P0 | T1071.004 (DNS), T1568 (Tunneling) | Name resolution, tunneling, DGA |
+| **TLS/SSL** | 443, 8443 | P0 | T1573 (Encrypted Channel) | Certificate analysis, weak ciphers |
+| **SMB/CIFS** | 445, 139 | P1 | T1021.002 (SMB), T1570 (Lateral) | File sharing, lateral movement |
+| **SSH** | 22 | P1 | T1021.004 (SSH), T1110 (Brute Force) | Remote access, tunneling |
+| **FTP/SFTP** | 21, 22 | P2 | T1071.002 (File Protocols) | File transfer, data exfiltration |
+| **SMTP** | 25, 587, 465 | P2 | T1071.003 (Mail Protocols) | Email traffic, phishing, exfiltration |
+| **LDAP** | 389, 636 | P2 | T1087 (Account Discovery) | Directory queries, reconnaissance |
+| **RDP** | 3389 | P1 | T1021.001 (RDP) | Remote desktop, lateral movement |
+| **DHCP** | 67, 68 | P3 | T1557 (MITM) | Network discovery, rogue DHCP |
+| **NTP** | 123 | P3 | T1108 (Time-based Evasion) | Time sync, DDoS amplification |
+| **ICMP** | - | P2 | T1018 (Remote System Discovery) | Network recon, covert channels |
+
+**Priority Levels**:
+- **P0**: Critical for detection (always parsed)
+- **P1**: High-value (parsed by default)
+- **P2**: Medium-value (configurable)
+- **P3**: Low-value (optional)
 
 ### 2.2 HTTP/HTTPS Parser
 
@@ -777,7 +796,158 @@ func (tp *TLSParser) isWeakCipher(cipher uint16) bool {
 }
 ```
 
-### 2.5 C2 Beacon Detector
+### 2.5 SMB/CIFS Parser
+
+**Monitored Fields**:
+- SMB version (v1, v2, v3)
+- Command types (open, read, write, delete)
+- File/share access patterns
+- Authentication attempts (NTLM, Kerberos)
+- Named pipes
+
+**Key Features**:
+- Lateral movement detection
+- Ransomware activity (mass file operations)
+- Credential abuse detection
+- Suspicious file access patterns
+
+**ATT&CK Coverage**: T1021.002 (SMB/Windows Admin Shares), T1570 (Lateral Tool Transfer)
+
+### 2.6 SSH Parser
+
+**Monitored Fields**:
+- SSH version
+- Authentication methods (password, key)
+- Authentication attempts (success/failure)
+- User accounts
+- Session duration
+
+**Key Features**:
+- Brute force detection
+- Suspicious login patterns
+- Tunnel detection
+- Weak algorithm detection
+
+**ATT&CK Coverage**: T1021.004 (SSH), T1110 (Brute Force), T1572 (Protocol Tunneling)
+
+### 2.7 FTP/SFTP Parser
+
+**Monitored Fields**:
+- Commands (USER, PASS, RETR, STOR, LIST)
+- File transfers (upload/download)
+- Authentication attempts
+- Data channel connections
+
+**Key Features**:
+- Data exfiltration detection
+- Anonymous FTP usage
+- Credential brute forcing
+- Suspicious file transfers
+
+**ATT&CK Coverage**: T1071.002 (File Transfer Protocols), T1048 (Exfiltration)
+
+### 2.8 SMTP Parser
+
+**Monitored Fields**:
+- SMTP commands (HELO, MAIL FROM, RCPT TO)
+- Sender/recipient addresses
+- Message size
+- Attachment indicators
+- Authentication
+
+**Key Features**:
+- Phishing detection
+- Data exfiltration via email
+- SPAM detection
+- Malicious attachment indicators
+
+**ATT&CK Coverage**: T1071.003 (Mail Protocols), T1566 (Phishing), T1048.003 (Exfiltration Over Email)
+
+### 2.9 LDAP Parser
+
+**Monitored Fields**:
+- LDAP queries (search, bind)
+- Query filters
+- Attributes requested
+- Authentication attempts
+- Response sizes
+
+**Key Features**:
+- Account enumeration detection
+- LDAP injection detection
+- Reconnaissance activity
+- Credential dumping indicators
+
+**ATT&CK Coverage**: T1087 (Account Discovery), T1069 (Permission Groups Discovery)
+
+### 2.10 RDP Parser
+
+**Monitored Fields**:
+- Connection attempts
+- Authentication status
+- User accounts
+- Client information
+- Encryption level
+
+**Key Features**:
+- Brute force detection
+- Lateral movement tracking
+- Suspicious remote access
+- Session anomalies
+
+**ATT&CK Coverage**: T1021.001 (Remote Desktop Protocol), T1110 (Brute Force)
+
+### 2.11 DHCP Parser
+
+**Monitored Fields**:
+- DHCP message types (DISCOVER, OFFER, REQUEST, ACK)
+- Client MAC addresses
+- Assigned IP addresses
+- DHCP server identity
+- Lease information
+
+**Key Features**:
+- Rogue DHCP server detection
+- Network mapping
+- Device fingerprinting
+- DHCP spoofing detection
+
+**ATT&CK Coverage**: T1557 (Adversary-in-the-Middle), T1018 (Remote System Discovery)
+
+### 2.12 NTP Parser
+
+**Monitored Fields**:
+- NTP version
+- Mode (client, server)
+- Stratum level
+- Time offset
+- Packet rates
+
+**Key Features**:
+- NTP amplification attack detection
+- Time synchronization anomalies
+- Rogue NTP server detection
+
+**ATT&CK Coverage**: T1498 (Network DoS)
+
+### 2.13 ICMP Parser
+
+**Monitored Fields**:
+- ICMP type/code
+- Payload size
+- Source/destination
+- Packet rate
+- Payload patterns
+
+**Key Features**:
+- Covert channel detection
+- Network reconnaissance
+- Ping sweeps
+- ICMP tunneling
+
+**ATT&CK Coverage**: T1018 (Remote System Discovery), T1095 (Non-Application Layer Protocol)
+
+### 2.14 C2 Beacon Detector
 
 **Detection Methods**:
 - Fixed interval beaconing
@@ -1058,37 +1228,58 @@ func (psd *PortScanDetector) TrackConnection(conn Connection) {
 
 ### 5.1 Packet Capture Optimization
 
-**Standard libpcap**:
-- Use BPF filters to reduce packet processing
-- Zero-copy capture where supported
-- Packet buffers to handle bursts
-- Drop packets under extreme load (rather than crash)
+**Primary: AF_PACKET + MMAP** (Linux):
+- Zero-copy via memory-mapped ring buffer
+- PACKET_FANOUT for multi-core load balancing
+- BPF filters at kernel level (minimal overhead)
+- No kernel modules required (built into Linux)
+- Performance: ~1-5M packets/second
+
+**Fallback: libpcap** (Windows/macOS):
+- Standard packet capture
+- BPF filters for basic filtering
+- Cross-platform compatibility
 - Performance: ~100K-500K packets/second
-
-**High-Performance: PF_RING** (Recommended for 10+ Gbps networks):
-
-PF_RING is a Linux kernel module providing zero-copy packet capture with 100x better performance than libpcap.
-
-**Key Benefits**:
-- **Throughput**: 10M+ packets/second (vs 100K for libpcap)
-- **Zero-copy**: Direct NIC-to-userspace packet delivery
-- **Multi-core**: Linear scaling across CPU cores
-- **Hardware offload**: NIC-level filtering support
-- **Low latency**: Sub-microsecond packet processing
 
 **Performance Comparison**:
 
-| Engine | Throughput | CPU Usage | Packet Loss | Use Case |
-|--------|------------|-----------|-------------|----------|
-| **libpcap** | 100K pps | 80-100% | 10-30% | < 1 Gbps |
-| **AF_PACKET + MMAP** | 1M pps | 40-60% | 1-5% | 1-5 Gbps |
-| **PF_RING** | 10M+ pps | 10-20% | < 0.1% | 10-100 Gbps |
-| **PF_RING + ZC** | 14.8M pps | 5-10% | 0% | 100+ Gbps |
+| Engine | Throughput | CPU Usage | Packet Loss | Dependencies | Use Case |
+|--------|------------|-----------|-------------|--------------|----------|
+| **libpcap** | 100K pps | 80-100% | 10-30% | None | < 1 Gbps, Windows/macOS |
+| **AF_PACKET + MMAP** | 1-5M pps | 10-30% | 1-5% | Linux kernel | 1-10 Gbps, Linux |
 
-**Rust Implementation** (FFI to PF_RING C library):
+**Key Optimizations for AF_PACKET + MMAP**:
 
-```rust
-use pfring_sys::*;
+1. **PACKET_FANOUT** - Automatically distributes packets across CPU cores
+2. **BPF Filtering** - Kernel-level filtering before copying to userspace
+3. **Zero-Copy mmap()** - Direct access to kernel ring buffer
+4. **Async I/O** - Non-blocking packet processing with tokio
+5. **Batch Processing** - Process multiple packets per syscall
+
+**Performance Targets**:
+
+| Network Speed | Workers | Expected Throughput | CPU Usage | Memory |
+|---------------|---------|---------------------|-----------|--------|
+| **100 Mbps** | 2 | 10K pps | 5-10% | 40 MB |
+| **1 Gbps** | 4 | 150K pps | 10-15% | 60 MB |
+| **10 Gbps** | 8 | 1.5M pps | 20-30% | 120 MB |
+
+**When to Use AF_PACKET + MMAP** (Linux):
+- ✅ Network traffic 100 Mbps - 10 Gbps
+- ✅ Linux servers (kernel 2.6.27+)
+- ✅ No kernel module installation allowed
+- ✅ Pure Rust implementation required
+- ✅ Multi-core systems (4-8 cores)
+
+**When to Use libpcap** (Cross-platform):
+- ✅ Windows or macOS deployment
+- ✅ Network traffic < 100 Mbps
+- ✅ Simple deployment requirements
+- ✅ Limited CPU resources (1-2 cores)
+
+### 5.2 Memory Management
+
+Already covered in section 2.1 implementation with `RawPacket` struct and drop trait.
 use std::ffi::CString;
 
 pub struct PFRingCapture {
