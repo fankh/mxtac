@@ -1,0 +1,23 @@
+title: SMB Lateral Movement via PsExec
+id: c2c02497-17b0-4c2d-a3f7-e5a19cf1b88b
+status: stable
+level: high
+description: Detects lateral movement via SMB using PsExec or similar tools.
+logsource:
+  category: network_connection
+  product: windows
+detection:
+  selection:
+    dst_endpoint.port:
+      - 445
+      - 139
+    process.name|contains:
+      - 'psexec'
+      - 'smbexec'
+      - 'wmiexec'
+  condition: selection
+tags:
+  - attack.T1021.002
+  - attack.TA0008
+references:
+  - https://attack.mitre.org/techniques/T1021/002/

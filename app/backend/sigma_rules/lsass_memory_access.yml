@@ -1,0 +1,22 @@
+title: LSASS Memory Access via Process Injection
+id: 0d894093-71bc-43c3-b7e0-01eb5adf38cd
+status: stable
+level: critical
+description: Detects suspicious process access to LSASS memory, indicative of credential dumping.
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    path|endswith: '\lsass.exe'
+  filter:
+    name:
+      - 'csrss.exe'
+      - 'wininit.exe'
+      - 'wmiprvse.exe'
+  condition: selection and not filter
+tags:
+  - attack.T1003.001
+  - attack.TA0006
+references:
+  - https://attack.mitre.org/techniques/T1003/001/

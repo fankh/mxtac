@@ -106,7 +106,7 @@ class RedisStreamQueue(MessageQueue):
     """Redis Streams-based queue. Requires redis-py[hiredis] >= 5.0."""
 
     def __init__(self, redis_url: str) -> None:
-        import redis.asyncio as aioredis  # type: ignore[import-untyped]
+        import valkey.asyncio as aioredis  # type: ignore[import-untyped]
         self._redis = aioredis.from_url(redis_url, decode_responses=True)
         self._tasks: list[asyncio.Task] = []
 
@@ -153,7 +153,7 @@ class RedisStreamQueue(MessageQueue):
         self._tasks.append(task)
 
     async def start(self) -> None:
-        logger.info("RedisStreamQueue started url=%s", settings.redis_url)
+        logger.info("RedisStreamQueue started url=%s", settings.valkey_url)
 
     async def stop(self) -> None:
         for task in self._tasks:
@@ -231,7 +231,7 @@ def create_queue() -> MessageQueue:
     if backend == "kafka":
         return KafkaQueue(getattr(settings, "kafka_bootstrap_servers", "localhost:9092"))
     if backend == "redis":
-        return RedisStreamQueue(settings.redis_url)
+        return RedisStreamQueue(settings.valkey_url)
     return InMemoryQueue()
 
 

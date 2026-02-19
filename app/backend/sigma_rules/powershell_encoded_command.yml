@@ -1,0 +1,21 @@
+title: PowerShell Encoded Command Execution
+id: b6f98540-ed62-4856-b8b7-2a2d7b80f5b7
+status: stable
+level: high
+description: Detects execution of PowerShell with Base64-encoded commands, commonly used for obfuscation.
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    cmd_line|contains:
+      - '-enc'
+      - '-EncodedCommand'
+      - '-e '
+    name|endswith: 'powershell.exe'
+  condition: selection
+tags:
+  - attack.T1059.001
+  - attack.TA0002
+references:
+  - https://attack.mitre.org/techniques/T1059/001/

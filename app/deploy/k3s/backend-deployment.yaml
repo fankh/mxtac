@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mxtac-backend
+  namespace: mxtac
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: mxtac
+    app.kubernetes.io/component: api
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backend
+        app.kubernetes.io/part-of: mxtac
+        app.kubernetes.io/component: api
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: backend
+          image: mxtac/backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mxtac-secrets
+                  key: database-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mxtac-secrets
+                  key: secret-key
+            - name: VALKEY_URL
+              value: "redis://mxtac-valkey-0.mxtac-valkey.mxtac.svc.cluster.local:6379/0"
+            - name: OPENSEARCH_HOST
+              value: "mxtac-opensearch-0.mxtac-opensearch.mxtac.svc.cluster.local"
+            - name: OPENSEARCH_PORT
+              value: "9200"
+            - name: QUEUE_BACKEND
+              value: "redis"
+            - name: CORS_ORIGINS
+              value: '["https://mxtac.local"]'
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 5
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

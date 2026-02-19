@@ -1,0 +1,20 @@
+title: New Service Creation via sc.exe
+id: e4f1b7cc-28b3-47c8-bb8e-c93f6a8e8d7e
+status: stable
+level: medium
+description: Detects new Windows service creation via sc.exe, a common persistence technique.
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    cmd_line|contains:
+      - 'sc create'
+      - 'sc.exe create'
+      - 'New-Service'
+  condition: selection
+tags:
+  - attack.T1543.003
+  - attack.TA0003
+references:
+  - https://attack.mitre.org/techniques/T1543/003/

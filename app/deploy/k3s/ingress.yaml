@@ -1,0 +1,71 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mxtac-ingress
+  namespace: mxtac
+  labels:
+    app.kubernetes.io/part-of: mxtac
+  annotations:
+    # Traefik (default k3s ingress controller)
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    # Nginx ingress controller (alternative)
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # WebSocket support
+    nginx.ingress.kubernetes.io/websocket-services: mxtac-backend
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
+spec:
+  tls:
+    - hosts:
+        - mxtac.local
+      secretName: mxtac-tls
+  rules:
+    - host: mxtac.local
+      http:
+        paths:
+          # API and WebSocket traffic -> backend
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: mxtac-backend
+                port:
+                  number: 8080
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: mxtac-backend
+                port:
+                  number: 8080
+          - path: /ready
+            pathType: Exact
+            backend:
+              service:
+                name: mxtac-backend
+                port:
+                  number: 8080
+          - path: /docs
+            pathType: Exact
+            backend:
+              service:
+                name: mxtac-backend
+                port:
+                  number: 8080
+          - path: /openapi.json
+            pathType: Exact
+            backend:
+              service:
+                name: mxtac-backend
+                port:
+                  number: 8080
+          # Everything else -> frontend static
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mxtac-frontend
+                port:
+                  number: 80

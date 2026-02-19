@@ -1,13 +1,47 @@
-from fastapi import APIRouter, Query, HTTPException, Path
+from fastapi import APIRouter, Query, HTTPException, Path, Depends
 from typing import Literal
 from math import ceil
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ....core.database import get_db
+from ....core.security import get_current_user
 from ....schemas.detection import Detection, DetectionUpdate, SeverityLevel, DetectionStatus
 from ....schemas.common import PaginatedResponse, Pagination
-from ....services.mock_data import DETECTIONS
+from ....repositories.detection_repo import DetectionRepo
 
 router = APIRouter(prefix="/detections", tags=["detections"])
 
 SortField = Literal["score", "time", "severity", "host", "tactic"]
+
+
+def _detection_to_schema(d) -> dict:
+    """Convert ORM Detection model to schema dict."""
+    return {
+        "id": d.id,
+        "score": d.score,
+        "severity": d.severity,
+        "technique_id": d.technique_id,
+        "technique_name": d.technique_name,
+        "name": d.name,
+        "host": d.host,
+        "tactic": d.tactic,
+        "status": d.status,
+        "time": d.time,
+        "user": d.user,
+        "process": d.process,
+        "rule_name": d.rule_name,
+        "log_source": d.log_source,
+        "event_id": d.event_id,
+        "occurrence_count": d.occurrence_count,
+        "description": d.description,
+        "cvss_v3": d.cvss_v3,
+        "confidence": d.confidence,
+        "tactic_id": d.tactic_id,
+        "related_technique_ids": [],
+        "assigned_to": d.assigned_to,
+        "priority": d.priority,
+    }
 
 
 @router.get("", response_model=PaginatedResponse[Detection])
@@ -21,50 +55,23 @@ async def list_detections(
     search: str | None = Query(None),
     sort: SortField = Query("time"),
     order: Literal["asc", "desc"] = Query("desc"),
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
 ):
-    """
-    List detections with filtering, sorting, and pagination.
-
-    Filters combine with AND logic.
-    """
-    items = list(DETECTIONS)
-
-    # Apply filters
-    if severity:
-        items = [d for d in items if d.severity in severity]
-    if status:
-        items = [d for d in items if d.status in status]
-    if tactic:
-        items = [d for d in items if tactic.lower() in d.tactic.lower()]
-    if host:
-        items = [d for d in items if host.lower() in d.host.lower()]
-    if search:
-        q = search.lower()
-        items = [
-            d for d in items
-            if q in d.name.lower()
-            or q in d.technique_id.lower()
-            or q in d.host.lower()
-        ]
-
-    # Sort
-    reverse = order == "desc"
-    sort_key = {
-        "score": lambda d: d.score,
-        "time": lambda d: d.time,
-        "severity": lambda d: {"critical": 4, "high": 3, "medium": 2, "low": 1}[d.severity],
-        "host": lambda d: d.host,
-        "tactic": lambda d: d.tactic,
-    }[sort]
-    items.sort(key=sort_key, reverse=reverse)
-
-    # Paginate
-    total = len(items)
-    start = (page - 1) * page_size
-    page_items = items[start : start + page_size]
-
+    items, total = await DetectionRepo.list(
+        db,
+        page=page,
+        page_size=page_size,
+        severity=severity,
+        status=status,
+        tactic=tactic,
+        host=host,
+        search=search,
+        sort=sort,
+        order=order,
+    )
     return PaginatedResponse(
-        data=page_items,
+        data=[_detection_to_schema(d) for d in items],
         pagination=Pagination(
             page=page,
             page_size=page_size,
@@ -75,25 +82,25 @@ async def list_detections(
 
 
 @router.get("/{detection_id}", response_model=Detection)
-async def get_detection(detection_id: str = Path(..., description="Detection ID")):
-    """Get full detail for a single detection (used by the slide-out panel)."""
-    for d in DETECTIONS:
-        if d.id == detection_id:
-            return d
-    raise HTTPException(status_code=404, detail=f"Detection {detection_id} not found")
+async def get_detection(
+    detection_id: str = Path(..., description="Detection ID"),
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    d = await DetectionRepo.get(db, detection_id)
+    if not d:
+        raise HTTPException(status_code=404, detail=f"Detection {detection_id} not found")
+    return _detection_to_schema(d)
 
 
 @router.patch("/{detection_id}", response_model=Detection)
 async def update_detection(
     detection_id: str,
     body: DetectionUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
 ):
-    """Update status, assignment, or priority of a detection."""
-    for d in DETECTIONS:
-        if d.id == detection_id:
-            updated = d.model_copy(update=body.model_dump(exclude_none=True))
-            # In production: persist to DB; here mutate in-place
-            idx = DETECTIONS.index(d)
-            DETECTIONS[idx] = updated
-            return updated
-    raise HTTPException(status_code=404, detail=f"Detection {detection_id} not found")
+    d = await DetectionRepo.update(db, detection_id, **body.model_dump(exclude_none=True))
+    if not d:
+        raise HTTPException(status_code=404, detail=f"Detection {detection_id} not found")
+    return _detection_to_schema(d)

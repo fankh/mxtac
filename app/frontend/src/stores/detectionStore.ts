@@ -15,9 +15,15 @@ interface DetectionFilters {
   pageSize: number
 }
 
+/** Maximum number of live alerts kept in memory. */
+const MAX_LIVE_ALERTS = 200
+
 interface DetectionState {
   filters: DetectionFilters
   selected: Detection | null
+
+  /** Live alerts pushed via WebSocket (newest first). */
+  liveAlerts: Detection[]
 
   setFilter: <K extends keyof DetectionFilters>(key: K, value: DetectionFilters[K]) => void
   resetFilters: () => void
@@ -25,6 +31,9 @@ interface DetectionState {
   setSelected: (d: Detection | null) => void
   nextPage: () => void
   prevPage: () => void
+
+  /** Prepend a live alert from the WebSocket stream. Caps at MAX_LIVE_ALERTS. */
+  addLiveAlert: (alert: Detection) => void
 }
 
 const DEFAULT_FILTERS: DetectionFilters = {
@@ -42,6 +51,7 @@ const DEFAULT_FILTERS: DetectionFilters = {
 export const useDetectionStore = create<DetectionState>()((set, get) => ({
   filters: { ...DEFAULT_FILTERS },
   selected: null,
+  liveAlerts: [],
 
   setFilter: (key, value) =>
     set((s) => ({ filters: { ...s.filters, [key]: value, page: 1 } })),
@@ -65,4 +75,9 @@ export const useDetectionStore = create<DetectionState>()((set, get) => ({
 
   prevPage: () =>
     set((s) => ({ filters: { ...s.filters, page: Math.max(1, s.filters.page - 1) } })),
+
+  addLiveAlert: (alert) =>
+    set((s) => ({
+      liveAlerts: [alert, ...s.liveAlerts].slice(0, MAX_LIVE_ALERTS),
+    })),
 }))

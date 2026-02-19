@@ -10,7 +10,7 @@ services:
       - DEBUG=false
       - SECRET_KEY=${SECRET_KEY}
       - DATABASE_URL=postgresql+asyncpg://mxtac:${POSTGRES_PASSWORD}@db:5432/mxtac
-      - REDIS_URL=redis://redis:6379/0
+      - VALKEY_URL=redis://redis:6379/0
       - CORS_ORIGINS=["https://${DOMAIN}"]
     depends_on:
       db:
@@ -19,7 +19,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -64,13 +64,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── Redis ────────────────────────────────────────────────────────────────────
+  # ─── Valkey (Redis-compatible, BSD-licensed) ────────────────────────────────
   redis:
-    image: redis:7-alpine
+    image: valkey/valkey:8-alpine
     volumes:
       - redis_data:/data
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: valkey-server --appendonly yes
 
 volumes:
   postgres_data:

@@ -13,7 +13,7 @@ services:
       - DEBUG=true
       - SECRET_KEY=dev-secret-change-in-production
       - DATABASE_URL=postgresql+asyncpg://mxtac:mxtac@postgres:5432/mxtac
-      - REDIS_URL=redis://redis:6379/0
+      - VALKEY_URL=redis://redis:6379/0
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
       - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
@@ -30,7 +30,7 @@ services:
       opensearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -68,16 +68,16 @@ services:
       timeout: 3s
       retries: 10
 
-  # ─── Redis ────────────────────────────────────────────────────────────────────
+  # ─── Valkey (Redis-compatible, BSD-licensed) ────────────────────────────────
   redis:
-    image: redis:7-alpine
-    command: redis-server --save 60 1
+    image: valkey/valkey:8-alpine
+    command: valkey-server --save 60 1
     volumes:
       - redis_data:/data
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5

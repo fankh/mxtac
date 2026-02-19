@@ -1,6 +1,9 @@
 from datetime import datetime, timedelta
-from jose import jwt
+
+from fastapi import Depends, Header, HTTPException, status
+from jose import JWTError, jwt
 from passlib.context import CryptContext
+
 from .config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -21,3 +24,38 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
+
+
+def decode_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
+
+async def get_current_user(authorization: str = Header(None)) -> dict:
+    """FastAPI dependency — extract and validate JWT from Authorization header."""
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header required",
+        )
+    # Support "Bearer <token>" format
+    parts = authorization.split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        token = parts[1]
+    else:
+        token = authorization
+
+    payload = decode_token(token)
+    sub = payload.get("sub")
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+        )
+    return {"email": sub, "role": payload.get("role", "viewer")}

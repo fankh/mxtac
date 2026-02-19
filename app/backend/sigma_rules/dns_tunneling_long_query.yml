@@ -1,0 +1,16 @@
+title: DNS Tunneling - Suspicious Long Query
+id: d5e0ef77-3bd9-4a4d-b6e2-0b3c8af53a10
+status: test
+level: medium
+description: Detects unusually long DNS queries that may indicate DNS tunneling for C2 or data exfiltration.
+logsource:
+  category: dns_query
+detection:
+  selection:
+    network_traffic.query|re: '.{50,}'
+  condition: selection
+tags:
+  - attack.T1071.004
+  - attack.TA0011
+references:
+  - https://attack.mitre.org/techniques/T1071/004/

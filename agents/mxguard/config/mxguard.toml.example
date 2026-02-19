@@ -1,0 +1,43 @@
+# MxGuard EDR Agent Configuration
+# Copy this file to mxguard.toml and adjust settings as needed.
+
+[agent]
+# Unique agent identifier (auto-generated UUID if empty)
+agent_id = ""
+# Human-readable name for this agent instance
+name = "mxguard-node-01"
+# Logging level: trace, debug, info, warn, error
+log_level = "info"
+
+[collectors.process]
+enabled = true
+# How often to scan /proc for new processes (milliseconds)
+scan_interval_ms = 2000
+
+[collectors.file]
+enabled = true
+# Directories to watch for file modifications via inotify
+watch_paths = ["/etc", "/usr/bin", "/usr/sbin", "/tmp"]
+# Glob patterns to exclude from monitoring
+exclude_patterns = ["*.log", "*.tmp", "*.swp"]
+
+[collectors.network]
+enabled = true
+# How often to scan /proc/net/tcp for connections (milliseconds)
+scan_interval_ms = 5000
+
+[transport]
+# MxTac backend ingest endpoint
+endpoint = "http://127.0.0.1:8080/api/v1/ingest/ocsf"
+# Bearer token for authentication
+api_key = ""
+# Maximum events per batch
+batch_size = 100
+# Flush interval in milliseconds (flush even if batch is not full)
+flush_interval_ms = 5000
+# Number of retry attempts on transport failure
+retry_attempts = 3
+
+[health]
+# Listen address for the health check HTTP endpoint
+listen_addr = "0.0.0.0:9001"
