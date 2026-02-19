@@ -1,14 +1,14 @@
 import { NavLink } from 'react-router-dom'
 
 const NAV = [
-  { to: '/',           icon: '⊞', label: 'Overview' },
-  { to: '/detections', icon: '⚡', label: 'Detections' },
-  { to: '/attack',     icon: '⬡', label: 'ATT&CK Map' },
-  { to: '/rules',      icon: 'σ',  label: 'Sigma Rules' },
-  { to: '/incidents',  icon: '🔔', label: 'Incidents' },
-  { to: '/intel',      icon: '🌐', label: 'Threat Intel' },
-  { to: '/assets',     icon: '🖥', label: 'Assets' },
-  { to: '/reports',    icon: '📋', label: 'Reports' },
+  { to: '/',              icon: '⊞', label: 'Overview' },
+  { to: '/detections',   icon: '⚡', label: 'Detections' },
+  { to: '/attack',       icon: '⬡', label: 'ATT&CK Coverage' },
+  { to: '/rules',        icon: 'σ',  label: 'Sigma Rules' },
+  { to: '/incidents',    icon: '🔔', label: 'Incidents' },
+  { to: '/intel',        icon: '🌐', label: 'Threat Intel' },
+  { to: '/integrations', icon: '⇄',  label: 'Integrations' },
+  { to: '/admin',        icon: '⚙',  label: 'Admin' },
 ]
 
 export function Sidebar() {

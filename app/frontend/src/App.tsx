@@ -2,6 +2,10 @@ import { Routes, Route } from 'react-router-dom'
 import { Sidebar } from './components/layout/Sidebar'
 import { OverviewPage } from './components/features/overview/OverviewPage'
 import { DetectionsPage } from './components/features/detections/DetectionsPage'
+import { CoveragePage } from './components/features/coverage/CoveragePage'
+import { RulesPage } from './components/features/rules/RulesPage'
+import { ConnectorsPage } from './components/features/connectors/ConnectorsPage'
+import { AdminPage } from './components/features/admin/AdminPage'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { NotificationToast } from './components/shared/NotificationToast'
 
@@ -20,14 +24,16 @@ export default function App() {
       <main className="ml-[52px] flex-1 min-h-screen">
         <ErrorBoundary>
           <Routes>
-            <Route path="/"           element={<OverviewPage />} />
-            <Route path="/detections" element={<DetectionsPage />} />
-            <Route path="/attack"     element={<Placeholder title="ATT&CK Map" />} />
-            <Route path="/rules"      element={<Placeholder title="Sigma Rules" />} />
-            <Route path="/incidents"  element={<Placeholder title="Incidents" />} />
-            <Route path="/intel"      element={<Placeholder title="Threat Intel" />} />
-            <Route path="/assets"     element={<Placeholder title="Assets" />} />
-            <Route path="/reports"    element={<Placeholder title="Reports" />} />
+            <Route path="/"              element={<OverviewPage />} />
+            <Route path="/detections"    element={<DetectionsPage />} />
+            <Route path="/attack"        element={<CoveragePage />} />
+            <Route path="/rules"         element={<RulesPage />} />
+            <Route path="/integrations"  element={<ConnectorsPage />} />
+            <Route path="/admin"         element={<AdminPage />} />
+            <Route path="/incidents"     element={<Placeholder title="Incidents" />} />
+            <Route path="/intel"         element={<Placeholder title="Threat Intel" />} />
+            <Route path="/assets"        element={<Placeholder title="Assets" />} />
+            <Route path="/reports"       element={<Placeholder title="Reports" />} />
           </Routes>
         </ErrorBoundary>
       </main>

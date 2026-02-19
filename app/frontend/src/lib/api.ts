@@ -16,6 +16,9 @@ http.interceptors.request.use((config) => {
   return config
 })
 
+// ── Raw axios instance (for pages that need direct access) ────────────────────
+export const apiClient = http
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export const authApi = {
