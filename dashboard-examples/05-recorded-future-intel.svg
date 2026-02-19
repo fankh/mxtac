@@ -1,0 +1,257 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg05" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0C0E14"/>
+      <stop offset="100%" style="stop-color:#111420"/>
+    </linearGradient>
+    <linearGradient id="card05" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#181C28"/>
+      <stop offset="100%" style="stop-color:#141827"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1400" height="900" fill="url(#bg05)"/>
+
+  <!-- Header -->
+  <rect x="0" y="0" width="1400" height="56" fill="#181C28" stroke="#1E2436" stroke-width="1"/>
+  <rect x="0" y="0" width="56" height="56" fill="#005A9C"/>
+  <text x="28" y="36" font-family="Arial, sans-serif" font-size="24" font-weight="900" fill="white" text-anchor="middle">RF</text>
+  <text x="72" y="24" font-family="Inter, sans-serif" font-size="11" fill="#8A9BB5">Recorded Future</text>
+  <text x="72" y="42" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#E8EDF5">Intelligence Portal</text>
+  <text x="400" y="32" font-family="Inter, sans-serif" font-size="13" fill="#4E6080">Search for IP, Domain, Hash, CVE...</text>
+  <rect x="380" y="16" width="560" height="26" rx="4" fill="#111420" stroke="#2A3355" stroke-width="1"/>
+  <text x="1050" y="34" font-family="Inter, sans-serif" font-size="11" fill="#8A9BB5">Threat Intel  Analytics  Playbooks  Settings</text>
+  <rect x="1320" y="16" width="64" height="26" rx="4" fill="#005A9C"/>
+  <text x="1352" y="33" font-family="Inter, sans-serif" font-size="11" fill="white" text-anchor="middle">Upgrade</text>
+
+  <!-- Risk Score Banner -->
+  <rect x="12" y="68" width="340" height="130" rx="6" fill="url(#card05)" stroke="#1E2436" stroke-width="1"/>
+  <text x="26" y="92" font-family="Inter, sans-serif" font-size="12" fill="#8A9BB5" letter-spacing="1">ORG RISK SCORE</text>
+  <text x="26" y="138" font-family="Inter, sans-serif" font-size="64" font-weight="900" fill="#E55353">78</text>
+  <text x="108" y="125" font-family="Inter, sans-serif" font-size="14" fill="#E55353">/100</text>
+  <rect x="108" y="140" width="80" height="22" rx="4" fill="#E55353" fill-opacity="0.15" stroke="#E55353" stroke-width="1"/>
+  <text x="148" y="155" font-family="Inter, sans-serif" font-size="11" fill="#E55353" text-anchor="middle">HIGH RISK</text>
+  <text x="26" y="186" font-family="Inter, sans-serif" font-size="11" fill="#4E6080">Last updated: 2 min ago</text>
+
+  <!-- Threat Actor Cards -->
+  <rect x="364" y="68" width="430" height="130" rx="6" fill="url(#card05)" stroke="#1E2436" stroke-width="1"/>
+  <text x="378" y="92" font-family="Inter, sans-serif" font-size="12" fill="#8A9BB5" letter-spacing="1">ACTIVE THREAT ACTORS TARGETING YOUR SECTOR</text>
+  <text x="378" y="122" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E8EDF5">APT29 (Cozy Bear)</text>
+  <rect x="540" y="110" width="60" height="18" rx="9" fill="#7f1d1d"/>
+  <text x="570" y="123" font-family="Inter, sans-serif" font-size="10" fill="#F87171" text-anchor="middle">NATION</text>
+  <text x="378" y="146" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E8EDF5">FIN7 (Carbanak)</text>
+  <rect x="520" y="134" width="66" height="18" rx="9" fill="#7c2d12"/>
+  <text x="553" y="147" font-family="Inter, sans-serif" font-size="10" fill="#FB923C" text-anchor="middle">FINANCIAL</text>
+  <text x="378" y="170" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E8EDF5">TA505 (Evil Corp)</text>
+  <rect x="522" y="158" width="62" height="18" rx="9" fill="#7c2d12"/>
+  <text x="553" y="171" font-family="Inter, sans-serif" font-size="10" fill="#FB923C" text-anchor="middle">RANSOMWARE</text>
+
+  <!-- Vulnerability Exposure -->
+  <rect x="806" y="68" width="280" height="130" rx="6" fill="url(#card05)" stroke="#1E2436" stroke-width="1"/>
+  <text x="820" y="92" font-family="Inter, sans-serif" font-size="12" fill="#8A9BB5" letter-spacing="1">CVE EXPOSURE</text>
+  <text x="820" y="130" font-family="Inter, sans-serif" font-size="48" font-weight="900" fill="#E8EDF5">147</text>
+  <text x="820" y="158" font-family="Inter, sans-serif" font-size="12" fill="#E55353">● 23 Exploited in Wild</text>
+  <text x="820" y="178" font-family="Inter, sans-serif" font-size="12" fill="#FB923C">● 61 CVSS 9+</text>
+
+  <!-- Brand Exposure -->
+  <rect x="1098" y="68" width="290" height="130" rx="6" fill="url(#card05)" stroke="#1E2436" stroke-width="1"/>
+  <text x="1112" y="92" font-family="Inter, sans-serif" font-size="12" fill="#8A9BB5" letter-spacing="1">BRAND / DARK WEB</text>
+  <text x="1112" y="122" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">● Leaked Credentials: <tspan fill="#E55353" font-weight="700">3,247</tspan></text>
+  <text x="1112" y="146" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">● Domain Typosquats: <tspan fill="#FB923C" font-weight="700">18</tspan></text>
+  <text x="1112" y="170" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">● Mentions (24h): <tspan fill="#FBBF24" font-weight="700">412</tspan></text>
+  <text x="1112" y="190" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">● Paste Sites: <tspan fill="#34D399" font-weight="700">2 new</tspan></text>
+
+  <!-- Intelligence Feed Table -->
+  <rect x="12" y="212" width="870" height="380" rx="6" fill="url(#card05)" stroke="#1E2436" stroke-width="1"/>
+  <text x="26" y="236" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E8EDF5">Intelligence Feed — Prioritized IOCs</text>
+  <rect x="750" y="220" width="110" height="24" rx="4" fill="#005A9C" fill-opacity="0.2" stroke="#005A9C" stroke-width="1"/>
+  <text x="805" y="236" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" text-anchor="middle">Export CSV</text>
+
+  <!-- Header Row -->
+  <rect x="12" y="244" width="870" height="24" fill="#111420"/>
+  <text x="26" y="260" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">RISK</text>
+  <text x="80" y="260" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">INDICATOR</text>
+  <text x="320" y="260" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">TYPE</text>
+  <text x="420" y="260" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">THREAT CATEGORY</text>
+  <text x="600" y="260" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">ASSOCIATION</text>
+  <text x="720" y="260" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">LAST SEEN</text>
+  <text x="800" y="260" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">SIGHTINGS</text>
+
+  <!-- IOC Rows -->
+  <rect x="12" y="268" width="870" height="28" fill="#181C28"/>
+  <rect x="26" y="276" width="30" height="14" rx="3" fill="#7f1d1d"/>
+  <text x="41" y="287" font-family="Inter, sans-serif" font-size="10" fill="#F87171" text-anchor="middle">97</text>
+  <text x="80" y="287" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" font-family="monospace">198.51.100.23</text>
+  <text x="320" y="287" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">IP Address</text>
+  <rect x="420" y="274" width="72" height="16" rx="8" fill="#7f1d1d"/>
+  <text x="456" y="285" font-family="Inter, sans-serif" font-size="10" fill="#F87171" text-anchor="middle">C2 Server</text>
+  <text x="600" y="287" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">APT29</text>
+  <text x="720" y="287" font-family="Inter, sans-serif" font-size="11" fill="#4E6080">2h ago</text>
+  <text x="800" y="287" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">1,247</text>
+
+  <rect x="12" y="296" width="870" height="28" fill="#141827"/>
+  <rect x="26" y="304" width="30" height="14" rx="3" fill="#7f1d1d"/>
+  <text x="41" y="315" font-family="Inter, sans-serif" font-size="10" fill="#F87171" text-anchor="middle">95</text>
+  <text x="80" y="315" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" font-family="monospace">e3b0c44298fc1c149afb</text>
+  <text x="320" y="315" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">File Hash (MD5)</text>
+  <rect x="420" y="302" width="60" height="16" rx="8" fill="#7f1d1d"/>
+  <text x="450" y="313" font-family="Inter, sans-serif" font-size="10" fill="#F87171" text-anchor="middle">Malware</text>
+  <text x="600" y="315" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">Cobalt Strike</text>
+  <text x="720" y="315" font-family="Inter, sans-serif" font-size="11" fill="#4E6080">5h ago</text>
+  <text x="800" y="315" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">984</text>
+
+  <rect x="12" y="324" width="870" height="28" fill="#181C28"/>
+  <rect x="26" y="332" width="30" height="14" rx="3" fill="#7c2d12"/>
+  <text x="41" y="343" font-family="Inter, sans-serif" font-size="10" fill="#FB923C" text-anchor="middle">88</text>
+  <text x="80" y="343" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" font-family="monospace">malicious-update.xyz</text>
+  <text x="320" y="343" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">Domain</text>
+  <rect x="420" y="330" width="80" height="16" rx="8" fill="#7c2d12"/>
+  <text x="460" y="341" font-family="Inter, sans-serif" font-size="10" fill="#FB923C" text-anchor="middle">Phishing Kit</text>
+  <text x="600" y="343" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">TA505</text>
+  <text x="720" y="343" font-family="Inter, sans-serif" font-size="11" fill="#4E6080">12h ago</text>
+  <text x="800" y="343" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">720</text>
+
+  <rect x="12" y="352" width="870" height="28" fill="#141827"/>
+  <rect x="26" y="360" width="30" height="14" rx="3" fill="#7c2d12"/>
+  <text x="41" y="371" font-family="Inter, sans-serif" font-size="10" fill="#FB923C" text-anchor="middle">82</text>
+  <text x="80" y="371" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" font-family="monospace">CVE-2024-3400</text>
+  <text x="320" y="371" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">Vulnerability</text>
+  <rect x="420" y="358" width="96" height="16" rx="8" fill="#7c2d12"/>
+  <text x="468" y="369" font-family="Inter, sans-serif" font-size="10" fill="#FB923C" text-anchor="middle">RCE Exploited</text>
+  <text x="600" y="371" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">Multiple</text>
+  <text x="720" y="371" font-family="Inter, sans-serif" font-size="11" fill="#4E6080">1d ago</text>
+  <text x="800" y="371" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">4,123</text>
+
+  <rect x="12" y="380" width="870" height="28" fill="#181C28"/>
+  <rect x="26" y="388" width="30" height="14" rx="3" fill="#713f12"/>
+  <text x="41" y="399" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">74</text>
+  <text x="80" y="399" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" font-family="monospace">203.0.113.99</text>
+  <text x="320" y="399" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">IP Address</text>
+  <rect x="420" y="386" width="64" height="16" rx="8" fill="#713f12"/>
+  <text x="452" y="397" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">Tor Exit Node</text>
+  <text x="600" y="399" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">Anonymous</text>
+  <text x="720" y="399" font-family="Inter, sans-serif" font-size="11" fill="#4E6080">3h ago</text>
+  <text x="800" y="399" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">312</text>
+
+  <rect x="12" y="408" width="870" height="28" fill="#141827"/>
+  <rect x="26" y="416" width="30" height="14" rx="3" fill="#713f12"/>
+  <text x="41" y="427" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">71</text>
+  <text x="80" y="427" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" font-family="monospace">secure-login-portal.net</text>
+  <text x="320" y="427" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">URL</text>
+  <rect x="420" y="414" width="80" height="16" rx="8" fill="#713f12"/>
+  <text x="460" y="425" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">Typosquatting</text>
+  <text x="600" y="427" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">Unknown</text>
+  <text x="720" y="427" font-family="Inter, sans-serif" font-size="11" fill="#4E6080">6h ago</text>
+  <text x="800" y="427" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">187</text>
+
+  <rect x="12" y="436" width="870" height="28" fill="#181C28"/>
+  <rect x="26" y="444" width="30" height="14" rx="3" fill="#713f12"/>
+  <text x="41" y="455" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">68</text>
+  <text x="80" y="455" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" font-family="monospace">185.220.101.40</text>
+  <text x="320" y="455" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">IP Address</text>
+  <rect x="420" y="442" width="72" height="16" rx="8" fill="#713f12"/>
+  <text x="456" y="453" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">Botnet Node</text>
+  <text x="600" y="455" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">Emotet</text>
+  <text x="720" y="455" font-family="Inter, sans-serif" font-size="11" fill="#4E6080">8h ago</text>
+  <text x="800" y="455" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">143</text>
+
+  <rect x="12" y="464" width="870" height="28" fill="#141827"/>
+  <rect x="26" y="472" width="30" height="14" rx="3" fill="#14532d"/>
+  <text x="41" y="483" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">44</text>
+  <text x="80" y="483" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" font-family="monospace">CVE-2023-44487</text>
+  <text x="320" y="483" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">Vulnerability</text>
+  <rect x="420" y="470" width="64" height="16" rx="8" fill="#14532d"/>
+  <text x="452" y="481" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">DoS (HTTP/2)</text>
+  <text x="600" y="483" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">Generic</text>
+  <text x="720" y="483" font-family="Inter, sans-serif" font-size="11" fill="#4E6080">2d ago</text>
+  <text x="800" y="483" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">8,941</text>
+
+  <rect x="12" y="492" width="870" height="28" fill="#181C28"/>
+  <rect x="26" y="500" width="30" height="14" rx="3" fill="#14532d"/>
+  <text x="41" y="511" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">37</text>
+  <text x="80" y="511" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" font-family="monospace">91.108.4.213</text>
+  <text x="320" y="511" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">IP Address</text>
+  <rect x="420" y="498" width="80" height="16" rx="8" fill="#14532d"/>
+  <text x="460" y="509" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">Scanner</text>
+  <text x="600" y="511" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">Shodan</text>
+  <text x="720" y="511" font-family="Inter, sans-serif" font-size="11" fill="#4E6080">4h ago</text>
+  <text x="800" y="511" font-family="Inter, sans-serif" font-size="11" fill="#E8EDF5">72</text>
+
+  <!-- Pagination -->
+  <text x="26" y="575" font-family="Inter, sans-serif" font-size="11" fill="#4E6080">Showing 9 of 14,382 indicators   |  </text>
+  <text x="320" y="575" font-family="Inter, sans-serif" font-size="11" fill="#005A9C">Next →</text>
+
+  <!-- Threat Intelligence Timeseries -->
+  <rect x="12" y="590" width="870" height="180" rx="6" fill="url(#card05)" stroke="#1E2436" stroke-width="1"/>
+  <text x="26" y="614" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E8EDF5">IOC Ingestion Volume — 30 Days</text>
+  <polyline points="40,740 80,735 120,728 160,720 200,730 240,712 280,700 320,710 360,695 400,680 440,688 480,672 520,660 560,672 600,655 640,644 680,652 720,638 760,626 800,634 840,620 860,760" fill="#005A9C" fill-opacity="0.1" stroke="none"/>
+  <polyline points="40,740 80,735 120,728 160,720 200,730 240,712 280,700 320,710 360,695 400,680 440,688 480,672 520,660 560,672 600,655 640,644 680,652 720,638 760,626 800,634 840,620" fill="none" stroke="#005A9C" stroke-width="2"/>
+  <line x1="40" y1="760" x2="860" y2="760" stroke="#1E2436" stroke-width="1"/>
+  <text x="40" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">Jan 20</text>
+  <text x="450" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">Feb 4</text>
+  <text x="840" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">Feb 19</text>
+
+  <!-- Right Panel -->
+  <!-- Threat Actor Intel -->
+  <rect x="894" y="212" width="494" height="280" rx="6" fill="url(#card05)" stroke="#1E2436" stroke-width="1"/>
+  <text x="908" y="236" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E8EDF5">Threat Actor: APT29</text>
+  <rect x="908" y="246" width="84" height="18" rx="9" fill="#7f1d1d"/>
+  <text x="950" y="258" font-family="Inter, sans-serif" font-size="10" fill="#F87171" text-anchor="middle">Nation State</text>
+  <rect x="1002" y="246" width="50" height="18" rx="9" fill="#1E2436"/>
+  <text x="1027" y="258" font-family="Inter, sans-serif" font-size="10" fill="#8A9BB5" text-anchor="middle">Russia</text>
+  <text x="908" y="285" font-family="Inter, sans-serif" font-size="12" fill="#8A9BB5">Primary Target: Government, Finance, Energy</text>
+  <text x="908" y="305" font-family="Inter, sans-serif" font-size="12" fill="#8A9BB5">TTPs: Spearphishing, Supply Chain, LOTL</text>
+  <text x="908" y="325" font-family="Inter, sans-serif" font-size="12" fill="#8A9BB5">Primary Malware: SUNBURST, WellMess, Cobalt Strike</text>
+  <line x1="908" y1="340" x2="1374" y2="340" stroke="#1E2436" stroke-width="1"/>
+  <text x="908" y="362" font-family="Inter, sans-serif" font-size="12" fill="#8A9BB5">Sector Relevance:</text>
+  <rect x="908" y="370" width="120" height="24" rx="4" fill="#005A9C" fill-opacity="0.2"/>
+  <text x="968" y="386" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" text-anchor="middle">Financial Services</text>
+  <rect x="1038" y="370" width="80" height="24" rx="4" fill="#005A9C" fill-opacity="0.2"/>
+  <text x="1078" y="386" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" text-anchor="middle">Technology</text>
+  <rect x="1128" y="370" width="70" height="24" rx="4" fill="#005A9C" fill-opacity="0.2"/>
+  <text x="1163" y="386" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA" text-anchor="middle">Healthcare</text>
+  <text x="908" y="415" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">Recent Activity: Campaign targeting EU financial sector via</text>
+  <text x="908" y="435" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">spearphishing with COVID-themed lures (Feb 2026)</text>
+  <text x="908" y="455" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">Confidence: <tspan fill="#34D399">High (87%)</tspan>   Sources: 14</text>
+  <text x="908" y="475" font-family="Inter, sans-serif" font-size="12" fill="#8A9BB5">Linked IOCs: <tspan fill="#60A5FA">312 active</tspan>   Campaigns: <tspan fill="#60A5FA">7</tspan></text>
+
+  <!-- Alerting & Playbooks -->
+  <rect x="894" y="504" width="494" height="180" rx="6" fill="url(#card05)" stroke="#1E2436" stroke-width="1"/>
+  <text x="908" y="528" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E8EDF5">Triggered Playbooks</text>
+  <line x1="894" y1="536" x2="1388" y2="536" stroke="#1E2436" stroke-width="1"/>
+  <text x="908" y="557" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">Block C2 IPs → Palo Alto FW</text>
+  <rect x="1270" y="545" width="56" height="16" rx="8" fill="#065f46"/>
+  <text x="1298" y="556" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">ACTIVE</text>
+  <text x="1340" y="557" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">2h ago</text>
+  <text x="908" y="581" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">Update Blocked Domains → DNS Sinkhole</text>
+  <rect x="1270" y="569" width="56" height="16" rx="8" fill="#065f46"/>
+  <text x="1298" y="580" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">ACTIVE</text>
+  <text x="1340" y="581" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">4h ago</text>
+  <text x="908" y="605" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">Enrich SIEM Alerts → IBM QRadar</text>
+  <rect x="1270" y="593" width="56" height="16" rx="8" fill="#065f46"/>
+  <text x="1298" y="604" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">ACTIVE</text>
+  <text x="1340" y="605" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">1d ago</text>
+  <text x="908" y="629" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">Alert on Leaked Credentials → ServiceNow</text>
+  <rect x="1270" y="617" width="56" height="16" rx="8" fill="#1e3a5f"/>
+  <text x="1298" y="628" font-family="Inter, sans-serif" font-size="10" fill="#60A5FA" text-anchor="middle">PAUSED</text>
+  <text x="1340" y="629" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">3d ago</text>
+  <text x="908" y="653" font-family="Inter, sans-serif" font-size="12" fill="#E8EDF5">Tag IOCs in Endpoint EDR</text>
+  <rect x="1270" y="641" width="64" height="16" rx="8" fill="#1E2436" stroke="#2A3355"/>
+  <text x="1302" y="652" font-family="Inter, sans-serif" font-size="10" fill="#8A9BB5" text-anchor="middle">DISABLED</text>
+  <text x="1340" y="653" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">7d ago</text>
+
+  <!-- Vulnerability Exposure Table -->
+  <rect x="894" y="696" width="494" height="74" rx="6" fill="url(#card05)" stroke="#1E2436" stroke-width="1"/>
+  <text x="908" y="720" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E8EDF5">Top CVE Exposure</text>
+  <text x="908" y="742" font-family="Inter, sans-serif" font-size="12" fill="#60A5FA">CVE-2024-3400</text>
+  <text x="1100" y="742" font-family="Inter, sans-serif" font-size="12" fill="#E55353">CVSS 10.0</text>
+  <text x="1180" y="742" font-family="Inter, sans-serif" font-size="12" fill="#FB923C">Palo Alto PAN-OS RCE</text>
+  <text x="908" y="760" font-family="Inter, sans-serif" font-size="12" fill="#60A5FA">CVE-2023-34362</text>
+  <text x="1100" y="760" font-family="Inter, sans-serif" font-size="12" fill="#E55353">CVSS 9.8</text>
+  <text x="1180" y="760" font-family="Inter, sans-serif" font-size="12" fill="#FB923C">MOVEit Transfer SQLi</text>
+
+  <!-- Footer -->
+  <rect x="0" y="878" width="1400" height="22" fill="#0C0E14" stroke="#1E2436" stroke-width="1"/>
+  <text x="16" y="893" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">Recorded Future Intelligence Cloud — API v3 — Sources: 900,000+  |  Last refresh: 09:14:22 UTC</text>
+  <text x="1200" y="893" font-family="Inter, sans-serif" font-size="10" fill="#4E6080">Enterprise License — 50 seats</text>
+</svg>

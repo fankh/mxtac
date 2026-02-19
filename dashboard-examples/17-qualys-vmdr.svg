@@ -1,0 +1,525 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900">
+  <defs>
+    <linearGradient id="hdrGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#C8102E"/>
+      <stop offset="100%" stop-color="#E81C3C"/>
+    </linearGradient>
+    <linearGradient id="sideGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1A1A2E"/>
+      <stop offset="100%" stop-color="#16213E"/>
+    </linearGradient>
+    <linearGradient id="cardCrit" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF0F0"/>
+      <stop offset="100%" stop-color="#FFE0E0"/>
+    </linearGradient>
+    <linearGradient id="barFill" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#C8102E"/>
+      <stop offset="100%" stop-color="#FF4466"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="900" fill="#F5F7FA"/>
+
+  <!-- Left sidebar -->
+  <rect width="60" height="900" fill="url(#sideGrad)"/>
+  <!-- Qualys Q logo -->
+  <rect x="10" y="12" width="40" height="40" rx="8" fill="#C8102E"/>
+  <text x="22" y="39" font-family="Arial Black,Arial,sans-serif" font-size="22" font-weight="900" fill="white">Q</text>
+  <!-- Nav icons -->
+  <rect x="15" y="70" width="30" height="30" rx="6" fill="rgba(200,16,46,0.3)"/>
+  <text x="24" y="91" font-family="Arial,sans-serif" font-size="16">🏠</text>
+  <rect x="15" y="110" width="30" height="30" rx="6" fill="transparent"/>
+  <text x="24" y="131" font-family="Arial,sans-serif" font-size="16">🛡️</text>
+  <rect x="15" y="150" width="30" height="30" rx="6" fill="transparent"/>
+  <text x="24" y="171" font-family="Arial,sans-serif" font-size="16">🔍</text>
+  <rect x="15" y="190" width="30" height="30" rx="6" fill="transparent"/>
+  <text x="24" y="211" font-family="Arial,sans-serif" font-size="16">📊</text>
+  <rect x="15" y="230" width="30" height="30" rx="6" fill="transparent"/>
+  <text x="24" y="251" font-family="Arial,sans-serif" font-size="16">⚙️</text>
+
+  <!-- Top Header -->
+  <rect x="60" y="0" width="1340" height="52" fill="url(#hdrGrad)"/>
+  <text x="80" y="33" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="700" fill="white">Qualys VMDR</text>
+  <text x="230" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.7)">Vulnerability Management, Detection &amp; Response</text>
+  <!-- Nav tabs -->
+  <text x="640" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.9)">Dashboard</text>
+  <text x="730" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.6)">Assets</text>
+  <text x="790" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.6)">Vulnerabilities</text>
+  <text x="900" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.6)">Remediation</text>
+  <text x="1000" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.6)">Reports</text>
+  <text x="1070" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.6)">Policies</text>
+  <!-- Right user -->
+  <text x="1250" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.8)">admin@corp.com</text>
+  <circle cx="1370" cy="26" r="16" fill="rgba(0,0,0,0.2)"/>
+  <text x="1363" y="31" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">JD</text>
+
+  <!-- Breadcrumb -->
+  <rect x="60" y="52" width="1340" height="36" fill="white" stroke="#E0E6EF" stroke-width="0" />
+  <rect x="60" y="86" width="1340" height="1" fill="#E0E6EF"/>
+  <text x="80" y="74" font-family="Inter,Arial,sans-serif" font-size="12" fill="#888">Home</text>
+  <text x="112" y="74" font-family="Inter,Arial,sans-serif" font-size="12" fill="#888"> / </text>
+  <text x="126" y="74" font-family="Inter,Arial,sans-serif" font-size="12" fill="#C8102E">VM Dashboard</text>
+  <text x="1150" y="74" font-family="Inter,Arial,sans-serif" font-size="12" fill="#888">Assets: 24,831 | Last scan: 2h ago</text>
+  <rect x="1310" y="62" width="80" height="22" rx="4" fill="#C8102E"/>
+  <text x="1319" y="78" font-family="Inter,Arial,sans-serif" font-size="11" fill="white">Launch Scan</text>
+
+  <!-- KPI Cards Row 1 -->
+  <!-- Card: Total Vulns -->
+  <rect x="80" y="102" width="178" height="110" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="80" y="102" width="178" height="5" rx="3" fill="#C8102E"/>
+  <text x="92" y="124" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">TOTAL VULNERABILITIES</text>
+  <text x="92" y="157" font-family="Inter,Arial,sans-serif" font-size="32" font-weight="700" fill="#1A2B3C">187,432</text>
+  <text x="92" y="178" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">▲ 2,841 new since last scan</text>
+  <text x="92" y="198" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Across 24,831 assets</text>
+
+  <!-- Card: Critical -->
+  <rect x="268" y="102" width="178" height="110" rx="6" fill="url(#cardCrit)" stroke="#F5C2C7" stroke-width="1"/>
+  <rect x="268" y="102" width="178" height="5" rx="3" fill="#C8102E"/>
+  <text x="280" y="124" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">CRITICAL</text>
+  <text x="280" y="157" font-family="Inter,Arial,sans-serif" font-size="32" font-weight="700" fill="#C8102E">4,291</text>
+  <text x="280" y="178" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">CVSS 9.0-10.0</text>
+  <text x="280" y="198" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">▲ 127 new</text>
+
+  <!-- Card: High -->
+  <rect x="456" y="102" width="178" height="110" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="456" y="102" width="178" height="5" rx="3" fill="#FF6B35"/>
+  <text x="468" y="124" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">HIGH</text>
+  <text x="468" y="157" font-family="Inter,Arial,sans-serif" font-size="32" font-weight="700" fill="#FF6B35">28,847</text>
+  <text x="468" y="178" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF6B35">CVSS 7.0-8.9</text>
+  <text x="468" y="198" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">▲ 1,203 new</text>
+
+  <!-- Card: Exploitable -->
+  <rect x="644" y="102" width="178" height="110" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="644" y="102" width="178" height="5" rx="3" fill="#9B59B6"/>
+  <text x="656" y="124" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">ACTIVELY EXPLOITED</text>
+  <text x="656" y="157" font-family="Inter,Arial,sans-serif" font-size="32" font-weight="700" fill="#9B59B6">1,847</text>
+  <text x="656" y="178" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">KEV confirmed</text>
+  <text x="656" y="198" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Patch priority</text>
+
+  <!-- Card: Assets at Risk -->
+  <rect x="832" y="102" width="178" height="110" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="832" y="102" width="178" height="5" rx="3" fill="#F39C12"/>
+  <text x="844" y="124" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">ASSETS AT RISK</text>
+  <text x="844" y="157" font-family="Inter,Arial,sans-serif" font-size="32" font-weight="700" fill="#F39C12">18,247</text>
+  <text x="844" y="178" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">73.5% of total assets</text>
+  <text x="844" y="198" font-family="Inter,Arial,sans-serif" font-size="11" fill="#F39C12">6,584 unpatched crit</text>
+
+  <!-- Card: Remediation SLA -->
+  <rect x="1020" y="102" width="178" height="110" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="1020" y="102" width="178" height="5" rx="3" fill="#27AE60"/>
+  <text x="1032" y="124" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">REMEDIATION SLA</text>
+  <text x="1032" y="157" font-family="Inter,Arial,sans-serif" font-size="32" font-weight="700" fill="#27AE60">71.2%</text>
+  <text x="1032" y="178" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">On-time closure rate</text>
+  <text x="1032" y="198" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">847 overdue</text>
+
+  <!-- Card: QDS Score -->
+  <rect x="1208" y="102" width="178" height="110" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="1208" y="102" width="178" height="5" rx="3" fill="#C8102E"/>
+  <text x="1220" y="124" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">ORG RISK SCORE</text>
+  <text x="1220" y="157" font-family="Inter,Arial,sans-serif" font-size="32" font-weight="700" fill="#C8102E">74</text>
+  <text x="1260" y="157" font-family="Inter,Arial,sans-serif" font-size="16" fill="#888">/100</text>
+  <text x="1220" y="178" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">HIGH RISK</text>
+  <text x="1220" y="198" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">QDS-based scoring</text>
+
+  <!-- Main Panel: Vulnerability Table -->
+  <rect x="80" y="228" width="840" height="350" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="80" y="228" width="840" height="40" rx="6" fill="white"/>
+  <rect x="80" y="262" width="840" height="1" fill="#E0E6EF"/>
+  <text x="92" y="254" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">Vulnerability Priority List</text>
+  <rect x="750" y="236" width="80" height="20" rx="4" fill="#C8102E"/>
+  <text x="762" y="250" font-family="Inter,Arial,sans-serif" font-size="11" fill="white">Export CSV</text>
+  <rect x="840" y="236" width="68" height="20" rx="4" fill="#F5F7FA" stroke="#E0E6EF" stroke-width="1"/>
+  <text x="855" y="250" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">Filter ▼</text>
+
+  <!-- Table headers -->
+  <rect x="80" y="263" width="840" height="28" fill="#F8FAFC"/>
+  <text x="92" y="281" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">QID</text>
+  <text x="150" y="281" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">VULNERABILITY</text>
+  <text x="380" y="281" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">CVE</text>
+  <text x="470" y="281" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">CVSS</text>
+  <text x="520" y="281" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">QDS</text>
+  <text x="565" y="281" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">ASSETS</text>
+  <text x="615" y="281" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">EXPLOITABILITY</text>
+  <text x="740" y="281" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">DUE DATE</text>
+  <text x="820" y="281" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">ACTION</text>
+
+  <!-- Vuln rows -->
+  <!-- Row 1 - Critical -->
+  <rect x="80" y="291" width="840" height="32" fill="#FFF8F8"/>
+  <text x="92" y="312" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">376921</text>
+  <text x="150" y="312" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="500" fill="#1A2B3C">Microsoft Exchange RCE (ProxyLogon)</text>
+  <text x="380" y="312" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">CVE-2021-26855</text>
+  <rect x="462" y="301" width="42" height="18" rx="9" fill="#C8102E"/>
+  <text x="468" y="314" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">10.0</text>
+  <rect x="512" y="301" width="38" height="18" rx="9" fill="#C8102E"/>
+  <text x="520" y="314" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">100</text>
+  <text x="565" y="312" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">247</text>
+  <rect x="611" y="301" width="90" height="18" rx="9" fill="rgba(200,16,46,0.15)"/>
+  <text x="619" y="314" font-family="Inter,Arial,sans-serif" font-size="10" fill="#C8102E">Active Exploit (KEV)</text>
+  <text x="740" y="312" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">OVERDUE</text>
+  <rect x="817" y="302" width="88" height="18" rx="4" fill="#C8102E"/>
+  <text x="825" y="315" font-family="Inter,Arial,sans-serif" font-size="10" fill="white">Patch Now!</text>
+  <rect x="80" y="323" width="840" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 2 - Critical -->
+  <rect x="80" y="324" width="840" height="32" fill="white"/>
+  <text x="92" y="345" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">384702</text>
+  <text x="150" y="345" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="500" fill="#1A2B3C">Log4Shell Remote Code Execution</text>
+  <text x="380" y="345" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">CVE-2021-44228</text>
+  <rect x="462" y="334" width="42" height="18" rx="9" fill="#C8102E"/>
+  <text x="468" y="347" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">10.0</text>
+  <rect x="512" y="334" width="38" height="18" rx="9" fill="#C8102E"/>
+  <text x="520" y="347" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">100</text>
+  <text x="565" y="345" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">1,847</text>
+  <rect x="611" y="334" width="90" height="18" rx="9" fill="rgba(200,16,46,0.15)"/>
+  <text x="619" y="347" font-family="Inter,Arial,sans-serif" font-size="10" fill="#C8102E">Active Exploit (KEV)</text>
+  <text x="740" y="345" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">OVERDUE</text>
+  <rect x="817" y="335" width="88" height="18" rx="4" fill="#C8102E"/>
+  <text x="825" y="348" font-family="Inter,Arial,sans-serif" font-size="10" fill="white">Patch Now!</text>
+  <rect x="80" y="356" width="840" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 3 - Critical -->
+  <rect x="80" y="357" width="840" height="32" fill="#FFF8F8"/>
+  <text x="92" y="378" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">391284</text>
+  <text x="150" y="378" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="500" fill="#1A2B3C">Windows Netlogon Elevation of Privilege</text>
+  <text x="380" y="378" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">CVE-2020-1472</text>
+  <rect x="462" y="367" width="42" height="18" rx="9" fill="#C8102E"/>
+  <text x="468" y="380" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">10.0</text>
+  <rect x="512" y="367" width="38" height="18" rx="9" fill="#C8102E"/>
+  <text x="520" y="380" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">98</text>
+  <text x="565" y="378" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">312</text>
+  <rect x="611" y="367" width="90" height="18" rx="9" fill="rgba(200,16,46,0.15)"/>
+  <text x="619" y="380" font-family="Inter,Arial,sans-serif" font-size="10" fill="#C8102E">Active Exploit (KEV)</text>
+  <text x="740" y="378" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">Mar 1</text>
+  <rect x="817" y="368" width="88" height="18" rx="4" fill="#FF6B35"/>
+  <text x="825" y="381" font-family="Inter,Arial,sans-serif" font-size="10" fill="white">Remediate</text>
+  <rect x="80" y="389" width="840" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 4 - High -->
+  <rect x="80" y="390" width="840" height="32" fill="white"/>
+  <text x="92" y="411" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">399127</text>
+  <text x="150" y="411" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="500" fill="#1A2B3C">Apache HTTP Server Path Traversal</text>
+  <text x="380" y="411" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">CVE-2021-41773</text>
+  <rect x="462" y="400" width="42" height="18" rx="9" fill="#FF6B35"/>
+  <text x="472" y="413" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">9.8</text>
+  <rect x="512" y="400" width="38" height="18" rx="9" fill="#FF6B35"/>
+  <text x="520" y="413" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">95</text>
+  <text x="565" y="411" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">523</text>
+  <rect x="611" y="400" width="76" height="18" rx="9" fill="rgba(255,107,53,0.15)"/>
+  <text x="619" y="413" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF6B35">Exploit Available</text>
+  <text x="740" y="411" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF6B35">Mar 15</text>
+  <rect x="817" y="401" width="88" height="18" rx="4" fill="#FF6B35"/>
+  <text x="825" y="414" font-family="Inter,Arial,sans-serif" font-size="10" fill="white">Remediate</text>
+  <rect x="80" y="422" width="840" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 5 - High -->
+  <rect x="80" y="423" width="840" height="32" fill="#FFF8F8"/>
+  <text x="92" y="444" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">402841</text>
+  <text x="150" y="444" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="500" fill="#1A2B3C">VMware vCenter Server RCE</text>
+  <text x="380" y="444" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">CVE-2021-22005</text>
+  <rect x="462" y="433" width="42" height="18" rx="9" fill="#FF6B35"/>
+  <text x="472" y="446" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">9.8</text>
+  <rect x="512" y="433" width="38" height="18" rx="9" fill="#FF6B35"/>
+  <text x="520" y="446" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">93</text>
+  <text x="565" y="444" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">89</text>
+  <rect x="611" y="433" width="76" height="18" rx="9" fill="rgba(255,107,53,0.15)"/>
+  <text x="619" y="446" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF6B35">Exploit Available</text>
+  <text x="740" y="444" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Mar 28</text>
+  <rect x="817" y="434" width="88" height="18" rx="4" fill="#FF6B35"/>
+  <text x="825" y="447" font-family="Inter,Arial,sans-serif" font-size="10" fill="white">Remediate</text>
+  <rect x="80" y="455" width="840" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 6 - High -->
+  <rect x="80" y="456" width="840" height="32" fill="white"/>
+  <text x="92" y="477" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">408372</text>
+  <text x="150" y="477" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="500" fill="#1A2B3C">Citrix Gateway Auth Bypass</text>
+  <text x="380" y="477" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">CVE-2023-3519</text>
+  <rect x="462" y="466" width="42" height="18" rx="9" fill="#FF6B35"/>
+  <text x="472" y="479" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">9.8</text>
+  <rect x="512" y="466" width="38" height="18" rx="9" fill="#FF6B35"/>
+  <text x="520" y="479" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">91</text>
+  <text x="565" y="477" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">42</text>
+  <rect x="611" y="466" width="76" height="18" rx="9" fill="rgba(255,107,53,0.15)"/>
+  <text x="619" y="479" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF6B35">Exploit Available</text>
+  <text x="740" y="477" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Apr 5</text>
+  <rect x="817" y="467" width="88" height="18" rx="4" fill="#F39C12"/>
+  <text x="825" y="480" font-family="Inter,Arial,sans-serif" font-size="10" fill="white">Schedule</text>
+  <rect x="80" y="488" width="840" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 7 - Medium -->
+  <rect x="80" y="489" width="840" height="32" fill="#FFF8F8"/>
+  <text x="92" y="510" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">412905</text>
+  <text x="150" y="510" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="500" fill="#1A2B3C">OpenSSL Buffer Overflow (TLS 1.3)</text>
+  <text x="380" y="510" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">CVE-2022-3602</text>
+  <rect x="462" y="499" width="42" height="18" rx="9" fill="#F39C12"/>
+  <text x="472" y="512" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">7.5</text>
+  <rect x="512" y="499" width="38" height="18" rx="9" fill="#F39C12"/>
+  <text x="520" y="512" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">74</text>
+  <text x="565" y="510" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">2,847</text>
+  <rect x="611" y="499" width="76" height="18" rx="9" fill="rgba(243,156,18,0.15)"/>
+  <text x="619" y="512" font-family="Inter,Arial,sans-serif" font-size="10" fill="#F39C12">PoC Available</text>
+  <text x="740" y="510" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Apr 15</text>
+  <rect x="817" y="500" width="88" height="18" rx="4" fill="#F39C12"/>
+  <text x="825" y="513" font-family="Inter,Arial,sans-serif" font-size="10" fill="white">Schedule</text>
+  <rect x="80" y="521" width="840" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 8 -->
+  <rect x="80" y="522" width="840" height="32" fill="white"/>
+  <text x="92" y="543" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">418273</text>
+  <text x="150" y="543" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="500" fill="#1A2B3C">Kubernetes API Server Exposure</text>
+  <text x="380" y="543" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">CVE-2023-2728</text>
+  <rect x="462" y="532" width="42" height="18" rx="9" fill="#F39C12"/>
+  <text x="472" y="545" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">7.2</text>
+  <rect x="512" y="532" width="38" height="18" rx="9" fill="#F39C12"/>
+  <text x="520" y="545" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">68</text>
+  <text x="565" y="543" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">156</text>
+  <rect x="611" y="532" width="76" height="18" rx="9" fill="rgba(39,174,96,0.15)"/>
+  <text x="619" y="545" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">No Known Exploit</text>
+  <text x="740" y="543" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">May 1</text>
+  <rect x="817" y="533" width="88" height="18" rx="4" fill="#27AE60"/>
+  <text x="822" y="546" font-family="Inter,Arial,sans-serif" font-size="10" fill="white">Plan Patch</text>
+  <rect x="80" y="554" width="840" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 9 -->
+  <rect x="80" y="555" width="840" height="32" fill="#FFF8F8"/>
+  <text x="92" y="576" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">421834</text>
+  <text x="150" y="576" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="500" fill="#1A2B3C">FortiOS SSL VPN Auth Bypass</text>
+  <text x="380" y="576" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">CVE-2023-27997</text>
+  <rect x="462" y="565" width="42" height="18" rx="9" fill="#C8102E"/>
+  <text x="472" y="578" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">9.8</text>
+  <rect x="512" y="565" width="38" height="18" rx="9" fill="#C8102E"/>
+  <text x="520" y="578" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="white">97</text>
+  <text x="565" y="576" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">18</text>
+  <rect x="611" y="565" width="90" height="18" rx="9" fill="rgba(200,16,46,0.15)"/>
+  <text x="619" y="578" font-family="Inter,Arial,sans-serif" font-size="10" fill="#C8102E">Active Exploit (KEV)</text>
+  <text x="740" y="576" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">OVERDUE</text>
+  <rect x="817" y="566" width="88" height="18" rx="4" fill="#C8102E"/>
+  <text x="825" y="579" font-family="Inter,Arial,sans-serif" font-size="10" fill="white">Patch Now!</text>
+
+  <!-- Right Panel: Asset Coverage -->
+  <rect x="930" y="228" width="456" height="180" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="930" y="228" width="456" height="40" rx="6" fill="white"/>
+  <rect x="930" y="262" width="456" height="1" fill="#E0E6EF"/>
+  <text x="942" y="254" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">Asset Coverage by OS</text>
+
+  <!-- OS bars -->
+  <text x="942" y="284" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">Windows Server</text>
+  <rect x="1070" y="275" width="290" height="14" rx="3" fill="#E0E6EF"/>
+  <rect x="1070" y="275" width="232" height="14" rx="3" fill="#0077C5"/>
+  <text x="1365" y="286" font-family="Inter,Arial,sans-serif" font-size="10" fill="#888">80%</text>
+
+  <text x="942" y="310" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">Windows 10/11</text>
+  <rect x="1070" y="301" width="290" height="14" rx="3" fill="#E0E6EF"/>
+  <rect x="1070" y="301" width="261" height="14" rx="3" fill="#0077C5"/>
+  <text x="1365" y="312" font-family="Inter,Arial,sans-serif" font-size="10" fill="#888">90%</text>
+
+  <text x="942" y="336" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">RHEL / CentOS</text>
+  <rect x="1070" y="327" width="290" height="14" rx="3" fill="#E0E6EF"/>
+  <rect x="1070" y="327" width="203" height="14" rx="3" fill="#C8102E"/>
+  <text x="1365" y="338" font-family="Inter,Arial,sans-serif" font-size="10" fill="#888">70%</text>
+
+  <text x="942" y="362" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">Ubuntu Linux</text>
+  <rect x="1070" y="353" width="290" height="14" rx="3" fill="#E0E6EF"/>
+  <rect x="1070" y="353" width="174" height="14" rx="3" fill="#C8102E"/>
+  <text x="1365" y="364" font-family="Inter,Arial,sans-serif" font-size="10" fill="#888">60%</text>
+
+  <text x="942" y="388" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">macOS</text>
+  <rect x="1070" y="379" width="290" height="14" rx="3" fill="#E0E6EF"/>
+  <rect x="1070" y="379" width="116" height="14" rx="3" fill="#27AE60"/>
+  <text x="1365" y="390" font-family="Inter,Arial,sans-serif" font-size="10" fill="#888">40%</text>
+
+  <!-- Vulnerability Age Distribution -->
+  <rect x="930" y="418" width="456" height="160" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="930" y="418" width="456" height="40" rx="6" fill="white"/>
+  <rect x="930" y="452" width="456" height="1" fill="#E0E6EF"/>
+  <text x="942" y="444" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">Vulnerability Age Distribution</text>
+
+  <!-- Age buckets -->
+  <text x="942" y="472" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Age</text>
+  <text x="1000" y="472" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Count</text>
+  <text x="1100" y="472" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Distribution</text>
+  <text x="1340" y="472" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">%</text>
+
+  <text x="942" y="494" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">0-7 days</text>
+  <text x="1000" y="494" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">12,841</text>
+  <rect x="1100" y="484" width="230" height="14" rx="3" fill="#E0E6EF"/>
+  <rect x="1100" y="484" width="62" height="14" rx="3" fill="#27AE60"/>
+  <text x="1340" y="495" font-family="Inter,Arial,sans-serif" font-size="10" fill="#888">27%</text>
+
+  <text x="942" y="516" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">8-30 days</text>
+  <text x="1000" y="516" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">38,421</text>
+  <rect x="1100" y="506" width="230" height="14" rx="3" fill="#E0E6EF"/>
+  <rect x="1100" y="506" width="90" height="14" rx="3" fill="#F39C12"/>
+  <text x="1340" y="517" font-family="Inter,Arial,sans-serif" font-size="10" fill="#888">39%</text>
+
+  <text x="942" y="538" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">31-90 days</text>
+  <text x="1000" y="538" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">72,347</text>
+  <rect x="1100" y="528" width="230" height="14" rx="3" fill="#E0E6EF"/>
+  <rect x="1100" y="528" width="138" height="14" rx="3" fill="#FF6B35"/>
+  <text x="1340" y="539" font-family="Inter,Arial,sans-serif" font-size="10" fill="#888">60%</text>
+
+  <text x="942" y="560" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">&gt;90 days</text>
+  <text x="1000" y="560" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">63,823</text>
+  <rect x="1100" y="550" width="230" height="14" rx="3" fill="#E0E6EF"/>
+  <rect x="1100" y="550" width="230" height="14" rx="3" fill="#C8102E"/>
+  <text x="1340" y="561" font-family="Inter,Arial,sans-serif" font-size="10" fill="#C8102E">100%!</text>
+
+  <!-- Remediation Tracking -->
+  <rect x="80" y="590" width="420" height="220" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="80" y="590" width="420" height="40" rx="6" fill="white"/>
+  <rect x="80" y="624" width="420" height="1" fill="#E0E6EF"/>
+  <text x="92" y="615" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">Remediation SLA Tracking</text>
+  <!-- SLA Progress bars -->
+  <text x="92" y="648" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">Critical (SLA: 24h)</text>
+  <rect x="240" y="638" width="240" height="16" rx="3" fill="#F5F7FA" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="240" y="638" width="115" height="16" rx="3" fill="#C8102E"/>
+  <text x="486" y="650" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">48% — 52 overdue</text>
+
+  <text x="92" y="678" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">High (SLA: 7 days)</text>
+  <rect x="240" y="668" width="240" height="16" rx="3" fill="#F5F7FA" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="240" y="668" width="168" height="16" rx="3" fill="#FF6B35"/>
+  <text x="486" y="680" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF6B35">70% — 347 overdue</text>
+
+  <text x="92" y="708" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">Medium (SLA: 30 days)</text>
+  <rect x="240" y="698" width="240" height="16" rx="3" fill="#F5F7FA" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="240" y="698" width="192" height="16" rx="3" fill="#F39C12"/>
+  <text x="486" y="710" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">80% on-time</text>
+
+  <text x="92" y="738" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">Low (SLA: 90 days)</text>
+  <rect x="240" y="728" width="240" height="16" rx="3" fill="#F5F7FA" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="240" y="728" width="230" height="16" rx="3" fill="#27AE60"/>
+  <text x="486" y="740" font-family="Inter,Arial,sans-serif" font-size="11" fill="#27AE60">96% on-time</text>
+
+  <text x="92" y="768" font-family="Inter,Arial,sans-serif" font-size="11" fill="#555">Overall SLA</text>
+  <rect x="240" y="758" width="240" height="16" rx="3" fill="#F5F7FA" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="240" y="758" width="171" height="16" rx="3" fill="#0077C5"/>
+  <text x="486" y="770" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">71.2% on-time</text>
+
+  <!-- Scan Activity panel -->
+  <rect x="510" y="590" width="410" height="220" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="510" y="590" width="410" height="40" rx="6" fill="white"/>
+  <rect x="510" y="624" width="410" height="1" fill="#E0E6EF"/>
+  <text x="522" y="615" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">Recent Scan Activity</text>
+  <!-- Scan rows -->
+  <rect x="510" y="625" width="410" height="22" fill="#F8FAFC"/>
+  <text x="522" y="640" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">SCAN NAME</text>
+  <text x="690" y="640" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">ASSETS</text>
+  <text x="740" y="640" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">DURATION</text>
+  <text x="810" y="640" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">STATUS</text>
+  <text x="872" y="640" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">TIME</text>
+
+  <rect x="510" y="647" width="410" height="26" fill="white"/>
+  <text x="522" y="664" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Full Network Discovery</text>
+  <text x="690" y="664" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">24,831</text>
+  <text x="740" y="664" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">4h 12m</text>
+  <rect x="806" y="652" width="56" height="16" rx="8" fill="#E8FDF0"/>
+  <text x="812" y="664" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Complete</text>
+  <text x="872" y="664" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">2h ago</text>
+  <rect x="510" y="673" width="410" height="1" fill="#F0F4F8"/>
+
+  <rect x="510" y="674" width="410" height="26" fill="#F8FAFC"/>
+  <text x="522" y="691" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">DMZ Targeted Scan</text>
+  <text x="690" y="691" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">347</text>
+  <text x="740" y="691" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">45m</text>
+  <rect x="806" y="679" width="56" height="16" rx="8" fill="#E8FDF0"/>
+  <text x="812" y="691" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Complete</text>
+  <text x="872" y="691" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">6h ago</text>
+  <rect x="510" y="700" width="410" height="1" fill="#F0F4F8"/>
+
+  <rect x="510" y="701" width="410" height="26" fill="white"/>
+  <text x="522" y="718" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Cloud Assets (AWS/Azure)</text>
+  <text x="690" y="718" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">8,241</text>
+  <text x="740" y="718" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">1h 58m</text>
+  <rect x="806" y="706" width="56" height="16" rx="8" fill="#E8FDF0"/>
+  <text x="812" y="718" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Complete</text>
+  <text x="872" y="718" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">1d ago</text>
+  <rect x="510" y="727" width="410" height="1" fill="#F0F4F8"/>
+
+  <rect x="510" y="728" width="410" height="26" fill="#F8FAFC"/>
+  <text x="522" y="745" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">PCI Scope Compliance Scan</text>
+  <text x="690" y="745" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">2,103</text>
+  <text x="740" y="745" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">—</text>
+  <rect x="806" y="733" width="70" height="16" rx="8" fill="#FFF3CD"/>
+  <text x="812" y="745" font-family="Inter,Arial,sans-serif" font-size="10" fill="#856404">Running...</text>
+  <text x="872" y="745" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">In progress</text>
+  <rect x="510" y="754" width="410" height="1" fill="#F0F4F8"/>
+
+  <rect x="510" y="755" width="410" height="26" fill="white"/>
+  <text x="522" y="772" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Weekly Authenticated Scan</text>
+  <text x="690" y="772" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">18,500</text>
+  <text x="740" y="772" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">—</text>
+  <rect x="806" y="760" width="60" height="16" rx="8" fill="#E8F4FD"/>
+  <text x="812" y="772" font-family="Inter,Arial,sans-serif" font-size="10" fill="#0077C5">Scheduled</text>
+  <text x="872" y="772" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Tomorrow</text>
+
+  <!-- Top Hosts panel -->
+  <rect x="930" y="590" width="456" height="220" rx="6" fill="white" stroke="#E0E6EF" stroke-width="1"/>
+  <rect x="930" y="590" width="456" height="40" rx="6" fill="white"/>
+  <rect x="930" y="624" width="456" height="1" fill="#E0E6EF"/>
+  <text x="942" y="615" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">Most Vulnerable Assets</text>
+  <!-- Headers -->
+  <rect x="930" y="625" width="456" height="22" fill="#F8FAFC"/>
+  <text x="942" y="640" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">HOST</text>
+  <text x="1080" y="640" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">OS</text>
+  <text x="1180" y="640" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">CRIT</text>
+  <text x="1220" y="640" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">HIGH</text>
+  <text x="1270" y="640" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">SCORE</text>
+  <text x="1340" y="640" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#888">STATUS</text>
+
+  <!-- Host rows -->
+  <rect x="930" y="647" width="456" height="26" fill="white"/>
+  <text x="942" y="664" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">exchange01.corp</text>
+  <text x="1080" y="664" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Win 2019</text>
+  <text x="1180" y="664" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E" font-weight="700">12</text>
+  <text x="1220" y="664" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF6B35">47</text>
+  <text x="1270" y="664" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">847</text>
+  <rect x="1332" y="652" width="48" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="1338" y="664" font-family="Inter,Arial,sans-serif" font-size="10" fill="#C8102E">Critical</text>
+  <rect x="930" y="673" width="456" height="1" fill="#F0F4F8"/>
+
+  <rect x="930" y="674" width="456" height="26" fill="#F8FAFC"/>
+  <text x="942" y="691" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">vcenter.infra</text>
+  <text x="1080" y="691" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">vCenter 7</text>
+  <text x="1180" y="691" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E" font-weight="700">9</text>
+  <text x="1220" y="691" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF6B35">31</text>
+  <text x="1270" y="691" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">712</text>
+  <rect x="1332" y="679" width="48" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="1338" y="691" font-family="Inter,Arial,sans-serif" font-size="10" fill="#C8102E">Critical</text>
+  <rect x="930" y="700" width="456" height="1" fill="#F0F4F8"/>
+
+  <rect x="930" y="701" width="456" height="26" fill="white"/>
+  <text x="942" y="718" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">dc01.corp</text>
+  <text x="1080" y="718" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Win 2022</text>
+  <text x="1180" y="718" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E" font-weight="700">7</text>
+  <text x="1220" y="718" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF6B35">28</text>
+  <text x="1270" y="718" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF6B35">643</text>
+  <rect x="1332" y="706" width="42" height="16" rx="8" fill="#FFE8D5"/>
+  <text x="1338" y="718" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF6B35">High</text>
+  <rect x="930" y="727" width="456" height="1" fill="#F0F4F8"/>
+
+  <rect x="930" y="728" width="456" height="26" fill="#F8FAFC"/>
+  <text x="942" y="745" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">web-prod-01</text>
+  <text x="1080" y="745" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">Ubuntu 20</text>
+  <text x="1180" y="745" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E" font-weight="700">5</text>
+  <text x="1220" y="745" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF6B35">41</text>
+  <text x="1270" y="745" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF6B35">591</text>
+  <rect x="1332" y="733" width="42" height="16" rx="8" fill="#FFE8D5"/>
+  <text x="1338" y="745" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF6B35">High</text>
+  <rect x="930" y="754" width="456" height="1" fill="#F0F4F8"/>
+
+  <rect x="930" y="755" width="456" height="26" fill="white"/>
+  <text x="942" y="772" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">forti-vpn-gw</text>
+  <text x="1080" y="772" font-family="Inter,Arial,sans-serif" font-size="11" fill="#888">FortiOS 7</text>
+  <text x="1180" y="772" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E" font-weight="700">3</text>
+  <text x="1220" y="772" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF6B35">12</text>
+  <text x="1270" y="772" font-family="Inter,Arial,sans-serif" font-size="11" fill="#C8102E">487</text>
+  <rect x="1332" y="760" width="48" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="1338" y="772" font-family="Inter,Arial,sans-serif" font-size="10" fill="#C8102E">Critical</text>
+
+  <!-- Footer -->
+  <rect x="60" y="820" width="1340" height="40" fill="#1A1A2E"/>
+  <text x="80" y="846" font-family="Inter,Arial,sans-serif" font-size="11" fill="rgba(255,255,255,0.5)">Qualys VMDR Platform v10.4 | Scanner Appliances: 18 Active | Cloud Agent Coverage: 97.2% | DB: Updated 15min ago</text>
+  <rect x="1220" y="830" width="140" height="16" rx="3" fill="rgba(39,174,96,0.2)"/>
+  <text x="1236" y="842" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Platform Status: Healthy</text>
+</svg>

@@ -1,0 +1,345 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg03" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#161616"/>
+      <stop offset="100%" style="stop-color:#1a1a1a"/>
+    </linearGradient>
+    <linearGradient id="cardGrad03" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#262626"/>
+      <stop offset="100%" style="stop-color:#1f1f1f"/>
+    </linearGradient>
+    <linearGradient id="blueBar03" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0F62FE"/>
+      <stop offset="100%" style="stop-color:#0043CE"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="900" fill="url(#bg03)"/>
+
+  <!-- Top Nav Bar -->
+  <rect x="0" y="0" width="1400" height="48" fill="#0F62FE"/>
+  <text x="16" y="30" font-family="IBM Plex Mono, monospace" font-size="18" font-weight="700" fill="white">QRadar SIEM</text>
+  <text x="160" y="30" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#a6c8ff">Offense Management</text>
+  <text x="1200" y="30" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#a6c8ff">LIVE  ●  2026-02-19 09:14:22 UTC</text>
+  <rect x="1360" y="10" width="24" height="24" rx="2" fill="#0043CE"/>
+  <text x="1372" y="27" font-family="IBM Plex Sans, sans-serif" font-size="14" fill="white" text-anchor="middle">⚙</text>
+
+  <!-- Left Sidebar -->
+  <rect x="0" y="48" width="180" height="852" fill="#1f1f1f"/>
+  <text x="16" y="80" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#8d8d8d" letter-spacing="1">NAVIGATION</text>
+  <rect x="0" y="90" width="180" height="36" fill="#0F62FE"/>
+  <text x="16" y="114" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="white" font-weight="600">Offense Summary</text>
+  <text x="16" y="144" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#8d8d8d">My Offenses</text>
+  <text x="16" y="172" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#8d8d8d">All Offenses</text>
+  <text x="16" y="200" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#8d8d8d">Network Activity</text>
+  <text x="16" y="228" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#8d8d8d">Log Activity</text>
+  <text x="16" y="256" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#8d8d8d">Assets</text>
+  <text x="16" y="284" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#8d8d8d">Reports</text>
+  <text x="16" y="312" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#8d8d8d">Admin</text>
+  <line x1="0" y1="340" x2="180" y2="340" stroke="#393939" stroke-width="1"/>
+  <text x="16" y="362" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#8d8d8d" letter-spacing="1">FILTERS</text>
+  <text x="16" y="390" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#c6c6c6">Status: Active</text>
+  <text x="16" y="414" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#c6c6c6">Assigned: Me</text>
+  <text x="16" y="438" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#c6c6c6">Magnitude: 5+</text>
+  <text x="16" y="462" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#c6c6c6">Last 24 Hours</text>
+
+  <!-- Main Content Area -->
+  <!-- KPI Cards Row -->
+  <rect x="196" y="60" width="220" height="88" rx="2" fill="url(#cardGrad03)" stroke="#393939" stroke-width="1"/>
+  <rect x="196" y="60" width="220" height="4" fill="#FA4D56"/>
+  <text x="206" y="83" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#8d8d8d" letter-spacing="1">ACTIVE OFFENSES</text>
+  <text x="206" y="118" font-family="IBM Plex Mono, monospace" font-size="36" font-weight="700" fill="#FA4D56">347</text>
+  <text x="370" y="118" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#FF8389">+23 since 1h</text>
+
+  <rect x="428" y="60" width="220" height="88" rx="2" fill="url(#cardGrad03)" stroke="#393939" stroke-width="1"/>
+  <rect x="428" y="60" width="220" height="4" fill="#FF832B"/>
+  <text x="438" y="83" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#8d8d8d" letter-spacing="1">HIGH MAGNITUDE (7+)</text>
+  <text x="438" y="118" font-family="IBM Plex Mono, monospace" font-size="36" font-weight="700" fill="#FF832B">89</text>
+  <text x="506" y="118" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#FF832B">Requires attention</text>
+
+  <rect x="660" y="60" width="220" height="88" rx="2" fill="url(#cardGrad03)" stroke="#393939" stroke-width="1"/>
+  <rect x="660" y="60" width="220" height="4" fill="#0F62FE"/>
+  <text x="670" y="83" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#8d8d8d" letter-spacing="1">EVENTS / MINUTE</text>
+  <text x="670" y="118" font-family="IBM Plex Mono, monospace" font-size="36" font-weight="700" fill="#0F62FE">24,182</text>
+  <text x="844" y="118" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#78a9ff">EPS</text>
+
+  <rect x="892" y="60" width="220" height="88" rx="2" fill="url(#cardGrad03)" stroke="#393939" stroke-width="1"/>
+  <rect x="892" y="60" width="220" height="4" fill="#42BE65"/>
+  <text x="902" y="83" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#8d8d8d" letter-spacing="1">CLOSED TODAY</text>
+  <text x="902" y="118" font-family="IBM Plex Mono, monospace" font-size="36" font-weight="700" fill="#42BE65">134</text>
+  <text x="966" y="118" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#42BE65">Resolution: 79%</text>
+
+  <rect x="1124" y="60" width="220" height="88" rx="2" fill="url(#cardGrad03)" stroke="#393939" stroke-width="1"/>
+  <rect x="1124" y="60" width="220" height="4" fill="#BE95FF"/>
+  <text x="1134" y="83" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#8d8d8d" letter-spacing="1">SOURCES TRIGGERED</text>
+  <text x="1134" y="118" font-family="IBM Plex Mono, monospace" font-size="36" font-weight="700" fill="#BE95FF">1,247</text>
+  <text x="1278" y="118" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#BE95FF">IPs</text>
+
+  <!-- Offense Queue Table -->
+  <rect x="196" y="164" width="810" height="380" rx="2" fill="url(#cardGrad03)" stroke="#393939" stroke-width="1"/>
+  <text x="210" y="187" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#f4f4f4">Active Offense Queue</text>
+  <text x="960" y="187" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#0F62FE">View All</text>
+
+  <!-- Table Header -->
+  <rect x="196" y="194" width="810" height="28" fill="#262626"/>
+  <text x="210" y="213" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">MAG</text>
+  <text x="260" y="213" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">OFFENSE NAME</text>
+  <text x="560" y="213" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">SOURCE IP</text>
+  <text x="670" y="213" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">EVENTS</text>
+  <text x="750" y="213" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">ASSIGNED</text>
+  <text x="860" y="213" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">STATUS</text>
+  <text x="930" y="213" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">FIRST SEEN</text>
+
+  <!-- Table Rows -->
+  <rect x="196" y="222" width="810" height="28" fill="#1f1f1f"/>
+  <rect x="210" y="231" width="28" height="14" rx="1" fill="#FA4D56"/>
+  <text x="224" y="242" font-family="IBM Plex Mono, monospace" font-size="11" fill="white" text-anchor="middle">9</text>
+  <text x="260" y="242" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#f4f4f4">Brute Force Login - Critical Asset</text>
+  <text x="560" y="242" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">198.51.100.23</text>
+  <text x="670" y="242" font-family="IBM Plex Mono, monospace" font-size="11" fill="#f4f4f4">14,872</text>
+  <text x="750" y="242" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">j.smith</text>
+  <rect x="855" y="231" width="56" height="14" rx="7" fill="#450a0a"/>
+  <text x="883" y="242" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#FA4D56" text-anchor="middle">ACTIVE</text>
+  <text x="930" y="242" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8d8d8d">08:14:03</text>
+
+  <rect x="196" y="250" width="810" height="28" fill="#262626"/>
+  <rect x="210" y="259" width="28" height="14" rx="1" fill="#FA4D56"/>
+  <text x="224" y="270" font-family="IBM Plex Mono, monospace" font-size="11" fill="white" text-anchor="middle">8</text>
+  <text x="260" y="270" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#f4f4f4">C2 Beacon - Known Malware Family</text>
+  <text x="560" y="270" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">203.0.113.45</text>
+  <text x="670" y="270" font-family="IBM Plex Mono, monospace" font-size="11" fill="#f4f4f4">8,341</text>
+  <text x="750" y="270" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">a.patel</text>
+  <rect x="855" y="259" width="56" height="14" rx="7" fill="#450a0a"/>
+  <text x="883" y="270" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#FA4D56" text-anchor="middle">ACTIVE</text>
+  <text x="930" y="270" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8d8d8d">07:52:18</text>
+
+  <rect x="196" y="278" width="810" height="28" fill="#1f1f1f"/>
+  <rect x="210" y="287" width="28" height="14" rx="1" fill="#FF832B"/>
+  <text x="224" y="298" font-family="IBM Plex Mono, monospace" font-size="11" fill="white" text-anchor="middle">7</text>
+  <text x="260" y="298" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#f4f4f4">Data Exfiltration - Large Volume DNS</text>
+  <text x="560" y="298" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">10.1.45.87</text>
+  <text x="670" y="298" font-family="IBM Plex Mono, monospace" font-size="11" fill="#f4f4f4">5,290</text>
+  <text x="750" y="298" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">t.wong</text>
+  <rect x="855" y="287" width="70" height="14" rx="7" fill="#1c3a2a"/>
+  <text x="890" y="298" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#42BE65" text-anchor="middle">IN REVIEW</text>
+  <text x="930" y="298" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8d8d8d">07:33:41</text>
+
+  <rect x="196" y="306" width="810" height="28" fill="#262626"/>
+  <rect x="210" y="315" width="28" height="14" rx="1" fill="#FF832B"/>
+  <text x="224" y="326" font-family="IBM Plex Mono, monospace" font-size="11" fill="white" text-anchor="middle">7</text>
+  <text x="260" y="326" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#f4f4f4">Privileged Account Lateral Movement</text>
+  <text x="560" y="326" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">172.16.8.12</text>
+  <text x="670" y="326" font-family="IBM Plex Mono, monospace" font-size="11" fill="#f4f4f4">3,847</text>
+  <text x="750" y="326" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">r.garcia</text>
+  <rect x="855" y="315" width="56" height="14" rx="7" fill="#450a0a"/>
+  <text x="883" y="326" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#FA4D56" text-anchor="middle">ACTIVE</text>
+  <text x="930" y="326" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8d8d8d">06:58:07</text>
+
+  <rect x="196" y="334" width="810" height="28" fill="#1f1f1f"/>
+  <rect x="210" y="343" width="28" height="14" rx="1" fill="#F1C21B"/>
+  <text x="224" y="354" font-family="IBM Plex Mono, monospace" font-size="11" fill="#161616" text-anchor="middle">6</text>
+  <text x="260" y="354" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#f4f4f4">Port Scan - Internal Subnet</text>
+  <text x="560" y="354" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">192.168.1.104</text>
+  <text x="670" y="354" font-family="IBM Plex Mono, monospace" font-size="11" fill="#f4f4f4">2,193</text>
+  <text x="750" y="354" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">Unassigned</text>
+  <rect x="855" y="343" width="56" height="14" rx="7" fill="#450a0a"/>
+  <text x="883" y="354" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#FA4D56" text-anchor="middle">ACTIVE</text>
+  <text x="930" y="354" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8d8d8d">06:21:55</text>
+
+  <rect x="196" y="362" width="810" height="28" fill="#262626"/>
+  <rect x="210" y="371" width="28" height="14" rx="1" fill="#F1C21B"/>
+  <text x="224" y="382" font-family="IBM Plex Mono, monospace" font-size="11" fill="#161616" text-anchor="middle">6</text>
+  <text x="260" y="382" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#f4f4f4">Suspicious DNS Tunneling Pattern</text>
+  <text x="560" y="382" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">10.5.12.34</text>
+  <text x="670" y="382" font-family="IBM Plex Mono, monospace" font-size="11" fill="#f4f4f4">1,847</text>
+  <text x="750" y="382" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">k.lee</text>
+  <rect x="855" y="371" width="70" height="14" rx="7" fill="#1c3a2a"/>
+  <text x="890" y="382" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#42BE65" text-anchor="middle">IN REVIEW</text>
+  <text x="930" y="382" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8d8d8d">05:47:29</text>
+
+  <rect x="196" y="390" width="810" height="28" fill="#1f1f1f"/>
+  <rect x="210" y="399" width="28" height="14" rx="1" fill="#F1C21B"/>
+  <text x="224" y="410" font-family="IBM Plex Mono, monospace" font-size="11" fill="#161616" text-anchor="middle">6</text>
+  <text x="260" y="410" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#f4f4f4">VPN Login from Anomalous Geography</text>
+  <text x="560" y="410" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">185.220.101.7</text>
+  <text x="670" y="410" font-family="IBM Plex Mono, monospace" font-size="11" fill="#f4f4f4">984</text>
+  <text x="750" y="410" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">Unassigned</text>
+  <rect x="855" y="399" width="56" height="14" rx="7" fill="#450a0a"/>
+  <text x="883" y="410" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#FA4D56" text-anchor="middle">ACTIVE</text>
+  <text x="930" y="410" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8d8d8d">05:12:44</text>
+
+  <rect x="196" y="418" width="810" height="28" fill="#262626"/>
+  <rect x="210" y="427" width="28" height="14" rx="1" fill="#6FDC8C"/>
+  <text x="224" y="438" font-family="IBM Plex Mono, monospace" font-size="11" fill="#161616" text-anchor="middle">5</text>
+  <text x="260" y="438" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#f4f4f4">Service Account Anomalous Access</text>
+  <text x="560" y="438" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">10.2.33.11</text>
+  <text x="670" y="438" font-family="IBM Plex Mono, monospace" font-size="11" fill="#f4f4f4">721</text>
+  <text x="750" y="438" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">m.johnson</text>
+  <rect x="855" y="427" width="70" height="14" rx="7" fill="#1c3a2a"/>
+  <text x="890" y="438" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#42BE65" text-anchor="middle">IN REVIEW</text>
+  <text x="930" y="438" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8d8d8d">04:55:16</text>
+
+  <rect x="196" y="446" width="810" height="28" fill="#1f1f1f"/>
+  <rect x="210" y="455" width="28" height="14" rx="1" fill="#6FDC8C"/>
+  <text x="224" y="466" font-family="IBM Plex Mono, monospace" font-size="11" fill="#161616" text-anchor="middle">5</text>
+  <text x="260" y="466" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#f4f4f4">Malware Comm - Blocked by Firewall</text>
+  <text x="560" y="466" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">198.51.100.98</text>
+  <text x="670" y="466" font-family="IBM Plex Mono, monospace" font-size="11" fill="#f4f4f4">503</text>
+  <text x="750" y="466" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">auto-close</text>
+  <rect x="855" y="455" width="56" height="14" rx="7" fill="#1f3244"/>
+  <text x="883" y="466" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#78a9ff" text-anchor="middle">CLOSED</text>
+  <text x="930" y="466" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8d8d8d">04:10:33</text>
+
+  <rect x="196" y="474" width="810" height="28" fill="#262626"/>
+  <rect x="210" y="483" width="28" height="14" rx="1" fill="#6FDC8C"/>
+  <text x="224" y="494" font-family="IBM Plex Mono, monospace" font-size="11" fill="#161616" text-anchor="middle">5</text>
+  <text x="260" y="494" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#f4f4f4">Auth Failure - Service Account Lockout</text>
+  <text x="560" y="494" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">10.0.0.15</text>
+  <text x="670" y="494" font-family="IBM Plex Mono, monospace" font-size="11" fill="#f4f4f4">441</text>
+  <text x="750" y="494" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">l.chen</text>
+  <rect x="855" y="483" width="70" height="14" rx="7" fill="#1c3a2a"/>
+  <text x="890" y="494" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#42BE65" text-anchor="middle">IN REVIEW</text>
+  <text x="930" y="494" font-family="IBM Plex Mono, monospace" font-size="10" fill="#8d8d8d">03:38:09</text>
+
+  <!-- Offense Magnitude Chart -->
+  <rect x="196" y="558" width="810" height="200" rx="2" fill="url(#cardGrad03)" stroke="#393939" stroke-width="1"/>
+  <text x="210" y="581" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#f4f4f4">Offense Volume — Last 24 Hours</text>
+
+  <!-- Bar Chart -->
+  <line x1="220" y1="620" x2="990" y2="620" stroke="#393939" stroke-width="1"/>
+  <line x1="220" y1="600" x2="990" y2="600" stroke="#393939" stroke-width="1" stroke-dasharray="4,4"/>
+  <line x1="220" y1="580" x2="990" y2="580" stroke="#393939" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="210" y="623" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8d8d8d" text-anchor="end">0</text>
+  <text x="210" y="603" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8d8d8d" text-anchor="end">10</text>
+  <text x="210" y="583" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8d8d8d" text-anchor="end">20</text>
+
+  <!-- Bars (24 hours) -->
+  <rect x="225" y="598" width="28" height="22" fill="#FA4D56"/>
+  <rect x="256" y="605" width="28" height="15" fill="#FF832B"/>
+  <rect x="287" y="610" width="28" height="10" fill="#F1C21B"/>
+  <rect x="318" y="607" width="28" height="13" fill="#FF832B"/>
+  <rect x="349" y="600" width="28" height="20" fill="#FA4D56"/>
+  <rect x="380" y="603" width="28" height="17" fill="#FF832B"/>
+  <rect x="411" y="612" width="28" height="8" fill="#F1C21B"/>
+  <rect x="442" y="608" width="28" height="12" fill="#F1C21B"/>
+  <rect x="473" y="604" width="28" height="16" fill="#FF832B"/>
+  <rect x="504" y="596" width="28" height="24" fill="#FA4D56"/>
+  <rect x="535" y="601" width="28" height="19" fill="#FA4D56"/>
+  <rect x="566" y="605" width="28" height="15" fill="#FF832B"/>
+  <rect x="597" y="613" width="28" height="7" fill="#6FDC8C"/>
+  <rect x="628" y="609" width="28" height="11" fill="#F1C21B"/>
+  <rect x="659" y="606" width="28" height="14" fill="#FF832B"/>
+  <rect x="690" y="598" width="28" height="22" fill="#FA4D56"/>
+  <rect x="721" y="602" width="28" height="18" fill="#FA4D56"/>
+  <rect x="752" y="607" width="28" height="13" fill="#FF832B"/>
+  <rect x="783" y="614" width="28" height="6" fill="#6FDC8C"/>
+  <rect x="814" y="610" width="28" height="10" fill="#F1C21B"/>
+  <rect x="845" y="604" width="28" height="16" fill="#FF832B"/>
+  <rect x="876" y="596" width="28" height="24" fill="#FA4D56"/>
+  <rect x="907" y="600" width="28" height="20" fill="#FA4D56"/>
+  <rect x="938" y="597" width="28" height="23" fill="#FA4D56"/>
+  <!-- Time labels -->
+  <text x="225" y="640" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8d8d8d">00</text>
+  <text x="349" y="640" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8d8d8d">06</text>
+  <text x="473" y="640" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8d8d8d">12</text>
+  <text x="597" y="640" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8d8d8d">18</text>
+  <text x="721" y="640" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8d8d8d">21</text>
+  <text x="938" y="640" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8d8d8d">Now</text>
+
+  <!-- Legend -->
+  <rect x="680" y="648" width="12" height="8" fill="#FA4D56"/>
+  <text x="696" y="656" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#8d8d8d">Critical/High (Mag 7+)</text>
+  <rect x="820" y="648" width="12" height="8" fill="#FF832B"/>
+  <text x="836" y="656" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#8d8d8d">Medium (Mag 5-6)</text>
+  <rect x="935" y="648" width="12" height="8" fill="#F1C21B"/>
+  <text x="951" y="656" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#8d8d8d">Low</text>
+
+  <!-- Right Panel -->
+  <!-- Log Source Health -->
+  <rect x="1020" y="164" width="340" height="200" rx="2" fill="url(#cardGrad03)" stroke="#393939" stroke-width="1"/>
+  <text x="1034" y="187" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#f4f4f4">Log Source Health</text>
+
+  <text x="1034" y="213" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">SOURCE</text>
+  <text x="1200" y="213" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">EPS</text>
+  <text x="1270" y="213" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">STATUS</text>
+  <line x1="1020" y1="218" x2="1360" y2="218" stroke="#393939" stroke-width="1"/>
+
+  <text x="1034" y="236" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#c6c6c6">Windows AD</text>
+  <text x="1200" y="236" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">8,432</text>
+  <circle cx="1300" cy="232" r="5" fill="#42BE65"/>
+  <text x="1034" y="256" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#c6c6c6">Palo Alto FW</text>
+  <text x="1200" y="256" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">5,128</text>
+  <circle cx="1300" cy="252" r="5" fill="#42BE65"/>
+  <text x="1034" y="276" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#c6c6c6">Crowdstrike EDR</text>
+  <text x="1200" y="276" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">4,891</text>
+  <circle cx="1300" cy="272" r="5" fill="#42BE65"/>
+  <text x="1034" y="296" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#c6c6c6">AWS CloudTrail</text>
+  <text x="1200" y="296" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">3,247</text>
+  <circle cx="1300" cy="292" r="5" fill="#42BE65"/>
+  <text x="1034" y="316" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#c6c6c6">Linux Syslog</text>
+  <text x="1200" y="316" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">2,484</text>
+  <circle cx="1300" cy="312" r="5" fill="#F1C21B"/>
+  <text x="1034" y="336" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#c6c6c6">Cisco ASA</text>
+  <text x="1200" y="336" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">0</text>
+  <circle cx="1300" cy="332" r="5" fill="#FA4D56"/>
+  <text x="1310" y="336" font-family="IBM Plex Sans, sans-serif" font-size="10" fill="#FA4D56">DOWN</text>
+  <text x="1034" y="356" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="#c6c6c6">Okta IdP</text>
+  <text x="1200" y="356" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">1,022</text>
+  <circle cx="1300" cy="352" r="5" fill="#42BE65"/>
+
+  <!-- Top Attackers -->
+  <rect x="1020" y="378" width="340" height="186" rx="2" fill="url(#cardGrad03)" stroke="#393939" stroke-width="1"/>
+  <text x="1034" y="401" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#f4f4f4">Top Source IPs</text>
+  <text x="1034" y="427" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">IP ADDRESS</text>
+  <text x="1220" y="427" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">OFFENSES</text>
+  <text x="1300" y="427" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">COUNTRY</text>
+  <line x1="1020" y1="432" x2="1360" y2="432" stroke="#393939" stroke-width="1"/>
+  <text x="1034" y="450" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">198.51.100.23</text>
+  <text x="1220" y="450" font-family="IBM Plex Mono, monospace" font-size="11" fill="#FA4D56">47</text>
+  <text x="1300" y="450" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">RU</text>
+  <text x="1034" y="470" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">203.0.113.45</text>
+  <text x="1220" y="470" font-family="IBM Plex Mono, monospace" font-size="11" fill="#FA4D56">38</text>
+  <text x="1300" y="470" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">CN</text>
+  <text x="1034" y="490" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">185.220.101.7</text>
+  <text x="1220" y="490" font-family="IBM Plex Mono, monospace" font-size="11" fill="#FF832B">29</text>
+  <text x="1300" y="490" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">NL</text>
+  <text x="1034" y="510" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">45.33.49.119</text>
+  <text x="1220" y="510" font-family="IBM Plex Mono, monospace" font-size="11" fill="#FF832B">21</text>
+  <text x="1300" y="510" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">US</text>
+  <text x="1034" y="530" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">91.108.4.213</text>
+  <text x="1220" y="530" font-family="IBM Plex Mono, monospace" font-size="11" fill="#F1C21B">17</text>
+  <text x="1300" y="530" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">DE</text>
+  <text x="1034" y="550" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">5.188.10.76</text>
+  <text x="1220" y="550" font-family="IBM Plex Mono, monospace" font-size="11" fill="#F1C21B">14</text>
+  <text x="1300" y="550" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">CN</text>
+
+  <!-- QRadar Rules Fired -->
+  <rect x="1020" y="578" width="340" height="180" rx="2" fill="url(#cardGrad03)" stroke="#393939" stroke-width="1"/>
+  <text x="1034" y="601" font-family="IBM Plex Sans, sans-serif" font-size="13" font-weight="600" fill="#f4f4f4">Top Rules Fired</text>
+  <line x1="1020" y1="610" x2="1360" y2="610" stroke="#393939" stroke-width="1"/>
+  <text x="1034" y="629" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">BB:CategoryDefinition: Brute Force Attack</text>
+  <text x="1320" y="629" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">14,872</text>
+  <text x="1034" y="649" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">BB:NetworkDefinition: C2 Comm Detected</text>
+  <text x="1320" y="649" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">8,341</text>
+  <text x="1034" y="669" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">BB:CategoryDefinition: Recon Activity</text>
+  <text x="1320" y="669" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">5,290</text>
+  <text x="1034" y="689" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">BB:HostDefinition: Critical Asset Alert</text>
+  <text x="1320" y="689" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">3,847</text>
+  <text x="1034" y="709" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">BB:NetworkDefinition: Large Data Upload</text>
+  <text x="1320" y="709" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">2,193</text>
+  <text x="1034" y="729" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">BB:PolicyDefinition: Forbidden App Use</text>
+  <text x="1320" y="729" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">1,847</text>
+  <text x="1034" y="749" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#c6c6c6">BB:AuthenticationDefinition: Admin Login</text>
+  <text x="1320" y="749" font-family="IBM Plex Mono, monospace" font-size="11" fill="#78a9ff">984</text>
+
+  <!-- Bottom Status Bar -->
+  <rect x="0" y="872" width="1400" height="28" fill="#161616" stroke="#393939" stroke-width="1"/>
+  <text x="16" y="890" font-family="IBM Plex Mono, monospace" font-size="11" fill="#42BE65">● CONNECTED</text>
+  <text x="140" y="890" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">Console: qradar-console-01.corp</text>
+  <text x="400" y="890" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">Flow Processor: OK</text>
+  <text x="580" y="890" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">Event Processor: OK</text>
+  <text x="760" y="890" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">Ariel DB: OK</text>
+  <text x="900" y="890" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">License: 50,000 EPS</text>
+  <text x="1100" y="890" font-family="IBM Plex Mono, monospace" font-size="11" fill="#8d8d8d">Version: QRadar 7.5.0 UP7</text>
+</svg>

@@ -1,0 +1,303 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg09" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0A0B0F"/>
+      <stop offset="100%" style="stop-color:#0D0F14"/>
+    </linearGradient>
+    <linearGradient id="card09" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#14161E"/>
+      <stop offset="100%" style="stop-color:#111319"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1400" height="900" fill="url(#bg09)"/>
+
+  <!-- Top Nav - Wiz style -->
+  <rect x="0" y="0" width="1400" height="52" fill="#0D0F14" stroke="#1E2033" stroke-width="1"/>
+  <rect x="0" y="14" width="36" height="24" rx="4" fill="#F5E642"/>
+  <text x="18" y="30" font-family="Arial Black, sans-serif" font-size="14" font-weight="900" fill="black" text-anchor="middle">W</text>
+  <text x="46" y="20" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">Wiz</text>
+  <text x="46" y="38" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F0F4F8">Cloud Risk Platform</text>
+  <text x="230" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Dashboard</text>
+  <text x="320" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Issues</text>
+  <text x="390" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Graph</text>
+  <text x="460" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Reports</text>
+  <text x="540" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Integrations</text>
+  <text x="1200" y="30" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">Organizations: 3  |  Subscriptions: 82</text>
+  <rect x="1340" y="14" width="46" height="26" rx="4" fill="#F5E642"/>
+  <text x="1363" y="31" font-family="Inter, sans-serif" font-size="11" fill="black" text-anchor="middle" font-weight="700">+ New</text>
+
+  <!-- Risk Score Banner -->
+  <rect x="12" y="66" width="240" height="120" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <text x="26" y="90" font-family="Inter, sans-serif" font-size="11" fill="#6B7280" letter-spacing="0.5">WIZ RISK SCORE</text>
+  <text x="26" y="140" font-family="Inter, sans-serif" font-size="64" font-weight="900" fill="#EF4444">A-</text>
+  <text x="130" y="140" font-family="Inter, sans-serif" font-size="18" fill="#9CA3AF">(82/100)</text>
+  <text x="26" y="174" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">Updated 2m ago</text>
+
+  <!-- KPI Cards -->
+  <rect x="262" y="66" width="160" height="120" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <rect x="262" y="66" width="160" height="3" fill="#EF4444"/>
+  <text x="276" y="88" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">CRITICAL ISSUES</text>
+  <text x="276" y="128" font-family="Inter, sans-serif" font-size="40" font-weight="700" fill="#EF4444">347</text>
+  <text x="276" y="178" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">▲ 12 today</text>
+
+  <rect x="432" y="66" width="160" height="120" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <rect x="432" y="66" width="160" height="3" fill="#F97316"/>
+  <text x="446" y="88" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">HIGH ISSUES</text>
+  <text x="446" y="128" font-family="Inter, sans-serif" font-size="40" font-weight="700" fill="#F97316">1,847</text>
+  <text x="446" y="178" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">▼ 34 today</text>
+
+  <rect x="602" y="66" width="160" height="120" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <rect x="602" y="66" width="160" height="3" fill="#F5E642"/>
+  <text x="616" y="88" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">TOXIC COMBINATIONS</text>
+  <text x="616" y="128" font-family="Inter, sans-serif" font-size="40" font-weight="700" fill="#F5E642">127</text>
+  <text x="616" y="178" font-family="Inter, sans-serif" font-size="11" fill="#F5E642">Attack paths</text>
+
+  <rect x="772" y="66" width="160" height="120" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <rect x="772" y="66" width="160" height="3" fill="#00C8A8"/>
+  <text x="786" y="88" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">CLOUD RESOURCES</text>
+  <text x="786" y="128" font-family="Inter, sans-serif" font-size="40" font-weight="700" fill="#F0F4F8">1.2M</text>
+  <text x="786" y="178" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">Agentless scanned</text>
+
+  <rect x="942" y="66" width="160" height="120" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <rect x="942" y="66" width="160" height="3" fill="#A78BFA"/>
+  <text x="956" y="88" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">DATA RISKS</text>
+  <text x="956" y="128" font-family="Inter, sans-serif" font-size="40" font-weight="700" fill="#A78BFA">84</text>
+  <text x="956" y="178" font-family="Inter, sans-serif" font-size="11" fill="#A78BFA">Exposed sensitive</text>
+
+  <rect x="1112" y="66" width="272" height="120" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <rect x="1112" y="66" width="272" height="3" fill="#34D399"/>
+  <text x="1126" y="88" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">REMEDIATED (7d)</text>
+  <text x="1126" y="128" font-family="Inter, sans-serif" font-size="40" font-weight="700" fill="#34D399">2,841</text>
+  <text x="1126" y="178" font-family="Inter, sans-serif" font-size="11" fill="#34D399">Auto-fix: 847</text>
+
+  <!-- Security Graph -->
+  <rect x="12" y="200" width="680" height="330" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <text x="26" y="224" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#F0F4F8">Wiz Security Graph — Attack Path</text>
+  <rect x="600" y="210" width="76" height="22" rx="4" fill="#F5E642" fill-opacity="0.15" stroke="#F5E642" stroke-width="1"/>
+  <text x="638" y="225" font-family="Inter, sans-serif" font-size="10" fill="#F5E642" text-anchor="middle">Full Graph</text>
+  <!-- Graph visualization -->
+  <rect x="26" y="234" width="654" height="280" rx="4" fill="#0A0B0F"/>
+  <!-- Node: Internet -->
+  <circle cx="80" cy="374" r="30" fill="#7f1d1d" stroke="#EF4444" stroke-width="1.5"/>
+  <text x="80" y="378" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Internet</text>
+  <!-- Connector lines -->
+  <line x1="110" y1="374" x2="180" y2="330" stroke="#EF4444" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="110" y1="374" x2="180" y2="420" stroke="#F97316" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <!-- Firewall -->
+  <rect x="185" y="308" width="60" height="44" rx="4" fill="#7c2d12" stroke="#F97316" stroke-width="1"/>
+  <text x="215" y="328" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">SG Open</text>
+  <text x="215" y="342" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">:22 :443</text>
+  <!-- Load Balancer -->
+  <rect x="185" y="398" width="60" height="44" rx="4" fill="#713f12" stroke="#FBBF24" stroke-width="1"/>
+  <text x="215" y="416" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">ALB</text>
+  <text x="215" y="430" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">Public</text>
+  <line x1="245" y1="330" x2="330" y2="310" stroke="#EF4444" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="245" y1="420" x2="330" y2="360" stroke="#F97316" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <!-- EC2 -->
+  <circle cx="370" cy="300" r="28" fill="#7f1d1d" stroke="#EF4444" stroke-width="1.5"/>
+  <text x="370" y="296" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">EC2</text>
+  <text x="370" y="308" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Admin</text>
+  <!-- Lambda -->
+  <circle cx="370" cy="370" r="28" fill="#713f12" stroke="#FBBF24" stroke-width="1.5"/>
+  <text x="370" y="368" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">Lambda</text>
+  <text x="370" y="380" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">Overperm</text>
+  <line x1="398" y1="300" x2="470" y2="280" stroke="#EF4444" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <line x1="398" y1="370" x2="470" y2="360" stroke="#FBBF24" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <!-- IAM Role -->
+  <rect x="470" y="258" width="70" height="44" rx="4" fill="#7f1d1d" stroke="#EF4444" stroke-width="1"/>
+  <text x="505" y="278" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">IAM Role</text>
+  <text x="505" y="292" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">FullAdmin</text>
+  <!-- S3 Bucket -->
+  <rect x="470" y="340" width="70" height="44" rx="4" fill="#7f1d1d" stroke="#EF4444" stroke-width="1"/>
+  <text x="505" y="360" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">S3</text>
+  <text x="505" y="374" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">PII Data</text>
+  <line x1="540" y1="280" x2="600" y2="370" stroke="#EF4444" stroke-width="2"/>
+  <line x1="540" y1="362" x2="600" y2="370" stroke="#EF4444" stroke-width="2"/>
+  <!-- Crown target -->
+  <circle cx="628" cy="374" r="28" fill="#7f1d1d" stroke="#EF4444" stroke-width="2"/>
+  <text x="628" y="368" font-family="Inter, sans-serif" font-size="14" fill="#F5E642" text-anchor="middle">♛</text>
+  <text x="628" y="384" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Crown Jewel</text>
+  <!-- Labels -->
+  <text x="40" y="260" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">⚠ CRITICAL ATTACK PATH</text>
+  <text x="40" y="278" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">Internet → EC2(admin) → IAM(FullAdmin) → S3(PII)</text>
+  <text x="40" y="495" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">6 nodes  |  3 toxic combos  |  Blast radius: 1.2M records</text>
+
+  <!-- Issue List -->
+  <rect x="702" y="200" width="686" height="330" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <text x="716" y="224" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#F0F4F8">Critical Issues</text>
+  <rect x="702" y="232" width="686" height="24" fill="#0A0B0F"/>
+  <text x="716" y="248" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">SEV</text>
+  <text x="764" y="248" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">ISSUE</text>
+  <text x="1080" y="248" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">TYPE</text>
+  <text x="1200" y="248" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">ACCOUNT</text>
+  <text x="1310" y="248" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">STATUS</text>
+
+  <!-- Issue rows -->
+  <rect x="702" y="256" width="686" height="26" fill="#14161E"/>
+  <circle cx="730" cy="269" r="9" fill="#7f1d1d" stroke="#EF4444" stroke-width="1"/>
+  <text x="730" y="273" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">C</text>
+  <text x="764" y="273" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">S3 with PII data publicly accessible</text>
+  <rect x="1080" y="261" width="84" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1122" y="272" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Data Exposure</text>
+  <text x="1200" y="273" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">prod-aws</text>
+  <rect x="1310" y="261" width="60" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1340" y="272" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="702" y="282" width="686" height="26" fill="#111319"/>
+  <circle cx="730" cy="295" r="9" fill="#7f1d1d" stroke="#EF4444" stroke-width="1"/>
+  <text x="730" y="299" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">C</text>
+  <text x="764" y="299" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Admin IAM role attached to internet-facing VM</text>
+  <rect x="1080" y="287" width="84" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1122" y="298" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Toxic Combo</text>
+  <text x="1200" y="299" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">prod-aws</text>
+  <rect x="1310" y="287" width="60" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1340" y="298" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="702" y="308" width="686" height="26" fill="#14161E"/>
+  <circle cx="730" cy="321" r="9" fill="#7f1d1d" stroke="#EF4444" stroke-width="1"/>
+  <text x="730" y="325" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">C</text>
+  <text x="764" y="325" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Secret key in container image ENV variable</text>
+  <rect x="1080" y="313" width="72" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1116" y="324" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Secret Exposure</text>
+  <text x="1200" y="325" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">gcp-prod</text>
+  <rect x="1310" y="313" width="68" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="1344" y="324" font-family="Inter, sans-serif" font-size="9" fill="#60A5FA" text-anchor="middle">In Review</text>
+
+  <rect x="702" y="334" width="686" height="26" fill="#111319"/>
+  <circle cx="730" cy="347" r="9" fill="#7f1d1d" stroke="#EF4444" stroke-width="1"/>
+  <text x="730" y="351" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">C</text>
+  <text x="764" y="351" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">K8s container running as root with host PID</text>
+  <rect x="1080" y="339" width="80" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1120" y="350" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Misconfig</text>
+  <text x="1200" y="351" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">azure-dev</text>
+  <rect x="1310" y="339" width="60" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1340" y="350" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="702" y="360" width="686" height="26" fill="#14161E"/>
+  <circle cx="730" cy="373" r="9" fill="#7c2d12" stroke="#F97316" stroke-width="1"/>
+  <text x="730" y="377" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">H</text>
+  <text x="764" y="377" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">RDS DB with known CVE — unpatched 90d</text>
+  <rect x="1080" y="365" width="80" height="14" rx="7" fill="#7c2d12"/>
+  <text x="1120" y="376" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">Vulnerability</text>
+  <text x="1200" y="377" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">prod-aws</text>
+  <rect x="1310" y="365" width="60" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1340" y="376" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="702" y="386" width="686" height="26" fill="#111319"/>
+  <circle cx="730" cy="399" r="9" fill="#7c2d12" stroke="#F97316" stroke-width="1"/>
+  <text x="730" y="403" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">H</text>
+  <text x="764" y="403" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">VM with lateral movement risk — no segmentation</text>
+  <rect x="1080" y="391" width="80" height="14" rx="7" fill="#7c2d12"/>
+  <text x="1120" y="402" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">Network</text>
+  <text x="1200" y="403" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">azure-prod</text>
+  <rect x="1310" y="391" width="68" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="1344" y="402" font-family="Inter, sans-serif" font-size="9" fill="#60A5FA" text-anchor="middle">In Review</text>
+
+  <rect x="702" y="412" width="686" height="26" fill="#14161E"/>
+  <circle cx="730" cy="425" r="9" fill="#7c2d12" stroke="#F97316" stroke-width="1"/>
+  <text x="730" y="429" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">H</text>
+  <text x="764" y="429" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Lambda function with wildcard resource perms</text>
+  <rect x="1080" y="417" width="64" height="14" rx="7" fill="#7c2d12"/>
+  <text x="1112" y="428" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">IAM Risk</text>
+  <text x="1200" y="429" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">dev-aws</text>
+  <rect x="1310" y="417" width="60" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1340" y="428" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="702" y="438" width="686" height="26" fill="#111319"/>
+  <circle cx="730" cy="451" r="9" fill="#7c2d12" stroke="#F97316" stroke-width="1"/>
+  <text x="730" y="455" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">H</text>
+  <text x="764" y="455" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Container image: critical CVE in base OS</text>
+  <rect x="1080" y="443" width="80" height="14" rx="7" fill="#7c2d12"/>
+  <text x="1120" y="454" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">CVE</text>
+  <text x="1200" y="455" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">gcp-prod</text>
+  <rect x="1310" y="443" width="60" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1340" y="454" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="702" y="464" width="686" height="26" fill="#14161E"/>
+  <circle cx="730" cy="477" r="9" fill="#713f12" stroke="#FBBF24" stroke-width="1"/>
+  <text x="730" y="481" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">M</text>
+  <text x="764" y="481" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">CloudWatch logging disabled for VPC flow logs</text>
+  <rect x="1080" y="469" width="64" height="14" rx="7" fill="#713f12"/>
+  <text x="1112" y="480" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">Logging</text>
+  <text x="1200" y="481" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">dev-aws</text>
+  <rect x="1310" y="469" width="68" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="1344" y="480" font-family="Inter, sans-serif" font-size="9" fill="#60A5FA" text-anchor="middle">Suppressed</text>
+
+  <text x="716" y="513" font-family="Inter, sans-serif" font-size="11" fill="#4B5563">Showing 9 of 347 critical issues</text>
+  <text x="970" y="513" font-family="Inter, sans-serif" font-size="11" fill="#F5E642">View in Wiz Graph →</text>
+
+  <!-- Bottom Row -->
+  <!-- Risk Trend -->
+  <rect x="12" y="544" width="500" height="240" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <text x="26" y="568" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#F0F4F8">Risk Score Trend — 30 Days</text>
+  <polyline points="40,740 80,735 120,730 160,720 200,725 240,715 280,705 320,710 360,700 400,690 440,695 480,683 500,760" fill="#F5E642" fill-opacity="0.08" stroke="none"/>
+  <polyline points="40,740 80,735 120,730 160,720 200,725 240,715 280,705 320,710 360,700 400,690 440,695 480,683" fill="none" stroke="#F5E642" stroke-width="2"/>
+  <line x1="40" y1="760" x2="500" y2="760" stroke="#1E2033" stroke-width="1"/>
+  <text x="40" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">Jan 20</text>
+  <text x="260" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">Feb 4</text>
+  <text x="470" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">Feb 19</text>
+
+  <!-- Data Findings -->
+  <rect x="522" y="544" width="430" height="240" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <text x="536" y="568" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#F0F4F8">Data Findings</text>
+  <text x="536" y="596" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Type</text>
+  <text x="760" y="596" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Resources</text>
+  <text x="870" y="596" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Severity</text>
+  <line x1="522" y1="604" x2="952" y2="604" stroke="#1E2033" stroke-width="1"/>
+  <text x="536" y="624" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">PII Data</text>
+  <text x="760" y="624" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">347</text>
+  <rect x="870" y="614" width="50" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="895" y="625" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">CRIT</text>
+  <text x="536" y="646" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Credit Cards</text>
+  <text x="760" y="646" font-family="Inter, sans-serif" font-size="12" fill="#F97316">84</text>
+  <rect x="870" y="636" width="40" height="14" rx="7" fill="#7c2d12"/>
+  <text x="890" y="647" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">HIGH</text>
+  <text x="536" y="668" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Credentials / Keys</text>
+  <text x="760" y="668" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">127</text>
+  <rect x="870" y="658" width="50" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="895" y="669" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">CRIT</text>
+  <text x="536" y="690" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">SSN / Tax IDs</text>
+  <text x="760" y="690" font-family="Inter, sans-serif" font-size="12" fill="#F97316">23</text>
+  <rect x="870" y="680" width="40" height="14" rx="7" fill="#7c2d12"/>
+  <text x="890" y="691" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">HIGH</text>
+  <text x="536" y="712" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Passwords (plaintext)</text>
+  <text x="760" y="712" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">412</text>
+  <rect x="870" y="702" width="50" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="895" y="713" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">CRIT</text>
+  <text x="536" y="740" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">HIPAA / PHI</text>
+  <text x="760" y="740" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24">18</text>
+  <rect x="870" y="730" width="40" height="14" rx="7" fill="#713f12"/>
+  <text x="890" y="741" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">MED</text>
+
+  <!-- Cloud Coverage -->
+  <rect x="962" y="544" width="426" height="240" rx="6" fill="url(#card09)" stroke="#1E2033" stroke-width="1"/>
+  <text x="976" y="568" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#F0F4F8">Cloud Provider Breakdown</text>
+  <text x="976" y="596" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Provider</text>
+  <text x="1150" y="596" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Issues</text>
+  <text x="1250" y="596" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Resources</text>
+  <line x1="962" y1="604" x2="1388" y2="604" stroke="#1E2033" stroke-width="1"/>
+  <text x="976" y="624" font-family="Inter, sans-serif" font-size="12" fill="#F8A100">▪ AWS (47 accts)</text>
+  <text x="1150" y="624" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">1,247</text>
+  <text x="1250" y="624" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">684K</text>
+  <text x="976" y="648" font-family="Inter, sans-serif" font-size="12" fill="#0078D4">▪ Azure (23 accts)</text>
+  <text x="1150" y="648" font-family="Inter, sans-serif" font-size="12" fill="#F97316">762</text>
+  <text x="1250" y="648" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">341K</text>
+  <text x="976" y="672" font-family="Inter, sans-serif" font-size="12" fill="#34A853">▪ GCP (12 accts)</text>
+  <text x="1150" y="672" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24">184</text>
+  <text x="1250" y="672" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">175K</text>
+  <text x="976" y="696" font-family="Inter, sans-serif" font-size="12" fill="#A78BFA">▪ K8s Clusters</text>
+  <text x="1150" y="696" font-family="Inter, sans-serif" font-size="12" fill="#F97316">247</text>
+  <text x="1250" y="696" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">52K</text>
+  <text x="976" y="720" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">────────────────────────────────</text>
+  <text x="976" y="744" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Total Issues:</text>
+  <text x="1150" y="744" font-family="Inter, sans-serif" font-size="12" fill="#EF4444" font-weight="700">2,440</text>
+  <text x="1250" y="744" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">1.25M</text>
+  <text x="976" y="766" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Agentless Scan: </text>
+  <text x="1100" y="766" font-family="Inter, sans-serif" font-size="12" fill="#34D399">100% coverage</text>
+
+  <!-- Footer -->
+  <rect x="0" y="878" width="1400" height="22" fill="#0D0F14" stroke="#1E2033" stroke-width="1"/>
+  <text x="16" y="893" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">Wiz Cloud Security Platform — Agentless — Scan time: &lt;24h for full cloud  |  No agents required</text>
+  <text x="1100" y="893" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">Last scan completed: 09:00 UTC  |  ● All clouds connected</text>
+</svg>

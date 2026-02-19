@@ -1,0 +1,313 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg10" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0A0B0F"/>
+      <stop offset="100%" style="stop-color:#0D0E14"/>
+    </linearGradient>
+    <linearGradient id="card10" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#15162A"/>
+      <stop offset="100%" style="stop-color:#111221"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1400" height="900" fill="url(#bg10)"/>
+
+  <!-- Top Nav - SentinelOne purple/dark theme -->
+  <rect x="0" y="0" width="1400" height="52" fill="#0D0E14" stroke="#1E1F38" stroke-width="1"/>
+  <rect x="0" y="0" width="56" height="52" fill="#7B2D8B"/>
+  <text x="28" y="34" font-family="Arial, sans-serif" font-size="22" font-weight="900" fill="white" text-anchor="middle">S1</text>
+  <text x="70" y="20" font-family="Inter, sans-serif" font-size="10" fill="#8B8FA8">SentinelOne</text>
+  <text x="70" y="38" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#E0E4F4">Singularity XDR</text>
+  <text x="230" y="30" font-family="Inter, sans-serif" font-size="12" fill="#565B7A">Overview</text>
+  <text x="320" y="30" font-family="Inter, sans-serif" font-size="12" fill="#565B7A">Threats</text>
+  <text x="400" y="30" font-family="Inter, sans-serif" font-size="12" fill="#565B7A">Alerts</text>
+  <text x="470" y="30" font-family="Inter, sans-serif" font-size="12" fill="#565B7A">Incidents</text>
+  <text x="560" y="30" font-family="Inter, sans-serif" font-size="12" fill="#565B7A">Ranger</text>
+  <text x="640" y="30" font-family="Inter, sans-serif" font-size="12" fill="#565B7A">Patrol</text>
+  <text x="720" y="30" font-family="Inter, sans-serif" font-size="12" fill="#565B7A">Reports</text>
+  <rect x="1240" y="14" width="140" height="26" rx="4" fill="#7B2D8B"/>
+  <text x="1310" y="31" font-family="Inter, sans-serif" font-size="11" fill="white" text-anchor="middle" font-weight="600">Storyline AI Mode</text>
+
+  <!-- Threat Activity Banner -->
+  <rect x="0" y="52" width="1400" height="30" fill="#160D28"/>
+  <text x="16" y="72" font-family="Inter, sans-serif" font-size="12" fill="#C084FC">● ACTIVE THREAT: Ransomware behavior detected on 3 endpoints — Autonomous Response: KILL + QUARANTINE initiated</text>
+  <rect x="1300" y="58" width="88" height="18" rx="4" fill="#7B2D8B"/>
+  <text x="1344" y="71" font-family="Inter, sans-serif" font-size="10" fill="white" text-anchor="middle">View Details</text>
+
+  <!-- KPI Row -->
+  <rect x="12" y="96" width="160" height="90" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <rect x="12" y="96" width="160" height="3" fill="#EF4444"/>
+  <text x="24" y="116" font-family="Inter, sans-serif" font-size="10" fill="#565B7A" letter-spacing="0.5">ACTIVE THREATS</text>
+  <text x="24" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#EF4444">23</text>
+  <text x="24" y="178" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">Requires action</text>
+
+  <rect x="182" y="96" width="160" height="90" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <rect x="182" y="96" width="160" height="3" fill="#34D399"/>
+  <text x="194" y="116" font-family="Inter, sans-serif" font-size="10" fill="#565B7A" letter-spacing="0.5">AUTO-MITIGATED (24h)</text>
+  <text x="194" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#34D399">8,247</text>
+  <text x="194" y="178" font-family="Inter, sans-serif" font-size="11" fill="#34D399">AI autonomous</text>
+
+  <rect x="352" y="96" width="160" height="90" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <rect x="352" y="96" width="160" height="3" fill="#C084FC"/>
+  <text x="364" y="116" font-family="Inter, sans-serif" font-size="10" fill="#565B7A" letter-spacing="0.5">ENDPOINTS PROTECTED</text>
+  <text x="364" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#E0E4F4">32,847</text>
+  <text x="364" y="178" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">Online: 98.4%</text>
+
+  <rect x="522" y="96" width="160" height="90" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <rect x="522" y="96" width="160" height="3" fill="#FBBF24"/>
+  <text x="534" y="116" font-family="Inter, sans-serif" font-size="10" fill="#565B7A" letter-spacing="0.5">ALERTS UNRESOLVED</text>
+  <text x="534" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#FBBF24">847</text>
+  <text x="534" y="178" font-family="Inter, sans-serif" font-size="11" fill="#FBBF24">▲ 34 today</text>
+
+  <rect x="692" y="96" width="160" height="90" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <rect x="692" y="96" width="160" height="3" fill="#60A5FA"/>
+  <text x="704" y="116" font-family="Inter, sans-serif" font-size="10" fill="#565B7A" letter-spacing="0.5">STORYLINES ACTIVE</text>
+  <text x="704" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#60A5FA">147</text>
+  <text x="704" y="178" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">Correlated chains</text>
+
+  <rect x="862" y="96" width="160" height="90" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <rect x="862" y="96" width="160" height="3" fill="#34D399"/>
+  <text x="874" y="116" font-family="Inter, sans-serif" font-size="10" fill="#565B7A" letter-spacing="0.5">DWELL TIME (AVG)</text>
+  <text x="874" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#34D399">3.2m</text>
+  <text x="874" y="178" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">To detection</text>
+
+  <rect x="1032" y="96" width="160" height="90" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <rect x="1032" y="96" width="160" height="3" fill="#EF4444"/>
+  <text x="1044" y="116" font-family="Inter, sans-serif" font-size="10" fill="#565B7A" letter-spacing="0.5">RANSOMWARE BLOCKED</text>
+  <text x="1044" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#EF4444">3</text>
+  <text x="1084" y="153" font-family="Inter, sans-serif" font-size="18" fill="#6B7280">today</text>
+
+  <rect x="1202" y="96" width="182" height="90" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <rect x="1202" y="96" width="182" height="3" fill="#7B2D8B"/>
+  <text x="1214" y="116" font-family="Inter, sans-serif" font-size="10" fill="#565B7A" letter-spacing="0.5">AI CONFIDENCE SCORE</text>
+  <text x="1214" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#C084FC">99.1%</text>
+  <text x="1214" y="178" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">False pos. rate: 0.3%</text>
+
+  <!-- Threat Queue -->
+  <rect x="12" y="200" width="940" height="420" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <text x="26" y="224" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0E4F4">Threat Queue — AI Ranked</text>
+  <rect x="802" y="210" width="120" height="22" rx="4" fill="#7B2D8B" fill-opacity="0.3" stroke="#7B2D8B" stroke-width="1"/>
+  <text x="862" y="225" font-family="Inter, sans-serif" font-size="10" fill="#C084FC" text-anchor="middle">Autonomous Mode: ON</text>
+  <!-- Header -->
+  <rect x="12" y="232" width="940" height="24" fill="#0A0B0F"/>
+  <text x="26" y="248" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">RANK</text>
+  <text x="76" y="248" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">THREAT NAME / STORY</text>
+  <text x="380" y="248" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">CLASSIFICATION</text>
+  <text x="520" y="248" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">ENDPOINT</text>
+  <text x="660" y="248" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">USER</text>
+  <text x="760" y="248" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">RESPONSE</text>
+  <text x="860" y="248" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">STATUS</text>
+
+  <!-- Threat rows -->
+  <rect x="12" y="256" width="940" height="28" fill="#15162A"/>
+  <text x="40" y="274" font-family="Inter, sans-serif" font-size="14" fill="#EF4444" text-anchor="middle" font-weight="700">1</text>
+  <text x="76" y="268" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">LockBit 3.0 — Encrypt &amp; Exfil Behavior</text>
+  <text x="76" y="282" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">Storyline ID: S-2847-3f2a</text>
+  <rect x="380" y="261" width="80" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="420" y="272" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Ransomware</text>
+  <text x="520" y="274" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">win-fin-01</text>
+  <text x="660" y="274" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">cfo@corp</text>
+  <rect x="760" y="261" width="70" height="14" rx="7" fill="#065f46"/>
+  <text x="795" y="272" font-family="Inter, sans-serif" font-size="9" fill="#34D399" text-anchor="middle">KILL+QUAR</text>
+  <rect x="860" y="261" width="80" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="900" y="272" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">MITIGATED</text>
+
+  <rect x="12" y="284" width="940" height="28" fill="#111221"/>
+  <text x="40" y="302" font-family="Inter, sans-serif" font-size="14" fill="#EF4444" text-anchor="middle" font-weight="700">2</text>
+  <text x="76" y="296" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">Cobalt Strike Beacon — Stage 2 Payload</text>
+  <text x="76" y="310" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">Storyline ID: S-2847-a1c9</text>
+  <rect x="380" y="289" width="64" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="412" y="300" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">APT/C2</text>
+  <text x="520" y="302" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">dc-01</text>
+  <text x="660" y="302" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">SYSTEM</text>
+  <rect x="760" y="289" width="70" height="14" rx="7" fill="#065f46"/>
+  <text x="795" y="300" font-family="Inter, sans-serif" font-size="9" fill="#34D399" text-anchor="middle">KILL+QUAR</text>
+  <rect x="860" y="289" width="80" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="900" y="300" font-family="Inter, sans-serif" font-size="9" fill="#60A5FA" text-anchor="middle">IN REVIEW</text>
+
+  <rect x="12" y="312" width="940" height="28" fill="#15162A"/>
+  <text x="40" y="330" font-family="Inter, sans-serif" font-size="14" fill="#EF4444" text-anchor="middle" font-weight="700">3</text>
+  <text x="76" y="324" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">LSASS Memory Access — Credential Theft</text>
+  <text x="76" y="338" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">Storyline ID: S-2847-f8b2</text>
+  <rect x="380" y="317" width="90" height="14" rx="7" fill="#7c2d12"/>
+  <text x="425" y="328" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">Cred Theft</text>
+  <text x="520" y="330" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">dev-ws-47</text>
+  <text x="660" y="330" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">m.chen</text>
+  <rect x="760" y="317" width="60" height="14" rx="7" fill="#7B2D8B" fill-opacity="0.4"/>
+  <text x="790" y="328" font-family="Inter, sans-serif" font-size="9" fill="#C084FC" text-anchor="middle">BLOCKED</text>
+  <rect x="860" y="317" width="80" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="900" y="328" font-family="Inter, sans-serif" font-size="9" fill="#60A5FA" text-anchor="middle">IN REVIEW</text>
+
+  <rect x="12" y="340" width="940" height="28" fill="#111221"/>
+  <text x="40" y="358" font-family="Inter, sans-serif" font-size="14" fill="#F97316" text-anchor="middle" font-weight="700">4</text>
+  <text x="76" y="352" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">WMI Lateral Movement — PsExec Variant</text>
+  <text x="76" y="366" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">Storyline ID: S-2847-c3e7</text>
+  <rect x="380" y="345" width="90" height="14" rx="7" fill="#7c2d12"/>
+  <text x="425" y="356" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">Lateral Mvmt</text>
+  <text x="520" y="358" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">srv-app-03</text>
+  <text x="660" y="358" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">svc-admin</text>
+  <rect x="760" y="345" width="60" height="14" rx="7" fill="#7B2D8B" fill-opacity="0.4"/>
+  <text x="790" y="356" font-family="Inter, sans-serif" font-size="9" fill="#C084FC" text-anchor="middle">BLOCKED</text>
+  <rect x="860" y="345" width="60" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="890" y="356" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">OPEN</text>
+
+  <rect x="12" y="368" width="940" height="28" fill="#15162A"/>
+  <text x="40" y="386" font-family="Inter, sans-serif" font-size="14" fill="#F97316" text-anchor="middle" font-weight="700">5</text>
+  <text x="76" y="380" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">Scheduled Task Persistence — UAC Bypass</text>
+  <text x="76" y="394" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">Storyline ID: S-2847-d5f1</text>
+  <rect x="380" y="373" width="80" height="14" rx="7" fill="#7c2d12"/>
+  <text x="420" y="384" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">Persistence</text>
+  <text x="520" y="386" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">eng-ws-11</text>
+  <text x="660" y="386" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">a.johnson</text>
+  <rect x="760" y="373" width="60" height="14" rx="7" fill="#7B2D8B" fill-opacity="0.4"/>
+  <text x="790" y="384" font-family="Inter, sans-serif" font-size="9" fill="#C084FC" text-anchor="middle">BLOCKED</text>
+  <rect x="860" y="373" width="60" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="890" y="384" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">OPEN</text>
+
+  <rect x="12" y="396" width="940" height="28" fill="#111221"/>
+  <text x="40" y="414" font-family="Inter, sans-serif" font-size="14" fill="#FBBF24" text-anchor="middle" font-weight="700">6</text>
+  <text x="76" y="408" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">Browser Extension Exfiltrating Credentials</text>
+  <text x="76" y="422" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">Storyline ID: S-2847-b9a4</text>
+  <rect x="380" y="401" width="90" height="14" rx="7" fill="#713f12"/>
+  <text x="425" y="412" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">Infostealer</text>
+  <text x="520" y="414" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">hr-laptop-07</text>
+  <text x="660" y="414" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">l.chen</text>
+  <rect x="760" y="401" width="60" height="14" rx="7" fill="#7B2D8B" fill-opacity="0.4"/>
+  <text x="790" y="412" font-family="Inter, sans-serif" font-size="9" fill="#C084FC" text-anchor="middle">BLOCKED</text>
+  <rect x="860" y="401" width="80" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="900" y="412" font-family="Inter, sans-serif" font-size="9" fill="#60A5FA" text-anchor="middle">IN REVIEW</text>
+
+  <rect x="12" y="424" width="940" height="28" fill="#15162A"/>
+  <text x="40" y="442" font-family="Inter, sans-serif" font-size="14" fill="#FBBF24" text-anchor="middle" font-weight="700">7</text>
+  <text x="76" y="436" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">DNS Tunneling — Data Exfil Pattern</text>
+  <text x="76" y="450" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">Storyline ID: S-2847-e2c8</text>
+  <rect x="380" y="429" width="90" height="14" rx="7" fill="#713f12"/>
+  <text x="425" y="440" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">Exfiltration</text>
+  <text x="520" y="442" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">dev-ws-55</text>
+  <text x="660" y="442" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">p.nguyen</text>
+  <rect x="760" y="429" width="60" height="14" rx="7" fill="#7B2D8B" fill-opacity="0.4"/>
+  <text x="790" y="440" font-family="Inter, sans-serif" font-size="9" fill="#C084FC" text-anchor="middle">BLOCKED</text>
+  <rect x="860" y="429" width="80" height="14" rx="7" fill="#065f46"/>
+  <text x="900" y="440" font-family="Inter, sans-serif" font-size="9" fill="#34D399" text-anchor="middle">RESOLVED</text>
+
+  <rect x="12" y="452" width="940" height="28" fill="#111221"/>
+  <text x="40" y="470" font-family="Inter, sans-serif" font-size="14" fill="#34D399" text-anchor="middle" font-weight="700">8</text>
+  <text x="76" y="464" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">Anomalous Login — Geo Impossible Travel</text>
+  <text x="76" y="478" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">Storyline ID: S-2847-a7b3</text>
+  <rect x="380" y="457" width="72" height="14" rx="7" fill="#14532d"/>
+  <text x="416" y="468" font-family="Inter, sans-serif" font-size="9" fill="#34D399" text-anchor="middle">Identity</text>
+  <text x="520" y="470" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">vpn-user</text>
+  <text x="660" y="470" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">r.garcia</text>
+  <rect x="760" y="457" width="70" height="14" rx="7" fill="#1B3358"/>
+  <text x="795" y="468" font-family="Inter, sans-serif" font-size="9" fill="#60A5FA" text-anchor="middle">ALERT SENT</text>
+  <rect x="860" y="457" width="80" height="14" rx="7" fill="#065f46"/>
+  <text x="900" y="468" font-family="Inter, sans-serif" font-size="9" fill="#34D399" text-anchor="middle">RESOLVED</text>
+
+  <text x="26" y="528" font-family="Inter, sans-serif" font-size="11" fill="#565B7A">Showing 8 of 847 threats  |  </text>
+  <text x="310" y="528" font-family="Inter, sans-serif" font-size="11" fill="#7B2D8B">View All in Storyline Console →</text>
+
+  <!-- Right Panels -->
+  <!-- Autonomous Response Stats -->
+  <rect x="964" y="200" width="424" height="210" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <text x="978" y="224" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0E4F4">Autonomous Response (24h)</text>
+  <text x="978" y="252" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Threats Killed</text>
+  <text x="1280" y="252" font-family="Inter, sans-serif" font-size="12" fill="#34D399">7,284</text>
+  <text x="978" y="274" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Quarantined Files</text>
+  <text x="1280" y="274" font-family="Inter, sans-serif" font-size="12" fill="#34D399">847</text>
+  <text x="978" y="296" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Network Isolated</text>
+  <text x="1280" y="296" font-family="Inter, sans-serif" font-size="12" fill="#F97316">23</text>
+  <text x="978" y="318" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Process Terminated</text>
+  <text x="1280" y="318" font-family="Inter, sans-serif" font-size="12" fill="#34D399">2,841</text>
+  <text x="978" y="340" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Scripts Blocked</text>
+  <text x="1280" y="340" font-family="Inter, sans-serif" font-size="12" fill="#34D399">12,847</text>
+  <text x="978" y="362" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Manual Interventions</text>
+  <text x="1280" y="362" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24">34</text>
+  <text x="978" y="392" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Autonomous Rate:</text>
+  <text x="1200" y="392" font-family="Inter, sans-serif" font-size="18" font-weight="700" fill="#C084FC">99.6%</text>
+
+  <!-- OS Coverage -->
+  <rect x="964" y="422" width="424" height="200" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <text x="978" y="446" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0E4F4">Platform Coverage</text>
+  <text x="978" y="472" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Windows</text>
+  <rect x="1080" y="462" width="240" height="14" rx="3" fill="#1E1F38"/>
+  <rect x="1080" y="462" width="206" height="14" rx="3" fill="#C084FC"/>
+  <text x="1326" y="473" font-family="Inter, sans-serif" font-size="10" fill="#C084FC">86%</text>
+  <text x="978" y="496" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">macOS</text>
+  <rect x="1080" y="486" width="240" height="14" rx="3" fill="#1E1F38"/>
+  <rect x="1080" y="486" width="192" height="14" rx="3" fill="#7B2D8B"/>
+  <text x="1326" y="497" font-family="Inter, sans-serif" font-size="10" fill="#7B2D8B">80%</text>
+  <text x="978" y="520" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Linux</text>
+  <rect x="1080" y="510" width="240" height="14" rx="3" fill="#1E1F38"/>
+  <rect x="1080" y="510" width="158" height="14" rx="3" fill="#60A5FA"/>
+  <text x="1326" y="521" font-family="Inter, sans-serif" font-size="10" fill="#60A5FA">66%</text>
+  <text x="978" y="544" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Containers</text>
+  <rect x="1080" y="534" width="240" height="14" rx="3" fill="#1E1F38"/>
+  <rect x="1080" y="534" width="120" height="14" rx="3" fill="#34D399"/>
+  <text x="1326" y="545" font-family="Inter, sans-serif" font-size="10" fill="#34D399">50%</text>
+  <text x="978" y="608" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Total Endpoints: </text>
+  <text x="1120" y="608" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#E0E4F4">32,847</text>
+
+  <!-- Threat Intelligence -->
+  <rect x="964" y="634" width="424" height="156" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <text x="978" y="658" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0E4F4">AI Threat Intel</text>
+  <text x="978" y="684" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Malware Families (24h):</text>
+  <text x="1160" y="684" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">LockBit  </text>
+  <text x="1230" y="684" font-family="Inter, sans-serif" font-size="12" fill="#F97316">Cobalt Strike  </text>
+  <text x="1340" y="684" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24">+7</text>
+  <text x="978" y="706" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">APT Attribution:</text>
+  <text x="1100" y="706" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">APT29  </text>
+  <text x="1165" y="706" font-family="Inter, sans-serif" font-size="12" fill="#F97316">APT41  </text>
+  <text x="1230" y="706" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24">Lazarus  </text>
+  <text x="978" y="728" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">New IOCs Ingested:</text>
+  <text x="1160" y="728" font-family="Inter, sans-serif" font-size="12" fill="#34D399">14,247</text>
+  <text x="978" y="750" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Threat Intelligence Sources:</text>
+  <text x="1200" y="750" font-family="Inter, sans-serif" font-size="12" fill="#C084FC">WatchTower + Virustotal</text>
+  <text x="978" y="772" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Next AI Model Update:</text>
+  <text x="1180" y="772" font-family="Inter, sans-serif" font-size="12" fill="#60A5FA">Daily automatic</text>
+
+  <!-- Bottom - Detection Trend -->
+  <rect x="12" y="630" width="940" height="162" rx="4" fill="url(#card10)" stroke="#1E1F38" stroke-width="1"/>
+  <text x="26" y="654" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0E4F4">Threat Detection Trend — Last 7 Days</text>
+  <line x1="50" y1="766" x2="930" y2="766" stroke="#1E1F38" stroke-width="1"/>
+  <!-- Stacked bars per day -->
+  <rect x="80" y="726" width="90" height="40" fill="#EF4444" fill-opacity="0.8"/>
+  <rect x="80" y="706" width="90" height="20" fill="#F97316" fill-opacity="0.8"/>
+  <rect x="80" y="694" width="90" height="12" fill="#FBBF24" fill-opacity="0.8"/>
+  <text x="125" y="780" font-family="Inter, sans-serif" font-size="9" fill="#565B7A" text-anchor="middle">Feb 13</text>
+  <rect x="200" y="736" width="90" height="30" fill="#EF4444" fill-opacity="0.8"/>
+  <rect x="200" y="718" width="90" height="18" fill="#F97316" fill-opacity="0.8"/>
+  <rect x="200" y="707" width="90" height="11" fill="#FBBF24" fill-opacity="0.8"/>
+  <text x="245" y="780" font-family="Inter, sans-serif" font-size="9" fill="#565B7A" text-anchor="middle">Feb 14</text>
+  <rect x="320" y="718" width="90" height="48" fill="#EF4444" fill-opacity="0.8"/>
+  <rect x="320" y="700" width="90" height="18" fill="#F97316" fill-opacity="0.8"/>
+  <rect x="320" y="690" width="90" height="10" fill="#FBBF24" fill-opacity="0.8"/>
+  <text x="365" y="780" font-family="Inter, sans-serif" font-size="9" fill="#565B7A" text-anchor="middle">Feb 15</text>
+  <rect x="440" y="728" width="90" height="38" fill="#EF4444" fill-opacity="0.8"/>
+  <rect x="440" y="710" width="90" height="18" fill="#F97316" fill-opacity="0.8"/>
+  <rect x="440" y="700" width="90" height="10" fill="#FBBF24" fill-opacity="0.8"/>
+  <text x="485" y="780" font-family="Inter, sans-serif" font-size="9" fill="#565B7A" text-anchor="middle">Feb 16</text>
+  <rect x="560" y="722" width="90" height="44" fill="#EF4444" fill-opacity="0.8"/>
+  <rect x="560" y="704" width="90" height="18" fill="#F97316" fill-opacity="0.8"/>
+  <rect x="560" y="694" width="90" height="10" fill="#FBBF24" fill-opacity="0.8"/>
+  <text x="605" y="780" font-family="Inter, sans-serif" font-size="9" fill="#565B7A" text-anchor="middle">Feb 17</text>
+  <rect x="680" y="730" width="90" height="36" fill="#EF4444" fill-opacity="0.8"/>
+  <rect x="680" y="714" width="90" height="16" fill="#F97316" fill-opacity="0.8"/>
+  <rect x="680" y="704" width="90" height="10" fill="#FBBF24" fill-opacity="0.8"/>
+  <text x="725" y="780" font-family="Inter, sans-serif" font-size="9" fill="#565B7A" text-anchor="middle">Feb 18</text>
+  <rect x="800" y="712" width="90" height="54" fill="#EF4444" fill-opacity="0.8"/>
+  <rect x="800" y="694" width="90" height="18" fill="#F97316" fill-opacity="0.8"/>
+  <rect x="800" y="684" width="90" height="10" fill="#FBBF24" fill-opacity="0.8"/>
+  <text x="845" y="780" font-family="Inter, sans-serif" font-size="9" fill="#565B7A" text-anchor="middle">Feb 19</text>
+  <!-- Legend -->
+  <rect x="660" y="654" width="12" height="8" fill="#EF4444"/>
+  <text x="676" y="662" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">Critical</text>
+  <rect x="740" y="654" width="12" height="8" fill="#F97316"/>
+  <text x="756" y="662" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">High</text>
+  <rect x="800" y="654" width="12" height="8" fill="#FBBF24"/>
+  <text x="816" y="662" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">Medium</text>
+
+  <!-- Footer -->
+  <rect x="0" y="878" width="1400" height="22" fill="#0D0E14" stroke="#1E1F38" stroke-width="1"/>
+  <text x="16" y="893" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">SentinelOne Singularity XDR  |  Autonomous AI: Active  |  WatchTower Threat Intel: Enabled  |  Agent: 23.2.x</text>
+  <text x="1100" y="893" font-family="Inter, sans-serif" font-size="10" fill="#565B7A">Console: us-east-1.sentinelone.net  |  ● Connected</text>
+</svg>

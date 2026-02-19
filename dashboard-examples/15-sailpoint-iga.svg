@@ -1,0 +1,541 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900">
+  <defs>
+    <linearGradient id="hdrGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0070C9"/>
+      <stop offset="100%" stop-color="#0095E8"/>
+    </linearGradient>
+    <linearGradient id="cardBlue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E8F4FD"/>
+      <stop offset="100%" stop-color="#D6EDF9"/>
+    </linearGradient>
+    <linearGradient id="cardRed" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FDE8E8"/>
+      <stop offset="100%" stop-color="#FAD6D6"/>
+    </linearGradient>
+    <linearGradient id="cardGreen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E8FDF0"/>
+      <stop offset="100%" stop-color="#D6F5E3"/>
+    </linearGradient>
+    <linearGradient id="cardYellow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FDF8E8"/>
+      <stop offset="100%" stop-color="#F5EDD6"/>
+    </linearGradient>
+    <linearGradient id="barFill" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0095E8"/>
+      <stop offset="100%" stop-color="#00C4FF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="900" fill="#F0F4F8"/>
+
+  <!-- Top Nav -->
+  <rect width="1400" height="56" fill="url(#hdrGrad)"/>
+  <text x="20" y="35" font-family="Inter,Arial,sans-serif" font-size="20" font-weight="700" fill="white">SailPoint</text>
+  <text x="110" y="35" font-family="Inter,Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.8)">IdentityNow</text>
+  <rect x="210" y="0" width="1" height="56" fill="rgba(255,255,255,0.3)"/>
+  <text x="230" y="35" font-family="Inter,Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.7)">Dashboard</text>
+  <text x="320" y="35" font-family="Inter,Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.7)">Identities</text>
+  <text x="400" y="35" font-family="Inter,Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.7)">Access</text>
+  <text x="470" y="35" font-family="Inter,Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.7)">Certifications</text>
+  <text x="580" y="35" font-family="Inter,Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.7)">Roles</text>
+  <text x="640" y="35" font-family="Inter,Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.7)">Policies</text>
+  <text x="720" y="35" font-family="Inter,Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.7)">Reports</text>
+  <!-- Right side -->
+  <text x="1100" y="35" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.8)">Acme Corp | Admin</text>
+  <circle cx="1340" cy="28" r="16" fill="rgba(255,255,255,0.2)"/>
+  <text x="1332" y="33" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="700" fill="white">JK</text>
+
+  <!-- Sub header -->
+  <rect y="56" width="1400" height="40" fill="white"/>
+  <text x="20" y="82" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="600" fill="#1A2B3C">Identity Governance Dashboard</text>
+  <rect x="20" y="92" width="240" height="2" fill="#0095E8"/>
+  <text x="1150" y="82" font-family="Inter,Arial,sans-serif" font-size="12" fill="#666">Period: Last 30 Days</text>
+  <rect x="1240" y="68" width="90" height="24" rx="4" fill="#0095E8"/>
+  <text x="1257" y="85" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">Run Report</text>
+
+  <!-- Alert Banner -->
+  <rect x="20" y="108" width="1360" height="30" rx="4" fill="#FFF3CD"/>
+  <rect x="20" y="108" width="4" height="30" rx="2" fill="#FFC107"/>
+  <text x="32" y="128" font-family="Inter,Arial,sans-serif" font-size="12" fill="#856404">3 high-risk access certifications overdue — 47 entitlement violations require immediate review</text>
+
+  <!-- KPI Cards Row -->
+  <!-- Card 1: Total Identities -->
+  <rect x="20" y="150" width="185" height="100" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="20" y="150" width="185" height="4" rx="2" fill="#0095E8"/>
+  <text x="32" y="170" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">TOTAL IDENTITIES</text>
+  <text x="32" y="205" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700" fill="#1A2B3C">52,847</text>
+  <text x="32" y="224" font-family="Inter,Arial,sans-serif" font-size="11" fill="#27AE60">▲ 312 this month</text>
+  <rect x="150" y="165" width="40" height="40" rx="6" fill="#E8F4FD"/>
+  <text x="163" y="191" font-family="Inter,Arial,sans-serif" font-size="20">👤</text>
+
+  <!-- Card 2: Active Certifications -->
+  <rect x="215" y="150" width="185" height="100" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="215" y="150" width="185" height="4" rx="2" fill="#FF6B35"/>
+  <text x="227" y="170" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">ACTIVE CERTIFICATIONS</text>
+  <text x="227" y="205" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700" fill="#1A2B3C">23</text>
+  <text x="227" y="224" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">3 overdue</text>
+  <rect x="345" y="165" width="40" height="40" rx="6" fill="#FDE8E0"/>
+  <text x="358" y="191" font-family="Inter,Arial,sans-serif" font-size="20">📋</text>
+
+  <!-- Card 3: Access Requests -->
+  <rect x="410" y="150" width="185" height="100" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="410" y="150" width="185" height="4" rx="2" fill="#27AE60"/>
+  <text x="422" y="170" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">PENDING REQUESTS</text>
+  <text x="422" y="205" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700" fill="#1A2B3C">486</text>
+  <text x="422" y="224" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Avg wait: 1.4 days</text>
+  <rect x="540" y="165" width="40" height="40" rx="6" fill="#E8FDF0"/>
+  <text x="553" y="191" font-family="Inter,Arial,sans-serif" font-size="20">📥</text>
+
+  <!-- Card 4: SoD Violations -->
+  <rect x="605" y="150" width="185" height="100" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="605" y="150" width="185" height="4" rx="2" fill="#E74C3C"/>
+  <text x="617" y="170" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">SOD VIOLATIONS</text>
+  <text x="617" y="205" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700" fill="#E74C3C">47</text>
+  <text x="617" y="224" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">▲ 8 new this week</text>
+  <rect x="735" y="165" width="40" height="40" rx="6" fill="#FDE8E8"/>
+  <text x="748" y="191" font-family="Inter,Arial,sans-serif" font-size="20">⚠️</text>
+
+  <!-- Card 5: Orphan Accounts -->
+  <rect x="800" y="150" width="185" height="100" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="800" y="150" width="185" height="4" rx="2" fill="#9B59B6"/>
+  <text x="812" y="170" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">ORPHAN ACCOUNTS</text>
+  <text x="812" y="205" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700" fill="#1A2B3C">134</text>
+  <text x="812" y="224" font-family="Inter,Arial,sans-serif" font-size="11" fill="#27AE60">▼ 22 remediated</text>
+  <rect x="930" y="165" width="40" height="40" rx="6" fill="#F0E8FD"/>
+  <text x="943" y="191" font-family="Inter,Arial,sans-serif" font-size="20">👻</text>
+
+  <!-- Card 6: Policy Compliance -->
+  <rect x="995" y="150" width="185" height="100" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="995" y="150" width="185" height="4" rx="2" fill="#27AE60"/>
+  <text x="1007" y="170" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">POLICY COMPLIANCE</text>
+  <text x="1007" y="205" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700" fill="#27AE60">94.2%</text>
+  <text x="1007" y="224" font-family="Inter,Arial,sans-serif" font-size="11" fill="#27AE60">▲ 1.3% vs last period</text>
+  <rect x="1125" y="165" width="40" height="40" rx="6" fill="#E8FDF0"/>
+  <text x="1138" y="191" font-family="Inter,Arial,sans-serif" font-size="20">✅</text>
+
+  <!-- Card 7: Provisioning -->
+  <rect x="1190" y="150" width="185" height="100" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="1190" y="150" width="185" height="4" rx="2" fill="#0095E8"/>
+  <text x="1202" y="170" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">PROVISIONING SLA</text>
+  <text x="1202" y="205" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700" fill="#0095E8">98.7%</text>
+  <text x="1202" y="224" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Within 4hr SLA</text>
+  <rect x="1320" y="165" width="40" height="40" rx="6" fill="#E8F4FD"/>
+  <text x="1333" y="191" font-family="Inter,Arial,sans-serif" font-size="20">⚡</text>
+
+  <!-- Left Panel: Access Certification Status -->
+  <rect x="20" y="265" width="540" height="300" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="20" y="265" width="540" height="36" rx="6" fill="white"/>
+  <rect x="20" y="295" width="540" height="1" fill="#E0E8EF"/>
+  <text x="32" y="289" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">Access Certification Campaigns</text>
+  <!-- Column headers -->
+  <rect x="20" y="296" width="540" height="24" fill="#F8FAFC"/>
+  <text x="32" y="312" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">CAMPAIGN</text>
+  <text x="230" y="312" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">PROGRESS</text>
+  <text x="350" y="312" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">DUE DATE</text>
+  <text x="440" y="312" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">STATUS</text>
+  <text x="490" y="312" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">ITEMS</text>
+
+  <!-- Cert rows -->
+  <!-- Row 1 -->
+  <rect x="20" y="320" width="540" height="32" fill="white"/>
+  <text x="32" y="340" font-family="Inter,Arial,sans-serif" font-size="12" fill="#1A2B3C">Q1 2024 Finance Access Review</text>
+  <!-- Progress bar -->
+  <rect x="230" y="333" width="110" height="8" rx="4" fill="#E0E8EF"/>
+  <rect x="230" y="333" width="87" height="8" rx="4" fill="#27AE60"/>
+  <text x="345" y="341" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">79%</text>
+  <text x="360" y="340" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Mar 31</text>
+  <rect x="435" y="330" width="48" height="18" rx="9" fill="#FFF3CD"/>
+  <text x="447" y="343" font-family="Inter,Arial,sans-serif" font-size="10" fill="#856404">In Prog</text>
+  <text x="492" y="340" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">2,341</text>
+  <rect x="20" y="352" width="540" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 2 -->
+  <rect x="20" y="352" width="540" height="32" fill="#FFF8F8"/>
+  <text x="32" y="372" font-family="Inter,Arial,sans-serif" font-size="12" fill="#1A2B3C">Admin Privileged Access Cert</text>
+  <rect x="230" y="365" width="110" height="8" rx="4" fill="#E0E8EF"/>
+  <rect x="230" y="365" width="44" height="8" rx="4" fill="#E74C3C"/>
+  <text x="345" y="373" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">40%</text>
+  <text x="360" y="372" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">Feb 28</text>
+  <rect x="435" y="362" width="48" height="18" rx="9" fill="#FDE8E8"/>
+  <text x="444" y="375" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">Overdue</text>
+  <text x="492" y="372" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">847</text>
+  <rect x="20" y="384" width="540" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 3 -->
+  <rect x="20" y="384" width="540" height="32" fill="white"/>
+  <text x="32" y="404" font-family="Inter,Arial,sans-serif" font-size="12" fill="#1A2B3C">Annual IT Role Certification</text>
+  <rect x="230" y="397" width="110" height="8" rx="4" fill="#E0E8EF"/>
+  <rect x="230" y="397" width="110" height="8" rx="4" fill="#27AE60"/>
+  <text x="345" y="405" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">100%</text>
+  <text x="360" y="404" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Feb 15</text>
+  <rect x="435" y="394" width="48" height="18" rx="9" fill="#E8FDF0"/>
+  <text x="444" y="407" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Complete</text>
+  <text x="492" y="404" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">1,203</text>
+  <rect x="20" y="416" width="540" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 4 -->
+  <rect x="20" y="416" width="540" height="32" fill="#FFF8F8"/>
+  <text x="32" y="436" font-family="Inter,Arial,sans-serif" font-size="12" fill="#1A2B3C">HR Manager Access Review</text>
+  <rect x="230" y="429" width="110" height="8" rx="4" fill="#E0E8EF"/>
+  <rect x="230" y="429" width="17" height="8" rx="4" fill="#E74C3C"/>
+  <text x="345" y="437" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">15%</text>
+  <text x="360" y="436" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">Mar 1</text>
+  <rect x="435" y="426" width="48" height="18" rx="9" fill="#FDE8E8"/>
+  <text x="444" y="439" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">Overdue</text>
+  <text x="492" y="436" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">3,871</text>
+  <rect x="20" y="448" width="540" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 5 -->
+  <rect x="20" y="448" width="540" height="32" fill="white"/>
+  <text x="32" y="468" font-family="Inter,Arial,sans-serif" font-size="12" fill="#1A2B3C">SOC 2 Access Control Audit</text>
+  <rect x="230" y="461" width="110" height="8" rx="4" fill="#E0E8EF"/>
+  <rect x="230" y="461" width="66" height="8" rx="4" fill="#0095E8"/>
+  <text x="345" y="469" font-family="Inter,Arial,sans-serif" font-size="10" fill="#0095E8">60%</text>
+  <text x="360" y="468" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Apr 15</text>
+  <rect x="435" y="458" width="48" height="18" rx="9" fill="#E8F4FD"/>
+  <text x="447" y="471" font-family="Inter,Arial,sans-serif" font-size="10" fill="#0095E8">In Prog</text>
+  <text x="492" y="468" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">1,592</text>
+  <rect x="20" y="480" width="540" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 6 -->
+  <rect x="20" y="480" width="540" height="32" fill="white"/>
+  <text x="32" y="500" font-family="Inter,Arial,sans-serif" font-size="12" fill="#1A2B3C">Critical Systems Privileged Review</text>
+  <rect x="230" y="493" width="110" height="8" rx="4" fill="#E0E8EF"/>
+  <rect x="230" y="493" width="17" height="8" rx="4" fill="#E74C3C"/>
+  <text x="345" y="501" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">15%</text>
+  <text x="360" y="500" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">Mar 5</text>
+  <rect x="435" y="490" width="48" height="18" rx="9" fill="#FDE8E8"/>
+  <text x="444" y="503" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">Overdue</text>
+  <text x="492" y="500" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">512</text>
+  <rect x="20" y="512" width="540" height="1" fill="#F0F4F8"/>
+
+  <!-- Row 7 -->
+  <rect x="20" y="512" width="540" height="32" fill="white"/>
+  <text x="32" y="532" font-family="Inter,Arial,sans-serif" font-size="12" fill="#1A2B3C">Vendor Identity Review Q1</text>
+  <rect x="230" y="525" width="110" height="8" rx="4" fill="#E0E8EF"/>
+  <rect x="230" y="525" width="94" height="8" rx="4" fill="#27AE60"/>
+  <text x="345" y="533" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">85%</text>
+  <text x="360" y="532" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Apr 30</text>
+  <rect x="435" y="522" width="48" height="18" rx="9" fill="#FFF3CD"/>
+  <text x="447" y="535" font-family="Inter,Arial,sans-serif" font-size="10" fill="#856404">In Prog</text>
+  <text x="492" y="532" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">728</text>
+
+  <!-- Middle Panel: SoD Policy Violations -->
+  <rect x="570" y="265" width="430" height="300" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="570" y="265" width="430" height="36" rx="6" fill="white"/>
+  <rect x="570" y="295" width="430" height="1" fill="#E0E8EF"/>
+  <text x="582" y="289" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">SoD Policy Violations</text>
+  <rect x="898" y="272" width="88" height="20" rx="10" fill="#FDE8E8"/>
+  <text x="910" y="286" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">47 Active</text>
+  <!-- Headers -->
+  <rect x="570" y="296" width="430" height="24" fill="#F8FAFC"/>
+  <text x="582" y="312" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">POLICY</text>
+  <text x="730" y="312" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">IDENTITY</text>
+  <text x="850" y="312" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">SEV</text>
+  <text x="900" y="312" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">DAYS</text>
+  <!-- Rows -->
+  <rect x="570" y="320" width="430" height="28" fill="white"/>
+  <text x="582" y="338" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Create &amp; Approve PO</text>
+  <text x="730" y="338" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">john.doe</text>
+  <rect x="845" y="328" width="36" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="851" y="340" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">High</text>
+  <text x="900" y="338" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">14</text>
+  <rect x="570" y="348" width="430" height="1" fill="#F0F4F8"/>
+
+  <rect x="570" y="348" width="430" height="28" fill="#FFF8F8"/>
+  <text x="582" y="366" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">GL Post &amp; Approve Payment</text>
+  <text x="730" y="366" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">sarah.kim</text>
+  <rect x="845" y="356" width="48" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="849" y="368" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">Critical</text>
+  <text x="900" y="366" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">21</text>
+  <rect x="570" y="376" width="430" height="1" fill="#F0F4F8"/>
+
+  <rect x="570" y="376" width="430" height="28" fill="white"/>
+  <text x="582" y="394" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Sys Admin &amp; Audit Access</text>
+  <text x="730" y="394" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">mike.johnson</text>
+  <rect x="845" y="384" width="36" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="851" y="396" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">High</text>
+  <text x="900" y="394" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">7</text>
+  <rect x="570" y="404" width="430" height="1" fill="#F0F4F8"/>
+
+  <rect x="570" y="404" width="430" height="28" fill="white"/>
+  <text x="582" y="422" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Payroll Input &amp; Approve</text>
+  <text x="730" y="422" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">anna.lee</text>
+  <rect x="845" y="412" width="48" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="849" y="424" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">Critical</text>
+  <text x="900" y="422" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">3</text>
+  <rect x="570" y="432" width="430" height="1" fill="#F0F4F8"/>
+
+  <rect x="570" y="432" width="430" height="28" fill="white"/>
+  <text x="582" y="450" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Vendor Create &amp; Pay Invoice</text>
+  <text x="730" y="450" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">david.park</text>
+  <rect x="845" y="440" width="36" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="851" y="452" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">High</text>
+  <text x="900" y="450" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">9</text>
+  <rect x="570" y="460" width="430" height="1" fill="#F0F4F8"/>
+
+  <rect x="570" y="460" width="430" height="28" fill="white"/>
+  <text x="582" y="478" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">DB Admin &amp; Data Extract</text>
+  <text x="730" y="478" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">emma.white</text>
+  <rect x="845" y="468" width="48" height="16" rx="8" fill="#FFF3CD"/>
+  <text x="848" y="480" font-family="Inter,Arial,sans-serif" font-size="10" fill="#856404">Medium</text>
+  <text x="900" y="478" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">5</text>
+  <rect x="570" y="488" width="430" height="1" fill="#F0F4F8"/>
+
+  <rect x="570" y="488" width="430" height="28" fill="white"/>
+  <text x="582" y="506" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Cloud Admin &amp; Log Delete</text>
+  <text x="730" y="506" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">tom.davis</text>
+  <rect x="845" y="496" width="48" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="849" y="508" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">Critical</text>
+  <text x="900" y="506" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">2</text>
+  <rect x="570" y="516" width="430" height="1" fill="#F0F4F8"/>
+
+  <rect x="570" y="516" width="430" height="28" fill="white"/>
+  <text x="582" y="534" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">HR Data Access &amp; Payroll</text>
+  <text x="730" y="534" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">lisa.chen</text>
+  <rect x="845" y="524" width="36" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="851" y="536" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">High</text>
+  <text x="900" y="534" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C">11</text>
+
+  <!-- Right Panel: Identity Risk Distribution -->
+  <rect x="1010" y="265" width="370" height="300" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="1010" y="265" width="370" height="36" rx="6" fill="white"/>
+  <rect x="1010" y="295" width="370" height="1" fill="#E0E8EF"/>
+  <text x="1022" y="289" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">Identity Risk Distribution</text>
+
+  <!-- Donut chart -->
+  <!-- Total: Critical 4%, High 11%, Medium 27%, Low 58% -->
+  <circle cx="1140" cy="395" r="70" fill="none" stroke="#E0E8EF" stroke-width="28"/>
+  <!-- Low: 58% = 208.8deg, starts at -90 -->
+  <circle cx="1140" cy="395" r="70" fill="none" stroke="#27AE60" stroke-width="28" stroke-dasharray="255 186" stroke-dashoffset="0" transform="rotate(-90 1140 395)"/>
+  <!-- Medium: 27% = 97.2deg -->
+  <circle cx="1140" cy="395" r="70" fill="none" stroke="#F39C12" stroke-width="28" stroke-dasharray="119 322" stroke-dashoffset="-255" transform="rotate(-90 1140 395)"/>
+  <!-- High: 11% = 39.6deg -->
+  <circle cx="1140" cy="395" r="70" fill="none" stroke="#E74C3C" stroke-width="28" stroke-dasharray="48 393" stroke-dashoffset="-374" transform="rotate(-90 1140 395)"/>
+  <!-- Critical: 4% = 14.4deg -->
+  <circle cx="1140" cy="395" r="70" fill="none" stroke="#8B0000" stroke-width="28" stroke-dasharray="18 423" stroke-dashoffset="-422" transform="rotate(-90 1140 395)"/>
+  <!-- Center label -->
+  <text x="1140" y="390" font-family="Inter,Arial,sans-serif" font-size="22" font-weight="700" fill="#1A2B3C" text-anchor="middle">52,847</text>
+  <text x="1140" y="410" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666" text-anchor="middle">Identities</text>
+
+  <!-- Legend -->
+  <rect x="1235" y="345" width="12" height="12" rx="2" fill="#8B0000"/>
+  <text x="1252" y="356" font-family="Inter,Arial,sans-serif" font-size="11" fill="#333">Critical</text>
+  <text x="1340" y="356" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#8B0000">2,114</text>
+
+  <rect x="1235" y="365" width="12" height="12" rx="2" fill="#E74C3C"/>
+  <text x="1252" y="376" font-family="Inter,Arial,sans-serif" font-size="11" fill="#333">High Risk</text>
+  <text x="1340" y="376" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#E74C3C">5,813</text>
+
+  <rect x="1235" y="385" width="12" height="12" rx="2" fill="#F39C12"/>
+  <text x="1252" y="396" font-family="Inter,Arial,sans-serif" font-size="11" fill="#333">Medium</text>
+  <text x="1340" y="396" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#F39C12">14,269</text>
+
+  <rect x="1235" y="405" width="12" height="12" rx="2" fill="#27AE60"/>
+  <text x="1252" y="416" font-family="Inter,Arial,sans-serif" font-size="11" fill="#333">Low Risk</text>
+  <text x="1340" y="416" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#27AE60">30,651</text>
+
+  <!-- Risk trend bars -->
+  <text x="1022" y="448" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#333">Risk by Department</text>
+  <!-- Finance -->
+  <text x="1022" y="468" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Finance</text>
+  <rect x="1100" y="458" width="200" height="12" rx="3" fill="#E0E8EF"/>
+  <rect x="1100" y="458" width="148" height="12" rx="3" fill="#E74C3C"/>
+  <text x="1308" y="469" font-family="Inter,Arial,sans-serif" font-size="10" fill="#666">74%</text>
+
+  <text x="1022" y="490" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">IT Admin</text>
+  <rect x="1100" y="480" width="200" height="12" rx="3" fill="#E0E8EF"/>
+  <rect x="1100" y="480" width="122" height="12" rx="3" fill="#F39C12"/>
+  <text x="1308" y="491" font-family="Inter,Arial,sans-serif" font-size="10" fill="#666">61%</text>
+
+  <text x="1022" y="512" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">HR</text>
+  <rect x="1100" y="502" width="200" height="12" rx="3" fill="#E0E8EF"/>
+  <rect x="1100" y="502" width="88" height="12" rx="3" fill="#F39C12"/>
+  <text x="1308" y="513" font-family="Inter,Arial,sans-serif" font-size="10" fill="#666">44%</text>
+
+  <text x="1022" y="534" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Engineering</text>
+  <rect x="1100" y="524" width="200" height="12" rx="3" fill="#E0E8EF"/>
+  <rect x="1100" y="524" width="60" height="12" rx="3" fill="#27AE60"/>
+  <text x="1308" y="535" font-family="Inter,Arial,sans-serif" font-size="10" fill="#666">30%</text>
+
+  <text x="1022" y="556" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Marketing</text>
+  <rect x="1100" y="546" width="200" height="12" rx="3" fill="#E0E8EF"/>
+  <rect x="1100" y="546" width="34" height="12" rx="3" fill="#27AE60"/>
+  <text x="1308" y="557" font-family="Inter,Arial,sans-serif" font-size="10" fill="#666">17%</text>
+
+  <!-- Bottom section: 3 panels -->
+
+  <!-- Access Request Trend chart -->
+  <rect x="20" y="575" width="450" height="210" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="20" y="575" width="450" height="36" rx="6" fill="white"/>
+  <rect x="20" y="605" width="450" height="1" fill="#E0E8EF"/>
+  <text x="32" y="598" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">Access Request Activity (30 days)</text>
+  <!-- Chart area -->
+  <rect x="30" y="615" width="430" height="130" fill="#F8FAFC" rx="3"/>
+  <!-- Y axis -->
+  <text x="28" y="625" font-family="Inter,Arial,sans-serif" font-size="9" fill="#999" text-anchor="end">600</text>
+  <text x="28" y="658" font-family="Inter,Arial,sans-serif" font-size="9" fill="#999" text-anchor="end">400</text>
+  <text x="28" y="692" font-family="Inter,Arial,sans-serif" font-size="9" fill="#999" text-anchor="end">200</text>
+  <text x="28" y="725" font-family="Inter,Arial,sans-serif" font-size="9" fill="#999" text-anchor="end">0</text>
+  <!-- Grid lines -->
+  <line x1="35" y1="622" x2="455" y2="622" stroke="#E8EDF2" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="35" y1="655" x2="455" y2="655" stroke="#E8EDF2" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="35" y1="689" x2="455" y2="689" stroke="#E8EDF2" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="35" y1="722" x2="455" y2="722" stroke="#E8EDF2" stroke-width="1"/>
+  <!-- Bars (submitted = blue, approved = green) -->
+  <!-- 30 days, sample points -->
+  <rect x="38" y="677" width="9" height="45" fill="#0095E8" opacity="0.8"/>
+  <rect x="48" y="690" width="9" height="32" fill="#27AE60" opacity="0.8"/>
+  <rect x="63" y="672" width="9" height="50" fill="#0095E8" opacity="0.8"/>
+  <rect x="73" y="685" width="9" height="37" fill="#27AE60" opacity="0.8"/>
+  <rect x="88" y="668" width="9" height="54" fill="#0095E8" opacity="0.8"/>
+  <rect x="98" y="679" width="9" height="43" fill="#27AE60" opacity="0.8"/>
+  <rect x="113" y="670" width="9" height="52" fill="#0095E8" opacity="0.8"/>
+  <rect x="123" y="683" width="9" height="39" fill="#27AE60" opacity="0.8"/>
+  <rect x="138" y="655" width="9" height="67" fill="#0095E8" opacity="0.8"/>
+  <rect x="148" y="670" width="9" height="52" fill="#27AE60" opacity="0.8"/>
+  <rect x="163" y="648" width="9" height="74" fill="#0095E8" opacity="0.8"/>
+  <rect x="173" y="661" width="9" height="61" fill="#27AE60" opacity="0.8"/>
+  <rect x="188" y="643" width="9" height="79" fill="#0095E8" opacity="0.8"/>
+  <rect x="198" y="656" width="9" height="66" fill="#27AE60" opacity="0.8"/>
+  <rect x="213" y="638" width="9" height="84" fill="#0095E8" opacity="0.8"/>
+  <rect x="223" y="651" width="9" height="71" fill="#27AE60" opacity="0.8"/>
+  <rect x="238" y="645" width="9" height="77" fill="#0095E8" opacity="0.8"/>
+  <rect x="248" y="658" width="9" height="64" fill="#27AE60" opacity="0.8"/>
+  <rect x="263" y="650" width="9" height="72" fill="#0095E8" opacity="0.8"/>
+  <rect x="273" y="663" width="9" height="59" fill="#27AE60" opacity="0.8"/>
+  <rect x="288" y="642" width="9" height="80" fill="#0095E8" opacity="0.8"/>
+  <rect x="298" y="655" width="9" height="67" fill="#27AE60" opacity="0.8"/>
+  <rect x="313" y="635" width="9" height="87" fill="#0095E8" opacity="0.8"/>
+  <rect x="323" y="648" width="9" height="74" fill="#27AE60" opacity="0.8"/>
+  <rect x="338" y="630" width="9" height="92" fill="#0095E8" opacity="0.8"/>
+  <rect x="348" y="643" width="9" height="79" fill="#27AE60" opacity="0.8"/>
+  <rect x="363" y="638" width="9" height="84" fill="#0095E8" opacity="0.8"/>
+  <rect x="373" y="651" width="9" height="71" fill="#27AE60" opacity="0.8"/>
+  <rect x="388" y="643" width="9" height="79" fill="#0095E8" opacity="0.8"/>
+  <rect x="398" y="656" width="9" height="66" fill="#27AE60" opacity="0.8"/>
+  <rect x="413" y="632" width="9" height="90" fill="#0095E8" opacity="0.8"/>
+  <rect x="423" y="645" width="9" height="77" fill="#27AE60" opacity="0.8"/>
+  <rect x="438" y="628" width="9" height="94" fill="#0095E8" opacity="0.8"/>
+  <rect x="448" y="641" width="9" height="81" fill="#27AE60" opacity="0.8"/>
+  <!-- Legend -->
+  <rect x="32" y="753" width="10" height="10" rx="2" fill="#0095E8"/>
+  <text x="46" y="762" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Submitted (486 avg/day)</text>
+  <rect x="200" y="753" width="10" height="10" rx="2" fill="#27AE60"/>
+  <text x="214" y="762" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Approved (412 avg/day)</text>
+
+  <!-- Role Analytics panel -->
+  <rect x="480" y="575" width="370" height="210" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="480" y="575" width="370" height="36" rx="6" fill="white"/>
+  <rect x="480" y="605" width="370" height="1" fill="#E0E8EF"/>
+  <text x="492" y="598" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">Role Coverage Analytics</text>
+  <!-- Stats -->
+  <rect x="492" y="614" width="160" height="70" rx="4" fill="#F0F8FF"/>
+  <text x="572" y="640" font-family="Inter,Arial,sans-serif" font-size="24" font-weight="700" fill="#0095E8" text-anchor="middle">1,847</text>
+  <text x="572" y="656" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666" text-anchor="middle">Total Roles Defined</text>
+  <text x="572" y="674" font-family="Inter,Arial,sans-serif" font-size="11" fill="#27AE60" text-anchor="middle">82% coverage</text>
+
+  <rect x="664" y="614" width="160" height="70" rx="4" fill="#FFF5F5"/>
+  <text x="744" y="640" font-family="Inter,Arial,sans-serif" font-size="24" font-weight="700" fill="#E74C3C" text-anchor="middle">342</text>
+  <text x="744" y="656" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666" text-anchor="middle">Unused Roles (>90 days)</text>
+  <text x="744" y="674" font-family="Inter,Arial,sans-serif" font-size="11" fill="#E74C3C" text-anchor="middle">Need cleanup</text>
+
+  <!-- Role usage bars -->
+  <text x="492" y="702" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#333">Top Role Assignments</text>
+  <text x="492" y="722" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Employee - Standard</text>
+  <rect x="620" y="712" width="200" height="11" rx="3" fill="#E0E8EF"/>
+  <rect x="620" y="712" width="200" height="11" rx="3" fill="#0095E8"/>
+  <text x="824" y="722" font-family="Inter,Arial,sans-serif" font-size="10" fill="#666">100%</text>
+
+  <text x="492" y="742" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">Manager</text>
+  <rect x="620" y="732" width="200" height="11" rx="3" fill="#E0E8EF"/>
+  <rect x="620" y="732" width="84" height="11" rx="3" fill="#0095E8"/>
+  <text x="824" y="742" font-family="Inter,Arial,sans-serif" font-size="10" fill="#666">42%</text>
+
+  <text x="492" y="762" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">IT Admin</text>
+  <rect x="620" y="752" width="200" height="11" rx="3" fill="#E0E8EF"/>
+  <rect x="620" y="752" width="32" height="11" rx="3" fill="#9B59B6"/>
+  <text x="824" y="762" font-family="Inter,Arial,sans-serif" font-size="10" fill="#666">16%</text>
+
+  <!-- Lifecycle Events panel -->
+  <rect x="860" y="575" width="520" height="210" rx="6" fill="white" stroke="#E0E8EF" stroke-width="1"/>
+  <rect x="860" y="575" width="520" height="36" rx="6" fill="white"/>
+  <rect x="860" y="605" width="520" height="1" fill="#E0E8EF"/>
+  <text x="872" y="598" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="#1A2B3C">Identity Lifecycle Events</text>
+
+  <!-- Event headers -->
+  <rect x="860" y="606" width="520" height="22" fill="#F8FAFC"/>
+  <text x="872" y="622" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">EVENT</text>
+  <text x="1010" y="622" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">IDENTITY</text>
+  <text x="1150" y="622" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">TYPE</text>
+  <text x="1240" y="622" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">TIME</text>
+  <text x="1310" y="622" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="600" fill="#666">STATUS</text>
+
+  <!-- Event rows -->
+  <rect x="860" y="628" width="520" height="26" fill="white"/>
+  <text x="872" y="645" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">New Employee Onboard</text>
+  <text x="1010" y="645" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">james.wilson</text>
+  <rect x="1148" y="634" width="70" height="16" rx="8" fill="#E8FDF0"/>
+  <text x="1157" y="646" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Joiners</text>
+  <text x="1240" y="645" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">2m ago</text>
+  <rect x="1307" y="633" width="60" height="16" rx="8" fill="#E8FDF0"/>
+  <text x="1316" y="645" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Complete</text>
+  <rect x="860" y="654" width="520" height="1" fill="#F0F4F8"/>
+
+  <rect x="860" y="655" width="520" height="26" fill="#F8FAFC"/>
+  <text x="872" y="672" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Access Modified - Promo</text>
+  <text x="1010" y="672" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">alice.morgan</text>
+  <rect x="1148" y="661" width="60" height="16" rx="8" fill="#E8F4FD"/>
+  <text x="1157" y="673" font-family="Inter,Arial,sans-serif" font-size="10" fill="#0095E8">Movers</text>
+  <text x="1240" y="672" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">15m ago</text>
+  <rect x="1307" y="660" width="60" height="16" rx="8" fill="#E8FDF0"/>
+  <text x="1316" y="672" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Complete</text>
+  <rect x="860" y="681" width="520" height="1" fill="#F0F4F8"/>
+
+  <rect x="860" y="682" width="520" height="26" fill="white"/>
+  <text x="872" y="699" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Termination - Revoke All</text>
+  <text x="1010" y="699" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">robert.hayes</text>
+  <rect x="1148" y="688" width="60" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="1157" y="700" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">Leavers</text>
+  <text x="1240" y="699" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">42m ago</text>
+  <rect x="1307" y="687" width="60" height="16" rx="8" fill="#E8FDF0"/>
+  <text x="1316" y="699" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Complete</text>
+  <rect x="860" y="708" width="520" height="1" fill="#F0F4F8"/>
+
+  <rect x="860" y="709" width="520" height="26" fill="#F8FAFC"/>
+  <text x="872" y="726" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">MFA Enrollment Triggered</text>
+  <text x="1010" y="726" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">karen.smith</text>
+  <rect x="1148" y="715" width="60" height="16" rx="8" fill="#E8F4FD"/>
+  <text x="1157" y="727" font-family="Inter,Arial,sans-serif" font-size="10" fill="#0095E8">Security</text>
+  <text x="1240" y="726" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">1h ago</text>
+  <rect x="1307" y="714" width="70" height="16" rx="8" fill="#FFF3CD"/>
+  <text x="1312" y="726" font-family="Inter,Arial,sans-serif" font-size="10" fill="#856404">Pending</text>
+  <rect x="860" y="735" width="520" height="1" fill="#F0F4F8"/>
+
+  <rect x="860" y="736" width="520" height="26" fill="white"/>
+  <text x="872" y="753" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Contractor Expiry - Deactivate</text>
+  <text x="1010" y="753" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">ext.vendor01</text>
+  <rect x="1148" y="742" width="60" height="16" rx="8" fill="#FDE8E8"/>
+  <text x="1157" y="754" font-family="Inter,Arial,sans-serif" font-size="10" fill="#E74C3C">Leavers</text>
+  <text x="1240" y="753" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">3h ago</text>
+  <rect x="1307" y="741" width="60" height="16" rx="8" fill="#E8FDF0"/>
+  <text x="1316" y="753" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Complete</text>
+  <rect x="860" y="762" width="520" height="1" fill="#F0F4F8"/>
+
+  <rect x="860" y="763" width="520" height="26" fill="white"/>
+  <text x="872" y="780" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">Privileged Role Assignment</text>
+  <text x="1010" y="780" font-family="Inter,Arial,sans-serif" font-size="11" fill="#1A2B3C">devops.team</text>
+  <rect x="1148" y="769" width="70" height="16" rx="8" fill="#F0E8FD"/>
+  <text x="1157" y="781" font-family="Inter,Arial,sans-serif" font-size="10" fill="#9B59B6">Privileged</text>
+  <text x="1240" y="780" font-family="Inter,Arial,sans-serif" font-size="11" fill="#666">5h ago</text>
+  <rect x="1307" y="768" width="70" height="16" rx="8" fill="#FFF3CD"/>
+  <text x="1312" y="780" font-family="Inter,Arial,sans-serif" font-size="10" fill="#856404">Review</text>
+
+  <!-- Footer -->
+  <rect y="868" width="1400" height="32" fill="#1A2B3C"/>
+  <text x="20" y="889" font-family="Inter,Arial,sans-serif" font-size="11" fill="rgba(255,255,255,0.6)">SailPoint IdentityNow v24.1 | Connected: 48 Source Systems | Last Sync: 2 min ago</text>
+  <text x="900" y="889" font-family="Inter,Arial,sans-serif" font-size="11" fill="rgba(255,255,255,0.6)">Total Access Entitlements: 1,284,392 | Provisioning Engine: Active</text>
+  <rect x="1240" y="878" width="80" height="14" rx="3" fill="#27AE60"/>
+  <text x="1253" y="889" font-family="Inter,Arial,sans-serif" font-size="10" fill="white">ALL SYSTEMS GO</text>
+</svg>

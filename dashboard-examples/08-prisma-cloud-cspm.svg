@@ -1,0 +1,348 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg08" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0D1B2E"/>
+      <stop offset="100%" style="stop-color:#091422"/>
+    </linearGradient>
+    <linearGradient id="card08" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#112240"/>
+      <stop offset="100%" style="stop-color:#0D1B33"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1400" height="900" fill="url(#bg08)"/>
+
+  <!-- Top Nav - Prisma Cloud -->
+  <rect x="0" y="0" width="1400" height="52" fill="#091422" stroke="#1B3358" stroke-width="1"/>
+  <rect x="0" y="0" width="220" height="52" fill="#0F2043"/>
+  <text x="16" y="22" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">Prisma</text>
+  <text x="16" y="42" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#00A3E0">Cloud</text>
+  <text x="240" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B7CA8">Dashboard</text>
+  <text x="340" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B7CA8">Inventory</text>
+  <text x="440" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B7CA8">Alerts</text>
+  <text x="520" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B7CA8">Compliance</text>
+  <text x="640" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B7CA8">IAM Security</text>
+  <text x="760" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B7CA8">Data Security</text>
+  <text x="890" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B7CA8">Investigate</text>
+  <text x="1300" y="30" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">Multi-Cloud: AWS / Azure / GCP</text>
+
+  <!-- Cloud Provider Status Bar -->
+  <rect x="0" y="52" width="1400" height="34" fill="#0F2043"/>
+  <text x="16" y="74" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">CONNECTED ACCOUNTS:</text>
+  <rect x="190" y="60" width="80" height="18" rx="9" fill="#1B3358"/>
+  <text x="230" y="73" font-family="Inter, sans-serif" font-size="11" fill="#F8A100" text-anchor="middle">AWS 47</text>
+  <rect x="280" y="60" width="90" height="18" rx="9" fill="#1B3358"/>
+  <text x="325" y="73" font-family="Inter, sans-serif" font-size="11" fill="#0078D4" text-anchor="middle">Azure 23</text>
+  <rect x="380" y="60" width="80" height="18" rx="9" fill="#1B3358"/>
+  <text x="420" y="73" font-family="Inter, sans-serif" font-size="11" fill="#34A853" text-anchor="middle">GCP 12</text>
+  <text x="1100" y="74" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">Last ingestion: 5m ago  |  Resources: 847,291</text>
+
+  <!-- KPI Row -->
+  <rect x="12" y="100" width="178" height="90" rx="4" fill="url(#card08)" stroke="#1B3358" stroke-width="1"/>
+  <rect x="12" y="100" width="178" height="3" fill="#EF4444"/>
+  <text x="24" y="120" font-family="Inter, sans-serif" font-size="10" fill="#6B8CAE" letter-spacing="0.5">CRITICAL ALERTS</text>
+  <text x="24" y="158" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#EF4444">1,847</text>
+  <text x="24" y="180" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">▲ 127 today</text>
+
+  <rect x="200" y="100" width="178" height="90" rx="4" fill="url(#card08)" stroke="#1B3358" stroke-width="1"/>
+  <rect x="200" y="100" width="178" height="3" fill="#F97316"/>
+  <text x="212" y="120" font-family="Inter, sans-serif" font-size="10" fill="#6B8CAE" letter-spacing="0.5">HIGH ALERTS</text>
+  <text x="212" y="158" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#F97316">5,234</text>
+  <text x="212" y="180" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">▼ 23 today</text>
+
+  <rect x="388" y="100" width="178" height="90" rx="4" fill="url(#card08)" stroke="#1B3358" stroke-width="1"/>
+  <rect x="388" y="100" width="178" height="3" fill="#00A3E0"/>
+  <text x="400" y="120" font-family="Inter, sans-serif" font-size="10" fill="#6B8CAE" letter-spacing="0.5">TOTAL RESOURCES</text>
+  <text x="400" y="158" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#E0F0FF">847K</text>
+  <text x="400" y="180" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">82 accounts</text>
+
+  <rect x="576" y="100" width="178" height="90" rx="4" fill="url(#card08)" stroke="#1B3358" stroke-width="1"/>
+  <rect x="576" y="100" width="178" height="3" fill="#EF4444"/>
+  <text x="588" y="120" font-family="Inter, sans-serif" font-size="10" fill="#6B8CAE" letter-spacing="0.5">EXPOSED TO INTERNET</text>
+  <text x="588" y="158" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#EF4444">312</text>
+  <text x="588" y="180" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">Critical assets</text>
+
+  <rect x="764" y="100" width="178" height="90" rx="4" fill="url(#card08)" stroke="#1B3358" stroke-width="1"/>
+  <rect x="764" y="100" width="178" height="3" fill="#FBBF24"/>
+  <text x="776" y="120" font-family="Inter, sans-serif" font-size="10" fill="#6B8CAE" letter-spacing="0.5">COMPLIANCE SCORE</text>
+  <text x="776" y="158" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#FBBF24">67%</text>
+  <text x="776" y="180" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">CIS AWS Benchmark</text>
+
+  <rect x="952" y="100" width="178" height="90" rx="4" fill="url(#card08)" stroke="#1B3358" stroke-width="1"/>
+  <rect x="952" y="100" width="178" height="3" fill="#A78BFA"/>
+  <text x="964" y="120" font-family="Inter, sans-serif" font-size="10" fill="#6B8CAE" letter-spacing="0.5">IAM RISK FINDINGS</text>
+  <text x="964" y="158" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#A78BFA">4,127</text>
+  <text x="964" y="180" font-family="Inter, sans-serif" font-size="11" fill="#A78BFA">Excess permissions</text>
+
+  <rect x="1140" y="100" width="248" height="90" rx="4" fill="url(#card08)" stroke="#1B3358" stroke-width="1"/>
+  <rect x="1140" y="100" width="248" height="3" fill="#34D399"/>
+  <text x="1152" y="120" font-family="Inter, sans-serif" font-size="10" fill="#6B8CAE" letter-spacing="0.5">AUTO-REMEDIATED (24h)</text>
+  <text x="1152" y="158" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#34D399">847</text>
+  <text x="1152" y="180" font-family="Inter, sans-serif" font-size="11" fill="#34D399">Policies applied</text>
+
+  <!-- Alert Table -->
+  <rect x="12" y="204" width="900" height="420" rx="4" fill="url(#card08)" stroke="#1B3358" stroke-width="1"/>
+  <text x="26" y="228" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0F0FF">Top Critical Alerts</text>
+  <rect x="700" y="214" width="80" height="22" rx="4" fill="#00A3E0" fill-opacity="0.15" stroke="#00A3E0" stroke-width="1"/>
+  <text x="740" y="229" font-family="Inter, sans-serif" font-size="10" fill="#00A3E0" text-anchor="middle">Filter</text>
+  <rect x="790" y="214" width="100" height="22" rx="4" fill="#1B3358"/>
+  <text x="840" y="229" font-family="Inter, sans-serif" font-size="10" fill="#6B8CAE" text-anchor="middle">Suppress Rule</text>
+
+  <rect x="12" y="236" width="900" height="24" fill="#091422"/>
+  <text x="26" y="252" font-family="Inter, sans-serif" font-size="10" fill="#4B7CA8">SEVERITY</text>
+  <text x="120" y="252" font-family="Inter, sans-serif" font-size="10" fill="#4B7CA8">POLICY NAME</text>
+  <text x="450" y="252" font-family="Inter, sans-serif" font-size="10" fill="#4B7CA8">CLOUD</text>
+  <text x="530" y="252" font-family="Inter, sans-serif" font-size="10" fill="#4B7CA8">ACCOUNT</text>
+  <text x="660" y="252" font-family="Inter, sans-serif" font-size="10" fill="#4B7CA8">RESOURCE</text>
+  <text x="800" y="252" font-family="Inter, sans-serif" font-size="10" fill="#4B7CA8">COUNT</text>
+  <text x="856" y="252" font-family="Inter, sans-serif" font-size="10" fill="#4B7CA8">STATUS</text>
+
+  <!-- Policy alert rows -->
+  <rect x="12" y="260" width="900" height="26" fill="#112240"/>
+  <rect x="26" y="267" width="50" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="51" y="278" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">CRITICAL</text>
+  <text x="120" y="278" font-family="Inter, sans-serif" font-size="11" fill="#E0F0FF">S3 Bucket Public Access Enabled</text>
+  <text x="450" y="278" font-family="Inter, sans-serif" font-size="11" fill="#F8A100">AWS</text>
+  <text x="530" y="278" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">prod-us-east-1</text>
+  <text x="660" y="278" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">s3://corp-data-lake</text>
+  <text x="800" y="278" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">47</text>
+  <rect x="856" y="267" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="879" y="278" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="12" y="286" width="900" height="26" fill="#0D1B33"/>
+  <rect x="26" y="293" width="50" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="51" y="304" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">CRITICAL</text>
+  <text x="120" y="304" font-family="Inter, sans-serif" font-size="11" fill="#E0F0FF">Overly Permissive IAM Role (Admin)</text>
+  <text x="450" y="304" font-family="Inter, sans-serif" font-size="11" fill="#0078D4">Azure</text>
+  <text x="530" y="304" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">azure-prod-sub</text>
+  <text x="660" y="304" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">iam/role/SuperAdmin</text>
+  <text x="800" y="304" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">23</text>
+  <rect x="856" y="293" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="879" y="304" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="12" y="312" width="900" height="26" fill="#112240"/>
+  <rect x="26" y="319" width="50" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="51" y="330" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">CRITICAL</text>
+  <text x="120" y="330" font-family="Inter, sans-serif" font-size="11" fill="#E0F0FF">Security Group Allows 0.0.0.0/0 on 22</text>
+  <text x="450" y="330" font-family="Inter, sans-serif" font-size="11" fill="#F8A100">AWS</text>
+  <text x="530" y="330" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">dev-staging</text>
+  <text x="660" y="330" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">sg-0a1b2c3d4e5f</text>
+  <text x="800" y="330" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">312</text>
+  <rect x="856" y="319" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="879" y="330" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="12" y="338" width="900" height="26" fill="#0D1B33"/>
+  <rect x="26" y="345" width="50" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="51" y="356" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">CRITICAL</text>
+  <text x="120" y="356" font-family="Inter, sans-serif" font-size="11" fill="#E0F0FF">RDS Instance Publicly Accessible</text>
+  <text x="450" y="356" font-family="Inter, sans-serif" font-size="11" fill="#F8A100">AWS</text>
+  <text x="530" y="356" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">prod-eu-west-1</text>
+  <text x="660" y="356" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">db-prod-mysql-01</text>
+  <text x="800" y="356" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">8</text>
+  <rect x="856" y="345" width="58" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="885" y="356" font-family="Inter, sans-serif" font-size="10" fill="#60A5FA" text-anchor="middle">In Review</text>
+
+  <rect x="12" y="364" width="900" height="26" fill="#112240"/>
+  <rect x="26" y="371" width="40" height="14" rx="7" fill="#7c2d12"/>
+  <text x="46" y="382" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">HIGH</text>
+  <text x="120" y="382" font-family="Inter, sans-serif" font-size="11" fill="#E0F0FF">MFA Not Enabled for IAM User</text>
+  <text x="450" y="382" font-family="Inter, sans-serif" font-size="11" fill="#F8A100">AWS</text>
+  <text x="530" y="382" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">corp-management</text>
+  <text x="660" y="382" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">iam/user/svc-cicd</text>
+  <text x="800" y="382" font-family="Inter, sans-serif" font-size="11" fill="#F97316">127</text>
+  <rect x="856" y="371" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="879" y="382" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="12" y="390" width="900" height="26" fill="#0D1B33"/>
+  <rect x="26" y="397" width="40" height="14" rx="7" fill="#7c2d12"/>
+  <text x="46" y="408" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">HIGH</text>
+  <text x="120" y="408" font-family="Inter, sans-serif" font-size="11" fill="#E0F0FF">Azure Storage Account HTTP Access</text>
+  <text x="450" y="408" font-family="Inter, sans-serif" font-size="11" fill="#0078D4">Azure</text>
+  <text x="530" y="408" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">azure-dev-sub</text>
+  <text x="660" y="408" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">storage/devfiles01</text>
+  <text x="800" y="408" font-family="Inter, sans-serif" font-size="11" fill="#F97316">84</text>
+  <rect x="856" y="397" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="879" y="408" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="12" y="416" width="900" height="26" fill="#112240"/>
+  <rect x="26" y="423" width="40" height="14" rx="7" fill="#7c2d12"/>
+  <text x="46" y="434" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">HIGH</text>
+  <text x="120" y="434" font-family="Inter, sans-serif" font-size="11" fill="#E0F0FF">GKE Cluster Basic Auth Enabled</text>
+  <text x="450" y="434" font-family="Inter, sans-serif" font-size="11" fill="#34A853">GCP</text>
+  <text x="530" y="434" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">gcp-prod</text>
+  <text x="660" y="434" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">k8s/cluster-prod-01</text>
+  <text x="800" y="434" font-family="Inter, sans-serif" font-size="11" fill="#F97316">3</text>
+  <rect x="856" y="423" width="58" height="14" rx="7" fill="#065f46"/>
+  <text x="885" y="434" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">Resolved</text>
+
+  <rect x="12" y="442" width="900" height="26" fill="#0D1B33"/>
+  <rect x="26" y="449" width="40" height="14" rx="7" fill="#7c2d12"/>
+  <text x="46" y="460" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">HIGH</text>
+  <text x="120" y="460" font-family="Inter, sans-serif" font-size="11" fill="#E0F0FF">AWS CloudTrail Logging Disabled</text>
+  <text x="450" y="460" font-family="Inter, sans-serif" font-size="11" fill="#F8A100">AWS</text>
+  <text x="530" y="460" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">corp-dev</text>
+  <text x="660" y="460" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">trail/dev-trail-01</text>
+  <text x="800" y="460" font-family="Inter, sans-serif" font-size="11" fill="#F97316">12</text>
+  <rect x="856" y="449" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="879" y="460" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="12" y="468" width="900" height="26" fill="#112240"/>
+  <rect x="26" y="475" width="40" height="14" rx="7" fill="#713f12"/>
+  <text x="46" y="486" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">MED</text>
+  <text x="120" y="486" font-family="Inter, sans-serif" font-size="11" fill="#E0F0FF">EC2 Instance Without Patch Mgmt</text>
+  <text x="450" y="486" font-family="Inter, sans-serif" font-size="11" fill="#F8A100">AWS</text>
+  <text x="530" y="486" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">prod-us-west-2</text>
+  <text x="660" y="486" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">i-0a1b2c3d</text>
+  <text x="800" y="486" font-family="Inter, sans-serif" font-size="11" fill="#FBBF24">247</text>
+  <rect x="856" y="475" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="879" y="486" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+
+  <rect x="12" y="494" width="900" height="26" fill="#0D1B33"/>
+  <rect x="26" y="501" width="40" height="14" rx="7" fill="#713f12"/>
+  <text x="46" y="512" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">MED</text>
+  <text x="120" y="512" font-family="Inter, sans-serif" font-size="11" fill="#E0F0FF">Unencrypted EBS Volume</text>
+  <text x="450" y="512" font-family="Inter, sans-serif" font-size="11" fill="#F8A100">AWS</text>
+  <text x="530" y="512" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">prod-us-east-1</text>
+  <text x="660" y="512" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">vol-0a1b2c3d4e</text>
+  <text x="800" y="512" font-family="Inter, sans-serif" font-size="11" fill="#FBBF24">184</text>
+  <rect x="856" y="501" width="58" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="885" y="512" font-family="Inter, sans-serif" font-size="10" fill="#60A5FA" text-anchor="middle">Snoozed</text>
+
+  <text x="26" y="550" font-family="Inter, sans-serif" font-size="11" fill="#4B7CA8">Showing 10 of 1,847 critical alerts</text>
+  <text x="320" y="550" font-family="Inter, sans-serif" font-size="11" fill="#00A3E0">View all →</text>
+
+  <!-- Asset Risk Exposure -->
+  <rect x="12" y="565" width="900" height="220" rx="4" fill="url(#card08)" stroke="#1B3358" stroke-width="1"/>
+  <text x="26" y="589" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0F0FF">Attack Path Analysis</text>
+  <rect x="26" y="600" width="860" height="170" rx="4" fill="#091422"/>
+  <!-- Simplified attack path visual -->
+  <circle cx="80" cy="680" r="26" fill="#7f1d1d"/>
+  <text x="80" y="676" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Internet</text>
+  <text x="80" y="688" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Exposure</text>
+  <line x1="106" y1="680" x2="180" y2="680" stroke="#EF4444" stroke-width="2" marker-end="url(#arrow)"/>
+  <circle cx="220" cy="680" r="26" fill="#7c2d12"/>
+  <text x="220" y="676" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">Public</text>
+  <text x="220" y="688" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">SG Port 22</text>
+  <line x1="246" y1="680" x2="320" y2="680" stroke="#F97316" stroke-width="2"/>
+  <circle cx="360" cy="680" r="26" fill="#7c2d12"/>
+  <text x="360" y="676" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">EC2</text>
+  <text x="360" y="688" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">Instance</text>
+  <line x1="386" y1="680" x2="460" y2="680" stroke="#FBBF24" stroke-width="2"/>
+  <circle cx="500" cy="680" r="26" fill="#713f12"/>
+  <text x="500" y="676" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">Admin</text>
+  <text x="500" y="688" font-family="Inter, sans-serif" font-size="9" fill="#FBBF24" text-anchor="middle">IAM Role</text>
+  <line x1="526" y1="680" x2="600" y2="680" stroke="#FBBF24" stroke-width="2"/>
+  <circle cx="640" cy="680" r="26" fill="#7f1d1d"/>
+  <text x="640" y="676" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">S3</text>
+  <text x="640" y="688" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Sensitive Data</text>
+  <text x="700" y="680" font-family="Inter, sans-serif" font-size="24" fill="#EF4444">⚠</text>
+  <text x="740" y="676" font-family="Inter, sans-serif" font-size="12" fill="#EF4444" font-weight="600">Critical Path</text>
+  <text x="740" y="692" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">5 hops to data exfil</text>
+  <text x="740" y="710" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">Immediate action required</text>
+  <text x="26" y="755" font-family="Inter, sans-serif" font-size="11" fill="#6B8CAE">3 critical attack paths identified  |  Assets at risk: 47  |  </text>
+  <text x="440" y="755" font-family="Inter, sans-serif" font-size="11" fill="#00A3E0">View full graph →</text>
+
+  <!-- Right Panels -->
+  <!-- Compliance Frameworks -->
+  <rect x="924" y="204" width="464" height="250" rx="4" fill="url(#card08)" stroke="#1B3358" stroke-width="1"/>
+  <text x="938" y="228" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0F0FF">Compliance Coverage</text>
+  <line x1="924" y1="236" x2="1388" y2="236" stroke="#1B3358" stroke-width="1"/>
+  <text x="938" y="258" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">Framework</text>
+  <text x="1180" y="258" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">Score</text>
+  <text x="1280" y="258" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">Status</text>
+
+  <text x="938" y="280" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">CIS AWS Foundations</text>
+  <rect x="1130" y="268" width="70" height="16" rx="8" fill="#713f12"/>
+  <text x="1165" y="279" font-family="Inter, sans-serif" font-size="11" fill="#FBBF24" text-anchor="middle">67%</text>
+  <text x="1280" y="280" font-family="Inter, sans-serif" font-size="11" fill="#FBBF24">Partial</text>
+
+  <text x="938" y="304" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">SOC 2 Type II</text>
+  <rect x="1130" y="292" width="70" height="16" rx="8" fill="#7c2d12"/>
+  <text x="1165" y="303" font-family="Inter, sans-serif" font-size="11" fill="#F97316" text-anchor="middle">54%</text>
+  <text x="1280" y="304" font-family="Inter, sans-serif" font-size="11" fill="#F97316">Non-Compliant</text>
+
+  <text x="938" y="328" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">NIST CSF</text>
+  <rect x="1130" y="316" width="70" height="16" rx="8" fill="#065f46"/>
+  <text x="1165" y="327" font-family="Inter, sans-serif" font-size="11" fill="#34D399" text-anchor="middle">82%</text>
+  <text x="1280" y="328" font-family="Inter, sans-serif" font-size="11" fill="#34D399">Compliant</text>
+
+  <text x="938" y="352" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">PCI DSS v4.0</text>
+  <rect x="1130" y="340" width="70" height="16" rx="8" fill="#713f12"/>
+  <text x="1165" y="351" font-family="Inter, sans-serif" font-size="11" fill="#FBBF24" text-anchor="middle">71%</text>
+  <text x="1280" y="352" font-family="Inter, sans-serif" font-size="11" fill="#FBBF24">Partial</text>
+
+  <text x="938" y="376" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">HIPAA</text>
+  <rect x="1130" y="364" width="70" height="16" rx="8" fill="#7c2d12"/>
+  <text x="1165" y="375" font-family="Inter, sans-serif" font-size="11" fill="#F97316" text-anchor="middle">61%</text>
+  <text x="1280" y="376" font-family="Inter, sans-serif" font-size="11" fill="#F97316">Non-Compliant</text>
+
+  <text x="938" y="400" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">GDPR</text>
+  <rect x="1130" y="388" width="70" height="16" rx="8" fill="#713f12"/>
+  <text x="1165" y="399" font-family="Inter, sans-serif" font-size="11" fill="#FBBF24" text-anchor="middle">73%</text>
+  <text x="1280" y="400" font-family="Inter, sans-serif" font-size="11" fill="#FBBF24">Partial</text>
+
+  <text x="938" y="432" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">ISO 27001</text>
+  <rect x="1130" y="420" width="70" height="16" rx="8" fill="#065f46"/>
+  <text x="1165" y="431" font-family="Inter, sans-serif" font-size="11" fill="#34D399" text-anchor="middle">88%</text>
+  <text x="1280" y="432" font-family="Inter, sans-serif" font-size="11" fill="#34D399">Compliant</text>
+
+  <!-- Cloud Asset Inventory -->
+  <rect x="924" y="466" width="464" height="320" rx="4" fill="url(#card08)" stroke="#1B3358" stroke-width="1"/>
+  <text x="938" y="490" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0F0FF">Cloud Asset Inventory</text>
+  <line x1="924" y1="498" x2="1388" y2="498" stroke="#1B3358" stroke-width="1"/>
+  <text x="938" y="520" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">Service</text>
+  <text x="1140" y="520" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">Count</text>
+  <text x="1220" y="520" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">At Risk</text>
+  <text x="1310" y="520" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">Risk %</text>
+
+  <text x="938" y="542" font-family="Inter, sans-serif" font-size="12" fill="#F8A100">▪ </text><text x="952" y="542" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">EC2 Instances</text>
+  <text x="1140" y="542" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">12,847</text>
+  <text x="1220" y="542" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">1,247</text>
+  <text x="1310" y="542" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">9.7%</text>
+
+  <text x="938" y="564" font-family="Inter, sans-serif" font-size="12" fill="#F8A100">▪ </text><text x="952" y="564" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">S3 Buckets</text>
+  <text x="1140" y="564" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">2,341</text>
+  <text x="1220" y="564" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">312</text>
+  <text x="1310" y="564" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">13.3%</text>
+
+  <text x="938" y="586" font-family="Inter, sans-serif" font-size="12" fill="#F8A100">▪ </text><text x="952" y="586" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">IAM Users/Roles</text>
+  <text x="1140" y="586" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">8,741</text>
+  <text x="1220" y="586" font-family="Inter, sans-serif" font-size="12" fill="#F97316">2,847</text>
+  <text x="1310" y="586" font-family="Inter, sans-serif" font-size="12" fill="#F97316">32.6%</text>
+
+  <text x="938" y="608" font-family="Inter, sans-serif" font-size="12" fill="#0078D4">▪ </text><text x="952" y="608" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">Azure VMs</text>
+  <text x="1140" y="608" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">4,127</text>
+  <text x="1220" y="608" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24">447</text>
+  <text x="1310" y="608" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24">10.8%</text>
+
+  <text x="938" y="630" font-family="Inter, sans-serif" font-size="12" fill="#0078D4">▪ </text><text x="952" y="630" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">Azure Storage</text>
+  <text x="1140" y="630" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">1,247</text>
+  <text x="1220" y="630" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24">184</text>
+  <text x="1310" y="630" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24">14.8%</text>
+
+  <text x="938" y="652" font-family="Inter, sans-serif" font-size="12" fill="#34A853">▪ </text><text x="952" y="652" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">GCP GCE VMs</text>
+  <text x="1140" y="652" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">3,847</text>
+  <text x="1220" y="652" font-family="Inter, sans-serif" font-size="12" fill="#34D399">87</text>
+  <text x="1310" y="652" font-family="Inter, sans-serif" font-size="12" fill="#34D399">2.3%</text>
+
+  <text x="938" y="674" font-family="Inter, sans-serif" font-size="12" fill="#34A853">▪ </text><text x="952" y="674" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">K8s Clusters</text>
+  <text x="1140" y="674" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF">247</text>
+  <text x="1220" y="674" font-family="Inter, sans-serif" font-size="12" fill="#F97316">34</text>
+  <text x="1310" y="674" font-family="Inter, sans-serif" font-size="12" fill="#F97316">13.8%</text>
+
+  <text x="938" y="696" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">Total Vulnerable Resources:</text>
+  <text x="1140" y="696" font-family="Inter, sans-serif" font-size="12" fill="#EF4444" font-weight="700">5,158</text>
+  <text x="938" y="716" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">Auto-Remediation Rate:</text>
+  <text x="1140" y="716" font-family="Inter, sans-serif" font-size="12" fill="#34D399" font-weight="700">16.4%</text>
+  <text x="938" y="736" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">Avg Time to Remediate:</text>
+  <text x="1140" y="736" font-family="Inter, sans-serif" font-size="12" fill="#E0F0FF" font-weight="700">3.2 days</text>
+  <text x="938" y="756" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">Suppressed Alerts:</text>
+  <text x="1140" y="756" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24" font-weight="700">2,847</text>
+  <text x="938" y="776" font-family="Inter, sans-serif" font-size="12" fill="#6B8CAE">Jira Tickets Created:</text>
+  <text x="1140" y="776" font-family="Inter, sans-serif" font-size="12" fill="#60A5FA" font-weight="700">1,124</text>
+
+  <!-- Footer -->
+  <rect x="0" y="878" width="1400" height="22" fill="#091422" stroke="#1B3358" stroke-width="1"/>
+  <text x="16" y="893" font-family="Inter, sans-serif" font-size="10" fill="#4B7CA8">Prisma Cloud Enterprise  |  Stack: CSPM + CWPP + CIEM  |  Accounts: 82  |  Policies: 2,847 active  |  v24.1.1</text>
+  <text x="1150" y="893" font-family="Inter, sans-serif" font-size="10" fill="#4B7CA8">Ingestion lag: &lt;5m  |  ● All providers connected</text>
+</svg>

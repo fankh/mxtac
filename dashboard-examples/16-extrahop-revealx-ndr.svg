@@ -1,0 +1,528 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#04080F"/>
+      <stop offset="100%" stop-color="#080E1A"/>
+    </linearGradient>
+    <linearGradient id="hdrGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0A1628"/>
+      <stop offset="100%" stop-color="#0F1E38"/>
+    </linearGradient>
+    <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0077C5" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#0077C5" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="areaGrad2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00B4D8" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#00B4D8" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0077C5"/>
+      <stop offset="100%" stop-color="#0047A0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="900" fill="url(#bgGrad)"/>
+
+  <!-- Top Nav -->
+  <rect width="1400" height="52" fill="url(#hdrGrad)"/>
+  <rect width="1400" height="1" y="52" fill="#0077C5" opacity="0.8"/>
+  <!-- Logo -->
+  <rect x="16" y="12" width="32" height="28" rx="3" fill="#0077C5"/>
+  <text x="22" y="32" font-family="Arial,sans-serif" font-size="14" font-weight="900" fill="white">EH</text>
+  <text x="56" y="33" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700" fill="white">ExtraHop</text>
+  <text x="150" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="#4A9ECC">RevealX 360</text>
+  <rect x="220" y="0" width="1" height="52" fill="rgba(255,255,255,0.1)"/>
+  <text x="236" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="#4A9ECC">Overview</text>
+  <text x="310" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.5)">Detections</text>
+  <text x="400" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.5)">Investigations</text>
+  <text x="510" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.5)">Network</text>
+  <text x="585" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.5)">Protocols</text>
+  <text x="665" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.5)">Assets</text>
+  <text x="730" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.5)">Records</text>
+  <!-- Right -->
+  <rect x="1180" y="17" width="70" height="20" rx="4" fill="#0077C5"/>
+  <text x="1188" y="31" font-family="Inter,Arial,sans-serif" font-size="11" fill="white">Cloud Env</text>
+  <text x="1265" y="33" font-family="Inter,Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.6)">Last 24h</text>
+  <circle cx="1360" cy="26" r="14" fill="#1A2B3C"/>
+  <text x="1354" y="31" font-family="Inter,Arial,sans-serif" font-size="12" fill="#0077C5">AC</text>
+
+  <!-- Ribbon: Active Alert Banner -->
+  <rect y="53" width="1400" height="28" fill="#0E1A2E"/>
+  <rect x="8" y="58" width="8" height="8" rx="2" fill="#FF4444"/>
+  <text x="22" y="71" font-family="Inter,Arial,sans-serif" font-size="12" fill="#FF8888">ACTIVE: Ransomware lateral movement detected — 3 internal hosts | C2 beaconing from 192.168.12.47 | Kerberoasting attempt on DC-01</text>
+  <text x="1300" y="71" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">View All</text>
+
+  <!-- KPI strip -->
+  <rect y="81" width="1400" height="72" fill="#07111E"/>
+  <!-- KPI 1 -->
+  <rect x="16" y="88" width="155" height="58" rx="4" fill="#0A1628" stroke="#0077C5" stroke-width="1" stroke-opacity="0.5"/>
+  <text x="24" y="105" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">DETECTIONS (24H)</text>
+  <text x="24" y="128" font-family="Inter,Arial,sans-serif" font-size="26" font-weight="700" fill="#FF4444">247</text>
+  <text x="110" y="128" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF4444">▲ 38%</text>
+  <text x="24" y="140" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">vs prev period</text>
+
+  <rect x="179" y="88" width="155" height="58" rx="4" fill="#0A1628" stroke="#0E2240" stroke-width="1"/>
+  <text x="187" y="105" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">CRITICAL DETECTIONS</text>
+  <text x="187" y="128" font-family="Inter,Arial,sans-serif" font-size="26" font-weight="700" fill="#FF4444">23</text>
+  <text x="230" y="128" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF4444">▲ 5</text>
+  <text x="187" y="140" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">New since last hour</text>
+
+  <rect x="342" y="88" width="155" height="58" rx="4" fill="#0A1628" stroke="#0E2240" stroke-width="1"/>
+  <text x="350" y="105" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">MONITORED DEVICES</text>
+  <text x="350" y="128" font-family="Inter,Arial,sans-serif" font-size="26" font-weight="700" fill="white">48,291</text>
+  <text x="350" y="140" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">▲ 312 new today</text>
+
+  <rect x="505" y="88" width="155" height="58" rx="4" fill="#0A1628" stroke="#0E2240" stroke-width="1"/>
+  <text x="513" y="105" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">NETWORK TRAFFIC</text>
+  <text x="513" y="128" font-family="Inter,Arial,sans-serif" font-size="26" font-weight="700" fill="white">4.7</text>
+  <text x="560" y="128" font-family="Inter,Arial,sans-serif" font-size="14" fill="#4A9ECC">Tbps</text>
+  <text x="513" y="140" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">Analyzed in real-time</text>
+
+  <rect x="668" y="88" width="155" height="58" rx="4" fill="#0A1628" stroke="#0E2240" stroke-width="1"/>
+  <text x="676" y="105" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">E/W FLOWS ANALYZED</text>
+  <text x="676" y="128" font-family="Inter,Arial,sans-serif" font-size="26" font-weight="700" fill="white">1.2B</text>
+  <text x="676" y="140" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">Last 24 hours</text>
+
+  <rect x="831" y="88" width="155" height="58" rx="4" fill="#0A1628" stroke="#0E2240" stroke-width="1"/>
+  <text x="839" y="105" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">MTTD</text>
+  <text x="839" y="128" font-family="Inter,Arial,sans-serif" font-size="26" font-weight="700" fill="#27AE60">3.2</text>
+  <text x="888" y="128" font-family="Inter,Arial,sans-serif" font-size="14" fill="#4A9ECC">min</text>
+  <text x="839" y="140" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">▼ 0.8 min improved</text>
+
+  <rect x="994" y="88" width="155" height="58" rx="4" fill="#0A1628" stroke="#0E2240" stroke-width="1"/>
+  <text x="1002" y="105" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">ENCRYPTED TRAFFIC</text>
+  <text x="1002" y="128" font-family="Inter,Arial,sans-serif" font-size="26" font-weight="700" fill="white">78%</text>
+  <text x="1002" y="140" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">Decrypted &amp; analyzed</text>
+
+  <rect x="1157" y="88" width="220" height="58" rx="4" fill="#0A1628" stroke="#FF4444" stroke-width="1" stroke-opacity="0.5"/>
+  <text x="1165" y="105" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8888">RISK SCORE</text>
+  <text x="1165" y="128" font-family="Inter,Arial,sans-serif" font-size="26" font-weight="700" fill="#FF4444">82</text>
+  <text x="1205" y="128" font-family="Inter,Arial,sans-serif" font-size="14" fill="#FF8888">/100 HIGH</text>
+  <text x="1165" y="140" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8888">Elevated — Action required</text>
+
+  <!-- Main Detection Table -->
+  <rect x="16" y="163" width="870" height="370" rx="5" fill="#080E1A" stroke="#0E2240" stroke-width="1"/>
+  <rect x="16" y="163" width="870" height="32" rx="5" fill="#0A1628"/>
+  <rect x="16" y="189" width="870" height="1" fill="#0E2240"/>
+  <text x="28" y="185" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="white">Active Detections</text>
+  <rect x="764" y="170" width="108" height="18" rx="9" fill="rgba(255,68,68,0.15)" stroke="#FF4444" stroke-width="1"/>
+  <text x="776" y="183" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8888">247 Detections</text>
+  <!-- Column headers -->
+  <rect x="16" y="190" width="870" height="22" fill="#060C18"/>
+  <text x="28" y="206" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">RISK</text>
+  <text x="70" y="206" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">DETECTION NAME</text>
+  <text x="300" y="206" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">CATEGORY</text>
+  <text x="420" y="206" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">OFFENDER</text>
+  <text x="570" y="206" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">VICTIM</text>
+  <text x="700" y="206" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">TACTIC</text>
+  <text x="800" y="206" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">TIME</text>
+
+  <!-- Detection rows -->
+  <rect x="16" y="212" width="870" height="28" fill="#0A1628"/>
+  <rect x="28" y="219" width="32" height="14" rx="7" fill="#8B0000"/>
+  <text x="31" y="230" font-family="Inter,Arial,sans-serif" font-size="9" font-weight="700" fill="white">CRIT</text>
+  <text x="70" y="230" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">Ransomware C2 Beaconing</text>
+  <rect x="298" y="217" width="100" height="16" rx="8" fill="rgba(255,68,68,0.2)"/>
+  <text x="308" y="229" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF6B6B">C2 Comms</text>
+  <text x="420" y="230" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">192.168.12.47</text>
+  <text x="570" y="230" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">ext-205.84.1.2</text>
+  <text x="700" y="230" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF8888">C&amp;C</text>
+  <text x="800" y="230" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">2m ago</text>
+  <rect x="16" y="240" width="870" height="1" fill="#0E2240"/>
+
+  <rect x="16" y="241" width="870" height="28" fill="#080E1A"/>
+  <rect x="28" y="248" width="32" height="14" rx="7" fill="#8B0000"/>
+  <text x="31" y="259" font-family="Inter,Arial,sans-serif" font-size="9" font-weight="700" fill="white">CRIT</text>
+  <text x="70" y="259" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">Kerberoasting - SPN Enum</text>
+  <rect x="298" y="246" width="90" height="16" rx="8" fill="rgba(255,68,68,0.2)"/>
+  <text x="306" y="258" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF6B6B">Credential</text>
+  <text x="420" y="259" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">WKSTN-047</text>
+  <text x="570" y="259" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">DC-01.corp</text>
+  <text x="700" y="259" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF8888">Credential</text>
+  <text x="800" y="259" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">5m ago</text>
+  <rect x="16" y="269" width="870" height="1" fill="#0E2240"/>
+
+  <rect x="16" y="270" width="870" height="28" fill="#0A1628"/>
+  <rect x="28" y="277" width="32" height="14" rx="7" fill="#CC4400"/>
+  <text x="31" y="288" font-family="Inter,Arial,sans-serif" font-size="9" font-weight="700" fill="white">HIGH</text>
+  <text x="70" y="288" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">Lateral Movement via SMB</text>
+  <rect x="298" y="275" width="90" height="16" rx="8" fill="rgba(204,68,0,0.2)"/>
+  <text x="306" y="287" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8844">Lateral Move</text>
+  <text x="420" y="288" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">192.168.12.47</text>
+  <text x="570" y="288" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">192.168.14.22</text>
+  <text x="700" y="288" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF8844">Lateral</text>
+  <text x="800" y="288" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">8m ago</text>
+  <rect x="16" y="298" width="870" height="1" fill="#0E2240"/>
+
+  <rect x="16" y="299" width="870" height="28" fill="#080E1A"/>
+  <rect x="28" y="306" width="32" height="14" rx="7" fill="#CC4400"/>
+  <text x="31" y="317" font-family="Inter,Arial,sans-serif" font-size="9" font-weight="700" fill="white">HIGH</text>
+  <text x="70" y="317" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">DNS Tunneling Suspected</text>
+  <rect x="298" y="304" width="80" height="16" rx="8" fill="rgba(204,68,0,0.2)"/>
+  <text x="306" y="316" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8844">Exfiltration</text>
+  <text x="420" y="317" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">SRV-DB-03</text>
+  <text x="570" y="317" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">8.8.8.8 (ext)</text>
+  <text x="700" y="317" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF8844">Exfiltration</text>
+  <text x="800" y="317" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">12m ago</text>
+  <rect x="16" y="327" width="870" height="1" fill="#0E2240"/>
+
+  <rect x="16" y="328" width="870" height="28" fill="#0A1628"/>
+  <rect x="28" y="335" width="32" height="14" rx="7" fill="#CC4400"/>
+  <text x="31" y="346" font-family="Inter,Arial,sans-serif" font-size="9" font-weight="700" fill="white">HIGH</text>
+  <text x="70" y="346" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">Pass-the-Hash Attempt</text>
+  <rect x="298" y="333" width="90" height="16" rx="8" fill="rgba(204,68,0,0.2)"/>
+  <text x="306" y="345" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8844">Credential</text>
+  <text x="420" y="346" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">WKSTN-089</text>
+  <text x="570" y="346" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">FS-SERVER-02</text>
+  <text x="700" y="346" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF8844">Credential</text>
+  <text x="800" y="346" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">19m ago</text>
+  <rect x="16" y="356" width="870" height="1" fill="#0E2240"/>
+
+  <rect x="16" y="357" width="870" height="28" fill="#080E1A"/>
+  <rect x="28" y="364" width="32" height="14" rx="7" fill="#0055AA"/>
+  <text x="32" y="375" font-family="Inter,Arial,sans-serif" font-size="9" font-weight="700" fill="white">MED</text>
+  <text x="70" y="375" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">Port Scan - Internal Sweep</text>
+  <rect x="298" y="362" width="90" height="16" rx="8" fill="rgba(0,85,170,0.2)"/>
+  <text x="306" y="374" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">Recon</text>
+  <text x="420" y="375" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">192.168.1.0/24</text>
+  <text x="570" y="375" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">Multiple</text>
+  <text x="700" y="375" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">Discovery</text>
+  <text x="800" y="375" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">24m ago</text>
+  <rect x="16" y="385" width="870" height="1" fill="#0E2240"/>
+
+  <rect x="16" y="386" width="870" height="28" fill="#0A1628"/>
+  <rect x="28" y="393" width="32" height="14" rx="7" fill="#0055AA"/>
+  <text x="32" y="404" font-family="Inter,Arial,sans-serif" font-size="9" font-weight="700" fill="white">MED</text>
+  <text x="70" y="404" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">Anomalous RDP - Off-Hours</text>
+  <rect x="298" y="391" width="90" height="16" rx="8" fill="rgba(0,85,170,0.2)"/>
+  <text x="306" y="403" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">Access</text>
+  <text x="420" y="404" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">ext-104.23.1.7</text>
+  <text x="570" y="404" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">SRV-JUMP-01</text>
+  <text x="700" y="404" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">Initial Access</text>
+  <text x="800" y="404" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">38m ago</text>
+  <rect x="16" y="414" width="870" height="1" fill="#0E2240"/>
+
+  <rect x="16" y="415" width="870" height="28" fill="#080E1A"/>
+  <rect x="28" y="422" width="32" height="14" rx="7" fill="#0055AA"/>
+  <text x="32" y="433" font-family="Inter,Arial,sans-serif" font-size="9" font-weight="700" fill="white">MED</text>
+  <text x="70" y="433" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">LDAP Enum - AD Reconnaissance</text>
+  <rect x="298" y="420" width="70" height="16" rx="8" fill="rgba(0,85,170,0.2)"/>
+  <text x="306" y="432" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">Recon</text>
+  <text x="420" y="433" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">WKSTN-102</text>
+  <text x="570" y="433" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">DC-01.corp</text>
+  <text x="700" y="433" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">Discovery</text>
+  <text x="800" y="433" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">52m ago</text>
+  <rect x="16" y="443" width="870" height="1" fill="#0E2240"/>
+
+  <rect x="16" y="444" width="870" height="28" fill="#0A1628"/>
+  <rect x="28" y="451" width="32" height="14" rx="7" fill="#0055AA"/>
+  <text x="32" y="462" font-family="Inter,Arial,sans-serif" font-size="9" font-weight="700" fill="white">MED</text>
+  <text x="70" y="462" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">Large Data Transfer to Cloud</text>
+  <rect x="298" y="449" width="90" height="16" rx="8" fill="rgba(0,85,170,0.2)"/>
+  <text x="306" y="461" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">Exfiltration</text>
+  <text x="420" y="462" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">SRV-FILE-01</text>
+  <text x="570" y="462" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">s3.aws.com</text>
+  <text x="700" y="462" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">Exfiltration</text>
+  <text x="800" y="462" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">1h ago</text>
+  <rect x="16" y="472" width="870" height="1" fill="#0E2240"/>
+
+  <rect x="16" y="473" width="870" height="28" fill="#080E1A"/>
+  <rect x="28" y="480" width="32" height="14" rx="7" fill="#1A4D1A"/>
+  <text x="32" y="491" font-family="Inter,Arial,sans-serif" font-size="9" font-weight="700" fill="white">LOW</text>
+  <text x="70" y="491" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">SSL Cert Expiry Warning</text>
+  <rect x="298" y="478" width="70" height="16" rx="8" fill="rgba(26,77,26,0.3)"/>
+  <text x="306" y="490" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">TLS/SSL</text>
+  <text x="420" y="491" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">web-app-prod</text>
+  <text x="570" y="491" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">Internal CA</text>
+  <text x="700" y="491" font-family="Inter,Arial,sans-serif" font-size="11" fill="#27AE60">Config</text>
+  <text x="800" y="491" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">2h ago</text>
+  <rect x="16" y="501" width="870" height="1" fill="#0E2240"/>
+
+  <rect x="16" y="502" width="870" height="28" fill="#0A1628"/>
+  <rect x="28" y="509" width="32" height="14" rx="7" fill="#1A4D1A"/>
+  <text x="32" y="520" font-family="Inter,Arial,sans-serif" font-size="9" font-weight="700" fill="white">LOW</text>
+  <text x="70" y="520" font-family="Inter,Arial,sans-serif" font-size="12" fill="white">SSH Login from New Country</text>
+  <rect x="298" y="507" width="70" height="16" rx="8" fill="rgba(26,77,26,0.3)"/>
+  <text x="306" y="519" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Auth</text>
+  <text x="420" y="520" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">185.234.x.x (RU)</text>
+  <text x="570" y="520" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">LINUX-SRV-07</text>
+  <text x="700" y="520" font-family="Inter,Arial,sans-serif" font-size="11" fill="#27AE60">Initial Access</text>
+  <text x="800" y="520" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">3h ago</text>
+
+  <!-- Right panels -->
+
+  <!-- Network Traffic Trend -->
+  <rect x="896" y="163" width="488" height="200" rx="5" fill="#080E1A" stroke="#0E2240" stroke-width="1"/>
+  <rect x="896" y="163" width="488" height="32" rx="5" fill="#0A1628"/>
+  <rect x="896" y="189" width="488" height="1" fill="#0E2240"/>
+  <text x="908" y="185" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="white">Network Traffic Analysis</text>
+  <text x="1280" y="185" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">24h</text>
+  <!-- Chart area -->
+  <rect x="906" y="198" width="468" height="120" rx="3" fill="#060C18"/>
+  <!-- Grid lines -->
+  <line x1="910" y1="210" x2="1374" y2="210" stroke="#0E2240" stroke-width="1"/>
+  <line x1="910" y1="235" x2="1374" y2="235" stroke="#0E2240" stroke-width="1"/>
+  <line x1="910" y1="260" x2="1374" y2="260" stroke="#0E2240" stroke-width="1"/>
+  <line x1="910" y1="285" x2="1374" y2="285" stroke="#0E2240" stroke-width="1"/>
+  <line x1="910" y1="310" x2="1374" y2="310" stroke="#0E2240" stroke-width="1"/>
+  <!-- N/S Traffic area -->
+  <polyline points="910,290 939,282 968,275 997,268 1026,258 1055,250 1084,242 1113,235 1142,240 1171,244 1200,238 1229,230 1258,222 1287,218 1316,215 1345,210 1374,213" fill="none" stroke="#00B4D8" stroke-width="2"/>
+  <!-- E/W Traffic area -->
+  <polyline points="910,300 939,295 968,290 997,285 1026,278 1055,272 1084,268 1113,274 1142,280 1171,275 1200,268 1229,260 1258,252 1287,246 1316,240 1345,235 1374,238" fill="none" stroke="#0077C5" stroke-width="2"/>
+  <!-- Anomaly spike -->
+  <polyline points="1113,274 1142,220 1171,275" fill="none" stroke="#FF4444" stroke-width="2.5"/>
+  <rect x="1120" y="206" width="44" height="14" rx="3" fill="#FF4444"/>
+  <text x="1124" y="217" font-family="Inter,Arial,sans-serif" font-size="9" fill="white">E/W SPIKE</text>
+  <!-- Y labels -->
+  <text x="902" y="213" font-family="Inter,Arial,sans-serif" font-size="8" fill="#4A9ECC" text-anchor="end">5T</text>
+  <text x="902" y="238" font-family="Inter,Arial,sans-serif" font-size="8" fill="#4A9ECC" text-anchor="end">4T</text>
+  <text x="902" y="263" font-family="Inter,Arial,sans-serif" font-size="8" fill="#4A9ECC" text-anchor="end">3T</text>
+  <text x="902" y="288" font-family="Inter,Arial,sans-serif" font-size="8" fill="#4A9ECC" text-anchor="end">2T</text>
+  <text x="902" y="313" font-family="Inter,Arial,sans-serif" font-size="8" fill="#4A9ECC" text-anchor="end">1T</text>
+  <!-- Legend -->
+  <line x1="910" y1="326" x2="930" y2="326" stroke="#00B4D8" stroke-width="2"/>
+  <text x="934" y="330" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">N/S Traffic</text>
+  <line x1="1010" y1="326" x2="1030" y2="326" stroke="#0077C5" stroke-width="2"/>
+  <text x="1034" y="330" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">E/W Traffic</text>
+  <line x1="1110" y1="326" x2="1130" y2="326" stroke="#FF4444" stroke-width="2"/>
+  <text x="1134" y="330" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8888">Anomaly</text>
+
+  <!-- Detection by Category -->
+  <rect x="896" y="373" width="235" height="160" rx="5" fill="#080E1A" stroke="#0E2240" stroke-width="1"/>
+  <rect x="896" y="373" width="235" height="30" rx="5" fill="#0A1628"/>
+  <rect x="896" y="397" width="235" height="1" fill="#0E2240"/>
+  <text x="908" y="393" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="600" fill="white">Detections by Category</text>
+  <!-- Bars -->
+  <text x="908" y="415" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">C2 Comms</text>
+  <rect x="988" y="406" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="988" y="406" width="96" height="11" rx="3" fill="#FF4444"/>
+  <text x="1112" y="416" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">80</text>
+
+  <text x="908" y="435" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">Lateral Move</text>
+  <rect x="988" y="426" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="988" y="426" width="72" height="11" rx="3" fill="#FF8844"/>
+  <text x="1112" y="436" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">60</text>
+
+  <text x="908" y="455" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">Credential</text>
+  <rect x="988" y="446" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="988" y="446" width="60" height="11" rx="3" fill="#FF8844"/>
+  <text x="1112" y="456" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">50</text>
+
+  <text x="908" y="475" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">Exfiltration</text>
+  <rect x="988" y="466" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="988" y="466" width="42" height="11" rx="3" fill="#0077C5"/>
+  <text x="1112" y="476" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">35</text>
+
+  <text x="908" y="495" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">Recon</text>
+  <rect x="988" y="486" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="988" y="486" width="26" height="11" rx="3" fill="#4A9ECC"/>
+  <text x="1112" y="496" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">22</text>
+
+  <text x="908" y="515" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">Other</text>
+  <rect x="988" y="506" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="988" y="506" width="14" height="11" rx="3" fill="#27AE60"/>
+  <text x="1112" y="516" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">12 (est.)</text>
+
+  <!-- Protocol Analysis -->
+  <rect x="1141" y="373" width="243" height="160" rx="5" fill="#080E1A" stroke="#0E2240" stroke-width="1"/>
+  <rect x="1141" y="373" width="243" height="30" rx="5" fill="#0A1628"/>
+  <rect x="1141" y="397" width="243" height="1" fill="#0E2240"/>
+  <text x="1153" y="393" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="600" fill="white">Top Suspicious Protocols</text>
+  <!-- Protocol rows -->
+  <text x="1153" y="415" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">SMB (445)</text>
+  <rect x="1240" y="406" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="1240" y="406" width="110" height="11" rx="3" fill="#FF4444"/>
+  <text x="1364" y="416" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">2,841</text>
+
+  <text x="1153" y="435" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">DNS (53)</text>
+  <rect x="1240" y="426" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="1240" y="426" width="84" height="11" rx="3" fill="#FF8844"/>
+  <text x="1364" y="436" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">2,127</text>
+
+  <text x="1153" y="455" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">HTTPS (443)</text>
+  <rect x="1240" y="446" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="1240" y="446" width="60" height="11" rx="3" fill="#0077C5"/>
+  <text x="1364" y="456" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">1,523</text>
+
+  <text x="1153" y="475" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">RDP (3389)</text>
+  <rect x="1240" y="466" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="1240" y="466" width="42" height="11" rx="3" fill="#FF8844"/>
+  <text x="1364" y="476" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">1,067</text>
+
+  <text x="1153" y="495" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">Kerberos</text>
+  <rect x="1240" y="486" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="1240" y="486" width="28" height="11" rx="3" fill="#9B59B6"/>
+  <text x="1364" y="496" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">712</text>
+
+  <text x="1153" y="515" font-family="Inter,Arial,sans-serif" font-size="10" fill="#A0B8CC">SSH (22)</text>
+  <rect x="1240" y="506" width="120" height="11" rx="3" fill="#0E2240"/>
+  <rect x="1240" y="506" width="18" height="11" rx="3" fill="#27AE60"/>
+  <text x="1364" y="516" font-family="Inter,Arial,sans-serif" font-size="9" fill="#4A9ECC">456</text>
+
+  <!-- Bottom: Detection heatmap + investigation -->
+  <rect x="16" y="543" width="546" height="240" rx="5" fill="#080E1A" stroke="#0E2240" stroke-width="1"/>
+  <rect x="16" y="543" width="546" height="30" rx="5" fill="#0A1628"/>
+  <rect x="16" y="567" width="546" height="1" fill="#0E2240"/>
+  <text x="28" y="563" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="white">MITRE ATT&amp;CK Coverage</text>
+
+  <!-- MITRE tactics as horizontal bars -->
+  <!-- Tactic: Initial Access -->
+  <text x="28" y="588" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">Initial Access</text>
+  <rect x="170" y="578" width="370" height="14" rx="3" fill="#0E2240"/>
+  <rect x="170" y="578" width="296" height="14" rx="3" fill="#0077C5"/>
+  <text x="544" y="590" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">80%</text>
+
+  <text x="28" y="612" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">Execution</text>
+  <rect x="170" y="602" width="370" height="14" rx="3" fill="#0E2240"/>
+  <rect x="170" y="602" width="222" height="14" rx="3" fill="#0077C5"/>
+  <text x="544" y="614" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">60%</text>
+
+  <text x="28" y="636" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">Persistence</text>
+  <rect x="170" y="626" width="370" height="14" rx="3" fill="#0E2240"/>
+  <rect x="170" y="626" width="185" height="14" rx="3" fill="#0077C5"/>
+  <text x="544" y="638" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">50%</text>
+
+  <text x="28" y="660" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">Lateral Movement</text>
+  <rect x="170" y="650" width="370" height="14" rx="3" fill="#0E2240"/>
+  <rect x="170" y="650" width="333" height="14" rx="3" fill="#FF4444"/>
+  <text x="544" y="662" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8888">90%</text>
+
+  <text x="28" y="684" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">Credential Access</text>
+  <rect x="170" y="674" width="370" height="14" rx="3" fill="#0E2240"/>
+  <rect x="170" y="674" width="314" height="14" rx="3" fill="#FF8844"/>
+  <text x="544" y="686" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8888">85%</text>
+
+  <text x="28" y="708" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">Exfiltration</text>
+  <rect x="170" y="698" width="370" height="14" rx="3" fill="#0E2240"/>
+  <rect x="170" y="698" width="259" height="14" rx="3" fill="#FF8844"/>
+  <text x="544" y="710" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8888">70%</text>
+
+  <text x="28" y="732" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">Command &amp; Control</text>
+  <rect x="170" y="722" width="370" height="14" rx="3" fill="#0E2240"/>
+  <rect x="170" y="722" width="259" height="14" rx="3" fill="#FF4444"/>
+  <text x="544" y="734" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8888">70%</text>
+
+  <text x="28" y="756" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">Impact</text>
+  <rect x="170" y="746" width="370" height="14" rx="3" fill="#0E2240"/>
+  <rect x="170" y="746" width="148" height="14" rx="3" fill="#4A9ECC"/>
+  <text x="544" y="758" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">40%</text>
+
+  <!-- Active Investigations panel -->
+  <rect x="572" y="543" width="824" height="240" rx="5" fill="#080E1A" stroke="#0E2240" stroke-width="1"/>
+  <rect x="572" y="543" width="824" height="30" rx="5" fill="#0A1628"/>
+  <rect x="572" y="567" width="824" height="1" fill="#0E2240"/>
+  <text x="584" y="563" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600" fill="white">Active Investigations</text>
+  <rect x="1290" y="549" width="90" height="16" rx="8" fill="rgba(0,119,197,0.2)" stroke="#0077C5" stroke-width="1"/>
+  <text x="1298" y="561" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">Open: 18</text>
+
+  <!-- Investigation headers -->
+  <rect x="572" y="568" width="824" height="20" fill="#060C18"/>
+  <text x="584" y="583" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">INV ID</text>
+  <text x="640" y="583" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">TITLE</text>
+  <text x="830" y="583" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">RISK</text>
+  <text x="900" y="583" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">DEVICES</text>
+  <text x="980" y="583" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">ANALYST</text>
+  <text x="1080" y="583" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">STATUS</text>
+  <text x="1200" y="583" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">CREATED</text>
+  <text x="1300" y="583" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="600" fill="#4A9ECC">ACTIONS</text>
+
+  <!-- Investigation rows -->
+  <rect x="572" y="588" width="824" height="26" fill="#0A1628"/>
+  <text x="584" y="605" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">INV-2847</text>
+  <text x="640" y="605" font-family="Inter,Arial,sans-serif" font-size="11" fill="white">Ransomware Intrusion Set</text>
+  <rect x="826" y="594" width="60" height="16" rx="8" fill="#8B0000"/>
+  <text x="832" y="606" font-family="Inter,Arial,sans-serif" font-size="9" fill="white">CRITICAL</text>
+  <text x="900" y="605" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">14</text>
+  <text x="980" y="605" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">j.rodriguez</text>
+  <rect x="1075" y="593" width="80" height="16" rx="8" fill="rgba(255,68,68,0.2)"/>
+  <text x="1083" y="605" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8888">In Progress</text>
+  <text x="1200" y="605" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">2h ago</text>
+  <text x="1300" y="605" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">Contain</text>
+  <rect x="572" y="614" width="824" height="1" fill="#0E2240"/>
+
+  <rect x="572" y="615" width="824" height="26" fill="#080E1A"/>
+  <text x="584" y="632" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">INV-2846</text>
+  <text x="640" y="632" font-family="Inter,Arial,sans-serif" font-size="11" fill="white">Kerberoasting Campaign</text>
+  <rect x="826" y="621" width="48" height="16" rx="8" fill="#CC4400"/>
+  <text x="834" y="633" font-family="Inter,Arial,sans-serif" font-size="9" fill="white">HIGH</text>
+  <text x="900" y="632" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">6</text>
+  <text x="980" y="632" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">m.patel</text>
+  <rect x="1075" y="620" width="80" height="16" rx="8" fill="rgba(255,68,68,0.2)"/>
+  <text x="1083" y="632" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8888">In Progress</text>
+  <text x="1200" y="632" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">4h ago</text>
+  <text x="1300" y="632" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">Analyze</text>
+  <rect x="572" y="641" width="824" height="1" fill="#0E2240"/>
+
+  <rect x="572" y="642" width="824" height="26" fill="#0A1628"/>
+  <text x="584" y="659" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">INV-2844</text>
+  <text x="640" y="659" font-family="Inter,Arial,sans-serif" font-size="11" fill="white">Data Exfiltration via DNS</text>
+  <rect x="826" y="648" width="48" height="16" rx="8" fill="#CC4400"/>
+  <text x="834" y="660" font-family="Inter,Arial,sans-serif" font-size="9" fill="white">HIGH</text>
+  <text x="900" y="659" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">3</text>
+  <text x="980" y="659" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">s.nguyen</text>
+  <rect x="1075" y="647" width="60" height="16" rx="8" fill="rgba(0,119,197,0.2)"/>
+  <text x="1083" y="659" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">Reviewing</text>
+  <text x="1200" y="659" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">7h ago</text>
+  <text x="1300" y="659" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">Eradicate</text>
+  <rect x="572" y="668" width="824" height="1" fill="#0E2240"/>
+
+  <rect x="572" y="669" width="824" height="26" fill="#080E1A"/>
+  <text x="584" y="686" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">INV-2842</text>
+  <text x="640" y="686" font-family="Inter,Arial,sans-serif" font-size="11" fill="white">Insider Threat — Data Hoarding</text>
+  <rect x="826" y="675" width="50" height="16" rx="8" fill="#0055AA"/>
+  <text x="833" y="687" font-family="Inter,Arial,sans-serif" font-size="9" fill="white">MED</text>
+  <text x="900" y="686" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">2</text>
+  <text x="980" y="686" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">a.kim</text>
+  <rect x="1075" y="674" width="76" height="16" rx="8" fill="rgba(155,89,182,0.2)"/>
+  <text x="1083" y="686" font-family="Inter,Arial,sans-serif" font-size="10" fill="#9B59B6">Escalated</text>
+  <text x="1200" y="686" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">1d ago</text>
+  <text x="1300" y="686" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">Investigate</text>
+  <rect x="572" y="695" width="824" height="1" fill="#0E2240"/>
+
+  <rect x="572" y="696" width="824" height="26" fill="#0A1628"/>
+  <text x="584" y="713" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">INV-2840</text>
+  <text x="640" y="713" font-family="Inter,Arial,sans-serif" font-size="11" fill="white">Brute Force — Admin Accounts</text>
+  <rect x="826" y="702" width="50" height="16" rx="8" fill="#0055AA"/>
+  <text x="833" y="714" font-family="Inter,Arial,sans-serif" font-size="9" fill="white">MED</text>
+  <text x="900" y="713" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">1</text>
+  <text x="980" y="713" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">t.wilson</text>
+  <rect x="1075" y="701" width="72" height="16" rx="8" fill="rgba(39,174,96,0.2)"/>
+  <text x="1083" y="713" font-family="Inter,Arial,sans-serif" font-size="10" fill="#27AE60">Contained</text>
+  <text x="1200" y="713" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">1d ago</text>
+  <text x="1300" y="713" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">Close</text>
+  <rect x="572" y="722" width="824" height="1" fill="#0E2240"/>
+
+  <rect x="572" y="723" width="824" height="26" fill="#080E1A"/>
+  <text x="584" y="740" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">INV-2838</text>
+  <text x="640" y="740" font-family="Inter,Arial,sans-serif" font-size="11" fill="white">Supply Chain IOC Match</text>
+  <rect x="826" y="729" width="48" height="16" rx="8" fill="#CC4400"/>
+  <text x="834" y="741" font-family="Inter,Arial,sans-serif" font-size="9" fill="white">HIGH</text>
+  <text x="900" y="740" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">7</text>
+  <text x="980" y="740" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">l.chen</text>
+  <rect x="1075" y="728" width="60" height="16" rx="8" fill="rgba(0,119,197,0.2)"/>
+  <text x="1083" y="740" font-family="Inter,Arial,sans-serif" font-size="10" fill="#4A9ECC">Reviewing</text>
+  <text x="1200" y="740" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">2d ago</text>
+  <text x="1300" y="740" font-family="Inter,Arial,sans-serif" font-size="11" fill="#0077C5">Remediate</text>
+  <rect x="572" y="749" width="824" height="1" fill="#0E2240"/>
+
+  <rect x="572" y="750" width="824" height="26" fill="#0A1628"/>
+  <text x="584" y="767" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">INV-2835</text>
+  <text x="640" y="767" font-family="Inter,Arial,sans-serif" font-size="11" fill="white">Zero-Day Exploit Attempt</text>
+  <rect x="826" y="756" width="60" height="16" rx="8" fill="#8B0000"/>
+  <text x="832" y="768" font-family="Inter,Arial,sans-serif" font-size="9" fill="white">CRITICAL</text>
+  <text x="900" y="767" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">22</text>
+  <text x="980" y="767" font-family="Inter,Arial,sans-serif" font-size="11" fill="#A0B8CC">Unassigned</text>
+  <rect x="1075" y="755" width="72" height="16" rx="8" fill="rgba(255,68,68,0.2)"/>
+  <text x="1083" y="767" font-family="Inter,Arial,sans-serif" font-size="10" fill="#FF8888">New</text>
+  <text x="1200" y="767" font-family="Inter,Arial,sans-serif" font-size="11" fill="#4A9ECC">10m ago</text>
+  <text x="1300" y="767" font-family="Inter,Arial,sans-serif" font-size="11" fill="#FF4444">Assign!</text>
+
+  <!-- Footer -->
+  <rect y="868" width="1400" height="32" fill="#04080F"/>
+  <rect y="868" width="1400" height="1" fill="#0E2240"/>
+  <circle cx="28" cy="884" r="6" fill="#27AE60"/>
+  <text x="40" y="889" font-family="Inter,Arial,sans-serif" font-size="11" fill="rgba(255,255,255,0.5)">Sensor: ONLINE | Packet Capture: Active | Decryption: Active | Wire Data Rate: 4.7 Tbps | Latency: 0.3ms</text>
+  <text x="1100" y="889" font-family="Inter,Arial,sans-serif" font-size="11" fill="rgba(255,255,255,0.5)">RevealX 360 v9.4 | Cloud: AWS us-east-1 | Updated: Just Now</text>
+</svg>

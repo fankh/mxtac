@@ -1,0 +1,347 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg07" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0A0C10"/>
+      <stop offset="100%" style="stop-color:#0E1018"/>
+    </linearGradient>
+    <linearGradient id="card07" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#161B26"/>
+      <stop offset="100%" style="stop-color:#121720"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1400" height="900" fill="url(#bg07)"/>
+
+  <!-- Top Nav - CrowdStrike Falcon dark theme -->
+  <rect x="0" y="0" width="1400" height="50" fill="#0D1117" stroke="#1C2433" stroke-width="1"/>
+  <rect x="0" y="0" width="50" height="50" fill="#CC0000"/>
+  <text x="25" y="33" font-family="Arial Black, sans-serif" font-size="20" font-weight="900" fill="white" text-anchor="middle">F</text>
+  <text x="60" y="20" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">CrowdStrike Falcon</text>
+  <text x="60" y="38" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#F0F4F8">Endpoint Detection &amp; Response</text>
+  <text x="350" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Dashboard</text>
+  <text x="450" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Detections</text>
+  <text x="560" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Incidents</text>
+  <text x="660" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Threat Graph</text>
+  <text x="780" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Overwatch</text>
+  <text x="880" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Intel</text>
+  <text x="950" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Hosts</text>
+  <rect x="1250" y="13" width="130" height="26" rx="4" fill="#CC0000"/>
+  <text x="1315" y="31" font-family="Inter, sans-serif" font-size="11" fill="white" text-anchor="middle" font-weight="600">Threat Graph Live</text>
+
+  <!-- Overwatch Banner -->
+  <rect x="0" y="50" width="1400" height="32" fill="#1a0505" stroke="#3d0a0a" stroke-width="0"/>
+  <text x="16" y="71" font-family="Inter, sans-serif" font-size="12" fill="#FF6B6B">● OVERWATCH ALERT: Hands-on-keyboard activity detected on win-srv-12.corp — APT29 TTP pattern confirmed</text>
+  <rect x="1300" y="56" width="80" height="20" rx="4" fill="#CC0000"/>
+  <text x="1340" y="70" font-family="Inter, sans-serif" font-size="11" fill="white" text-anchor="middle">Investigate</text>
+
+  <!-- KPI Row -->
+  <rect x="12" y="96" width="164" height="90" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <rect x="12" y="96" width="164" height="3" fill="#CC0000"/>
+  <text x="24" y="116" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">DETECTIONS (24h)</text>
+  <text x="24" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#EF4444">847</text>
+  <text x="120" y="153" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">▲12%</text>
+
+  <rect x="186" y="96" width="164" height="90" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <rect x="186" y="96" width="164" height="3" fill="#F97316"/>
+  <text x="198" y="116" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">INCIDENTS OPEN</text>
+  <text x="198" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#F97316">34</text>
+  <text x="240" y="153" font-family="Inter, sans-serif" font-size="12" fill="#F97316">▲ 3</text>
+
+  <rect x="360" y="96" width="164" height="90" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <rect x="360" y="96" width="164" height="3" fill="#EF4444"/>
+  <text x="372" y="116" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">PREVENTION BLOCKED</text>
+  <text x="372" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#34D399">12,847</text>
+
+  <rect x="534" y="96" width="164" height="90" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <rect x="534" y="96" width="164" height="3" fill="#A78BFA"/>
+  <text x="546" y="116" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">ENDPOINTS PROTECTED</text>
+  <text x="546" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#F0F4F8">18,247</text>
+
+  <rect x="708" y="96" width="164" height="90" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <rect x="708" y="96" width="164" height="3" fill="#34D399"/>
+  <text x="720" y="116" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">SENSOR COVERAGE</text>
+  <text x="720" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#34D399">97.2%</text>
+
+  <rect x="882" y="96" width="164" height="90" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <rect x="882" y="96" width="164" height="3" fill="#60A5FA"/>
+  <text x="894" y="116" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">MEAN TIME TO DETECT</text>
+  <text x="894" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#60A5FA">1.4m</text>
+
+  <rect x="1056" y="96" width="164" height="90" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <rect x="1056" y="96" width="164" height="3" fill="#CC0000"/>
+  <text x="1068" y="116" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">OVERWATCH HUNTS</text>
+  <text x="1068" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#CC0000">7</text>
+  <text x="1100" y="153" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">active</text>
+
+  <rect x="1230" y="96" width="154" height="90" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <rect x="1230" y="96" width="154" height="3" fill="#FBBF24"/>
+  <text x="1242" y="116" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" letter-spacing="0.5">POLICY VIOLATIONS</text>
+  <text x="1242" y="153" font-family="Inter, sans-serif" font-size="36" font-weight="700" fill="#FBBF24">124</text>
+
+  <!-- Detection Table -->
+  <rect x="12" y="200" width="920" height="400" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <text x="26" y="224" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#F0F4F8">Recent Detections</text>
+  <rect x="12" y="232" width="920" height="26" fill="#0D1117"/>
+  <text x="26" y="249" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">SEV</text>
+  <text x="76" y="249" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">TACTIC</text>
+  <text x="210" y="249" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">DESCRIPTION</text>
+  <text x="510" y="249" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">HOST</text>
+  <text x="640" y="249" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">USER</text>
+  <text x="730" y="249" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">CMDLINE HASH</text>
+  <text x="840" y="249" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">STATUS</text>
+  <text x="900" y="249" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">TIME</text>
+
+  <!-- Rows -->
+  <rect x="12" y="258" width="920" height="28" fill="#161B26"/>
+  <rect x="26" y="265" width="32" height="14" rx="2" fill="#7f1d1d"/>
+  <text x="42" y="276" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">CRIT</text>
+  <text x="76" y="276" font-family="Inter, sans-serif" font-size="11" fill="#A78BFA">Credential Access</text>
+  <text x="210" y="276" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Mimikatz sekurlsa::logonpasswords</text>
+  <text x="510" y="276" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">win-srv-12</text>
+  <text x="640" y="276" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">SYSTEM</text>
+  <text x="730" y="276" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" font-family="monospace">a3f2b1...</text>
+  <rect x="840" y="265" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="863" y="276" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+  <text x="900" y="276" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">09:12</text>
+
+  <rect x="12" y="286" width="920" height="28" fill="#121720"/>
+  <rect x="26" y="293" width="32" height="14" rx="2" fill="#7f1d1d"/>
+  <text x="42" y="304" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">CRIT</text>
+  <text x="76" y="304" font-family="Inter, sans-serif" font-size="11" fill="#A78BFA">Execution</text>
+  <text x="210" y="304" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Encoded PowerShell -enc bypass</text>
+  <text x="510" y="304" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">dc-01</text>
+  <text x="640" y="304" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">jdoe@corp</text>
+  <text x="730" y="304" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" font-family="monospace">f7e9c3...</text>
+  <rect x="840" y="293" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="863" y="304" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+  <text x="900" y="304" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">08:58</text>
+
+  <rect x="12" y="314" width="920" height="28" fill="#161B26"/>
+  <rect x="26" y="321" width="28" height="14" rx="2" fill="#7c2d12"/>
+  <text x="40" y="332" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">HIGH</text>
+  <text x="76" y="332" font-family="Inter, sans-serif" font-size="11" fill="#34D399">Defense Evasion</text>
+  <text x="210" y="332" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Process hollowing via svchost.exe</text>
+  <text x="510" y="332" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">dev-ws-47</text>
+  <text x="640" y="332" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">m.chen</text>
+  <text x="730" y="332" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" font-family="monospace">b2d4a1...</text>
+  <rect x="840" y="321" width="58" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="869" y="332" font-family="Inter, sans-serif" font-size="10" fill="#60A5FA" text-anchor="middle">In Progress</text>
+  <text x="900" y="332" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">08:44</text>
+
+  <rect x="12" y="342" width="920" height="28" fill="#121720"/>
+  <rect x="26" y="349" width="28" height="14" rx="2" fill="#7c2d12"/>
+  <text x="40" y="360" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">HIGH</text>
+  <text x="76" y="360" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">Lateral Movement</text>
+  <text x="210" y="360" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">PsExec remote execution</text>
+  <text x="510" y="360" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">fin-ws-09</text>
+  <text x="640" y="360" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">svc-admin</text>
+  <text x="730" y="360" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" font-family="monospace">c9e8f2...</text>
+  <rect x="840" y="349" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="863" y="360" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+  <text x="900" y="360" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">08:31</text>
+
+  <rect x="12" y="370" width="920" height="28" fill="#161B26"/>
+  <rect x="26" y="377" width="28" height="14" rx="2" fill="#7c2d12"/>
+  <text x="40" y="388" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">HIGH</text>
+  <text x="76" y="388" font-family="Inter, sans-serif" font-size="11" fill="#FBBF24">Persistence</text>
+  <text x="210" y="388" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Registry Run key modification</text>
+  <text x="510" y="388" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">eng-ws-03</text>
+  <text x="640" y="388" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">a.johnson</text>
+  <text x="730" y="388" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" font-family="monospace">d1f5a9...</text>
+  <rect x="840" y="377" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="863" y="388" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+  <text x="900" y="388" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">08:17</text>
+
+  <rect x="12" y="398" width="920" height="28" fill="#121720"/>
+  <rect x="26" y="405" width="28" height="14" rx="2" fill="#713f12"/>
+  <text x="40" y="416" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">MED</text>
+  <text x="76" y="416" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">C2</text>
+  <text x="210" y="416" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Suspicious beacon: 198.51.100.23:443</text>
+  <text x="510" y="416" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">ws-mktg-22</text>
+  <text x="640" y="416" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">p.smith</text>
+  <text x="730" y="416" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" font-family="monospace">e4b7c2...</text>
+  <rect x="840" y="405" width="58" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="869" y="416" font-family="Inter, sans-serif" font-size="10" fill="#60A5FA" text-anchor="middle">In Progress</text>
+  <text x="900" y="416" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">08:02</text>
+
+  <rect x="12" y="426" width="920" height="28" fill="#161B26"/>
+  <rect x="26" y="433" width="28" height="14" rx="2" fill="#713f12"/>
+  <text x="40" y="444" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">MED</text>
+  <text x="76" y="444" font-family="Inter, sans-serif" font-size="11" fill="#A78BFA">Discovery</text>
+  <text x="210" y="444" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">BloodHound AD enumeration pattern</text>
+  <text x="510" y="444" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">hr-ws-14</text>
+  <text x="640" y="444" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">k.lee</text>
+  <text x="730" y="444" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" font-family="monospace">a8d3b7...</text>
+  <rect x="840" y="433" width="46" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="863" y="444" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">Open</text>
+  <text x="900" y="444" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">07:48</text>
+
+  <rect x="12" y="454" width="920" height="28" fill="#121720"/>
+  <rect x="26" y="461" width="28" height="14" rx="2" fill="#713f12"/>
+  <text x="40" y="472" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">MED</text>
+  <text x="76" y="472" font-family="Inter, sans-serif" font-size="11" fill="#34D399">Exfiltration</text>
+  <text x="210" y="472" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Large HTTPS transfer to unknown IP</text>
+  <text x="510" y="472" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">cfo-laptop-01</text>
+  <text x="640" y="472" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">r.garcia</text>
+  <text x="730" y="472" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" font-family="monospace">b5c1e4...</text>
+  <rect x="840" y="461" width="58" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="869" y="472" font-family="Inter, sans-serif" font-size="10" fill="#60A5FA" text-anchor="middle">In Progress</text>
+  <text x="900" y="472" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">07:34</text>
+
+  <rect x="12" y="482" width="920" height="28" fill="#161B26"/>
+  <rect x="26" y="489" width="24" height="14" rx="2" fill="#14532d"/>
+  <text x="38" y="500" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">LOW</text>
+  <text x="76" y="500" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">Initial Access</text>
+  <text x="210" y="500" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Macro-enabled Office document opened</text>
+  <text x="510" y="500" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">mktg-ws-07</text>
+  <text x="640" y="500" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">l.wang</text>
+  <text x="730" y="500" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" font-family="monospace">c4a2f8...</text>
+  <rect x="840" y="489" width="46" height="14" rx="7" fill="#065f46"/>
+  <text x="863" y="500" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">Closed</text>
+  <text x="900" y="500" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">07:21</text>
+
+  <rect x="12" y="510" width="920" height="28" fill="#121720"/>
+  <rect x="26" y="517" width="24" height="14" rx="2" fill="#14532d"/>
+  <text x="38" y="528" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">LOW</text>
+  <text x="76" y="528" font-family="Inter, sans-serif" font-size="11" fill="#FBBF24">Persistence</text>
+  <text x="210" y="528" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">Scheduled Task created by user account</text>
+  <text x="510" y="528" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">dev-ws-22</text>
+  <text x="640" y="528" font-family="Inter, sans-serif" font-size="11" fill="#F0F4F8">t.nguyen</text>
+  <text x="730" y="528" font-family="Inter, sans-serif" font-size="10" fill="#6B7280" font-family="monospace">f1d8b3...</text>
+  <rect x="840" y="517" width="46" height="14" rx="7" fill="#065f46"/>
+  <text x="863" y="528" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">Closed</text>
+  <text x="900" y="528" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">06:55</text>
+
+  <text x="26" y="572" font-family="Inter, sans-serif" font-size="11" fill="#4B5563">Showing 10 of 847 detections  |  </text>
+  <text x="320" y="572" font-family="Inter, sans-serif" font-size="11" fill="#CC0000">View all in Falcon Console →</text>
+
+  <!-- Right Panel -->
+  <!-- Tactic Breakdown -->
+  <rect x="944" y="200" width="440" height="200" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <text x="958" y="224" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#F0F4F8">Detection by Tactic (24h)</text>
+  <text x="958" y="250" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">Credential Access</text>
+  <rect x="1080" y="240" width="260" height="12" rx="2" fill="#1C2433"/>
+  <rect x="1080" y="240" width="182" height="12" rx="2" fill="#CC0000"/>
+  <text x="1346" y="250" font-family="Inter, sans-serif" font-size="10" fill="#CC0000">312</text>
+  <text x="958" y="272" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">Execution</text>
+  <rect x="1080" y="262" width="260" height="12" rx="2" fill="#1C2433"/>
+  <rect x="1080" y="262" width="156" height="12" rx="2" fill="#F97316"/>
+  <text x="1346" y="272" font-family="Inter, sans-serif" font-size="10" fill="#F97316">247</text>
+  <text x="958" y="294" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">Defense Evasion</text>
+  <rect x="1080" y="284" width="260" height="12" rx="2" fill="#1C2433"/>
+  <rect x="1080" y="284" width="130" height="12" rx="2" fill="#FBBF24"/>
+  <text x="1346" y="294" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24">187</text>
+  <text x="958" y="316" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">Lateral Movement</text>
+  <rect x="1080" y="306" width="260" height="12" rx="2" fill="#1C2433"/>
+  <rect x="1080" y="306" width="104" height="12" rx="2" fill="#A78BFA"/>
+  <text x="1346" y="316" font-family="Inter, sans-serif" font-size="10" fill="#A78BFA">143</text>
+  <text x="958" y="338" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">Persistence</text>
+  <rect x="1080" y="328" width="260" height="12" rx="2" fill="#1C2433"/>
+  <rect x="1080" y="328" width="78" height="12" rx="2" fill="#34D399"/>
+  <text x="1346" y="338" font-family="Inter, sans-serif" font-size="10" fill="#34D399">98</text>
+  <text x="958" y="360" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">Discovery</text>
+  <rect x="1080" y="350" width="260" height="12" rx="2" fill="#1C2433"/>
+  <rect x="1080" y="350" width="52" height="12" rx="2" fill="#60A5FA"/>
+  <text x="1346" y="360" font-family="Inter, sans-serif" font-size="10" fill="#60A5FA">60</text>
+  <text x="958" y="382" font-family="Inter, sans-serif" font-size="11" fill="#9CA3AF">C2</text>
+  <rect x="1080" y="372" width="260" height="12" rx="2" fill="#1C2433"/>
+  <rect x="1080" y="372" width="39" height="12" rx="2" fill="#EF4444"/>
+  <text x="1346" y="382" font-family="Inter, sans-serif" font-size="10" fill="#EF4444">47</text>
+
+  <!-- Host Protection Status -->
+  <rect x="944" y="412" width="440" height="190" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <text x="958" y="436" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#F0F4F8">Sensor Coverage</text>
+  <text x="958" y="462" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">OS Platform</text>
+  <text x="1180" y="462" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Sensors</text>
+  <text x="1280" y="462" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Coverage</text>
+  <line x1="944" y1="470" x2="1384" y2="470" stroke="#1C2433" stroke-width="1"/>
+  <text x="958" y="490" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Windows</text>
+  <text x="1180" y="490" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">12,847</text>
+  <text x="1280" y="490" font-family="Inter, sans-serif" font-size="12" fill="#34D399">98.4%</text>
+  <text x="958" y="512" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">macOS</text>
+  <text x="1180" y="512" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">3,241</text>
+  <text x="1280" y="512" font-family="Inter, sans-serif" font-size="12" fill="#34D399">96.1%</text>
+  <text x="958" y="534" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Linux</text>
+  <text x="1180" y="534" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">2,159</text>
+  <text x="1280" y="534" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24">91.2%</text>
+  <text x="958" y="556" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Sensors Outdated:</text>
+  <text x="1180" y="556" font-family="Inter, sans-serif" font-size="12" fill="#F97316">347</text>
+  <text x="958" y="578" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">RFM (Reduced Function):</text>
+  <text x="1180" y="578" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">23</text>
+  <text x="958" y="596" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Unprotected (no sensor):</text>
+  <text x="1180" y="596" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">487</text>
+
+  <!-- Prevention Policy -->
+  <rect x="944" y="614" width="440" height="186" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <text x="958" y="638" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#F0F4F8">Prevention Policy Status</text>
+  <text x="958" y="662" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Policy Group</text>
+  <text x="1180" y="662" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Hosts</text>
+  <text x="1270" y="662" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Mode</text>
+  <line x1="944" y1="670" x2="1384" y2="670" stroke="#1C2433" stroke-width="1"/>
+  <text x="958" y="690" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Corporate Workstations</text>
+  <text x="1180" y="690" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">9,847</text>
+  <rect x="1270" y="680" width="72" height="16" rx="8" fill="#065f46"/>
+  <text x="1306" y="691" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">PREVENT</text>
+  <text x="958" y="712" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Servers — Production</text>
+  <text x="1180" y="712" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">4,312</text>
+  <rect x="1270" y="702" width="72" height="16" rx="8" fill="#065f46"/>
+  <text x="1306" y="713" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">PREVENT</text>
+  <text x="958" y="734" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Dev / Test Environments</text>
+  <text x="1180" y="734" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">2,841</text>
+  <rect x="1270" y="724" width="64" height="16" rx="8" fill="#713f12"/>
+  <text x="1302" y="735" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="middle">DETECT</text>
+  <text x="958" y="756" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Legacy / Unmanaged</text>
+  <text x="1180" y="756" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">1,247</text>
+  <rect x="1270" y="746" width="64" height="16" rx="8" fill="#7f1d1d"/>
+  <text x="1302" y="757" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">DISABLED</text>
+  <text x="958" y="778" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">Cloud Containers</text>
+  <text x="1180" y="778" font-family="Inter, sans-serif" font-size="12" fill="#F0F4F8">787</text>
+  <rect x="1270" y="768" width="72" height="16" rx="8" fill="#065f46"/>
+  <text x="1306" y="779" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="middle">PREVENT</text>
+
+  <!-- Detection Timeline mini chart -->
+  <rect x="12" y="612" width="920" height="180" rx="4" fill="url(#card07)" stroke="#1C2433" stroke-width="1"/>
+  <text x="26" y="636" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#F0F4F8">Detection Volume — 7 Days</text>
+  <line x1="50" y1="760" x2="910" y2="760" stroke="#1C2433" stroke-width="1"/>
+  <!-- Bars by day -->
+  <rect x="70" y="720" width="90" height="40" fill="#CC0000" fill-opacity="0.7"/>
+  <rect x="70" y="700" width="90" height="20" fill="#F97316" fill-opacity="0.7"/>
+  <rect x="70" y="680" width="90" height="20" fill="#FBBF24" fill-opacity="0.7"/>
+  <text x="115" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4B5563" text-anchor="middle">Feb 13</text>
+  <rect x="190" y="730" width="90" height="30" fill="#CC0000" fill-opacity="0.7"/>
+  <rect x="190" y="710" width="90" height="20" fill="#F97316" fill-opacity="0.7"/>
+  <rect x="190" y="695" width="90" height="15" fill="#FBBF24" fill-opacity="0.7"/>
+  <text x="235" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4B5563" text-anchor="middle">Feb 14</text>
+  <rect x="310" y="710" width="90" height="50" fill="#CC0000" fill-opacity="0.7"/>
+  <rect x="310" y="695" width="90" height="15" fill="#F97316" fill-opacity="0.7"/>
+  <rect x="310" y="680" width="90" height="15" fill="#FBBF24" fill-opacity="0.7"/>
+  <text x="355" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4B5563" text-anchor="middle">Feb 15</text>
+  <rect x="430" y="725" width="90" height="35" fill="#CC0000" fill-opacity="0.7"/>
+  <rect x="430" y="705" width="90" height="20" fill="#F97316" fill-opacity="0.7"/>
+  <rect x="430" y="690" width="90" height="15" fill="#FBBF24" fill-opacity="0.7"/>
+  <text x="475" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4B5563" text-anchor="middle">Feb 16</text>
+  <rect x="550" y="715" width="90" height="45" fill="#CC0000" fill-opacity="0.7"/>
+  <rect x="550" y="700" width="90" height="15" fill="#F97316" fill-opacity="0.7"/>
+  <rect x="550" y="685" width="90" height="15" fill="#FBBF24" fill-opacity="0.7"/>
+  <text x="595" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4B5563" text-anchor="middle">Feb 17</text>
+  <rect x="670" y="720" width="90" height="40" fill="#CC0000" fill-opacity="0.7"/>
+  <rect x="670" y="700" width="90" height="20" fill="#F97316" fill-opacity="0.7"/>
+  <rect x="670" y="680" width="90" height="20" fill="#FBBF24" fill-opacity="0.7"/>
+  <text x="715" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4B5563" text-anchor="middle">Feb 18</text>
+  <rect x="790" y="700" width="90" height="60" fill="#CC0000" fill-opacity="0.7"/>
+  <rect x="790" y="685" width="90" height="15" fill="#F97316" fill-opacity="0.7"/>
+  <rect x="790" y="670" width="90" height="15" fill="#FBBF24" fill-opacity="0.7"/>
+  <text x="835" y="775" font-family="Inter, sans-serif" font-size="10" fill="#4B5563" text-anchor="middle">Feb 19 (Today)</text>
+  <!-- Legend -->
+  <rect x="680" y="636" width="12" height="8" fill="#CC0000"/>
+  <text x="696" y="644" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">Critical</text>
+  <rect x="760" y="636" width="12" height="8" fill="#F97316"/>
+  <text x="776" y="644" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">High</text>
+  <rect x="820" y="636" width="12" height="8" fill="#FBBF24"/>
+  <text x="836" y="644" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">Medium</text>
+
+  <!-- Footer -->
+  <rect x="0" y="878" width="1400" height="22" fill="#0D1117" stroke="#1C2433" stroke-width="1"/>
+  <text x="16" y="893" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">CrowdStrike Falcon Platform — Sensor 7.09.18110 — Cloud: US-1  |  Overwatch: Active  |  Threat Graph: Real-time</text>
+  <text x="1150" y="893" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">Last sync: 09:14:22 UTC  |  ● Connected</text>
+</svg>

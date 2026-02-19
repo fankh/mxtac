@@ -1,0 +1,310 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <linearGradient id="bg12" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1A1C28"/>
+      <stop offset="100%" style="stop-color:#141620"/>
+    </linearGradient>
+    <linearGradient id="card12" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#21242F"/>
+      <stop offset="100%" style="stop-color:#1C1F2B"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1400" height="900" fill="url(#bg12)"/>
+
+  <!-- Top Nav - Rapid7 InsightVM -->
+  <rect x="0" y="0" width="1400" height="52" fill="#141620" stroke="#2A2D3E" stroke-width="1"/>
+  <rect x="0" y="0" width="200" height="52" fill="#1A1C28"/>
+  <rect x="0" y="0" width="8" height="52" fill="#00C8B3"/>
+  <text x="20" y="22" font-family="Inter, sans-serif" font-size="11" fill="#8B8FA8">Rapid7 Insight Platform</text>
+  <text x="20" y="42" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#00C8B3">InsightVM</text>
+  <text x="220" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Dashboard</text>
+  <text x="320" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Assets</text>
+  <text x="400" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Vulnerabilities</text>
+  <text x="530" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Goals &amp; SLAs</text>
+  <text x="650" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Reports</text>
+  <text x="750" y="30" font-family="Inter, sans-serif" font-size="12" fill="#4B5563">Remediation</text>
+  <text x="1280" y="30" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">Site: Global Production</text>
+  <rect x="1340" y="14" width="48" height="26" rx="4" fill="#00C8B3"/>
+  <text x="1364" y="31" font-family="Inter, sans-serif" font-size="11" fill="#141620" text-anchor="middle" font-weight="700">Scan</text>
+
+  <!-- Risk Score Gauge Area -->
+  <rect x="12" y="66" width="280" height="150" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <text x="26" y="90" font-family="Inter, sans-serif" font-size="11" fill="#6B7280" letter-spacing="0.5">RISK SCORE</text>
+  <!-- Semi-circle gauge simulation -->
+  <circle cx="152" cy="176" r="62" fill="none" stroke="#2A2D3E" stroke-width="14"/>
+  <circle cx="152" cy="176" r="62" fill="none" stroke="#EF4444" stroke-width="14" stroke-dasharray="165 230" transform="rotate(-155 152 176)"/>
+  <text x="152" y="168" font-family="Inter, sans-serif" font-size="32" font-weight="700" fill="#EF4444" text-anchor="middle">628</text>
+  <text x="152" y="188" font-family="Inter, sans-serif" font-size="11" fill="#6B7280" text-anchor="middle">/ 1000</text>
+  <text x="26" y="198" font-family="Inter, sans-serif" font-size="10" fill="#EF4444">VERY HIGH RISK</text>
+  <text x="152" y="208" font-family="Inter, sans-serif" font-size="11" fill="#6B7280" text-anchor="middle">▲ 8.2% this week</text>
+
+  <!-- KPI Row -->
+  <rect x="302" y="66" width="170" height="72" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <rect x="302" y="66" width="170" height="3" fill="#EF4444"/>
+  <text x="316" y="86" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">CRITICAL VULNS</text>
+  <text x="316" y="120" font-family="Inter, sans-serif" font-size="32" font-weight="700" fill="#EF4444">1,847</text>
+  <text x="316" y="130" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">Exploited in wild: 312</text>
+
+  <rect x="482" y="66" width="170" height="72" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <rect x="482" y="66" width="170" height="3" fill="#F97316"/>
+  <text x="496" y="86" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">HIGH VULNS</text>
+  <text x="496" y="120" font-family="Inter, sans-serif" font-size="32" font-weight="700" fill="#F97316">5,234</text>
+  <text x="496" y="130" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">Assets: 12,847</text>
+
+  <rect x="662" y="66" width="170" height="72" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <rect x="662" y="66" width="170" height="3" fill="#00C8B3"/>
+  <text x="676" y="86" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">ASSETS SCANNED</text>
+  <text x="676" y="120" font-family="Inter, sans-serif" font-size="32" font-weight="700" fill="#E0E4F4">34,127</text>
+  <text x="676" y="130" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">Coverage: 97.2%</text>
+
+  <rect x="842" y="66" width="170" height="72" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <rect x="842" y="66" width="170" height="3" fill="#FBBF24"/>
+  <text x="856" y="86" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">SLA ACHIEVEMENT</text>
+  <text x="856" y="120" font-family="Inter, sans-serif" font-size="32" font-weight="700" fill="#FBBF24">78.4%</text>
+  <text x="856" y="130" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">Target: 90%</text>
+
+  <rect x="1022" y="66" width="170" height="72" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <rect x="1022" y="66" width="170" height="3" fill="#34D399"/>
+  <text x="1036" y="86" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">REMEDIATED (30d)</text>
+  <text x="1036" y="120" font-family="Inter, sans-serif" font-size="32" font-weight="700" fill="#34D399">8,247</text>
+  <text x="1036" y="130" font-family="Inter, sans-serif" font-size="11" fill="#34D399">▲ 12% vs last mo.</text>
+
+  <rect x="1202" y="66" width="186" height="72" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <rect x="1202" y="66" width="186" height="3" fill="#60A5FA"/>
+  <text x="1216" y="86" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">REAL RISK SCORE</text>
+  <text x="1216" y="120" font-family="Inter, sans-serif" font-size="32" font-weight="700" fill="#60A5FA">A</text>
+  <text x="1248" y="120" font-family="Inter, sans-serif" font-size="16" fill="#6B7280">(Trending ↓)</text>
+  <text x="1216" y="130" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">Executive view</text>
+
+  <!-- Risk Trend Chart -->
+  <rect x="12" y="230" width="640" height="220" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <text x="26" y="254" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0E4F4">Risk Score Trend — 90 Days</text>
+  <text x="26" y="272" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">Based on exploitability, asset criticality &amp; exposure</text>
+  <!-- Chart -->
+  <line x1="50" y1="420" x2="630" y2="420" stroke="#2A2D3E" stroke-width="1"/>
+  <polyline points="50,400 90,397 130,392 170,388 210,394 250,382 290,374 330,378 370,366 410,358 450,364 490,352 530,344 570,350 610,338" fill="#00C8B3" fill-opacity="0.1" stroke="none"/>
+  <polyline points="50,400 90,397 130,392 170,388 210,394 250,382 290,374 330,378 370,366 410,358 450,364 490,352 530,344 570,350 610,338" fill="none" stroke="#00C8B3" stroke-width="2"/>
+  <!-- Risk score numbers on y axis -->
+  <text x="42" y="423" font-family="Inter, sans-serif" font-size="9" fill="#6B7280" text-anchor="end">500</text>
+  <text x="42" y="393" font-family="Inter, sans-serif" font-size="9" fill="#6B7280" text-anchor="end">600</text>
+  <text x="42" y="363" font-family="Inter, sans-serif" font-size="9" fill="#6B7280" text-anchor="end">700</text>
+  <text x="42" y="333" font-family="Inter, sans-serif" font-size="9" fill="#6B7280" text-anchor="end">800</text>
+  <!-- Time labels -->
+  <text x="50" y="433" font-family="Inter, sans-serif" font-size="9" fill="#6B7280">Nov 20</text>
+  <text x="200" y="433" font-family="Inter, sans-serif" font-size="9" fill="#6B7280">Dec 20</text>
+  <text x="370" y="433" font-family="Inter, sans-serif" font-size="9" fill="#6B7280">Jan 19</text>
+  <text x="560" y="433" font-family="Inter, sans-serif" font-size="9" fill="#6B7280">Feb 19</text>
+
+  <!-- Top Vulnerabilities Table -->
+  <rect x="662" y="230" width="726" height="220" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <text x="676" y="254" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0E4F4">Top Exploitable Vulnerabilities</text>
+  <!-- Header -->
+  <rect x="662" y="262" width="726" height="22" fill="#1A1C28"/>
+  <text x="676" y="277" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">CVE</text>
+  <text x="820" y="277" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">CVSS</text>
+  <text x="876" y="277" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">REAL RISK</text>
+  <text x="960" y="277" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">ASSETS</text>
+  <text x="1020" y="277" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">EXPLOIT</text>
+  <text x="1120" y="277" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">SLA STATUS</text>
+  <text x="1270" y="277" font-family="Inter, sans-serif" font-size="10" fill="#6B7280">OWNER</text>
+
+  <rect x="662" y="284" width="726" height="26" fill="#21242F"/>
+  <text x="676" y="300" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">CVE-2024-3400</text>
+  <rect x="820" y="291" width="36" height="14" rx="3" fill="#7f1d1d"/>
+  <text x="838" y="302" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">10.0</text>
+  <text x="876" y="300" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">A+ (999)</text>
+  <text x="960" y="300" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">847</text>
+  <rect x="1020" y="291" width="64" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1052" y="302" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Metasploit</text>
+  <rect x="1120" y="291" width="60" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1150" y="302" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">OVERDUE</text>
+  <text x="1270" y="300" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">infra-ops</text>
+
+  <rect x="662" y="310" width="726" height="26" fill="#1C1F2B"/>
+  <text x="676" y="326" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">CVE-2021-44228</text>
+  <rect x="820" y="317" width="36" height="14" rx="3" fill="#7f1d1d"/>
+  <text x="838" y="328" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">10.0</text>
+  <text x="876" y="326" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">A (912)</text>
+  <text x="960" y="326" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">1,847</text>
+  <rect x="1020" y="317" width="80" height="14" rx="7" fill="#7c2d12"/>
+  <text x="1060" y="328" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">ExploitDB</text>
+  <rect x="1120" y="317" width="60" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1150" y="328" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">OVERDUE</text>
+  <text x="1270" y="326" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">app-team</text>
+
+  <rect x="662" y="336" width="726" height="26" fill="#21242F"/>
+  <text x="676" y="352" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">CVE-2023-34362</text>
+  <rect x="820" y="343" width="36" height="14" rx="3" fill="#7f1d1d"/>
+  <text x="838" y="354" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="middle">9.8</text>
+  <text x="876" y="352" font-family="Inter, sans-serif" font-size="11" fill="#EF4444">A (894)</text>
+  <text x="960" y="352" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">312</text>
+  <rect x="1020" y="343" width="64" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1052" y="354" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">Exploited</text>
+  <rect x="1120" y="343" width="60" height="14" rx="7" fill="#7f1d1d"/>
+  <text x="1150" y="354" font-family="Inter, sans-serif" font-size="9" fill="#EF4444" text-anchor="middle">OVERDUE</text>
+  <text x="1270" y="352" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">data-ops</text>
+
+  <rect x="662" y="362" width="726" height="26" fill="#1C1F2B"/>
+  <text x="676" y="378" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">CVE-2022-47966</text>
+  <rect x="820" y="369" width="36" height="14" rx="3" fill="#7c2d12"/>
+  <text x="838" y="380" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">9.8</text>
+  <text x="876" y="378" font-family="Inter, sans-serif" font-size="11" fill="#F97316">B (767)</text>
+  <text x="960" y="378" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">183</text>
+  <rect x="1020" y="369" width="64" height="14" rx="7" fill="#7c2d12"/>
+  <text x="1052" y="380" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">PoC Avail</text>
+  <rect x="1120" y="369" width="72" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="1156" y="380" font-family="Inter, sans-serif" font-size="9" fill="#60A5FA" text-anchor="middle">Due: Mar 5</text>
+  <text x="1270" y="378" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">corp-it</text>
+
+  <rect x="662" y="388" width="726" height="26" fill="#21242F"/>
+  <text x="676" y="404" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">CVE-2023-23397</text>
+  <rect x="820" y="395" width="36" height="14" rx="3" fill="#7c2d12"/>
+  <text x="838" y="406" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">9.8</text>
+  <text x="876" y="404" font-family="Inter, sans-serif" font-size="11" fill="#F97316">B (742)</text>
+  <text x="960" y="404" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">247</text>
+  <rect x="1020" y="395" width="64" height="14" rx="7" fill="#7c2d12"/>
+  <text x="1052" y="406" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">Metasploit</text>
+  <rect x="1120" y="395" width="72" height="14" rx="7" fill="#065f46"/>
+  <text x="1156" y="406" font-family="Inter, sans-serif" font-size="9" fill="#34D399" text-anchor="middle">IN PROGRESS</text>
+  <text x="1270" y="404" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">end-user</text>
+
+  <rect x="662" y="414" width="726" height="26" fill="#1C1F2B"/>
+  <text x="676" y="430" font-family="Inter, sans-serif" font-size="11" fill="#60A5FA">CVE-2024-21412</text>
+  <rect x="820" y="421" width="36" height="14" rx="3" fill="#7c2d12"/>
+  <text x="838" y="432" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="middle">8.1</text>
+  <text x="876" y="430" font-family="Inter, sans-serif" font-size="11" fill="#F97316">B (701)</text>
+  <text x="960" y="430" font-family="Inter, sans-serif" font-size="11" fill="#E0E4F4">1,247</text>
+  <rect x="1020" y="421" width="64" height="14" rx="7" fill="#7c2d12"/>
+  <text x="1052" y="432" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">Exploited</text>
+  <rect x="1120" y="421" width="72" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="1156" y="432" font-family="Inter, sans-serif" font-size="9" fill="#60A5FA" text-anchor="middle">Due: Mar 12</text>
+  <text x="1270" y="430" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">windows-team</text>
+
+  <!-- Remediation Goals -->
+  <rect x="12" y="464" width="400" height="310" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <text x="26" y="488" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0E4F4">Remediation Goals</text>
+
+  <text x="26" y="514" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Remediate All Critical by Feb 28</text>
+  <rect x="26" y="520" width="360" height="14" rx="3" fill="#2A2D3E"/>
+  <rect x="26" y="520" width="244" height="14" rx="3" fill="#EF4444"/>
+  <text x="398" y="531" font-family="Inter, sans-serif" font-size="10" fill="#EF4444" text-anchor="end">68%</text>
+  <text x="26" y="546" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">232/341 assets remediated</text>
+
+  <text x="26" y="572" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Reduce Internet-Facing Attack Surface</text>
+  <rect x="26" y="578" width="360" height="14" rx="3" fill="#2A2D3E"/>
+  <rect x="26" y="578" width="295" height="14" rx="3" fill="#F97316"/>
+  <text x="398" y="589" font-family="Inter, sans-serif" font-size="10" fill="#F97316" text-anchor="end">82%</text>
+  <text x="26" y="604" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">66/80 assets hardened</text>
+
+  <text x="26" y="630" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Patch All Windows Servers — Mar 15</text>
+  <rect x="26" y="636" width="360" height="14" rx="3" fill="#2A2D3E"/>
+  <rect x="26" y="636" width="216" height="14" rx="3" fill="#FBBF24"/>
+  <text x="398" y="647" font-family="Inter, sans-serif" font-size="10" fill="#FBBF24" text-anchor="end">60%</text>
+  <text x="26" y="662" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">847/1,412 servers patched</text>
+
+  <text x="26" y="688" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Eliminate EPSS 90+ Vulns</text>
+  <rect x="26" y="694" width="360" height="14" rx="3" fill="#2A2D3E"/>
+  <rect x="26" y="694" width="334" height="14" rx="3" fill="#34D399"/>
+  <text x="398" y="705" font-family="Inter, sans-serif" font-size="10" fill="#34D399" text-anchor="end">93%</text>
+  <text x="26" y="720" font-family="Inter, sans-serif" font-size="11" fill="#6B7280">312/336 vulns remediated</text>
+
+  <text x="26" y="746" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">SOC 2 Compliance Readiness</text>
+  <rect x="26" y="752" width="360" height="14" rx="3" fill="#2A2D3E"/>
+  <rect x="26" y="752" width="198" height="14" rx="3" fill="#A78BFA"/>
+  <text x="398" y="763" font-family="Inter, sans-serif" font-size="10" fill="#A78BFA" text-anchor="end">55%</text>
+
+  <!-- Asset Risk Breakdown -->
+  <rect x="422" y="464" width="380" height="310" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <text x="436" y="488" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0E4F4">Risk by Asset Group</text>
+  <text x="436" y="516" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Production Servers</text>
+  <text x="720" y="516" font-family="Inter, sans-serif" font-size="12" fill="#EF4444" text-anchor="end">847 pts</text>
+  <rect x="436" y="522" width="260" height="10" rx="2" fill="#2A2D3E"/>
+  <rect x="436" y="522" width="208" height="10" rx="2" fill="#EF4444"/>
+  <text x="436" y="548" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Corporate Workstations</text>
+  <text x="720" y="548" font-family="Inter, sans-serif" font-size="12" fill="#F97316" text-anchor="end">712 pts</text>
+  <rect x="436" y="554" width="260" height="10" rx="2" fill="#2A2D3E"/>
+  <rect x="436" y="554" width="185" height="10" rx="2" fill="#F97316"/>
+  <text x="436" y="580" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">DMZ / Perimeter</text>
+  <text x="720" y="580" font-family="Inter, sans-serif" font-size="12" fill="#EF4444" text-anchor="end">912 pts</text>
+  <rect x="436" y="586" width="260" height="10" rx="2" fill="#2A2D3E"/>
+  <rect x="436" y="586" width="237" height="10" rx="2" fill="#EF4444"/>
+  <text x="436" y="612" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Development</text>
+  <text x="720" y="612" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24" text-anchor="end">543 pts</text>
+  <rect x="436" y="618" width="260" height="10" rx="2" fill="#2A2D3E"/>
+  <rect x="436" y="618" width="141" height="10" rx="2" fill="#FBBF24"/>
+  <text x="436" y="644" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Cloud (AWS)</text>
+  <text x="720" y="644" font-family="Inter, sans-serif" font-size="12" fill="#FBBF24" text-anchor="end">612 pts</text>
+  <rect x="436" y="650" width="260" height="10" rx="2" fill="#2A2D3E"/>
+  <rect x="436" y="650" width="159" height="10" rx="2" fill="#FBBF24"/>
+  <text x="436" y="676" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">OT / ICS</text>
+  <text x="720" y="676" font-family="Inter, sans-serif" font-size="12" fill="#EF4444" text-anchor="end">934 pts</text>
+  <rect x="436" y="682" width="260" height="10" rx="2" fill="#2A2D3E"/>
+  <rect x="436" y="682" width="243" height="10" rx="2" fill="#EF4444"/>
+  <text x="436" y="708" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Containers (K8s)</text>
+  <text x="720" y="708" font-family="Inter, sans-serif" font-size="12" fill="#F97316" text-anchor="end">682 pts</text>
+  <rect x="436" y="714" width="260" height="10" rx="2" fill="#2A2D3E"/>
+  <rect x="436" y="714" width="177" height="10" rx="2" fill="#F97316"/>
+  <text x="436" y="748" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Total Attack Surface Score:</text>
+  <text x="700" y="748" font-family="Inter, sans-serif" font-size="14" font-weight="700" fill="#EF4444" text-anchor="end">628/1000</text>
+
+  <!-- Scan Coverage -->
+  <rect x="812" y="464" width="576" height="310" rx="6" fill="url(#card12)" stroke="#2A2D3E" stroke-width="1"/>
+  <text x="826" y="488" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#E0E4F4">Scan Activity &amp; Coverage</text>
+  <text x="826" y="516" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Scan Name</text>
+  <text x="1080" y="516" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Assets</text>
+  <text x="1160" y="516" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Last Scan</text>
+  <text x="1280" y="516" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Status</text>
+  <line x1="812" y1="524" x2="1388" y2="524" stroke="#2A2D3E" stroke-width="1"/>
+
+  <text x="826" y="544" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">Production Infrastructure</text>
+  <text x="1080" y="544" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">12,847</text>
+  <text x="1160" y="544" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">2h ago</text>
+  <rect x="1280" y="534" width="60" height="14" rx="7" fill="#065f46"/>
+  <text x="1310" y="545" font-family="Inter, sans-serif" font-size="9" fill="#34D399" text-anchor="middle">DONE</text>
+
+  <text x="826" y="568" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">Corporate Workstations</text>
+  <text x="1080" y="568" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">8,312</text>
+  <text x="1160" y="568" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">6h ago</text>
+  <rect x="1280" y="558" width="60" height="14" rx="7" fill="#065f46"/>
+  <text x="1310" y="569" font-family="Inter, sans-serif" font-size="9" fill="#34D399" text-anchor="middle">DONE</text>
+
+  <text x="826" y="592" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">DMZ Hosts</text>
+  <text x="1080" y="592" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">1,247</text>
+  <text x="1160" y="592" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Running now</text>
+  <rect x="1280" y="582" width="70" height="14" rx="7" fill="#1e3a5f"/>
+  <text x="1315" y="593" font-family="Inter, sans-serif" font-size="9" fill="#60A5FA" text-anchor="middle">SCANNING</text>
+
+  <text x="826" y="616" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">Cloud (AWS + Azure)</text>
+  <text x="1080" y="616" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">7,841</text>
+  <text x="1160" y="616" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">1h ago</text>
+  <rect x="1280" y="606" width="60" height="14" rx="7" fill="#065f46"/>
+  <text x="1310" y="617" font-family="Inter, sans-serif" font-size="9" fill="#34D399" text-anchor="middle">DONE</text>
+
+  <text x="826" y="640" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">OT / ICS (Passive)</text>
+  <text x="1080" y="640" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">342</text>
+  <text x="1160" y="640" font-family="Inter, sans-serif" font-size="12" fill="#EF4444">7d ago</text>
+  <rect x="1280" y="630" width="60" height="14" rx="7" fill="#7c2d12"/>
+  <text x="1310" y="641" font-family="Inter, sans-serif" font-size="9" fill="#F97316" text-anchor="middle">STALE</text>
+
+  <text x="826" y="664" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">Dev Environments</text>
+  <text x="1080" y="664" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">2,847</text>
+  <text x="1160" y="664" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">12h ago</text>
+  <rect x="1280" y="654" width="60" height="14" rx="7" fill="#065f46"/>
+  <text x="1310" y="665" font-family="Inter, sans-serif" font-size="9" fill="#34D399" text-anchor="middle">DONE</text>
+
+  <text x="826" y="688" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">K8s Containers</text>
+  <text x="1080" y="688" font-family="Inter, sans-serif" font-size="12" fill="#E0E4F4">1,491</text>
+  <text x="1160" y="688" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">4h ago</text>
+  <rect x="1280" y="678" width="60" height="14" rx="7" fill="#065f46"/>
+  <text x="1310" y="689" font-family="Inter, sans-serif" font-size="9" fill="#34D399" text-anchor="middle">DONE</text>
+  <line x1="812" y1="704" x2="1388" y2="704" stroke="#2A2D3E" stroke-width="1"/>
+  <text x="826" y="724" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Total Coverage: 34,127 assets  |  </text>
+  <text x="1060" y="724" font-family="Inter, sans-serif" font-size="12" fill="#00C8B3">97.2% of discovered assets</text>
+  <text x="826" y="748" font-family="Inter, sans-serif" font-size="12" fill="#6B7280">Next Full Scan: 2026-02-20 02:00 UTC</text>
+
+  <!-- Footer -->
+  <rect x="0" y="878" width="1400" height="22" fill="#141620" stroke="#2A2D3E" stroke-width="1"/>
+  <text x="16" y="893" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">Rapid7 InsightVM  |  Scan Engine: 6.6.218  |  Integrations: Jira, ServiceNow, Splunk, AWS  |  License: Enterprise Unlimited</text>
+  <text x="1150" y="893" font-family="Inter, sans-serif" font-size="10" fill="#4B5563">Last data: 09:12 UTC  |  ● Connected</text>
+</svg>
