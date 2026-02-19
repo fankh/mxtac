@@ -1,8 +1,8 @@
 # MxTac - UI/UX Design Guide
 
-> **Version**: 1.0  
-> **Last Updated**: 2026-01-12  
-> **Status**: Draft
+> **Version**: 2.0
+> **Last Updated**: 2026-02-19
+> **Status**: Active — reflects ui-mockup-v2 (overview + detections)
 
 ---
 
@@ -16,37 +16,42 @@
 6. [Interaction Patterns](#interaction-patterns)
 7. [Accessibility](#accessibility)
 8. [Responsive Design](#responsive-design)
+9. [Reference Mockups](#reference-mockups)
 
 ---
 
 ## Design Philosophy
+
+### Inspiration
+
+The v2 design is informed by Tenable Vulnerability Management's UI language: white/light background, icon-only sidebar, tab navigation, dense data tables, and a slide-out detail panel. The approach is **inspired by**, not a pixel-perfect copy — MxTac keeps its own content structure and security-domain personality.
 
 ### Core Principles
 
 | Principle | Description |
 |-----------|-------------|
 | **Clarity First** | Information should be immediately understandable |
-| **Action-Oriented** | Every screen should guide users to take action |
+| **Action-Oriented** | Every screen guides users to take action |
 | **Context-Rich** | Provide relevant context without overwhelming |
 | **Consistent** | Same patterns across all features |
-| **Performance** | Fast load times, responsive interactions |
+| **Restrained Color** | Color is used functionally, not decoratively |
 
 ### Design Goals
 
 | Goal | Implementation |
 |------|----------------|
-| Reduce alert fatigue | Smart grouping, severity indicators |
-| Speed up investigation | One-click pivots, entity timelines |
-| Enable quick decisions | Risk scores, recommendations |
-| Support collaboration | Shared views, assignment workflows |
+| Reduce alert fatigue | Muted severity palette, smart grouping |
+| Speed up investigation | Inline score badges, slide-out detail panel |
+| Enable quick decisions | MITRE technique IDs, confidence scores |
+| Support collaboration | Assignment chips, status pills |
 
 ### User Experience Priorities
 
 ```
 1. Time to first insight (< 30 seconds)
 2. Clicks to investigate alert (< 5 clicks)
-3. Cognitive load reduction (progressive disclosure)
-4. Cross-tool context (unified view)
+3. Cognitive load reduction (progressive disclosure via slide-out panel)
+4. Cross-tool context (unified detection view across all integrations)
 ```
 
 ---
@@ -55,43 +60,75 @@
 
 ### Color Palette
 
-#### Primary Colors
+The v2 palette is intentionally minimal: **one primary accent** and **one severity accent**. All other visual differentiation is achieved through opacity, weight, and size — not by adding more hues.
+
+#### Primary
 
 | Name | Hex | Usage |
 |------|-----|-------|
-| **Primary Blue** | `#1E3A5F` | Primary actions, headers |
-| **Primary Light** | `#2E5A8F` | Hover states |
-| **Primary Dark** | `#0E2A4F` | Active states |
+| **Primary Blue** | `#0066CC` | Accent, active nav, links, buttons, chart fills, heatmap base color |
+| **Primary Dark** | `#0055AA` | Hover states, technique ID text |
 
-#### Severity Colors
+#### Severity
 
-| Severity | Hex | Background | Usage |
-|----------|-----|------------|-------|
-| **Critical** | `#DC2626` | `#FEF2F2` | Critical alerts |
-| **High** | `#EA580C` | `#FFF7ED` | High severity |
-| **Medium** | `#CA8A04` | `#FEFCE8` | Medium severity |
-| **Low** | `#16A34A` | `#F0FDF4` | Low severity |
-| **Info** | `#2563EB` | `#EFF6FF` | Informational |
+Severity is the **only place** where additional hues enter the palette. Each severity level uses a muted tinted background with a darker foreground — never bright solid fills.
 
-#### Status Colors
+| Severity | Score range | Badge background | Badge text | Circle fill |
+|----------|------------|-----------------|------------|-------------|
+| **Critical** | 9.0 – 10.0 | `#FDECEA` | `#CC3333` | `#FDECEA` + `#CC3333` text |
+| **High** | 7.0 – 8.9 | `#FEF3E2` | `#CC6600` | `#FEF3E2` + `#CC6600` text |
+| **Medium** | 4.0 – 6.9 | `#EBF2FF` | `#0055AA` | `#EBF2FF` + `#0055AA` text |
+| **Low** | 0 – 3.9 | `#F4F6F8` | `#A0AABB` | `#F4F6F8` + `#A0AABB` text |
 
-| Status | Hex | Usage |
-|--------|-----|-------|
-| **Success** | `#16A34A` | Success states |
-| **Warning** | `#CA8A04` | Warning states |
-| **Error** | `#DC2626` | Error states |
-| **Info** | `#2563EB` | Info states |
+> **Rule**: Never use bright solid severity fills (e.g. `#DC2626` as a background). Always use the muted tinted background variant.
 
-#### Neutral Colors
+#### Status / Integration
+
+| State | Dot color | Usage |
+|-------|-----------|-------|
+| **Connected** | `#2E7D32` | Integration online |
+| **Warning** | `#CC6600` | Auth error, degraded |
+| **Disabled** | `#C8D0DC` | Not configured |
+
+> Status is communicated with a **small circle dot only** — not colored card borders or backgrounds.
+
+#### Alert / Highlight
 
 | Name | Hex | Usage |
 |------|-----|-------|
-| **Gray 900** | `#111827` | Primary text |
-| **Gray 700** | `#374151` | Secondary text |
-| **Gray 500** | `#6B7280` | Tertiary text |
-| **Gray 300** | `#D1D5DB` | Borders |
-| **Gray 100** | `#F3F4F6` | Backgrounds |
-| **White** | `#FFFFFF` | Cards, panels |
+| **Alert Red** | `#CC3333` | Critical counts in KPI cards, escalate button |
+
+#### Neutrals
+
+| Name | Hex | Usage |
+|------|-----|-------|
+| **Text Primary** | `#1C2D40` | Headlines, table body text |
+| **Text Secondary** | `#5A6B82` | Description text, detail panel body |
+| **Text Muted** | `#A0AABB` | Column headers, labels, timestamps |
+| **Text Faint** | `#C8D0DC` | De-emphasized rows (Low severity) |
+| **Surface** | `#FFFFFF` | Cards, panels, header bar, sidebar |
+| **Page Background** | `#F4F6F8` | Page-level background |
+| **Row Hover / Section** | `#F9FAFB` | Table header fill, group-by bar |
+| **Border** | `#E8ECF0` | Card edges, row dividers, panel edges |
+| **Border Strong** | `#DDE3EB` | Visible input borders |
+
+#### Selected Row
+
+| State | Background | Left border |
+|-------|------------|-------------|
+| Selected row | `#F0F6FF` | `3px solid #0066CC` |
+
+### Chart & Data Visualization Rules
+
+| Element | Rule |
+|---------|------|
+| Bar charts (tactic breakdown) | Uniform `#0066CC` fill, vary width/height for value |
+| ATT&CK heatmap | Single-hue `#0066CC` opacity scale: 0.10 (low) → 0.85 (full) |
+| Area / line charts | `#0066CC` line 1.5px; `#CC3333` for critical overlay only; area fill 7–25% opacity |
+| Sparklines | `#0066CC` line 1.5px, `#0066CC` 7% area fill |
+| Progress / coverage bars | `#0066CC` on `#E8ECF0` track |
+| Circular gauge (ATT&CK coverage) | `#0066CC` on `#E8ECF0` ring, 5–6px stroke |
+| Score circles (detect/CVSSv3) | `#FDECEA` background + `#CC3333` or `#CC6600` number |
 
 ### Typography
 
@@ -99,29 +136,29 @@
 
 ```css
 /* Primary */
-font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+font-family: 'Segoe UI', Inter, -apple-system, sans-serif;
 
-/* Monospace (code, logs) */
+/* Monospace (raw events, log output) */
 font-family: 'JetBrains Mono', 'Fira Code', monospace;
 ```
 
 #### Type Scale
 
-| Name | Size | Weight | Line Height | Usage |
-|------|------|--------|-------------|-------|
-| **Display** | 36px | 700 | 1.2 | Page titles |
-| **Heading 1** | 24px | 600 | 1.3 | Section titles |
-| **Heading 2** | 20px | 600 | 1.4 | Subsections |
-| **Heading 3** | 16px | 600 | 1.4 | Card titles |
-| **Body** | 14px | 400 | 1.5 | Body text |
-| **Body Small** | 13px | 400 | 1.5 | Secondary text |
-| **Caption** | 12px | 400 | 1.4 | Labels, captions |
-| **Code** | 13px | 400 | 1.5 | Code, logs |
+| Name | Size | Weight | Usage |
+|------|------|--------|-------|
+| **Page title** | 15px | 600 | Header breadcrumb active segment |
+| **Card title** | 12–13px | 600 | Panel headings, card labels |
+| **Table header** | 9–10px | 500 | Column labels (ALL CAPS, letter-spacing 0.5) |
+| **Table body** | 11px | 400 | Row content |
+| **Label / caption** | 10px | 400 | KPI sub-labels, timestamps, status |
+| **KPI number** | 32px | 700 | Main metric value |
+| **Score** | 24–30px | 700 | Score card number |
+| **Code / technique ID** | 10–11px | 400 | MITRE technique IDs (link colored) |
 
 ### Spacing
 
 ```css
-/* Spacing scale (4px base) */
+/* 4px base grid */
 --space-1: 4px;
 --space-2: 8px;
 --space-3: 12px;
@@ -129,28 +166,24 @@ font-family: 'JetBrains Mono', 'Fira Code', monospace;
 --space-5: 20px;
 --space-6: 24px;
 --space-8: 32px;
---space-10: 40px;
---space-12: 48px;
---space-16: 64px;
 ```
 
 ### Border Radius
 
 ```css
---radius-sm: 4px;   /* Buttons, inputs */
---radius-md: 6px;   /* Cards */
---radius-lg: 8px;   /* Modals */
---radius-xl: 12px;  /* Large cards */
---radius-full: 9999px; /* Pills, avatars */
+--radius-sm: 4px;     /* Buttons, inputs, group-by chips */
+--radius-md: 5–6px;   /* Cards */
+--radius-pill: 9999px; /* Severity badges, filter chips */
 ```
 
 ### Shadows
 
 ```css
---shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
---shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
---shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
---shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.1);
+/* Card shadow (used on all white cards) */
+box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+
+/* Slide-out panel shadow */
+box-shadow: -2px 0 10px rgba(0, 0, 0, 0.08);
 ```
 
 ---
@@ -160,325 +193,288 @@ font-family: 'JetBrains Mono', 'Fira Code', monospace;
 ### Application Shell
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  ┌──────┐  MxTac              Search...              [?] [🔔] [👤]     │
-│  │ Logo │                                                              │
-├──┴──────┴───────────────────────────────────────────────────────────────┤
-│ ┌────────────┐ ┌───────────────────────────────────────────────────────┐│
-│ │            │ │                                                       ││
-│ │  SIDEBAR   │ │                    MAIN CONTENT                       ││
-│ │            │ │                                                       ││
-│ │ Dashboard  │ │                                                       ││
-│ │ Alerts     │ │                                                       ││
-│ │ Hunting    │ │                                                       ││
-│ │ Rules      │ │                                                       ││
-│ │ Coverage   │ │                                                       ││
-│ │ Connectors │ │                                                       ││
-│ │ Reports    │ │                                                       ││
-│ │            │ │                                                       ││
-│ │ ────────── │ │                                                       ││
-│ │ Settings   │ │                                                       ││
-│ │ Help       │ │                                                       ││
-│ │            │ │                                                       ││
-│ └────────────┘ └───────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ ┌──┐ MxTac / Page Title       Updated HH:MM UTC   ↻  🔔  [KH]      │  ← Top bar (46px, white)
+├─┤  ├──────────────────────────────────────────────────────────────────┤
+│ │  │ [Tab 1] [Tab 2] [Tab 3]                   [Date Range ▾]        │  ← Tab bar (38px, white)
+│ │  ├──────────────────────────────────────────────────────────────────┤
+│ │  │ [Filter chips]  [+ Add Filter]  [Export]   N of M results       │  ← Filter bar (40px, white)
+│ │  ├──────────────────────────────────────────────────────────────────┤
+│ │  │ Group by: [None] [Tactic] [Host]           Sort: Field ↓        │  ← Group-by bar (34px, #FAFBFC)
+│ S  │──────────────────────────────────────────────────────────────────│
+│ I  │ [Table header row]                                               │  ← Table (fills remaining height)
+│ D  │ row…                                                             │
+│ E  │ row…                                                             │
+│ B  │                                                             ┌────┤
+│ A  │                                                             │    │  ← Slide-out detail panel
+│ R  │                                                             │    │    (436px wide, right edge)
+│    │ [Pagination]                                                │    │
+│ 52 │──────────────────────────────────────────────────────────────────│
+│ px │ Footer (18px, #F0F2F5)                                          │
+└────┴─────────────────────────────────────────────────────────────────┘
 ```
 
-### Header Components
+### Sidebar
 
-| Component | Purpose |
-|-----------|---------|
-| **Logo** | Brand, home navigation |
-| **Global Search** | Cross-feature search |
-| **Help** | Documentation, support |
-| **Notifications** | Real-time alerts |
-| **User Menu** | Profile, logout |
+| Property | Value |
+|----------|-------|
+| Width | **52px** (icon-only, no text labels) |
+| Background | `#FFFFFF` |
+| Right border | `1px solid #E8ECF0` |
+| Active item | `#EBF3FF` background + `3px #0066CC` left border |
+| Inactive item | Icon at `#A0AABB` |
+| Logo | 32×32px `#0066CC` rect, `rx=6`, white "M" |
+| Avatar | 20px circle at bottom, `#E8ECF0` background |
 
-### Sidebar Navigation
+Navigation items (top → bottom): Overview ⊞ · Detections ⚡ · ATT&CK ⬡ · Sigma σ · Incidents 🔔 · Intel 🌐 · Assets 🖥 · Reports 📋
+Bottom: Help ? · Settings ⚙ · Avatar
 
-| Section | Items |
-|---------|-------|
-| **Core** | Dashboard, Alerts, Hunting |
-| **Management** | Rules, Coverage, Connectors |
-| **Analytics** | Reports |
-| **System** | Settings, Help |
+### Top Bar
 
-### Navigation States
+| Property | Value |
+|----------|-------|
+| Height | 46px |
+| Background | `#FFFFFF` |
+| Bottom border | `1px solid #E8ECF0` |
+| Breadcrumb | Parent segments `#A0AABB`, active segment `#1C2D40` 600 |
+| Right area | "Updated HH:MM UTC" label + icon buttons (24×22px `#F4F6F8`) + notification dot `#CC3333` |
 
-```
-Default:    Gray text, no background
-Hover:      Slightly darker background
-Active:     Primary color background, white text
-Collapsed:  Icons only with tooltips
-```
+### Tab Bar
+
+| Property | Value |
+|----------|-------|
+| Height | 38px |
+| Background | `#FFFFFF` |
+| Active tab | `#0066CC` text 600 + `2px #0066CC` bottom underline |
+| Inactive tab | `#A0AABB` text |
+| Date range picker | Right-aligned, `160×24px`, `#F4F6F8`, `#DDE3EB` border |
+
+### Filter Bar
+
+- Height: 40px, white background
+- Filter chips: pill shape (`rx=11`), muted tinted background matching severity or blue; `×` to remove
+- "+ Add Filter" button: white with `#DDE3EB` border
+- Result count: right-aligned, `#A0AABB`
+- Export button: right-aligned, `#0066CC` filled, white text
+
+### Page Footer
+
+Height 18px, `#F0F2F5` background. Left: version + status text. Right: status dot + text.
 
 ---
 
 ## Core Screens
 
-### Dashboard
+### Screen 1 — Security Overview
+
+> Reference: `ui-mockup-v2/overview.svg`
+
+**Layout zones (top to bottom):**
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Dashboard                                        Last updated: 10:30   │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐   │
-│  │   Critical   │ │     High     │ │    Medium    │ │   Coverage   │   │
-│  │      12      │ │      45      │ │     128      │ │     72%      │   │
-│  │   +3 today   │ │   -5 today   │ │   +12 today  │ │   +2% week   │   │
-│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘   │
-│                                                                         │
-│  ┌─────────────────────────────────┐ ┌─────────────────────────────┐   │
-│  │      Alert Trend (7 days)       │ │    ATT&CK Coverage Map     │   │
-│  │   ┌───────────────────────┐     │ │  ┌────┬────┬────┬────┐     │   │
-│  │   │    📈 Chart           │     │ │  │ IA │ EX │ PE │ PR │     │   │
-│  │   │                       │     │ │  │ 85%│ 90%│ 80%│ 75%│     │   │
-│  │   └───────────────────────┘     │ │  └────┴────┴────┴────┘     │   │
-│  └─────────────────────────────────┘ └─────────────────────────────┘   │
-│                                                                         │
-│  ┌─────────────────────────────────┐ ┌─────────────────────────────┐   │
-│  │     Recent Critical Alerts      │ │   Top Techniques (24h)     │   │
-│  │  ┌───────────────────────────┐  │ │  1. T1059 - Execution      │   │
-│  │  │ ● Mimikatz detected       │  │ │  2. T1003 - Cred Access    │   │
-│  │  │ ● C2 beacon (APT29)       │  │ │  3. T1071 - C2             │   │
-│  │  │ ● Ransomware behavior     │  │ │  4. T1021 - Lateral        │   │
-│  │  └───────────────────────────┘  │ │  5. T1055 - Injection      │   │
-│  └─────────────────────────────────┘ └─────────────────────────────┘   │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+[Top bar] [Tab bar with date picker]
+[6 KPI cards — equal width, white, card-shadow]
+[Detection Timeline — 708px wide] [Top ATT&CK Tactics — 536px wide]
+[ATT&CK Coverage heatmap — 448px] [Recent Critical Detections — 796px]
+[Integration Status row — full width]
+[Footer]
 ```
 
-### Alerts List
+**KPI Cards (6 total):**
+
+| Card | Primary value | Sub-label style |
+|------|--------------|----------------|
+| Total Detections | `#1C2D40` 32px 700 | Delta in `#A0AABB` |
+| Critical Alerts | `#CC3333` 32px 700 | "N new today" |
+| ATT&CK Coverage | Circular gauge `#0066CC` | "X / Y techniques" |
+| MTTD | `#1C2D40` 32px 700 | "min" unit label `#A0AABB` |
+| Integrations | `#1C2D40` 32px 700 | Thin progress bar `#0066CC` on `#E8ECF0` |
+| Sigma Rules | `#1C2D40` 32px 700 | Breakdown in `#A0AABB` |
+
+**Detection Timeline chart:**
+- Area chart, two layers: gray total area + red (`#CC3333`) critical overlay
+- Y-axis labels `#C8D0DC`, grid lines `#F0F2F5`, baseline `#E8ECF0`
+- X-axis date labels `#A0AABB`
+- Spike annotation: `#CC3333` dashed vertical line + small red rect label
+
+**Top ATT&CK Tactics table:**
+- 6 rows, columns: Tactic name · bar · count · trend
+- All bars same `#0066CC` at 0.7 opacity; width is the only variable
+- Trend text: `#A0AABB` for neutral, `#CC3333` for notable increases only
+
+**ATT&CK Coverage heatmap:**
+- 4 rows × 9 tactic columns
+- Single-hue `#0066CC` opacity: `0.10` (1/9) → `0.85` (9/9)
+- Text: white when opacity ≥ 0.55, `#0066CC` when 0.28–0.54, `#A0AABB` when ≤ 0.20
+- Legend: 4 swatches (Low / Mid / High / Full)
+- Summary mini bar chart below: same blue opacity bars
+
+**Recent Critical Detections table:**
+- Columns: SEV (circle badge) · TECHNIQUE (link) · DETECTION NAME · HOST · STATUS · TIME
+- Score circle: 9px radius, tinted bg, colored score text
+- Technique ID: `#0066CC` link style
+- Status pills: muted tinted pills only
+
+**Integration Status row:**
+- 8 tiles in a single row, each 140×40px, `#F9FAFB` bg, `#E8ECF0` border
+- Each tile: small colored dot (left) + name (600) + metric (below, `#A0AABB`)
+- Warning tile: `#FFFBF0` bg, `#F0D580` border, dot `#CC6600`, text `#CC6600`
+- Disabled tile: 55% opacity, dot `#C8D0DC`
+
+### Screen 2 — Detections
+
+> Reference: `ui-mockup-v2/detections.svg`
+
+**Layout zones:**
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Alerts                                                      [+ Filter] │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │ [All] [Critical 12] [High 45] [Medium 128] [Low 89]  │ New ▼ │   │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │ □ │ SEV │ TIME     │ TITLE                    │ SOURCE │ ATTCK  │   │
-│  ├───┼─────┼──────────┼──────────────────────────┼────────┼────────┤   │
-│  │ □ │ ●●● │ 10:30:22 │ Mimikatz detected        │ Wazuh  │ T1003  │   │
-│  │   │ CRI │          │ Host: ws-01, User: admin │        │        │   │
-│  ├───┼─────┼──────────┼──────────────────────────┼────────┼────────┤   │
-│  │ □ │ ●●  │ 10:28:15 │ C2 beacon detected       │ Zeek   │ T1071  │   │
-│  │   │ HIG │          │ Dst: 45.33.x.x:443       │        │        │   │
-│  ├───┼─────┼──────────┼──────────────────────────┼────────┼────────┤   │
-│  │ □ │ ●●  │ 10:25:00 │ Lateral movement SSH     │ Wazuh  │ T1021  │   │
-│  │   │ HIG │          │ Src: 192.168.1.50        │        │        │   │
-│  └───┴─────┴──────────┴──────────────────────────┴────────┴────────┘   │
-│                                                                         │
-│  ◀ Prev │ Page 1 of 24 │ Next ▶                    Showing 1-50 of 274 │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+[Top bar] [Tab bar — Detections active] [Filter bar] [Group-by bar]
+[Table header] [Table rows — 11 visible]
+[Pagination bar]
++ [Slide-out detail panel — 436px, overlays right side when row selected]
+[Footer]
 ```
 
-### Alert Detail
+**Table columns:**
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  ← Alerts                                   [Acknowledge] [Actions ▼]   │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │ ●●● CRITICAL                                         Risk: 95/100│   │
-│  │                                                                   │   │
-│  │ Mimikatz Detection - Credential Dumping                          │   │
-│  │                                                                   │   │
-│  │ Detected at: 2026-01-12 10:30:22 │ Source: Wazuh │ Status: New   │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  ┌─ ATT&CK ───────────────────────────────────────────────────────┐    │
-│  │  Technique: T1003.001 - LSASS Memory                           │    │
-│  │  Tactic: Credential Access                                      │    │
-│  │  [View in ATT&CK Navigator]                                     │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                         │
-│  ┌─ Entities ─────────────────────────────────────────────────────┐    │
-│  │  Host: workstation-01  [View Timeline]                          │    │
-│  │  User: admin           [View Activity]                          │    │
-│  │  IP: 192.168.1.50      [View Connections]                       │    │
-│  │  Process: powershell.exe                                        │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                         │
-│  ┌─ Raw Event ────────────────────────────────────────────────────┐    │
-│  │ {                                                               │    │
-│  │   "class_uid": 1007,                                            │    │
-│  │   "process": {                                                  │    │
-│  │     "cmd_line": "powershell -ep bypass -c \"IEX...\"",         │    │
-│  │     "file": {"path": "C:\\Windows\\...\\powershell.exe"}       │    │
-│  │   }                                                             │    │
-│  │ }                                                               │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                         │
-│  ┌─ Related Alerts (3) ───────────────────────────────────────────┐    │
-│  │  • 10:28 - C2 beacon detected (T1071)                          │    │
-│  │  • 10:25 - Lateral movement SSH (T1021)                        │    │
-│  │  • 10:20 - Suspicious script execution (T1059)                 │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+| Col | Width | Notes |
+|-----|-------|-------|
+| Checkbox | 26px | 14×14px, `rx=3` |
+| Score | 30px | Circle badge, 11px radius |
+| SEV | 68px | Pill badge |
+| TECHNIQUE | 80px | `#0066CC` monospace |
+| DETECTION NAME | ~240px | `#1C2D40`; bold for selected row |
+| HOST | 100px | `#1C2D40` |
+| TACTIC | 110px | `#A0AABB` |
+| STATUS | 88px | Pill badge |
+| TIME | 50px | `#A0AABB` |
 
-### ATT&CK Coverage
+**Row states:**
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  ATT&CK Coverage                               [Export ▼] [Settings]    │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Overall Coverage: 72%  ████████████████████░░░░░░░░                    │
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │                    ATT&CK Navigator Heatmap                       │   │
-│  │                                                                   │   │
-│  │    Recon │ Res. │ Init │ Exec │ Pers │ Priv │ Def. │ Cred │...   │   │
-│  │  ┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┐       │   │
-│  │  │  20% │  10% │  85% │  90% │  80% │  75% │  65% │  70% │       │   │
-│  │  │ ░░░░ │ ░░░░ │ ████ │ ████ │ ████ │ ███░ │ ██░░ │ ███░ │       │   │
-│  │  └──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘       │   │
-│  │                                                                   │   │
-│  │  Legend: ░ 0-25% │ ▒ 26-50% │ ▓ 51-75% │ █ 76-100%              │   │
-│  │                                                                   │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  ┌─ Coverage by Source ──────────────────────────────────────────┐     │
-│  │  Wazuh (EDR)    ████████████████░░░░░░░░░░░░░  45%            │     │
-│  │  Zeek (NDR)     █████░░░░░░░░░░░░░░░░░░░░░░░░  15%            │     │
-│  │  Suricata (IDS) ████░░░░░░░░░░░░░░░░░░░░░░░░░  12%            │     │
-│  │  Prowler (Cloud)███░░░░░░░░░░░░░░░░░░░░░░░░░░  10%            │     │
-│  └────────────────────────────────────────────────────────────────┘     │
-│                                                                         │
-│  ┌─ Top Coverage Gaps ───────────────────────────────────────────┐     │
-│  │  1. T1055 Process Injection - No detection (High priority)    │     │
-│  │  2. T1027 Obfuscated Files - Partial (Medium priority)        │     │
-│  │  3. T1562 Impair Defenses - No detection (High priority)      │     │
-│  │  [View All Gaps]                                               │     │
-│  └────────────────────────────────────────────────────────────────┘     │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+| State | Style |
+|-------|-------|
+| Normal | White bg, `#F4F6F8` row separator |
+| Hover | `#F9FAFB` bg |
+| Selected | `#F0F6FF` bg + `3px solid #0066CC` left border; checkbox filled blue |
+| Low severity | Text `#A0AABB`, secondary text `#C8D0DC` |
 
-### Hunting / Search
+**Slide-out Detail Panel:**
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Hunting                                        [Saved Queries] [Help]  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │ 🔍 process.cmd_line:*mimikatz* OR process.cmd_line:*sekurlsa*   │   │
-│  │                                                                   │   │
-│  │ Time: [Last 24 hours ▼]  Source: [All ▼]  [Search]              │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  Results: 23 events (0.045s)                                            │
-│                                                                         │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │ TIME         │ CLASS           │ HOST         │ SUMMARY          │   │
-│  ├──────────────┼─────────────────┼──────────────┼──────────────────┤   │
-│  │ 10:29:55     │ Process Activity│ workstation-01│ powershell.exe  │   │
-│  │              │                 │              │ sekurlsa::logon  │   │
-│  ├──────────────┼─────────────────┼──────────────┼──────────────────┤   │
-│  │ 10:28:30     │ Process Activity│ workstation-01│ mimikatz.exe    │   │
-│  │              │                 │              │ privilege::debug │   │
-│  └──────────────┴─────────────────┴──────────────┴──────────────────┘   │
-│                                                                         │
-│  ┌─ Quick Filters ───────────────────────────────────────────────┐     │
-│  │ Host: [workstation-01 ×] User: [admin ×] Class: [Process ×]   │     │
-│  └────────────────────────────────────────────────────────────────┘     │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+- Width: 436px
+- Background: `#FFFFFF`
+- Left edge: `1px solid #E8ECF0` + drop shadow `-2px 0 10px rgba(0,0,0,0.08)`
+- **Header** (52px, `#F9FAFB`): Detection ID + technique badge (`#EBF3FF`) + close `×`
+- **Sub-tabs** (32px, white): Details · Timeline · Evidence · Actions — active tab `#0066CC` underline
+- **Title block**: 13px 700 title + 10px `#A0AABB` rule/source line
+- **Score cards** (4 cards, `#F9FAFB` bg, `#E8ECF0` border):
+  - Score: colored number (severity color), label "Critical/High/…"
+  - CVSSv3: `#CC6600` number
+  - Confidence: `#1C2D40` number
+  - Tactic: `#1C2D40` text, `#A0AABB` TA-code
+- **Details section**: two-column key-value, key `#A0AABB` 10px, value `#1C2D40` 10px; rule name is `#0066CC` link
+- **Description**: `#5A6B82` 10px, 4–5 lines
+- **Related techniques**: `#EBF3FF` tags, `#0055AA` text
+- **Sparkline**: `#0066CC` 1.5px line, 7% opacity fill, `#E8ECF0` baseline
+- **Actions**: Escalate (`#CC3333` filled) · Investigate (`#0066CC` outline) · False Positive (gray outline) · ⋯ (gray)
+- **Assigned / Priority**: avatar circle `#E8ECF0`, priority pill `#FDECEA`/`#CC3333`
+- **Panel footer** (36px, `#F9FAFB`): ← Prev / Next → navigation
 
 ---
 
 ## Components
 
-### Severity Badge
+### Score Circle Badge
+
+Used in the detections table and overview table to show a numeric severity score.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                                                                         │
-│  Critical:  [●●● CRITICAL]  (Red background, white text)               │
-│  High:      [●●  HIGH]      (Orange background, white text)            │
-│  Medium:    [●   MEDIUM]    (Yellow background, dark text)             │
-│  Low:       [    LOW]       (Green background, white text)             │
-│  Info:      [ℹ   INFO]      (Blue background, white text)              │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+- Shape: circle, r=11px
+- Fill: muted tinted severity background
+- Text: 9px, 700, severity text color
+- Critical (≥9): #FDECEA fill, #CC3333 text
+- High (7–8.9): #FEF3E2 fill, #CC6600 text
+- Medium (4–6.9): #EBF2FF fill, #0055AA text
+- Low (<4): #F4F6F8 fill, #A0AABB text
 ```
 
-### Alert Card
+### Severity Pill Badge
+
+Used in table rows and the slide-out panel.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ ●●● CRITICAL                                              Risk: 95    │
-│                                                                         │
-│ Mimikatz Detection - Credential Dumping                                 │
-│                                                                         │
-│ Host: workstation-01 │ User: admin │ T1003.001                         │
-│                                                                         │
-│ 10:30:22 │ Wazuh │ [View Details]                                      │
-└─────────────────────────────────────────────────────────────────────────┘
+- Shape: rx=8 (rounded pill)
+- Padding: 8px horizontal, 16px height
+- Font: 9–10px, 500
+
+Critical: bg #FDECEA, text #CC3333, label "Critical"
+High:     bg #FEF3E2, text #CC6600, label "High"
+Medium:   bg #EBF2FF, text #0055AA, label "Medium"
+Low:      bg #F4F6F8, text #A0AABB, label "Low"
 ```
 
-### Entity Pill
+### Status Pill
 
 ```
-┌────────────────────────────────────────────────────┐
-│  Host: [🖥️ workstation-01 ×]                       │
-│  User: [👤 admin ×]                                │
-│  IP:   [🌐 192.168.1.50 ×]                        │
-│  Tech: [🎯 T1003.001 ×]                           │
-└────────────────────────────────────────────────────┘
+Active:       bg #FDECEA, text #CC3333
+Investigating: bg #FEF3E2, text #CC6600
+Resolved:     bg #EBF5EB, text #2E7D32
+```
+
+### Filter Chip
+
+```
+- Shape: rx=11 (full pill), 22px height
+- Has ×  to dismiss
+
+Severity chip: bg #FDECEA, border #F5C6C6, text #CC3333
+Generic chip:  bg #EBF3FF, border #C0D6F7, text #0055AA
+```
+
+### Group-By Button
+
+```
+Active:   #0066CC fill, white text, rx=4
+Inactive: white fill, #DDE3EB border, #5A6B82 text, rx=4
+```
+
+### KPI Card
+
+```
+- White bg, rx=6, card-shadow
+- Label: 10px, 500, #A0AABB, letter-spacing 0.5, ALL CAPS
+- Value: 32px, 700, #1C2D40 (or #CC3333 for critical count)
+- Sub-label: 11px, #A0AABB
 ```
 
 ### Data Table
 
 | Feature | Implementation |
 |---------|----------------|
-| Sortable columns | Click header to sort |
-| Resizable columns | Drag column border |
-| Row selection | Checkbox for bulk actions |
-| Expandable rows | Click to show details |
-| Column visibility | Hide/show columns |
-| Export | CSV, JSON export |
+| Sortable columns | Click header, active column shows ↓ ↑ |
+| Row selection | Checkbox; selected row gets blue left border + `#F0F6FF` bg |
+| Expandable detail | Click row → slide-out panel appears on right |
+| Column headers | `#F4F6F8` fill, 9px UPPERCASE labels, `#A0AABB` |
+| Dividers | `#F4F6F8` between rows; `#E8ECF0` after header |
+| Pagination | Page buttons; active `#0066CC`, inactive white + `#DDE3EB` border |
 
-### Chart Types
+### Slide-Out Detail Panel
 
-| Chart | Use Case |
-|-------|----------|
-| Line chart | Trends over time |
-| Bar chart | Comparisons |
-| Pie/Donut | Proportions |
-| Heatmap | ATT&CK coverage |
-| Sparkline | Inline trends |
+- Triggered by row selection (not a modal — does not block the table)
+- Animates in from the right: `transform: translateX(100%)` → `translateX(0)`, 250ms ease-in-out
+- Table width adjusts: panel overlaps the rightmost table columns
+- Dismissed by clicking `×`, pressing `Esc`, or clicking another section
+- Sub-tab navigation for progressive disclosure: Details → Timeline → Evidence → Actions
 
-### Modal Dialog
+### Chart Components
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                                                                         │
-│  ┌───────────────────────────────────────────────────────────────┐     │
-│  │  Confirm Action                                            ✕  │     │
-│  ├───────────────────────────────────────────────────────────────┤     │
-│  │                                                               │     │
-│  │  Are you sure you want to isolate host workstation-01?       │     │
-│  │                                                               │     │
-│  │  This action will:                                            │     │
-│  │  • Block all network traffic                                  │     │
-│  │  • Require admin approval to reconnect                        │     │
-│  │                                                               │     │
-│  │                                    [Cancel]  [Isolate Host]   │     │
-│  └───────────────────────────────────────────────────────────────┘     │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+| Chart | Config |
+|-------|--------|
+| Area timeline | Two polygon layers (gray total + red critical), polyline strokes |
+| Horizontal bar | `#0066CC` at 0.7 opacity on `#E8ECF0` track, fixed height 8px, rx=4 |
+| ATT&CK heatmap | Rect grid cells, single-hue blue opacity, rounded corners rx=3 |
+| Circular gauge | SVG circle with `stroke-dasharray`, `stroke-linecap=round`, 5–6px |
+| Sparkline | Thin polygon fill + polyline, inline in panel |
+| Coverage bar | `#0066CC` on `#E8ECF0` track, 5px height, rx=2 |
 
 ---
 
@@ -488,64 +484,31 @@ Collapsed:  Icons only with tooltips
 
 | Context | Actions |
 |---------|---------|
-| Alert row | View, Acknowledge, Assign |
-| Entity pill | View timeline, Search, Block |
-| Event row | View details, Pivot, Add to investigation |
+| Alert row (hover) | Row highlights `#F9FAFB`; click opens slide-out panel |
+| Slide-out panel | Escalate · Investigate · False Positive · ⋯ menu |
+| Filter chip | Click `×` to remove; "Clear all" to reset |
+| Technique ID | Click → opens ATT&CK Map tab with technique highlighted |
 
 ### Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
 | `/` | Focus search |
-| `j` / `k` | Navigate list up/down |
-| `Enter` | Open selected item |
-| `a` | Acknowledge alert |
-| `Esc` | Close modal/panel |
-| `?` | Show shortcuts |
-
-### Drag and Drop
-
-| Feature | Behavior |
-|---------|----------|
-| Column reorder | Drag column headers |
-| Dashboard widgets | Rearrange widgets |
-| Query builder | Drag fields to build queries |
+| `j` / `k` | Navigate table rows up/down |
+| `Enter` | Open slide-out panel for selected row |
+| `Esc` | Close slide-out panel |
+| `a` | Acknowledge / mark resolved |
+| `?` | Show shortcuts overlay |
 
 ### Progressive Disclosure
 
-| Level | Content |
-|-------|---------|
-| Summary | Title, severity, time |
-| Preview | + Key entities, ATT&CK |
-| Full | + Raw event, related alerts |
-
-### Loading States
-
-```
-┌──────────────────────────────────────────────────┐
-│  Loading data...                                 │
-│  ────────────────────────────▓░░░░░░░░░░░░       │
-│                                                  │
-│  [Cancel]                                        │
-└──────────────────────────────────────────────────┘
-```
-
-### Empty States
-
-```
-┌──────────────────────────────────────────────────┐
-│                                                  │
-│           🔍                                     │
-│                                                  │
-│     No alerts match your filters                │
-│                                                  │
-│     Try adjusting your filters or               │
-│     expanding the time range.                   │
-│                                                  │
-│     [Clear Filters]                             │
-│                                                  │
-└──────────────────────────────────────────────────┘
-```
+| Level | Surface | Content |
+|-------|---------|---------|
+| 1 — Summary | Table row | Score · Severity · Technique ID · Name · Host · Status · Time |
+| 2 — Detail | Slide-out: Details tab | Score cards · key-value fields · description · related techniques |
+| 3 — Evidence | Slide-out: Evidence tab | Raw event JSON, log lines |
+| 4 — Timeline | Slide-out: Timeline tab | Chronological event chain on host |
+| 5 — Actions | Slide-out: Actions tab | Response playbooks, assignment |
 
 ---
 
@@ -555,128 +518,76 @@ Collapsed:  Icons only with tooltips
 
 | Requirement | Implementation |
 |-------------|----------------|
-| Color contrast | 4.5:1 minimum for text |
-| Keyboard navigation | Full keyboard support |
-| Screen reader | ARIA labels, landmarks |
-| Focus indicators | Visible focus rings |
-| Error messages | Associated with inputs |
+| Color contrast | 4.5:1 minimum; blue `#0066CC` on white passes AA |
+| Keyboard navigation | Full keyboard support; table rows navigable with j/k |
+| Screen reader | ARIA labels on badges, ARIA live region for count updates |
+| Focus indicators | `2px solid #0066CC`, `outline-offset: 2px` |
+| Non-color indicators | Severity shown by score number + label text, not color alone |
 
-### Color Accessibility
+### Color Rule Enforcement
 
-- Never use color alone to convey information
-- Include icons or text with color indicators
-- Test with color blindness simulators
+- **Never** convey severity by color alone — always pair with a number (score) or label text
+- All severity circles show a numeric score inside; all pills show a text label
+- Integration status dots always accompanied by status text below
 
-### Keyboard Focus
-
-```css
-/* Focus styles */
-:focus-visible {
-  outline: 2px solid #1E3A5F;
-  outline-offset: 2px;
-}
-```
-
-### Screen Reader Support
+### Screen Reader Examples
 
 ```html
-<!-- Severity badge -->
-<span class="badge badge-critical" role="status" aria-label="Critical severity">
-  CRITICAL
-</span>
+<!-- Score circle -->
+<span role="img" aria-label="Detection score 9.0, Critical">9.0</span>
 
-<!-- Alert count -->
-<span aria-live="polite" aria-atomic="true">
-  12 critical alerts
-</span>
+<!-- Severity pill -->
+<span class="badge" role="status" aria-label="Critical severity">Critical</span>
+
+<!-- Alert count live region -->
+<span aria-live="polite" aria-atomic="true">47 critical detections</span>
 ```
 
 ---
 
 ## Responsive Design
 
+MxTac is designed for **1280px+ desktop** (security operations center context). Tablet and mobile are secondary use cases.
+
 ### Breakpoints
 
-| Name | Width | Usage |
-|------|-------|-------|
-| `sm` | 640px | Mobile |
-| `md` | 768px | Tablet |
-| `lg` | 1024px | Small desktop |
-| `xl` | 1280px | Desktop |
-| `2xl` | 1536px | Large desktop |
+| Name | Width | Behavior |
+|------|-------|----------|
+| `xl` | 1280px | Primary target — all panels visible |
+| `lg` | 1024px | Slide-out panel overlaps more of table |
+| `md` | 768px | Sidebar collapses to hamburger drawer |
+| `sm` | 640px | Table switches to card list view |
 
-### Mobile Adaptations
+### Sidebar Behavior
 
-| Component | Desktop | Mobile |
-|-----------|---------|--------|
-| Sidebar | Fixed | Drawer (hamburger) |
-| Data table | Full | Card view |
-| Filters | Inline | Bottom sheet |
-| Actions | Button row | Action menu |
-
-### Responsive Layout
-
-```
-Desktop (>1024px):
-┌────────────┬─────────────────────────────────────┐
-│  Sidebar   │          Main Content               │
-│            │                                     │
-└────────────┴─────────────────────────────────────┘
-
-Tablet (768-1024px):
-┌────────────────────────────────────────────────┐
-│  [☰]  Header                                   │
-├────────────────────────────────────────────────┤
-│              Main Content                      │
-│                                                │
-└────────────────────────────────────────────────┘
-
-Mobile (<768px):
-┌──────────────────────────────────┐
-│  [☰]  MxTac                      │
-├──────────────────────────────────┤
-│         Main Content             │
-│                                  │
-├──────────────────────────────────┤
-│  [Home] [Alerts] [Hunt] [More]  │
-└──────────────────────────────────┘
-```
+| Breakpoint | Sidebar |
+|------------|---------|
+| ≥ 1024px | Fixed 52px icon-only sidebar |
+| < 1024px | Hidden; hamburger icon in top bar opens drawer overlay |
 
 ---
 
-## Appendix
+## Reference Mockups
 
-### A. Icon Library
+Current design artifacts are in `mitre-attack/mxtac/ui-mockup-v2/`:
 
-Using **Lucide Icons** (MIT License)
+| File | Description |
+|------|-------------|
+| `overview.svg` / `overview.png` | Security Overview dashboard — KPI cards, timeline chart, ATT&CK heatmap, detections table, integration status row |
+| `detections.svg` / `detections.png` | Detections table view — filter chips, group-by bar, dense table, slide-out detail panel |
 
-| Category | Icons |
-|----------|-------|
-| Navigation | Home, AlertTriangle, Search, Settings |
-| Actions | Play, Pause, Download, Upload, Edit, Trash |
-| Status | Check, X, AlertCircle, Info |
-| Entities | Monitor, User, Globe, Shield |
+The original dark-theme mockup is at `UI-MOCKUP.svg` / `UI-MOCKUP.png` (v1, superseded).
 
-### B. Animation Guidelines
+Reference screenshots from real products are in `dashboard-examples/real-screenshots/`. The primary design reference is `06-tenable-real.png` (Tenable Vulnerability Management Explore view).
 
-| Type | Duration | Easing |
-|------|----------|--------|
-| Micro (hover) | 100-150ms | ease-out |
-| Small (collapse) | 200-250ms | ease-in-out |
-| Medium (modal) | 250-300ms | ease-in-out |
-| Large (page) | 300-400ms | ease-out |
+---
 
-### C. z-index Scale
+## Changelog
 
-| Layer | z-index | Usage |
-|-------|---------|-------|
-| Base | 0 | Normal content |
-| Dropdown | 10 | Dropdowns, popovers |
-| Sticky | 20 | Sticky headers |
-| Sidebar | 30 | Navigation sidebar |
-| Modal backdrop | 40 | Modal overlay |
-| Modal | 50 | Modal dialog |
-| Toast | 60 | Notifications |
+| Version | Date | Changes |
+|---------|------|---------|
+| **2.0** | 2026-02-19 | Full v2 redesign: light theme, icon-only sidebar, Tenable-inspired layout; reduced palette to 2 accent colors; added slide-out panel pattern; updated all screen specs and component definitions |
+| 1.0 | 2026-01-12 | Initial dark-theme design guide |
 
 ---
 
