@@ -1,0 +1,463 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900" font-family="'Segoe UI', Inter, sans-serif">
+  <defs>
+    <filter id="card" x="-4%" y="-4%" width="108%" height="120%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#0000000D"/>
+    </filter>
+    <filter id="panel" x="-8%" y="-2%" width="116%" height="106%">
+      <feDropShadow dx="-2" dy="0" stdDeviation="5" flood-color="#00000014"/>
+    </filter>
+  </defs>
+
+  <!-- Page background -->
+  <rect width="1400" height="900" fill="#F4F6F8"/>
+
+  <!-- ── Sidebar ── -->
+  <rect x="0" y="0" width="52" height="900" fill="white"/>
+  <rect x="51" y="0" width="1" height="900" fill="#E8ECF0"/>
+
+  <!-- Logo -->
+  <rect x="10" y="12" width="32" height="32" rx="6" fill="#0066CC"/>
+  <text x="26" y="33" text-anchor="middle" fill="white" font-size="14" font-weight="700">M</text>
+
+  <!-- Nav: Detections active -->
+  <text x="26" y="82" text-anchor="middle" font-size="15" fill="#A0AABB">⊞</text>
+  <rect x="6" y="96" width="40" height="34" rx="6" fill="#EBF3FF"/>
+  <rect x="6" y="96" width="3" height="34" rx="1" fill="#0066CC"/>
+  <text x="26" y="118" text-anchor="middle" font-size="15" fill="#0066CC">⚡</text>
+
+  <text x="26" y="162" text-anchor="middle" font-size="15" fill="#A0AABB">⬡</text>
+  <text x="26" y="204" text-anchor="middle" font-size="15" fill="#A0AABB">σ</text>
+  <text x="26" y="246" text-anchor="middle" font-size="15" fill="#A0AABB">🔔</text>
+  <text x="26" y="288" text-anchor="middle" font-size="15" fill="#A0AABB">🌐</text>
+  <text x="26" y="330" text-anchor="middle" font-size="15" fill="#A0AABB">🖥</text>
+  <text x="26" y="372" text-anchor="middle" font-size="15" fill="#A0AABB">📋</text>
+
+  <text x="26" y="858" text-anchor="middle" font-size="15" fill="#A0AABB">⚙</text>
+  <circle cx="26" cy="878" r="10" fill="#E8ECF0"/>
+  <text x="26" y="882" text-anchor="middle" font-size="9" fill="#5A6B82" font-weight="600">KH</text>
+
+  <!-- ── Top bar ── -->
+  <rect x="52" y="0" width="1348" height="46" fill="white"/>
+  <rect x="52" y="45" width="1348" height="1" fill="#E8ECF0"/>
+
+  <text x="72" y="25" font-size="12" fill="#A0AABB">MxTac</text>
+  <text x="110" y="25" font-size="12" fill="#A0AABB">/</text>
+  <text x="120" y="25" font-size="12" fill="#1C2D40" font-weight="600">Detections</text>
+
+  <text x="1150" y="26" font-size="11" fill="#A0AABB">Updated 14:32 UTC</text>
+  <rect x="1288" y="12" width="24" height="22" rx="5" fill="#F4F6F8"/>
+  <text x="1300" y="27" text-anchor="middle" font-size="12" fill="#5A6B82">↻</text>
+  <rect x="1318" y="12" width="24" height="22" rx="5" fill="#F4F6F8"/>
+  <text x="1330" y="27" text-anchor="middle" font-size="12" fill="#5A6B82">🔔</text>
+  <circle cx="1341" cy="13" r="4" fill="#CC3333"/>
+
+  <!-- ── Tabs ── -->
+  <rect x="52" y="46" width="1348" height="38" fill="white"/>
+  <rect x="52" y="83" width="1348" height="1" fill="#E8ECF0"/>
+
+  <text x="119" y="69" text-anchor="middle" font-size="12" fill="#A0AABB">Overview</text>
+  <text x="246" y="69" text-anchor="middle" font-size="12" fill="#0066CC" font-weight="600">Detections</text>
+  <rect x="196" y="83" width="100" height="2" fill="#0066CC"/>
+  <text x="354" y="69" text-anchor="middle" font-size="12" fill="#A0AABB">ATT&amp;CK Map</text>
+  <text x="458" y="69" text-anchor="middle" font-size="12" fill="#A0AABB">Threat Intel</text>
+  <text x="556" y="69" text-anchor="middle" font-size="12" fill="#A0AABB">Asset Risk</text>
+
+  <rect x="1218" y="57" width="160" height="24" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="1298" y="73" text-anchor="middle" font-size="11" fill="#5A6B82">Last 24 hours  ▾</text>
+
+  <!-- ── Filter bar ── -->
+  <rect x="52" y="84" width="912" height="40" fill="white"/>
+  <rect x="52" y="123" width="912" height="1" fill="#E8ECF0"/>
+
+  <text x="72" y="108" font-size="11" fill="#A0AABB">Filters:</text>
+
+  <!-- Chips — same muted style, no bright colors -->
+  <rect x="116" y="96" width="126" height="22" rx="11" fill="#FDECEA" stroke="#F5C6C6" stroke-width="1"/>
+  <text x="127" y="111" font-size="10" fill="#CC3333">Severity: Critical  ×</text>
+
+  <rect x="252" y="96" width="90" height="22" rx="11" fill="#EBF3FF" stroke="#C0D6F7" stroke-width="1"/>
+  <text x="263" y="111" font-size="10" fill="#0055AA">Last 24h  ×</text>
+
+  <rect x="352" y="96" width="136" height="22" rx="11" fill="#EBF3FF" stroke="#C0D6F7" stroke-width="1"/>
+  <text x="363" y="111" font-size="10" fill="#0055AA">Tactic: Execution  ×</text>
+
+  <text x="500" y="111" font-size="10" fill="#A0AABB">Clear all</text>
+
+  <rect x="564" y="96" width="96" height="22" rx="11" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="612" y="111" text-anchor="middle" font-size="10" fill="#5A6B82">+ Add Filter</text>
+
+  <text x="736" y="108" font-size="11" fill="#A0AABB">Showing 47 of 2,847</text>
+
+  <!-- Export -->
+  <rect x="860" y="96" width="80" height="22" rx="4" fill="#0066CC"/>
+  <text x="900" y="111" text-anchor="middle" font-size="10" fill="white">Export ↓</text>
+
+  <!-- ── Group-by row ── -->
+  <rect x="52" y="124" width="912" height="34" fill="#FAFBFC"/>
+  <rect x="52" y="157" width="912" height="1" fill="#E8ECF0"/>
+
+  <text x="72" y="145" font-size="10" fill="#A0AABB">Group by:</text>
+  <rect x="118" y="133" width="68" height="20" rx="4" fill="#0066CC"/>
+  <text x="152" y="147" text-anchor="middle" font-size="10" fill="white">None</text>
+  <rect x="194" y="133" width="68" height="20" rx="4" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="228" y="147" text-anchor="middle" font-size="10" fill="#5A6B82">Tactic</text>
+  <rect x="270" y="133" width="68" height="20" rx="4" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="304" y="147" text-anchor="middle" font-size="10" fill="#5A6B82">Host</text>
+  <rect x="346" y="133" width="68" height="20" rx="4" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="380" y="147" text-anchor="middle" font-size="10" fill="#5A6B82">Rule</text>
+  <text x="612" y="146" font-size="10" fill="#A0AABB">Sort: Severity ↓</text>
+
+  <!-- ── Table header ── -->
+  <rect x="52" y="158" width="912" height="26" fill="#F4F6F8"/>
+  <rect x="52" y="183" width="912" height="1" fill="#E8ECF0"/>
+
+  <rect x="66" y="168" width="12" height="12" rx="3" fill="white" stroke="#C8D0DC" stroke-width="1.5"/>
+  <text x="92" y="178" font-size="9" fill="#A0AABB" font-weight="500">SCORE</text>
+  <text x="138" y="178" font-size="9" fill="#A0AABB" font-weight="500">SEV</text>
+  <text x="204" y="178" font-size="9" fill="#A0AABB" font-weight="500">TECHNIQUE</text>
+  <text x="298" y="178" font-size="9" fill="#A0AABB" font-weight="500">DETECTION NAME</text>
+  <text x="550" y="178" font-size="9" fill="#A0AABB" font-weight="500">HOST</text>
+  <text x="660" y="178" font-size="9" fill="#A0AABB" font-weight="500">TACTIC</text>
+  <text x="780" y="178" font-size="9" fill="#A0AABB" font-weight="500">STATUS</text>
+  <text x="876" y="178" font-size="9" fill="#A0AABB" font-weight="500">TIME ↓</text>
+
+  <!-- ── Table rows ── -->
+
+  <!-- Row 1 — normal -->
+  <rect x="52" y="184" width="912" height="32" fill="white"/>
+  <rect x="66" y="193" width="12" height="12" rx="3" fill="white" stroke="#C8D0DC" stroke-width="1.5"/>
+  <circle cx="107" cy="200" r="11" fill="#FDECEA"/>
+  <text x="107" y="204" text-anchor="middle" font-size="9" fill="#CC3333" font-weight="700">9.2</text>
+  <rect x="132" y="191" width="52" height="16" rx="8" fill="#FDECEA"/>
+  <text x="158" y="202" text-anchor="middle" font-size="9" fill="#CC3333">Critical</text>
+  <text x="204" y="204" font-size="10" fill="#0066CC">T1055.001</text>
+  <text x="298" y="204" font-size="11" fill="#1C2D40">Process Injection via DLL</text>
+  <text x="550" y="204" font-size="11" fill="#1C2D40">WS-PROD-114</text>
+  <text x="660" y="204" font-size="10" fill="#A0AABB">Defense Evasion</text>
+  <rect x="776" y="192" width="48" height="16" rx="8" fill="#FDECEA"/>
+  <text x="800" y="203" text-anchor="middle" font-size="9" fill="#CC3333">Active</text>
+  <text x="876" y="204" font-size="10" fill="#A0AABB">14:28</text>
+  <line x1="52" y1="216" x2="964" y2="216" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 2 — SELECTED -->
+  <rect x="52" y="216" width="912" height="32" fill="#F0F6FF"/>
+  <rect x="52" y="216" width="3" height="32" fill="#0066CC"/>
+  <rect x="66" y="225" width="12" height="12" rx="3" fill="#0066CC" stroke="#0066CC" stroke-width="1.5"/>
+  <text x="72" y="235" text-anchor="middle" font-size="9" fill="white">✓</text>
+  <circle cx="107" cy="232" r="11" fill="#FDECEA"/>
+  <text x="107" y="236" text-anchor="middle" font-size="9" fill="#CC3333" font-weight="700">9.0</text>
+  <rect x="132" y="223" width="52" height="16" rx="8" fill="#FDECEA"/>
+  <text x="158" y="234" text-anchor="middle" font-size="9" fill="#CC3333">Critical</text>
+  <text x="204" y="236" font-size="10" fill="#0066CC" font-weight="600">T1003.006</text>
+  <text x="298" y="236" font-size="11" fill="#1C2D40" font-weight="500">DCSync via DRSUAPI GetNCChanges</text>
+  <text x="550" y="236" font-size="11" fill="#1C2D40">DC-PROD-01</text>
+  <text x="660" y="236" font-size="10" fill="#A0AABB">Credential Access</text>
+  <rect x="776" y="224" width="48" height="16" rx="8" fill="#FDECEA"/>
+  <text x="800" y="235" text-anchor="middle" font-size="9" fill="#CC3333">Active</text>
+  <text x="876" y="236" font-size="10" fill="#A0AABB">14:21</text>
+  <line x1="52" y1="248" x2="964" y2="248" stroke="#D8E8F8" stroke-width="1"/>
+
+  <!-- Row 3 -->
+  <rect x="52" y="248" width="912" height="32" fill="white"/>
+  <rect x="66" y="257" width="12" height="12" rx="3" fill="white" stroke="#C8D0DC" stroke-width="1.5"/>
+  <circle cx="107" cy="264" r="11" fill="#FEF3E2"/>
+  <text x="107" y="268" text-anchor="middle" font-size="9" fill="#CC6600" font-weight="700">8.7</text>
+  <rect x="132" y="255" width="40" height="16" rx="8" fill="#FEF3E2"/>
+  <text x="152" y="266" text-anchor="middle" font-size="9" fill="#CC6600">High</text>
+  <text x="204" y="268" font-size="10" fill="#0066CC">T1558.003</text>
+  <text x="298" y="268" font-size="11" fill="#1C2D40">Kerberoasting — SPN Enumeration</text>
+  <text x="550" y="268" font-size="11" fill="#1C2D40">SRV-AUTH-07</text>
+  <text x="660" y="268" font-size="10" fill="#A0AABB">Credential Access</text>
+  <rect x="776" y="256" width="72" height="16" rx="8" fill="#FEF3E2"/>
+  <text x="812" y="267" text-anchor="middle" font-size="9" fill="#CC6600">Investigating</text>
+  <text x="876" y="268" font-size="10" fill="#A0AABB">14:09</text>
+  <line x1="52" y1="280" x2="964" y2="280" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 4 -->
+  <rect x="52" y="280" width="912" height="32" fill="white"/>
+  <rect x="66" y="289" width="12" height="12" rx="3" fill="white" stroke="#C8D0DC" stroke-width="1.5"/>
+  <circle cx="107" cy="296" r="11" fill="#FEF3E2"/>
+  <text x="107" y="300" text-anchor="middle" font-size="9" fill="#CC6600" font-weight="700">8.4</text>
+  <rect x="132" y="287" width="40" height="16" rx="8" fill="#FEF3E2"/>
+  <text x="152" y="298" text-anchor="middle" font-size="9" fill="#CC6600">High</text>
+  <text x="204" y="300" font-size="10" fill="#0066CC">T1550.003</text>
+  <text x="298" y="300" font-size="11" fill="#1C2D40">Pass the Ticket — Lateral Move</text>
+  <text x="550" y="300" font-size="11" fill="#1C2D40">WS-FIN-022</text>
+  <text x="660" y="300" font-size="10" fill="#A0AABB">Lateral Movement</text>
+  <rect x="776" y="288" width="56" height="16" rx="8" fill="#EBF5EB"/>
+  <text x="804" y="299" text-anchor="middle" font-size="9" fill="#2E7D32">Resolved</text>
+  <text x="876" y="300" font-size="10" fill="#A0AABB">13:58</text>
+  <line x1="52" y1="312" x2="964" y2="312" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 5 -->
+  <rect x="52" y="312" width="912" height="32" fill="white"/>
+  <rect x="66" y="321" width="12" height="12" rx="3" fill="white" stroke="#C8D0DC" stroke-width="1.5"/>
+  <circle cx="107" cy="328" r="11" fill="#FEF3E2"/>
+  <text x="107" y="332" text-anchor="middle" font-size="9" fill="#CC6600" font-weight="700">8.1</text>
+  <rect x="132" y="319" width="40" height="16" rx="8" fill="#FEF3E2"/>
+  <text x="152" y="330" text-anchor="middle" font-size="9" fill="#CC6600">High</text>
+  <text x="204" y="332" font-size="10" fill="#0066CC">T1078.002</text>
+  <text x="298" y="332" font-size="11" fill="#1C2D40">Valid Domain Admin Account Login</text>
+  <text x="550" y="332" font-size="11" fill="#1C2D40">FS-CORP-05</text>
+  <text x="660" y="332" font-size="10" fill="#A0AABB">Initial Access</text>
+  <rect x="776" y="320" width="48" height="16" rx="8" fill="#FDECEA"/>
+  <text x="800" y="331" text-anchor="middle" font-size="9" fill="#CC3333">Active</text>
+  <text x="876" y="332" font-size="10" fill="#A0AABB">13:44</text>
+  <line x1="52" y1="344" x2="964" y2="344" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 6 -->
+  <rect x="52" y="344" width="912" height="32" fill="white"/>
+  <rect x="66" y="353" width="12" height="12" rx="3" fill="white" stroke="#C8D0DC" stroke-width="1.5"/>
+  <circle cx="107" cy="360" r="11" fill="#EBF2FF"/>
+  <text x="107" y="364" text-anchor="middle" font-size="9" fill="#0055AA" font-weight="700">6.8</text>
+  <rect x="132" y="351" width="52" height="16" rx="8" fill="#EBF2FF"/>
+  <text x="158" y="362" text-anchor="middle" font-size="9" fill="#0055AA">Medium</text>
+  <text x="204" y="364" font-size="10" fill="#0066CC">T1059.001</text>
+  <text x="298" y="364" font-size="11" fill="#1C2D40">PowerShell Encoded Command Exec</text>
+  <text x="550" y="364" font-size="11" fill="#1C2D40">WS-DEV-031</text>
+  <text x="660" y="364" font-size="10" fill="#A0AABB">Execution</text>
+  <rect x="776" y="352" width="56" height="16" rx="8" fill="#EBF5EB"/>
+  <text x="804" y="363" text-anchor="middle" font-size="9" fill="#2E7D32">Resolved</text>
+  <text x="876" y="364" font-size="10" fill="#A0AABB">13:30</text>
+  <line x1="52" y1="376" x2="964" y2="376" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 7 -->
+  <rect x="52" y="376" width="912" height="32" fill="white"/>
+  <rect x="66" y="385" width="12" height="12" rx="3" fill="white" stroke="#C8D0DC" stroke-width="1.5"/>
+  <circle cx="107" cy="392" r="11" fill="#EBF2FF"/>
+  <text x="107" y="396" text-anchor="middle" font-size="9" fill="#0055AA" font-weight="700">6.5</text>
+  <rect x="132" y="383" width="52" height="16" rx="8" fill="#EBF2FF"/>
+  <text x="158" y="394" text-anchor="middle" font-size="9" fill="#0055AA">Medium</text>
+  <text x="204" y="396" font-size="10" fill="#0066CC">T1021.001</text>
+  <text x="298" y="396" font-size="11" fill="#1C2D40">RDP Lateral Movement</text>
+  <text x="550" y="396" font-size="11" fill="#1C2D40">WS-MGMT-04</text>
+  <text x="660" y="396" font-size="10" fill="#A0AABB">Lateral Movement</text>
+  <rect x="776" y="384" width="72" height="16" rx="8" fill="#FEF3E2"/>
+  <text x="812" y="395" text-anchor="middle" font-size="9" fill="#CC6600">Investigating</text>
+  <text x="876" y="396" font-size="10" fill="#A0AABB">13:15</text>
+  <line x1="52" y1="408" x2="964" y2="408" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 8 -->
+  <rect x="52" y="408" width="912" height="32" fill="white"/>
+  <rect x="66" y="417" width="12" height="12" rx="3" fill="white" stroke="#C8D0DC" stroke-width="1.5"/>
+  <circle cx="107" cy="424" r="11" fill="#EBF2FF"/>
+  <text x="107" y="428" text-anchor="middle" font-size="9" fill="#0055AA" font-weight="700">5.9</text>
+  <rect x="132" y="415" width="52" height="16" rx="8" fill="#EBF2FF"/>
+  <text x="158" y="426" text-anchor="middle" font-size="9" fill="#0055AA">Medium</text>
+  <text x="204" y="428" font-size="10" fill="#0066CC">T1218.011</text>
+  <text x="298" y="428" font-size="11" fill="#1C2D40">Rundll32 Proxy Execution</text>
+  <text x="550" y="428" font-size="11" fill="#1C2D40">WS-DEV-018</text>
+  <text x="660" y="428" font-size="10" fill="#A0AABB">Defense Evasion</text>
+  <rect x="776" y="416" width="56" height="16" rx="8" fill="#EBF5EB"/>
+  <text x="804" y="427" text-anchor="middle" font-size="9" fill="#2E7D32">Resolved</text>
+  <text x="876" y="428" font-size="10" fill="#A0AABB">12:58</text>
+  <line x1="52" y1="440" x2="964" y2="440" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 9 -->
+  <rect x="52" y="440" width="912" height="32" fill="white"/>
+  <rect x="66" y="449" width="12" height="12" rx="3" fill="white" stroke="#C8D0DC" stroke-width="1.5"/>
+  <circle cx="107" cy="456" r="11" fill="#EBF2FF"/>
+  <text x="107" y="460" text-anchor="middle" font-size="9" fill="#0055AA" font-weight="700">5.6</text>
+  <rect x="132" y="447" width="52" height="16" rx="8" fill="#EBF2FF"/>
+  <text x="158" y="458" text-anchor="middle" font-size="9" fill="#0055AA">Medium</text>
+  <text x="204" y="460" font-size="10" fill="#0066CC">T1136.001</text>
+  <text x="298" y="460" font-size="11" fill="#1C2D40">New Local Admin Account Created</text>
+  <text x="550" y="460" font-size="11" fill="#1C2D40">SRV-JUMP-02</text>
+  <text x="660" y="460" font-size="10" fill="#A0AABB">Persistence</text>
+  <rect x="776" y="448" width="48" height="16" rx="8" fill="#FDECEA"/>
+  <text x="800" y="459" text-anchor="middle" font-size="9" fill="#CC3333">Active</text>
+  <text x="876" y="460" font-size="10" fill="#A0AABB">12:41</text>
+  <line x1="52" y1="472" x2="964" y2="472" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 10 -->
+  <rect x="52" y="472" width="912" height="32" fill="white"/>
+  <rect x="66" y="481" width="12" height="12" rx="3" fill="white" stroke="#C8D0DC" stroke-width="1.5"/>
+  <circle cx="107" cy="488" r="11" fill="#EBF2FF"/>
+  <text x="107" y="492" text-anchor="middle" font-size="9" fill="#0055AA" font-weight="700">5.2</text>
+  <rect x="132" y="479" width="52" height="16" rx="8" fill="#EBF2FF"/>
+  <text x="158" y="490" text-anchor="middle" font-size="9" fill="#0055AA">Medium</text>
+  <text x="204" y="492" font-size="10" fill="#0066CC">T1098.001</text>
+  <text x="298" y="492" font-size="11" fill="#1C2D40">Azure AD Credential Added</text>
+  <text x="550" y="492" font-size="11" fill="#1C2D40">CLOUDAzure-04</text>
+  <text x="660" y="492" font-size="10" fill="#A0AABB">Persistence</text>
+  <rect x="776" y="480" width="72" height="16" rx="8" fill="#FEF3E2"/>
+  <text x="812" y="491" text-anchor="middle" font-size="9" fill="#CC6600">Investigating</text>
+  <text x="876" y="492" font-size="10" fill="#A0AABB">12:20</text>
+  <line x1="52" y1="504" x2="964" y2="504" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 11 -->
+  <rect x="52" y="504" width="912" height="32" fill="white"/>
+  <rect x="66" y="513" width="12" height="12" rx="3" fill="white" stroke="#C8D0DC" stroke-width="1.5"/>
+  <circle cx="107" cy="520" r="11" fill="#F4F6F8"/>
+  <text x="107" y="524" text-anchor="middle" font-size="9" fill="#A0AABB" font-weight="700">3.8</text>
+  <rect x="132" y="511" width="36" height="16" rx="8" fill="#F4F6F8"/>
+  <text x="150" y="522" text-anchor="middle" font-size="9" fill="#A0AABB">Low</text>
+  <text x="204" y="524" font-size="10" fill="#0066CC">T1070.004</text>
+  <text x="298" y="524" font-size="11" fill="#A0AABB">File Deletion to Cover Tracks</text>
+  <text x="550" y="524" font-size="11" fill="#A0AABB">WS-HR-011</text>
+  <text x="660" y="524" font-size="10" fill="#C8D0DC">Defense Evasion</text>
+  <rect x="776" y="512" width="56" height="16" rx="8" fill="#EBF5EB"/>
+  <text x="804" y="523" text-anchor="middle" font-size="9" fill="#2E7D32">Resolved</text>
+  <text x="876" y="524" font-size="10" fill="#C8D0DC">11:55</text>
+  <line x1="52" y1="536" x2="964" y2="536" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Pagination -->
+  <rect x="52" y="536" width="912" height="36" fill="#FAFBFC"/>
+  <rect x="52" y="535" width="912" height="1" fill="#E8ECF0"/>
+  <text x="72" y="558" font-size="10" fill="#A0AABB">Page 1 of 5</text>
+  <rect x="208" y="546" width="24" height="20" rx="4" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="220" y="560" text-anchor="middle" font-size="11" fill="#A0AABB">‹</text>
+  <rect x="238" y="546" width="24" height="20" rx="4" fill="#0066CC"/>
+  <text x="250" y="560" text-anchor="middle" font-size="11" fill="white">1</text>
+  <rect x="268" y="546" width="24" height="20" rx="4" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="280" y="560" text-anchor="middle" font-size="11" fill="#5A6B82">2</text>
+  <rect x="298" y="546" width="24" height="20" rx="4" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="310" y="560" text-anchor="middle" font-size="11" fill="#5A6B82">3</text>
+  <text x="334" y="560" font-size="11" fill="#A0AABB">…</text>
+  <rect x="346" y="546" width="24" height="20" rx="4" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="358" y="560" text-anchor="middle" font-size="11" fill="#5A6B82">5</text>
+  <rect x="376" y="546" width="24" height="20" rx="4" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="388" y="560" text-anchor="middle" font-size="11" fill="#A0AABB">›</text>
+  <text x="560" y="558" font-size="10" fill="#A0AABB">Rows per page:</text>
+  <rect x="648" y="547" width="52" height="20" rx="4" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="674" y="561" text-anchor="middle" font-size="10" fill="#5A6B82">25  ▾</text>
+
+  <!-- ── SLIDE-OUT DETAIL PANEL ── -->
+  <rect x="964" y="84" width="436" height="800" fill="white" filter="url(#panel)"/>
+  <rect x="964" y="84" width="1" height="800" fill="#E8ECF0"/>
+
+  <!-- Panel header -->
+  <rect x="964" y="84" width="436" height="52" fill="#F9FAFB"/>
+  <rect x="964" y="135" width="436" height="1" fill="#E8ECF0"/>
+
+  <rect x="1362" y="95" width="24" height="24" rx="5" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="1374" y="112" text-anchor="middle" font-size="13" fill="#A0AABB">×</text>
+
+  <text x="984" y="107" font-size="11" fill="#A0AABB">Detection</text>
+  <text x="984" y="123" font-size="10" fill="#0066CC">#DET-2026-00847</text>
+  <rect x="1200" y="94" width="140" height="28" rx="5" fill="#EBF3FF" stroke="#C0D6F7" stroke-width="1"/>
+  <text x="1270" y="113" text-anchor="middle" font-size="11" fill="#0055AA" font-weight="600">T1003.006</text>
+
+  <!-- Panel sub-tabs -->
+  <rect x="964" y="136" width="436" height="32" fill="white"/>
+  <rect x="964" y="167" width="436" height="1" fill="#E8ECF0"/>
+  <text x="1004" y="156" text-anchor="middle" font-size="11" fill="#0066CC" font-weight="600">Details</text>
+  <rect x="974" y="167" width="60" height="2" fill="#0066CC"/>
+  <text x="1084" y="156" text-anchor="middle" font-size="11" fill="#A0AABB">Timeline</text>
+  <text x="1176" y="156" text-anchor="middle" font-size="11" fill="#A0AABB">Evidence</text>
+  <text x="1268" y="156" text-anchor="middle" font-size="11" fill="#A0AABB">Actions</text>
+
+  <!-- Title -->
+  <text x="984" y="191" font-size="13" fill="#1C2D40" font-weight="700">DCSync via DRSUAPI GetNCChanges</text>
+  <text x="984" y="206" font-size="10" fill="#A0AABB">Sigma: win_dcsync_replication  ·  Source: Elastic SIEM</text>
+
+  <!-- Score cards — all same neutral background, single colored number -->
+  <rect x="984" y="216" width="88" height="64" rx="6" fill="#F9FAFB" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="1028" y="234" text-anchor="middle" font-size="9" fill="#A0AABB" font-weight="500">SCORE</text>
+  <text x="1028" y="264" text-anchor="middle" font-size="26" fill="#CC3333" font-weight="700">9.0</text>
+  <text x="1028" y="276" text-anchor="middle" font-size="8" fill="#A0AABB">Critical</text>
+
+  <rect x="1082" y="216" width="88" height="64" rx="6" fill="#F9FAFB" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="1126" y="234" text-anchor="middle" font-size="9" fill="#A0AABB" font-weight="500">CVSSv3</text>
+  <text x="1126" y="264" text-anchor="middle" font-size="26" fill="#CC6600" font-weight="700">8.8</text>
+  <text x="1126" y="276" text-anchor="middle" font-size="8" fill="#A0AABB">AV:N/AC:L</text>
+
+  <rect x="1180" y="216" width="88" height="64" rx="6" fill="#F9FAFB" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="1224" y="234" text-anchor="middle" font-size="9" fill="#A0AABB" font-weight="500">CONFIDENCE</text>
+  <text x="1224" y="264" text-anchor="middle" font-size="22" fill="#1C2D40" font-weight="700">96%</text>
+  <text x="1224" y="276" text-anchor="middle" font-size="8" fill="#A0AABB">High</text>
+
+  <rect x="1278" y="216" width="100" height="64" rx="6" fill="#F9FAFB" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="1328" y="234" text-anchor="middle" font-size="9" fill="#A0AABB" font-weight="500">TACTIC</text>
+  <text x="1328" y="256" text-anchor="middle" font-size="11" fill="#1C2D40" font-weight="600">Credential</text>
+  <text x="1328" y="269" text-anchor="middle" font-size="11" fill="#1C2D40" font-weight="600">Access</text>
+  <text x="1328" y="278" text-anchor="middle" font-size="8" fill="#A0AABB">TA0006</text>
+
+  <!-- Details section -->
+  <line x1="984" y1="292" x2="1380" y2="292" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="984" y="310" font-size="11" fill="#1C2D40" font-weight="600">Details</text>
+
+  <!-- Key-value -->
+  <text x="984" y="330" font-size="10" fill="#A0AABB">Host</text>
+  <text x="1100" y="330" font-size="10" fill="#1C2D40">DC-PROD-01  (192.168.1.10)</text>
+
+  <text x="984" y="348" font-size="10" fill="#A0AABB">User</text>
+  <text x="1100" y="348" font-size="10" fill="#1C2D40">CORP\svc-backup</text>
+
+  <text x="984" y="366" font-size="10" fill="#A0AABB">Process</text>
+  <text x="1100" y="366" font-size="10" fill="#1C2D40">lsass.exe (PID: 4)</text>
+
+  <text x="984" y="384" font-size="10" fill="#A0AABB">Rule</text>
+  <text x="1100" y="384" font-size="10" fill="#0066CC">win_dcsync_replication</text>
+
+  <text x="984" y="402" font-size="10" fill="#A0AABB">Log Source</text>
+  <text x="1100" y="402" font-size="10" fill="#1C2D40">Elastic SIEM  ·  Windows Security</text>
+
+  <text x="984" y="420" font-size="10" fill="#A0AABB">Event ID</text>
+  <text x="1100" y="420" font-size="10" fill="#1C2D40">4662 (Object accessed)</text>
+
+  <text x="984" y="438" font-size="10" fill="#A0AABB">First seen</text>
+  <text x="1100" y="438" font-size="10" fill="#1C2D40">2026-02-19 14:21:07 UTC</text>
+
+  <text x="984" y="456" font-size="10" fill="#A0AABB">Count</text>
+  <text x="1100" y="456" font-size="10" fill="#1C2D40">14 events in last 30 min</text>
+
+  <!-- Description -->
+  <line x1="984" y1="468" x2="1380" y2="468" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="984" y="486" font-size="11" fill="#1C2D40" font-weight="600">Description</text>
+  <text x="984" y="504" font-size="10" fill="#5A6B82">DCSync attack detected. Account CORP\svc-backup</text>
+  <text x="984" y="520" font-size="10" fill="#5A6B82">invoked DRSUAPI replication from DC-PROD-01.</text>
+  <text x="984" y="536" font-size="10" fill="#5A6B82">Consistent with credential dumping via DCSync</text>
+  <text x="984" y="552" font-size="10" fill="#5A6B82">(Mimikatz). Investigate service account immediately.</text>
+
+  <!-- Related techniques -->
+  <line x1="984" y1="564" x2="1380" y2="564" stroke="#E8ECF0" stroke-width="1"/>
+  <text x="984" y="582" font-size="11" fill="#1C2D40" font-weight="600">Related Techniques</text>
+  <rect x="984" y="590" width="80" height="20" rx="4" fill="#EBF3FF"/>
+  <text x="1024" y="604" text-anchor="middle" font-size="9" fill="#0055AA">T1558.003</text>
+  <rect x="1074" y="590" width="80" height="20" rx="4" fill="#EBF3FF"/>
+  <text x="1114" y="604" text-anchor="middle" font-size="9" fill="#0055AA">T1550.003</text>
+  <rect x="1164" y="590" width="80" height="20" rx="4" fill="#EBF3FF"/>
+  <text x="1204" y="604" text-anchor="middle" font-size="9" fill="#0055AA">T1078.002</text>
+
+  <!-- Sparkline (monochrome) -->
+  <text x="984" y="636" font-size="10" fill="#A0AABB">Activity — last 2h:</text>
+  <line x1="984" y1="672" x2="1378" y2="672" stroke="#E8ECF0" stroke-width="1"/>
+  <polygon points="984,665 1020,658 1056,661 1092,652 1128,638 1164,648 1200,645 1236,640 1272,628 1308,634 1344,637 1378,632 1378,672 984,672"
+    fill="#0066CC" opacity="0.07"/>
+  <polyline points="984,665 1020,658 1056,661 1092,652 1128,638 1164,648 1200,645 1236,640 1272,628 1308,634 1344,637 1378,632"
+    fill="none" stroke="#0066CC" stroke-width="1.5"/>
+
+  <!-- Actions -->
+  <line x1="984" y1="684" x2="1380" y2="684" stroke="#E8ECF0" stroke-width="1"/>
+  <rect x="984" y="694" width="100" height="28" rx="5" fill="#CC3333"/>
+  <text x="1034" y="712" text-anchor="middle" font-size="11" fill="white" font-weight="500">Escalate</text>
+  <rect x="1094" y="694" width="108" height="28" rx="5" fill="white" stroke="#0066CC" stroke-width="1.5"/>
+  <text x="1148" y="712" text-anchor="middle" font-size="11" fill="#0066CC" font-weight="500">Investigate</text>
+  <rect x="1212" y="694" width="108" height="28" rx="5" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="1266" y="712" text-anchor="middle" font-size="11" fill="#5A6B82">False Positive</text>
+  <rect x="1330" y="694" width="36" height="28" rx="5" fill="white" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="1348" y="712" text-anchor="middle" font-size="13" fill="#A0AABB">⋯</text>
+
+  <!-- Assigned -->
+  <text x="984" y="748" font-size="10" fill="#A0AABB">Assigned:</text>
+  <circle cx="1056" cy="743" r="9" fill="#E8ECF0"/>
+  <text x="1056" y="747" text-anchor="middle" font-size="8" fill="#5A6B82" font-weight="600">JS</text>
+  <text x="1070" y="748" font-size="10" fill="#1C2D40">J. Smith</text>
+  <text x="1160" y="748" font-size="10" fill="#A0AABB">Priority:</text>
+  <rect x="1210" y="736" width="60" height="18" rx="9" fill="#FDECEA"/>
+  <text x="1240" y="748" text-anchor="middle" font-size="9" fill="#CC3333" font-weight="500">P1 Urgent</text>
+
+  <!-- Panel footer -->
+  <rect x="964" y="848" width="436" height="36" fill="#F9FAFB"/>
+  <rect x="964" y="848" width="436" height="1" fill="#E8ECF0"/>
+  <text x="984" y="870" font-size="10" fill="#A0AABB">← Prev</text>
+  <text x="1340" y="870" font-size="10" fill="#A0AABB">Next →</text>
+
+  <!-- Footer -->
+  <rect x="0" y="882" width="1400" height="18" fill="#F0F2F5"/>
+  <rect x="0" y="882" width="1400" height="1" fill="#E0E4EA"/>
+  <text x="72" y="895" font-size="9" fill="#A0AABB">MxTac v2.4.1  ·  47 critical detections  ·  Elastic SIEM</text>
+  <circle cx="1346" cy="891" r="3" fill="#2E7D32"/>
+  <text x="1354" y="895" font-size="9" fill="#2E7D32">Operational</text>
+</svg>
