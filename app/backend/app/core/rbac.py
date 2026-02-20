@@ -40,6 +40,8 @@ PERMISSIONS: dict[str, set[str]] = {
     "users:read":       {"admin"},
     "users:write":      {"admin"},
     "events:search":    {"hunter", "engineer", "admin"},
+    "threat_intel:read":  {"hunter", "engineer", "admin"},
+    "threat_intel:write": {"engineer", "admin"},
 }
 
 # ── Role → permissions (inverse map) ──────────────────────────────────────────
