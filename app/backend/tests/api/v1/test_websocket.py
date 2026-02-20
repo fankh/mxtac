@@ -1,4 +1,4 @@
-"""Tests for WS /api/v1/ws/alerts — Features 17.1, 17.3, 17.4, 17.5, 17.6, and 28.27
+"""Tests for WS /api/v1/ws/alerts — Features 17.1, 17.3, 17.4, 17.5, 17.6, 28.27, and 28.28
 
 Coverage:
   - Happy path: WebSocket connection, "connected" handshake schema
@@ -74,6 +74,17 @@ Feature 28.27 — WebSocket client receives broadcast alert:
   - Full pipeline: ENRICHED queue publish → ws_broadcaster → client receives alert
   - broadcast_alert() with no connected clients completes without error
   - Received JSON is valid and decodable by the client
+
+Feature 28.28 — WebSocket: client on instance-2 receives alert from instance-1 (distributed):
+  - Instance-2 client receives alert broadcast by instance-1 via Valkey pub/sub
+  - Instance-2 client receives exact alert data dict published by instance-1
+  - Three clients on instance-2 each receive the alert from instance-1
+  - Instance-1's connections are isolated from instance-2's fanout (no direct cross-write)
+  - Both instances receive the same alert (instance-1 via loopback, instance-2 via sub)
+  - All alert data fields (nested dicts, arrays, numerics) preserved exactly across boundary
+  - Sequential alerts from instance-1 arrive at instance-2 client in order
+  - Dead client on instance-2 pruned; live client still receives from instance-1
+  - Instance-1 Valkey publish failure falls back to local fanout only (instance-2 not reached)
 """
 
 from __future__ import annotations
@@ -2114,3 +2125,374 @@ async def test_17_6_subscriber_loop_ignores_non_message_type_events():
     # Only the 'message' type event must have triggered fanout
     assert len(fanout_calls) == 1
     assert json.loads(fanout_calls[0])["data"]["id"] == "real"
+
+
+# ---------------------------------------------------------------------------
+# Section 16 — Feature 28.28: WebSocket client on instance-2 receives alert
+#              from instance-1 (distributed multi-instance delivery)
+# ---------------------------------------------------------------------------
+#
+# Test pattern:
+#   1. Create instance_1 and instance_2 (separate DistributedConnectionManager objects)
+#   2. Capture what instance_1.broadcast() would publish to Valkey
+#   3. Feed that exact payload into instance_2._subscriber_loop() via a fake listener
+#   4. Assert instance_2's clients received the message exactly
+#
+# Mocking note: mock_client for _subscriber_loop MUST be MagicMock (not AsyncMock)
+# because pubsub() is a synchronous call. See MEMORY.md for explanation.
+# ---------------------------------------------------------------------------
+
+
+def _make_cross_instance_fixtures(
+    alert_data: dict,
+) -> tuple[DistributedConnectionManager, DistributedConnectionManager, object]:
+    """Return (instance_1, instance_2, ws_on_2) with ws_on_2 added to instance_2._connections."""
+    instance_1 = DistributedConnectionManager("redis://localhost:6379/0")
+    instance_2 = DistributedConnectionManager("redis://localhost:6379/0")
+    ws_2 = _make_ws()
+    instance_2._connections.add(ws_2)
+    return instance_1, instance_2, ws_2
+
+
+async def _capture_published_payload(instance: DistributedConnectionManager, message: dict) -> str:
+    """Broadcast *message* via *instance* and return the raw JSON string published to Valkey."""
+    mock_pub = AsyncMock()
+    with patch.object(instance, "_get_pub_client", new=AsyncMock(return_value=mock_pub)):
+        await instance.broadcast(message)
+    return mock_pub.publish.call_args[0][1]
+
+
+def _make_sub_mock(payloads: list[str], cancel_after_listen: bool = True):
+    """Return a mock aioredis client whose subscriber loop yields *payloads* then terminates.
+
+    Termination strategy:
+      - fake_listen raises RuntimeError after all payloads → retry → subscribe raises CancelledError
+    """
+    subscribe_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal subscribe_count
+        subscribe_count += 1
+        if subscribe_count >= 2:
+            raise asyncio.CancelledError()
+
+    async def fake_listen():
+        for payload in payloads:
+            yield {"type": "message", "data": payload}
+        raise RuntimeError("end of stream")
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_pubsub.listen = fake_listen
+    mock_client.pubsub.return_value = mock_pubsub
+    return mock_client
+
+
+@pytest.mark.asyncio
+async def test_28_28_instance2_client_receives_type_alert():
+    """Instance-2 client must receive a JSON envelope with type='alert' from instance-1's broadcast."""
+    instance_1, instance_2, ws_2 = _make_cross_instance_fixtures({})
+
+    alert_data = {"id": "28-28-001", "level": "high", "host": "srv-01", "score": 7.5}
+    payload = await _capture_published_payload(instance_1, {"type": "alert", "data": alert_data})
+
+    mock_client = _make_sub_mock([payload])
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await instance_2._subscriber_loop()
+
+    ws_2.send_text.assert_awaited_once_with(payload)
+    received = json.loads(ws_2.send_text.call_args[0][0])
+    assert received["type"] == "alert"
+
+
+@pytest.mark.asyncio
+async def test_28_28_instance2_client_receives_exact_alert_data():
+    """Instance-2 client must receive the exact alert data dict broadcast by instance-1."""
+    instance_1, instance_2, ws_2 = _make_cross_instance_fixtures({})
+
+    alert_data = {
+        "id": "28-28-002",
+        "rule_title": "Suspicious PowerShell Base64 Execution",
+        "level": "critical",
+        "severity_id": 5,
+        "score": 9.1,
+        "host": "dc-02",
+        "technique_ids": ["T1059.001"],
+        "tactic_ids": ["TA0002"],
+        "ts": "2026-02-21T00:00:00+00:00",
+    }
+    payload = await _capture_published_payload(instance_1, {"type": "alert", "data": alert_data})
+
+    mock_client = _make_sub_mock([payload])
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await instance_2._subscriber_loop()
+
+    received = json.loads(ws_2.send_text.call_args[0][0])
+    assert received["data"] == alert_data
+    # Verify exact types for numeric and list fields
+    assert received["data"]["score"] == 9.1
+    assert received["data"]["severity_id"] == 5
+    assert received["data"]["technique_ids"] == ["T1059.001"]
+
+
+@pytest.mark.asyncio
+async def test_28_28_three_clients_on_instance2_each_receive():
+    """All three clients connected to instance-2 must receive the alert from instance-1."""
+    instance_1 = DistributedConnectionManager("redis://localhost:6379/0")
+    instance_2 = DistributedConnectionManager("redis://localhost:6379/0")
+
+    ws_a, ws_b, ws_c = _make_ws(), _make_ws(), _make_ws()
+    instance_2._connections.update({ws_a, ws_b, ws_c})
+
+    alert_data = {"id": "28-28-003", "level": "medium", "host": "win-03", "score": 5.0}
+    payload = await _capture_published_payload(instance_1, {"type": "alert", "data": alert_data})
+
+    mock_client = _make_sub_mock([payload])
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await instance_2._subscriber_loop()
+
+    for ws in (ws_a, ws_b, ws_c):
+        ws.send_text.assert_awaited_once()
+        received = json.loads(ws.send_text.call_args[0][0])
+        assert received["type"] == "alert"
+        assert received["data"] == alert_data
+
+
+@pytest.mark.asyncio
+async def test_28_28_instance1_connections_not_in_instance2_fanout():
+    """Instance-1's WebSocket connections must not be in instance-2's connection set.
+
+    Instance-2 delivers only to its own local connections — cross-instance isolation
+    means instance-1 clients are never directly written by instance-2's fanout.
+    """
+    instance_1 = DistributedConnectionManager("redis://localhost:6379/0")
+    instance_2 = DistributedConnectionManager("redis://localhost:6379/0")
+
+    ws_1 = _make_ws()
+    ws_2 = _make_ws()
+    instance_1._connections.add(ws_1)
+    instance_2._connections.add(ws_2)
+
+    alert_data = {"id": "28-28-isolation", "level": "high", "host": "lin-01", "score": 6.0}
+    payload = await _capture_published_payload(instance_1, {"type": "alert", "data": alert_data})
+
+    # Instance-2's subscriber loop delivers only to instance-2's clients
+    mock_client = _make_sub_mock([payload])
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await instance_2._subscriber_loop()
+
+    # ws_2 received the alert
+    ws_2.send_text.assert_awaited_once()
+    # ws_1 was NOT touched by instance_2's fanout — it is NOT in instance_2._connections
+    ws_1.send_text.assert_not_awaited()
+    assert ws_1 not in instance_2._connections
+
+
+@pytest.mark.asyncio
+async def test_28_28_both_instances_receive_same_alert():
+    """Both instance-1 (via loopback) and instance-2 must receive the same alert payload."""
+    instance_1 = DistributedConnectionManager("redis://localhost:6379/0")
+    instance_2 = DistributedConnectionManager("redis://localhost:6379/0")
+
+    ws_1 = _make_ws()
+    ws_2 = _make_ws()
+    instance_1._connections.add(ws_1)
+    instance_2._connections.add(ws_2)
+
+    alert_data = {"id": "28-28-both", "level": "critical", "host": "dc-01", "score": 9.5}
+    payload = await _capture_published_payload(instance_1, {"type": "alert", "data": alert_data})
+
+    # Simulate both subscriber loops receiving the same pub/sub message
+    for instance, ws in ((instance_1, ws_1), (instance_2, ws_2)):
+        mock_client = _make_sub_mock([payload])
+        with (
+            patch.object(ws_module, "aioredis") as mock_aioredis,
+            patch("asyncio.sleep", new=AsyncMock()),
+        ):
+            mock_aioredis.from_url.return_value = mock_client
+            await instance._subscriber_loop()
+
+        ws.send_text.assert_awaited_once_with(payload)
+        received = json.loads(ws.send_text.call_args[0][0])
+        assert received["type"] == "alert"
+        assert received["data"] == alert_data
+
+
+@pytest.mark.asyncio
+async def test_28_28_nested_alert_fields_preserved_exactly():
+    """Deeply nested alert data must be preserved byte-for-byte across the instance boundary."""
+    instance_1 = DistributedConnectionManager("redis://localhost:6379/0")
+    instance_2 = DistributedConnectionManager("redis://localhost:6379/0")
+    ws_2 = _make_ws()
+    instance_2._connections.add(ws_2)
+
+    alert_data = {
+        "id": "28-28-nested",
+        "rule_title": "Credential Dumping via LSASS",
+        "level": "critical",
+        "severity_id": 5,
+        "score": 9.8,
+        "host": "dc-01",
+        "technique_ids": ["T1003", "T1003.001"],
+        "tactic_ids": ["TA0006"],
+        "mitre": {
+            "technique": {"id": "T1003", "name": "OS Credential Dumping"},
+            "tactic": {"id": "TA0006", "name": "Credential Access"},
+        },
+        "asset": {"criticality": 1.0, "type": "domain_controller"},
+        "ts": "2026-02-21T12:00:00+00:00",
+    }
+    payload = await _capture_published_payload(instance_1, {"type": "alert", "data": alert_data})
+
+    mock_client = _make_sub_mock([payload])
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await instance_2._subscriber_loop()
+
+    received = json.loads(ws_2.send_text.call_args[0][0])
+    assert received["data"] == alert_data
+    assert received["data"]["mitre"]["technique"]["id"] == "T1003"
+    assert received["data"]["mitre"]["tactic"]["name"] == "Credential Access"
+    assert received["data"]["asset"]["criticality"] == 1.0
+    assert received["data"]["technique_ids"] == ["T1003", "T1003.001"]
+
+
+@pytest.mark.asyncio
+async def test_28_28_sequential_alerts_from_instance1_arrive_in_order():
+    """Three alerts broadcast by instance-1 must arrive at instance-2's client in the same order."""
+    instance_1 = DistributedConnectionManager("redis://localhost:6379/0")
+    instance_2 = DistributedConnectionManager("redis://localhost:6379/0")
+    ws_2 = _make_ws()
+    instance_2._connections.add(ws_2)
+
+    alerts = [
+        {"id": f"28-28-seq-{i}", "level": "medium", "host": f"host-{i}", "score": float(i + 1)}
+        for i in range(3)
+    ]
+
+    # Capture all three payloads in order
+    payloads: list[str] = []
+    for alert in alerts:
+        p = await _capture_published_payload(instance_1, {"type": "alert", "data": alert})
+        payloads.append(p)
+
+    # Feed all three into instance_2's subscriber loop in a single connection cycle
+    subscribe_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal subscribe_count
+        subscribe_count += 1
+        if subscribe_count >= 2:
+            raise asyncio.CancelledError()
+
+    async def fake_listen():
+        for payload in payloads:
+            yield {"type": "message", "data": payload}
+        raise RuntimeError("end of stream")
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_pubsub.listen = fake_listen
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await instance_2._subscriber_loop()
+
+    assert ws_2.send_text.await_count == 3
+    received_ids = [
+        json.loads(call[0][0])["data"]["id"]
+        for call in ws_2.send_text.call_args_list
+    ]
+    assert received_ids == ["28-28-seq-0", "28-28-seq-1", "28-28-seq-2"]
+
+
+@pytest.mark.asyncio
+async def test_28_28_dead_client_on_instance2_pruned_live_client_receives():
+    """Dead connection on instance-2 must be pruned while live client still receives from instance-1."""
+    instance_1 = DistributedConnectionManager("redis://localhost:6379/0")
+    instance_2 = DistributedConnectionManager("redis://localhost:6379/0")
+
+    alive = _make_ws()
+    dead = _make_ws()
+    dead.send_text.side_effect = RuntimeError("connection reset")
+    instance_2._connections.update({alive, dead})
+
+    alert_data = {"id": "28-28-dead", "level": "high", "host": "srv-02", "score": 7.0}
+    payload = await _capture_published_payload(instance_1, {"type": "alert", "data": alert_data})
+
+    mock_client = _make_sub_mock([payload])
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await instance_2._subscriber_loop()
+
+    # Live client received the alert from instance-1
+    alive.send_text.assert_awaited_once()
+    received = json.loads(alive.send_text.call_args[0][0])
+    assert received["type"] == "alert"
+    assert received["data"] == alert_data
+    # Dead client was pruned from instance-2's connection set
+    assert dead not in instance_2._connections
+
+
+@pytest.mark.asyncio
+async def test_28_28_instance1_valkey_down_instance2_not_reached():
+    """When instance-1's Valkey publish fails (falls back to local fanout), instance-2 must not receive.
+
+    If the Valkey pub client raises on publish(), broadcast() falls back to local _fanout_local().
+    Only instance-1's own clients receive the alert. Instance-2's clients are unreachable because
+    no message was published to the shared channel.
+    """
+    instance_1 = DistributedConnectionManager("redis://localhost:6379/0")
+    instance_2 = DistributedConnectionManager("redis://localhost:6379/0")
+
+    ws_1 = _make_ws()
+    ws_2 = _make_ws()
+    instance_1._connections.add(ws_1)
+    instance_2._connections.add(ws_2)
+
+    alert_data = {"id": "28-28-valkey-down", "level": "high", "host": "srv-03", "score": 6.5}
+
+    # Simulate instance-1's Valkey pub client being down (publish raises ConnectionError)
+    mock_pub_down = AsyncMock()
+    mock_pub_down.publish.side_effect = ConnectionError("valkey unreachable")
+    with patch.object(instance_1, "_get_pub_client", new=AsyncMock(return_value=mock_pub_down)):
+        await instance_1.broadcast({"type": "alert", "data": alert_data})
+
+    # Instance-1's local client received via fallback fanout
+    ws_1.send_text.assert_awaited_once()
+    received_1 = json.loads(ws_1.send_text.call_args[0][0])
+    assert received_1["type"] == "alert"
+    assert received_1["data"] == alert_data
+
+    # Instance-2's subscriber loop received nothing — no message was published to Valkey
+    ws_2.send_text.assert_not_awaited()
