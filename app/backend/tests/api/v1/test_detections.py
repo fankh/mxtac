@@ -212,6 +212,42 @@ async def test_list_detections_filter_tactic_no_match(client: AsyncClient, auth_
 
 
 @pytest.mark.asyncio
+async def test_list_detections_filter_host(client: AsyncClient, auth_headers: dict) -> None:
+    """?host=WS-01 returns only detections from that host."""
+    ws_det = _make_detection(id="DET-WS", host="WS-01")
+    with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([ws_det], 1))):
+        resp = await client.get("/api/v1/detections?host=WS-01", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pagination"]["total"] == 1
+    for item in data["items"]:
+        assert "WS-01" in item["host"]
+
+
+@pytest.mark.asyncio
+async def test_list_detections_filter_host_partial(client: AsyncClient, auth_headers: dict) -> None:
+    """?host=dc matches DC-PROD-01 (partial, case-insensitive)."""
+    dc_det = _make_detection(id="DET-DC", host="DC-PROD-01")
+    with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([dc_det], 1))):
+        resp = await client.get("/api/v1/detections?host=dc", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pagination"]["total"] == 1
+    assert data["items"][0]["host"] == "DC-PROD-01"
+
+
+@pytest.mark.asyncio
+async def test_list_detections_filter_host_no_match(client: AsyncClient, auth_headers: dict) -> None:
+    """?host=nonexistent returns empty results."""
+    with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([], 0))):
+        resp = await client.get("/api/v1/detections?host=nonexistent", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["items"] == []
+    assert data["pagination"]["total"] == 0
+
+
+@pytest.mark.asyncio
 async def test_list_detections_search(client: AsyncClient, auth_headers: dict) -> None:
     """?search=lsass passes the term to the repo and returns a list."""
     with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([_LSASS_DET], 1))):
