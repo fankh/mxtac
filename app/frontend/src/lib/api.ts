@@ -7,6 +7,22 @@ import type {
 const http = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
+  paramsSerializer: {
+    // Serialize arrays as repeated keys: severity=critical&severity=high
+    // (FastAPI's list[...] = Query(None) expects this format, not bracket notation)
+    serialize: (params: Record<string, unknown>) => {
+      const parts: string[] = []
+      for (const [key, value] of Object.entries(params)) {
+        if (value === undefined || value === null) continue
+        if (Array.isArray(value)) {
+          for (const v of value) parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(v))}`)
+        } else {
+          parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+        }
+      }
+      return parts.join('&')
+    },
+  },
 })
 
 // Attach token if present

@@ -1,6 +1,7 @@
 """Tests for POST /api/v1/auth/login — Feature 1.1
 Tests for expired token → 401 — Feature 28.4
 Tests for token refresh — Feature 28.5
+Tests for refresh token rotation — Feature 1.2
 
 Coverage:
   - Happy path: status code, response schema, JWT claims
@@ -15,6 +16,7 @@ Coverage:
   - Expired token: past exp claim on protected endpoint → 401 (Feature 28.4)
   - Expired refresh token: POST /auth/refresh with expired token → 401
   - Token refresh: happy path, invalid token, access token rejected, inactive user (Feature 28.5)
+  - Refresh token rotation: new refresh token issued on each call, never echoes old token (Feature 1.2)
 
 All tests that exercise business logic mock ``UserRepo.get_by_email`` and
 ``verify_password`` so the suite runs without a live database or a working
@@ -596,12 +598,12 @@ async def test_refresh_returns_new_access_token(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_refresh_echoes_refresh_token(client: AsyncClient) -> None:
-    """Response refresh_token is the same token that was submitted."""
+async def test_refresh_rotation_issues_new_token(client: AsyncClient) -> None:
+    """Rotation: response refresh_token is a NEW token, different from the submitted one."""
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
         resp = await client.post(REFRESH_URL, json={"refresh_token": token})
-    assert resp.json()["refresh_token"] == token
+    assert resp.json()["refresh_token"] != token
 
 
 @pytest.mark.asyncio
@@ -745,3 +747,58 @@ async def test_refresh_get_method_not_allowed(client: AsyncClient) -> None:
     """GET /auth/refresh → 405 Method Not Allowed."""
     resp = await client.get(REFRESH_URL)
     assert resp.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# Feature 1.2 — Refresh token rotation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rotation_new_refresh_token_has_type_claim(client: AsyncClient) -> None:
+    """Rotated refresh_token carries type='refresh' claim."""
+    token = _make_refresh_token()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
+        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+    new_token = resp.json()["refresh_token"]
+    payload = _decode(new_token)
+    assert payload.get("type") == "refresh"
+
+
+@pytest.mark.asyncio
+async def test_rotation_new_refresh_token_sub(client: AsyncClient) -> None:
+    """Rotated refresh_token sub claim matches the authenticated user's email."""
+    token = _make_refresh_token(sub="analyst@mxtac.local")
+    with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user(email="analyst@mxtac.local"))):
+        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+    payload = _decode(resp.json()["refresh_token"])
+    assert payload["sub"] == "analyst@mxtac.local"
+
+
+@pytest.mark.asyncio
+async def test_rotation_new_refresh_token_exp_in_future(client: AsyncClient) -> None:
+    """Rotated refresh_token exp claim is strictly in the future."""
+    import time
+    token = _make_refresh_token()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
+        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+    payload = _decode(resp.json()["refresh_token"])
+    assert payload["exp"] > time.time()
+
+
+@pytest.mark.asyncio
+async def test_rotation_chained_refresh_each_token_differs(client: AsyncClient) -> None:
+    """Two successive refreshes each produce a distinct refresh token (no re-use)."""
+    token1 = _make_refresh_token()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
+        resp1 = await client.post(REFRESH_URL, json={"refresh_token": token1})
+    token2 = resp1.json()["refresh_token"]
+
+    assert token2 != token1
+
+    with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
+        resp2 = await client.post(REFRESH_URL, json={"refresh_token": token2})
+    token3 = resp2.json()["refresh_token"]
+
+    assert token3 != token2
+    assert token3 != token1

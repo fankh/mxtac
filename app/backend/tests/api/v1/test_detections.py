@@ -146,6 +146,24 @@ async def test_list_detections_filter_severity(client: AsyncClient, auth_headers
 
 
 @pytest.mark.asyncio
+async def test_list_detections_filter_severity_multi(client: AsyncClient, auth_headers: dict) -> None:
+    """?severity=critical&severity=high returns only critical and high detections."""
+    _high_det = _make_detection(id="DET-H", severity="high", status="active")
+    with patch(
+        f"{MOCK_REPO}.list",
+        new=AsyncMock(return_value=([_CRITICAL_DET, _high_det], 2)),
+    ):
+        resp = await client.get(
+            "/api/v1/detections?severity=critical&severity=high", headers=auth_headers
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pagination"]["total"] == 2
+    for item in data["items"]:
+        assert item["severity"] in ("critical", "high")
+
+
+@pytest.mark.asyncio
 async def test_list_detections_filter_status(client: AsyncClient, auth_headers: dict) -> None:
     """?status=active only returns active detections."""
     with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([_ACTIVE_DET], 1))):

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from uuid import uuid4
 
 from fastapi import Depends, Header, HTTPException, status
 from jose import JWTError, jwt
@@ -21,7 +22,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 def create_refresh_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
-    to_encode.update({"exp": expire, "type": "refresh"})
+    to_encode.update({"exp": expire, "type": "refresh", "jti": str(uuid4())})
     return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
 
 

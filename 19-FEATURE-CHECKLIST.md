@@ -143,7 +143,7 @@
 | # | Feature | Impl | Test | Priority | Notes |
 |---|---------|:----:|:----:|----------|-------|
 | 7.1 | `OCSFEvent` Pydantic schema | `[x]` | `[ ]` | P0 | `normalizers/ocsf.py` |
-| 7.2 | Wazuh → OCSF: `rule.level` → `severity_id` | `[~]` | `[ ]` | P0 | Skeleton only |
+| 7.2 | Wazuh → OCSF: `rule.level` → `severity_id` | `[x]` | `[x]` | P0 | 74 tests: all tiers, boundaries, classify, MITRE, round-trip |
 | 7.3 | Wazuh → OCSF: MITRE tags → `attacks[]` | `[ ]` | `[ ]` | P0 | |
 | 7.4 | Wazuh → OCSF: `agent` → `dst_endpoint` | `[ ]` | `[ ]` | P0 | |
 | 7.5 | Wazuh → OCSF: Windows event data → `process` | `[ ]` | `[ ]` | P0 | |
@@ -536,7 +536,7 @@
 | 28.7 | RBAC: analyst can update detection status | `[x]` | `[T]` | P0 | 8 tests: viewer→403 (×2), analyst/hunter/engineer/admin→200, assigned_to, priority |
 | 28.8 | RBAC: engineer can create rules | `[x]` | `[T]` | P0 | 8 tests: unauth→401/403, viewer/analyst/hunter→403, engineer/admin→201, invalid→422, disabled |
 | 28.9 | RBAC: admin can manage users | `[ ]` | `[ ]` | P0 | |
-| 28.10 | Normalizer: Wazuh level 14 → severity_id 5 | `[ ]` | `[ ]` | P0 | |
+| 28.10 | Normalizer: Wazuh level 14 → severity_id 5 | `[x]` | `[x]` | P0 | `test_level_14_maps_to_severity_5` |
 | 28.11 | Normalizer: Wazuh MITRE tags → attacks[] | `[ ]` | `[ ]` | P0 | |
 | 28.12 | Normalizer: Zeek conn → NetworkActivity | `[ ]` | `[ ]` | P0 | |
 | 28.13 | Normalizer: Suricata severity 1 → severity_id 4 | `[ ]` | `[ ]` | P0 | |

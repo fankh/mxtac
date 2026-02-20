@@ -43,9 +43,10 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
     token = create_access_token({"sub": user.email, "role": user.role})
+    new_refresh = create_refresh_token({"sub": user.email})
     return TokenResponse(
         access_token=token,
-        refresh_token=body.refresh_token,
+        refresh_token=new_refresh,
         expires_in=3600,
     )
 

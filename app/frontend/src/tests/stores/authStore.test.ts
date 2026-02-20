@@ -180,7 +180,12 @@ describe('authStore', () => {
       })
       logoutMock.mockRejectedValueOnce(new Error('Network error'))
 
-      await useAuthStore.getState().logout()
+      // logout uses try/finally — the error propagates but the finally block still clears state
+      try {
+        await useAuthStore.getState().logout()
+      } catch {
+        // expected: error re-throws after finally runs
+      }
 
       expect(useAuthStore.getState().isAuthenticated).toBe(false)
       expect(useAuthStore.getState().user).toBeNull()

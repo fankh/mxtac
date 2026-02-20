@@ -4,7 +4,7 @@ import type { Detection, SeverityLevel, DetectionStatus } from '../types/api'
 type SortKey = 'score' | 'time' | 'severity' | 'host' | 'tactic'
 
 interface DetectionFilters {
-  severity?: SeverityLevel
+  severity?: SeverityLevel[]
   status?: DetectionStatus
   tactic?: string
   host?: string

@@ -23,6 +23,7 @@ Coverage:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, patch
 
@@ -468,3 +469,327 @@ async def test_mock_replay_stops_on_send_error():
         await ws_module._mock_replay(ws)
 
     assert call_count == 1  # loop must stop after the first failure
+
+
+# ---------------------------------------------------------------------------
+# Section 6 — _get_pub_client unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dcm_get_pub_client_creates_lazily():
+    """_get_pub_client() must create the Valkey client on the first call."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    mock_client = AsyncMock()
+    with patch.object(ws_module, "aioredis") as mock_aioredis:
+        mock_aioredis.from_url.return_value = mock_client
+        client = await m._get_pub_client()
+    mock_aioredis.from_url.assert_called_once()
+    assert client is mock_client
+    assert m._pub_client is mock_client
+
+
+@pytest.mark.asyncio
+async def test_dcm_get_pub_client_caches_client():
+    """_get_pub_client() must return the same client instance on subsequent calls."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    mock_client = AsyncMock()
+    with patch.object(ws_module, "aioredis") as mock_aioredis:
+        mock_aioredis.from_url.return_value = mock_client
+        client1 = await m._get_pub_client()
+        client2 = await m._get_pub_client()
+    mock_aioredis.from_url.assert_called_once()  # created only once
+    assert client1 is client2
+
+
+@pytest.mark.asyncio
+async def test_dcm_get_pub_client_uses_valkey_url():
+    """_get_pub_client() must pass the configured Valkey URL to from_url."""
+    url = "redis://custom-host:6380/1"
+    m = DistributedConnectionManager(url)
+    mock_client = AsyncMock()
+    with patch.object(ws_module, "aioredis") as mock_aioredis:
+        mock_aioredis.from_url.return_value = mock_client
+        await m._get_pub_client()
+    mock_aioredis.from_url.assert_called_once_with(url, decode_responses=True)
+
+
+# ---------------------------------------------------------------------------
+# Section 7 — shutdown unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dcm_shutdown_no_op_when_nothing_started():
+    """shutdown() with no task and no pub client must complete without error."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    await m.shutdown()  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_dcm_shutdown_resets_started_flag():
+    """shutdown() must set _started to False."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    m._started = True
+    await m.shutdown()
+    assert m._started is False
+
+
+@pytest.mark.asyncio
+async def test_dcm_shutdown_closes_pub_client():
+    """shutdown() must call aclose() on an existing pub client and clear the reference."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    mock_client = AsyncMock()
+    m._pub_client = mock_client
+    await m.shutdown()
+    mock_client.aclose.assert_awaited_once()
+    assert m._pub_client is None
+
+
+@pytest.mark.asyncio
+async def test_dcm_shutdown_cancels_running_task():
+    """shutdown() must cancel a live asyncio.Task and wait for it to finish."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+
+    async def hang_forever():
+        await asyncio.sleep(3600)
+
+    task = asyncio.create_task(hang_forever())
+    m._subscriber_task = task
+    m._started = True
+
+    await m.shutdown()
+
+    assert task.cancelled()
+    assert m._started is False
+
+
+# ---------------------------------------------------------------------------
+# Section 8 — _ensure_subscriber unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dcm_ensure_subscriber_sets_started_and_creates_task():
+    """_ensure_subscriber() must set _started=True and assign _subscriber_task."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+
+    async def fast_noop():
+        pass  # completes immediately — no real Valkey calls
+
+    with patch.object(m, "_subscriber_loop", return_value=fast_noop()):
+        await m._ensure_subscriber()
+
+    assert m._started is True
+    assert m._subscriber_task is not None
+
+
+@pytest.mark.asyncio
+async def test_dcm_ensure_subscriber_idempotent_when_started():
+    """_ensure_subscriber() with _started=True must return without creating a task."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    m._started = True  # pre-set to simulate already-running state
+
+    with patch("asyncio.create_task") as mock_create:
+        await m._ensure_subscriber()
+
+    mock_create.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Section 9 — broadcast happy-path unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dcm_broadcast_publishes_to_correct_channel():
+    """broadcast() must publish to the 'mxtac:alerts' channel when Valkey is healthy."""
+    from app.api.v1.endpoints.websocket import _CHANNEL
+
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    mock_pub = AsyncMock()
+    with patch.object(m, "_get_pub_client", new=AsyncMock(return_value=mock_pub)):
+        await m.broadcast({"type": "alert", "data": {"id": "t-001"}})
+
+    mock_pub.publish.assert_awaited_once()
+    assert mock_pub.publish.call_args[0][0] == _CHANNEL
+
+
+@pytest.mark.asyncio
+async def test_dcm_broadcast_sends_json_encoded_payload():
+    """broadcast() must JSON-encode the message dict before publishing."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    mock_pub = AsyncMock()
+    msg = {"type": "alert", "data": {"id": "t-002", "severity": "high"}}
+
+    with patch.object(m, "_get_pub_client", new=AsyncMock(return_value=mock_pub)):
+        await m.broadcast(msg)
+
+    raw_payload = mock_pub.publish.call_args[0][1]
+    assert json.loads(raw_payload) == msg
+
+
+@pytest.mark.asyncio
+async def test_dcm_broadcast_success_does_not_call_local_fanout():
+    """broadcast() must not invoke _fanout_local directly on a successful publish."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    ws = _make_ws()
+    m._connections.add(ws)
+    mock_pub = AsyncMock()
+
+    with patch.object(m, "_get_pub_client", new=AsyncMock(return_value=mock_pub)):
+        await m.broadcast({"type": "alert", "data": {"id": "t-003"}})
+
+    # Local fanout goes through Valkey subscriber, not directly — ws must not be called
+    ws.send_text.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Section 10 — _subscriber_loop unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dcm_subscriber_loop_exits_cleanly_on_cancelled_error():
+    """_subscriber_loop() must break out of the retry loop on CancelledError."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    mock_client = AsyncMock()
+    mock_pubsub = AsyncMock()
+    mock_client.pubsub.return_value = mock_pubsub
+    mock_pubsub.subscribe.side_effect = asyncio.CancelledError()
+
+    with patch.object(ws_module, "aioredis") as mock_aioredis:
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()  # must return, not re-raise
+
+    # finally block must close the sub_client even on CancelledError
+    mock_client.aclose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_dcm_subscriber_loop_retries_after_connection_error():
+    """_subscriber_loop() must retry after a transient error, then stop on CancelledError."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    call_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise ConnectionError("Valkey unavailable")
+        raise asyncio.CancelledError()
+
+    mock_client = AsyncMock()
+    mock_pubsub = AsyncMock()
+    mock_client.pubsub.return_value = mock_pubsub
+    mock_pubsub.subscribe = mock_subscribe
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    assert call_count == 2  # failed once, then exited on CancelledError
+
+
+@pytest.mark.asyncio
+async def test_dcm_subscriber_loop_closes_sub_client_in_finally():
+    """_subscriber_loop() must call aclose() on the sub_client after every iteration."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    call_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise ConnectionError("first failure")
+        raise asyncio.CancelledError()
+
+    mock_client = AsyncMock()
+    mock_pubsub = AsyncMock()
+    mock_client.pubsub.return_value = mock_pubsub
+    mock_pubsub.subscribe = mock_subscribe
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    # Two iterations → aclose() called twice
+    assert mock_client.aclose.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_dcm_subscriber_loop_fanouts_messages_to_local_connections():
+    """_subscriber_loop() must call _fanout_local() for 'message' type events only."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    alert_payload = json.dumps({"type": "alert", "data": {"id": "t-fan"}})
+
+    async def fake_listen():
+        yield {"type": "subscribe", "data": None}   # ignored — not 'message'
+        yield {"type": "message", "data": alert_payload}
+        raise asyncio.CancelledError()
+
+    mock_client = AsyncMock()
+    mock_pubsub = AsyncMock()
+    mock_client.pubsub.return_value = mock_pubsub
+    mock_pubsub.subscribe = AsyncMock()
+    mock_pubsub.listen = fake_listen
+
+    fanout_calls: list[str] = []
+
+    async def capture_fanout(payload: str) -> None:
+        fanout_calls.append(payload)
+
+    with patch.object(ws_module, "aioredis") as mock_aioredis:
+        mock_aioredis.from_url.return_value = mock_client
+        with patch.object(m, "_fanout_local", side_effect=capture_fanout):
+            await m._subscriber_loop()
+
+    assert len(fanout_calls) == 1
+    assert json.loads(fanout_calls[0])["type"] == "alert"
+
+
+# ---------------------------------------------------------------------------
+# Section 11 — Integration edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_ws_malformed_json_handled_gracefully(ws_mocks):
+    """Malformed JSON from the client must be handled; manager.disconnect still called."""
+    with patch.object(manager, "disconnect") as mock_disconnect:
+        with TestClient(app) as client:
+            with client.websocket_connect(WS_URL) as ws:
+                ws.receive_json()  # consume "connected"
+                ws.send_text("{bad json {{{{")  # malformed — json.loads raises
+    mock_disconnect.assert_called_once()
+
+
+def test_ws_multiple_filter_messages_each_get_acked(ws_mocks):
+    """Each filter message sent in sequence must receive its own independent ack."""
+    with TestClient(app) as client:
+        with client.websocket_connect(WS_URL) as ws:
+            ws.receive_json()  # connected
+            ws.send_json({"type": "filter", "data": {"severity": "high"}})
+            ack1 = ws.receive_json()
+            ws.send_json({"type": "filter", "data": {"tactic": "Discovery"}})
+            ack2 = ws.receive_json()
+    assert ack1["type"] == "ack"
+    assert ack1["filter"] == {"severity": "high"}
+    assert ack2["type"] == "ack"
+    assert ack2["filter"] == {"tactic": "Discovery"}
+
+
+def test_ws_filter_with_no_data_key_acks_none(ws_mocks):
+    """A filter message missing the 'data' key must ack with filter=None."""
+    with TestClient(app) as client:
+        with client.websocket_connect(WS_URL) as ws:
+            ws.receive_json()
+            ws.send_json({"type": "filter"})  # no 'data' key
+            ack = ws.receive_json()
+    assert ack["type"] == "ack"
+    assert ack["filter"] is None

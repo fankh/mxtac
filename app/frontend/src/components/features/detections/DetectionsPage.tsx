@@ -36,19 +36,26 @@ function FilterChip({
 }
 
 export function DetectionsPage() {
-  const [severity, setSeverity]   = useState<SeverityLevel | undefined>()
-  const [status, setStatus]       = useState<DetectionStatus | undefined>()
-  const [search, setSearch]       = useState('')
-  const [sortKey, setSortKey]     = useState<SortKey>('score')
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
-  const [selected, setSelected]   = useState<Detection | null>(null)
-  const [page, setPage]           = useState(1)
+  const [severities, setSeverities] = useState<SeverityLevel[]>([])
+  const [status, setStatus]         = useState<DetectionStatus | undefined>()
+  const [search, setSearch]         = useState('')
+  const [sortKey, setSortKey]       = useState<SortKey>('score')
+  const [sortOrder, setSortOrder]   = useState<'asc' | 'desc'>('desc')
+  const [selected, setSelected]     = useState<Detection | null>(null)
+  const [page, setPage]             = useState(1)
+
+  function toggleSeverity(s: SeverityLevel) {
+    setSeverities((prev) =>
+      prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]
+    )
+    setPage(1)
+  }
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['detections', { severity, status, search, sortKey, sortOrder, page }],
+    queryKey: ['detections', { severities, status, search, sortKey, sortOrder, page }],
     queryFn: () =>
       detectionsApi.list({
-        severity,
+        severity: severities.length > 0 ? severities : undefined,
         status,
         search: search || undefined,
         sort: sortKey,
@@ -100,8 +107,8 @@ export function DetectionsPage() {
               <FilterChip
                 key={s}
                 label={s.charAt(0).toUpperCase() + s.slice(1)}
-                active={severity === s}
-                onClick={() => { setSeverity(severity === s ? undefined : s); setPage(1) }}
+                active={severities.includes(s)}
+                onClick={() => toggleSeverity(s)}
               />
             ))}
           </div>
@@ -137,7 +144,7 @@ export function DetectionsPage() {
           <div className="flex items-center gap-3 mb-2">
             <span className="text-[11px] text-text-muted">
               {pagination.total.toLocaleString()} detections
-              {severity && ` · ${severity}`}
+              {severities.length > 0 && ` · ${severities.join(', ')}`}
               {status && ` · ${status}`}
             </span>
           </div>

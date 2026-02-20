@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 
 from .config import settings
+from .context import build_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +65,16 @@ class Executor:
         working_directory: str | None = None,
         model: str | None = None,
         task_db_id: int | None = None,
+        task_id: str = "",
+        attempt: int = 1,
+        max_retries: int = 3,
     ) -> ExecutionResult:
         """Execute a Claude CLI command with semaphore gating and rate limiting."""
         async with self._semaphore:
             await self._wait_for_rate_limit()
 
-            cmd = self._build_command(prompt, model)
+            full_prompt = build_prompt(prompt, task_id, attempt, max_retries)
+            cmd = self._build_command(full_prompt, model)
             env = self._build_env()
             cwd = working_directory or settings.mxtac_project_root
 
