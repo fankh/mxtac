@@ -382,8 +382,8 @@
 | # | Feature | Impl | Test | Priority | Notes |
 |---|---------|:----:|:----:|----------|-------|
 | 20.1 | Pipeline runs without UI or user action | `[~]` | `[ ]` | P0 | Needs wiring (Task 2.4) |
-| 20.2 | `systemd` service unit file | `[ ]` | `[ ]` | P1 | `app/deploy/systemd/mxtac.service` |
-| 20.3 | Process supervisor `Restart=always` | `[ ]` | `[ ]` | P1 | |
+| 20.2 | `systemd` service unit file | `[x]` | `[ ]` | P1 | `app/deploy/systemd/mxtac.service` |
+| 20.3 | Process supervisor `Restart=always` | `[x]` | `[ ]` | P1 | Included in `mxtac.service` |
 | 20.4 | Alert output to file (JSON per line) | `[ ]` | `[ ]` | P1 | No dashboard needed |
 | 20.5 | Alert output to syslog | `[ ]` | `[ ]` | P2 | |
 | 20.6 | Alert output to webhook (configurable URL) | `[ ]` | `[ ]` | P1 | POST JSON |

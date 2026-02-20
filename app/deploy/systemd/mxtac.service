@@ -1,0 +1,115 @@
+# /etc/systemd/system/mxtac.service
+#
+# MxTac Security Operations Platform — systemd service unit
+#
+# Installation:
+#   sudo cp mxtac.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mxtac
+#
+# Logs:
+#   journalctl -u mxtac -f
+#
+# See also: install.sh, mxtac.env.example
+
+[Unit]
+Description=MxTac Security Operations Platform
+Documentation=https://github.com/your-org/mxtac
+# Start after the network is fully reachable and (optionally) PostgreSQL is up.
+# If PostgreSQL runs on a remote host, remove postgresql.service from After=.
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=mxtac
+Group=mxtac
+WorkingDirectory=/opt/mxtac
+
+# ── Environment ────────────────────────────────────────────────────────────────
+# Copy mxtac.env.example → /etc/mxtac/mxtac.env and populate before starting.
+# The leading '-' means systemd will NOT fail if the file is missing (dev mode).
+EnvironmentFile=-/etc/mxtac/mxtac.env
+
+# ── Pre-start: database migrations ────────────────────────────────────────────
+# Alembic upgrade is idempotent — safe to run on every start.
+# Remove if running a managed database with external migration CI.
+ExecStartPre=/opt/mxtac/venv/bin/alembic \
+    -c /opt/mxtac/alembic.ini \
+    upgrade head
+
+# ── Main process ───────────────────────────────────────────────────────────────
+# Single Uvicorn worker — horizontal scaling is handled by HAProxy / k3s.
+# Increase --workers only on a dedicated single-node box where horizontal
+# scaling is not in use. WebSocket broadcaster requires sticky sessions when
+# workers > 1 without an external message broker.
+ExecStart=/opt/mxtac/venv/bin/uvicorn app.main:app \
+    --host 0.0.0.0 \
+    --port 8080 \
+    --workers 1 \
+    --log-level info \
+    --access-log \
+    --no-use-colors
+
+# ── Restart policy (feature 20.3) ──────────────────────────────────────────────
+# Restart the service whenever it exits for any reason (crash, OOM, etc.).
+Restart=always
+# Wait 5 s before restarting to avoid hammering a broken dependency.
+RestartSec=5s
+# Allow up to 5 rapid restarts within 60 s before systemd gives up entirely.
+# Raise StartLimitBurst if the upstream dependency (DB) takes longer to start.
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+# ── Graceful shutdown ──────────────────────────────────────────────────────────
+# Send SIGTERM to the main process; Uvicorn drains in-flight requests then exits.
+KillMode=mixed
+KillSignal=SIGTERM
+# Give Uvicorn up to 30 s to drain connections. Matches k3s terminationGracePeriod.
+TimeoutStopSec=30s
+
+# ── Security hardening ─────────────────────────────────────────────────────────
+# Run with minimal privileges. The mxtac user should own /opt/mxtac and have
+# write access only to the data directories listed in ReadWritePaths.
+NoNewPrivileges=true
+# Mount /usr, /boot, /etc as read-only; allow writes only to listed paths.
+ProtectSystem=strict
+ProtectHome=true
+# Paths the process needs write access to (logs, SQLite fallback, PID socket).
+ReadWritePaths=/opt/mxtac/data /var/log/mxtac /run/mxtac
+# Private /tmp — prevents temp-file disclosure between services.
+PrivateTmp=true
+# Prevent loading kernel modules.
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+# Prevent acquiring SUID/GUID bits.
+RestrictSUIDSGID=true
+# Prevent exec with personality() (mitigates some exploitation techniques).
+LockPersonality=true
+# Restrict to the system-service syscall set (covers asyncio, sockets, etc.).
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# ── Resource limits ────────────────────────────────────────────────────────────
+# 65 536 open file descriptors — needed for high connection counts.
+LimitNOFILE=65536
+LimitNPROC=512
+
+# ── Logging ────────────────────────────────────────────────────────────────────
+# Stdout/stderr go to the systemd journal. Query with: journalctl -u mxtac
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mxtac
+
+# ── Runtime / log directories ──────────────────────────────────────────────────
+# systemd creates /run/mxtac (mode 0750, owner mxtac) on every start and
+# removes it on stop. Use for PID files or Unix sockets.
+RuntimeDirectory=mxtac
+RuntimeDirectoryMode=0750
+# systemd creates /var/log/mxtac (persistent) if it does not exist.
+LogsDirectory=mxtac
+LogsDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target
