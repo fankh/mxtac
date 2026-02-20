@@ -5,13 +5,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....repositories.detection_repo import DetectionRepo
 from ....repositories.incident_repo import IncidentRepo
 from ....schemas.overview import KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus
-from ....services.mock_data import KPI, TIMELINE, TACTICS, HEATMAP, INTEGRATIONS, TACTIC_LABELS
+from ....services.mock_data import KPI, TACTICS, HEATMAP, INTEGRATIONS, TACTIC_LABELS
 from ....schemas.detection import Detection
 from ....services.mock_data import DETECTIONS
 
 router = APIRouter(prefix="/overview", tags=["overview"])
+
+_RANGE_DAYS: dict[str, int] = {"24h": 1, "7d": 7, "30d": 30, "90d": 90}
+
+
+def _parse_range_days(range_str: str) -> int:
+    return _RANGE_DAYS.get(range_str, 7)
 
 
 @router.get("/kpis", response_model=KpiMetrics)
@@ -37,11 +44,32 @@ async def get_kpis(
 
 @router.get("/timeline", response_model=list[TimelinePoint])
 async def get_timeline(
-    range: str = Query("7d"),
+    range: str = Query("7d", description="Time range: 24h | 7d | 30d | 90d"),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("detections:read")),
 ):
     """Detection counts per day broken down by severity."""
-    return TIMELINE
+    days = _parse_range_days(range)
+    now = datetime.now(timezone.utc)
+    from_date = now - timedelta(days=days)
+
+    db_rows = await DetectionRepo.get_timeline(db, from_date=from_date, to_date=now)
+    by_day = {row["day"]: row for row in db_rows}
+
+    result: list[TimelinePoint] = []
+    for i in range(days - 1, -1, -1):
+        day = (now - timedelta(days=i)).date()
+        row = by_day.get(str(day))
+        result.append(
+            TimelinePoint(
+                date=f"{day.strftime('%b')} {day.day}",
+                critical=row["critical"] if row else 0,
+                high=row["high"] if row else 0,
+                medium=row["medium"] if row else 0,
+                total=row["total"] if row else 0,
+            )
+        )
+    return result
 
 
 @router.get("/tactics", response_model=list[TacticBar])

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from math import ceil
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.detection import Detection
@@ -99,3 +100,40 @@ class DetectionRepo:
     async def count(session: AsyncSession) -> int:
         result = await session.scalar(select(func.count()).select_from(Detection))
         return result or 0
+
+    @staticmethod
+    async def get_timeline(
+        session: AsyncSession,
+        *,
+        from_date: datetime,
+        to_date: datetime,
+    ) -> list[dict]:
+        """Return daily detection counts grouped by severity for a date range.
+
+        Each returned dict has keys: day (YYYY-MM-DD str), critical, high, medium, total.
+        Only days that have at least one detection are included; the caller fills gaps.
+        """
+        q = (
+            select(
+                func.date(Detection.time).label("day"),
+                func.sum(case((Detection.severity == "critical", 1), else_=0)).label("critical"),
+                func.sum(case((Detection.severity == "high", 1), else_=0)).label("high"),
+                func.sum(case((Detection.severity == "medium", 1), else_=0)).label("medium"),
+                func.count().label("total"),
+            )
+            .where(Detection.time >= from_date)
+            .where(Detection.time <= to_date)
+            .group_by(func.date(Detection.time))
+            .order_by(func.date(Detection.time))
+        )
+        result = await session.execute(q)
+        return [
+            {
+                "day": str(row.day),
+                "critical": int(row.critical or 0),
+                "high": int(row.high or 0),
+                "medium": int(row.medium or 0),
+                "total": int(row.total),
+            }
+            for row in result.all()
+        ]
