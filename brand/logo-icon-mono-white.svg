@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <filter id="neonGlow">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur"/>
+      <feFlood flood-color="#00FF41" flood-opacity="0.35" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Outline-only: green border + green M for overlays on dark/photo backgrounds -->
+  <rect width="128" height="128" rx="24" fill="none" stroke="#00FF41" stroke-width="4" filter="url(#neonGlow)"/>
+  <path d="M38 90 V48 L64 68 L90 48 V90"
+        fill="none" stroke="#00FF41" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"
+        filter="url(#neonGlow)"/>
+</svg>

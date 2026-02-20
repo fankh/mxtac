@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MxTac — Brand &amp; CI Sheet</title>
+<style>
+:root {
+  --primary: #00FF41;
+  --primary-dark: #00CC33;
+  --primary-light: #33FF66;
+  --primary-bg: #0A1A0E;
+  --critical: #FF3333;
+  --critical-bg: #1A0808;
+  --high: #FF8800;
+  --high-bg: #1A1008;
+  --medium: #00CC33;
+  --medium-bg: #0A1A0E;
+  --low: #446644;
+  --low-bg: #0D1A0D;
+  --connected: #00FF41;
+  --connected-bg: #0A1A0E;
+  --warning: #FF8800;
+  --disabled: #334433;
+  --text-primary: #00FF41;
+  --text-secondary: #00CC33;
+  --text-muted: #337733;
+  --text-faint: #1A3A1A;
+  --surface: #0D0D0D;
+  --page-bg: #050505;
+  --border: #1A2A1A;
+  --border-strong: #224422;
+  --font: 'Courier New', 'Consolas', 'Fira Code', monospace;
+  --font-mono: 'Courier New', 'Consolas', 'Fira Code', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  color: var(--text-primary);
+  background: var(--page-bg);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.ci-container {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 40px 32px 60px;
+}
+
+/* -- Header ------------------------------------------------- */
+.ci-header {
+  text-align: center;
+  margin-bottom: 48px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+}
+.ci-header h1 {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.ci-header p {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.ci-header .version {
+  display: inline-block;
+  background: var(--primary-bg);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  margin-top: 8px;
+}
+
+/* -- Sections ----------------------------------------------- */
+.section {
+  margin-bottom: 48px;
+}
+.section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 20px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* -- Logo Grid ---------------------------------------------- */
+.logo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.logo-card {
+  border-radius: 8px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  border: 1px solid var(--border);
+  position: relative;
+}
+.logo-card.light { background: var(--surface); }
+.logo-card.dark { background: #000000; }
+.logo-card.gray { background: #0A0A0A; }
+
+.logo-card img {
+  max-width: 100%;
+  max-height: 80px;
+  object-fit: contain;
+}
+
+.logo-card-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 12px;
+  text-align: center;
+}
+.logo-card.dark .logo-card-label { color: rgba(255,255,255,0.45); }
+
+.logo-card-filename {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+.logo-card.dark .logo-card-filename { color: rgba(255,255,255,0.25); }
+
+/* -- Color Palette ------------------------------------------ */
+.color-group {
+  margin-bottom: 24px;
+}
+.color-group-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.color-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.color-chip {
+  width: 140px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.color-chip-swatch {
+  height: 52px;
+}
+.color-chip-info {
+  padding: 8px 10px;
+}
+.color-chip-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.color-chip-hex {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.color-chip-usage {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* -- Typography --------------------------------------------- */
+.type-row {
+  display: flex;
+  align-items: baseline;
+  gap: 24px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.type-spec {
+  width: 200px;
+  flex-shrink: 0;
+}
+.type-spec-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.type-spec-detail {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.type-sample {
+  flex: 1;
+}
+
+/* -- Spacing ------------------------------------------------ */
+.spacing-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.spacing-bar {
+  background: var(--primary);
+  border-radius: 3px;
+  height: 16px;
+  opacity: 0.7;
+}
+.spacing-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 60px;
+  flex-shrink: 0;
+}
+.spacing-px {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  width: 40px;
+}
+
+/* -- Components --------------------------------------------- */
+.component-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.component-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-primary);
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.score-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 11px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.btn-sm {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* -- Clearspace / Misuse ------------------------------------ */
+.clearspace-demo {
+  display: inline-block;
+  position: relative;
+  padding: 32px;
+  background: #0A0A0A;
+  border: 1px dashed var(--primary);
+  border-radius: 8px;
+}
+.clearspace-demo img {
+  display: block;
+  height: 48px;
+}
+.clearspace-label {
+  position: absolute;
+  font-size: 9px;
+  color: var(--primary);
+  font-family: var(--font-mono);
+}
+
+.misuse-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.misuse-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+.misuse-card.bad {
+  position: relative;
+}
+.misuse-card.bad::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 20px;
+  height: 20px;
+  background: var(--critical-bg);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.misuse-label {
+  font-size: 9px;
+  color: var(--critical);
+  font-weight: 600;
+  margin-top: 8px;
+}
+</style>
+</head>
+<body>
+<div class="ci-container">
+
+  <!-- ===== HEADER ===== -->
+  <div class="ci-header">
+    <h1>MxTac Brand &amp; CI</h1>
+    <p>Corporate Identity Guidelines &mdash; Visual Language Reference</p>
+    <span class="version">v3.0 Matrix &middot; 2026-02-20</span>
+  </div>
+
+  <!-- ===== 1. LOGO VARIANTS ===== -->
+  <div class="section">
+    <div class="section-title">1. Logo Variants</div>
+    <div class="logo-grid">
+      <!-- Row 1: Primary marks -->
+      <div class="logo-card light">
+        <img src="logo-icon.png" alt="MxTac icon mark" style="height:64px">
+        <div class="logo-card-label">Icon Mark (Primary)</div>
+        <div class="logo-card-filename">logo-icon.png</div>
+      </div>
+      <div class="logo-card light">
+        <img src="logo-horizontal.png" alt="MxTac horizontal lockup" style="height:48px">
+        <div class="logo-card-label">Horizontal Lockup</div>
+        <div class="logo-card-filename">logo-horizontal.png</div>
+      </div>
+      <div class="logo-card light">
+        <img src="logo-stacked.png" alt="MxTac stacked lockup" style="height:80px">
+        <div class="logo-card-label">Stacked Lockup</div>
+        <div class="logo-card-filename">logo-stacked.png</div>
+      </div>
+
+      <!-- Row 2: Dark variants -->
+      <div class="logo-card dark">
+        <img src="logo-icon-dark.png" alt="MxTac icon dark" style="height:64px">
+        <div class="logo-card-label">Icon (Dark BG)</div>
+        <div class="logo-card-filename">logo-icon-dark.png</div>
+      </div>
+      <div class="logo-card dark">
+        <img src="logo-horizontal-dark.png" alt="MxTac horizontal dark" style="height:48px">
+        <div class="logo-card-label">Horizontal (Dark BG)</div>
+        <div class="logo-card-filename">logo-horizontal-dark.png</div>
+      </div>
+      <div class="logo-card dark">
+        <img src="logo-icon-mono-white.png" alt="MxTac mono white" style="height:64px">
+        <div class="logo-card-label">Mono Outline (Dark BG)</div>
+        <div class="logo-card-filename">logo-icon-mono-white.png</div>
+      </div>
+
+      <!-- Row 3: Wordmarks + Favicon -->
+      <div class="logo-card light">
+        <img src="logo-wordmark.png" alt="MxTac wordmark" style="height:28px">
+        <div class="logo-card-label">Wordmark Only</div>
+        <div class="logo-card-filename">logo-wordmark.png</div>
+      </div>
+      <div class="logo-card dark">
+        <img src="logo-wordmark-dark.png" alt="MxTac wordmark dark" style="height:28px">
+        <div class="logo-card-label">Wordmark (Dark BG)</div>
+        <div class="logo-card-filename">logo-wordmark-dark.png</div>
+      </div>
+      <div class="logo-card gray">
+        <img src="favicon-32.png" alt="MxTac favicon" style="height:32px;image-rendering:pixelated">
+        <div class="logo-card-label">Favicon (32 x 32)</div>
+        <div class="logo-card-filename">favicon-32.png</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 2. ICON ANATOMY ===== -->
+  <div class="section">
+    <div class="section-title">2. Icon Anatomy</div>
+    <div style="display:flex;gap:32px;align-items:flex-start">
+      <svg width="200" height="200" viewBox="0 0 128 128" style="border:1px solid var(--border);border-radius:8px;background:#0A0A0A">
+        <!-- Grid -->
+        <line x1="64" y1="0" x2="64" y2="128" stroke="#1A2A1A" stroke-width="0.5" stroke-dasharray="4,4"/>
+        <line x1="0" y1="64" x2="128" y2="64" stroke="#1A2A1A" stroke-width="0.5" stroke-dasharray="4,4"/>
+        <!-- Container -->
+        <rect width="128" height="128" rx="24" fill="none" stroke="#00FF41" stroke-width="0.8" stroke-dasharray="4,2"/>
+        <!-- Shield shape -->
+        <path d="M64 22 L96 38 V68 C96 88 80 104 64 110 C48 104 32 88 32 68 V38 Z"
+              fill="rgba(0,255,65,0.06)" stroke="#00FF41" stroke-width="0.5" stroke-dasharray="3,3"/>
+        <!-- Digital rain hint -->
+        <g opacity="0.12" fill="#00FF41" font-family="monospace" font-size="6">
+          <text x="10" y="14">1</text><text x="10" y="24">0</text>
+          <text x="114" y="18">0</text><text x="114" y="28">1</text>
+        </g>
+        <!-- M letterform -->
+        <path d="M38 90 V48 L64 68 L90 48 V90"
+              fill="none" stroke="#00FF41" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- Keyline circles -->
+        <circle cx="38" cy="48" r="3" fill="none" stroke="#FF3333" stroke-width="0.5"/>
+        <circle cx="64" cy="68" r="3" fill="none" stroke="#FF3333" stroke-width="0.5"/>
+        <circle cx="90" cy="48" r="3" fill="none" stroke="#FF3333" stroke-width="0.5"/>
+        <circle cx="38" cy="90" r="3" fill="none" stroke="#FF3333" stroke-width="0.5"/>
+        <circle cx="90" cy="90" r="3" fill="none" stroke="#FF3333" stroke-width="0.5"/>
+      </svg>
+      <div style="flex:1">
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">The MxTac icon mark is a geometric <strong style="color:var(--text-primary)">"M"</strong> letterform with neon glow, set within a black rounded square. Digital rain (binary + katakana) and a shield silhouette reinforce the cybersecurity domain.</p>
+        <table style="font-size:11px;border-collapse:collapse;width:100%">
+          <tr><td style="padding:4px 12px 4px 0;color:var(--text-muted);width:120px">Container</td><td style="padding:4px 0">128 x 128, rx=24, #0A0A0A</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:var(--text-muted)">Radius ratio</td><td style="padding:4px 0">18.75% (scales with size)</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:var(--text-muted)">M stroke</td><td style="padding:4px 0">9px, round cap + join, #00FF41</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:var(--text-muted)">M glow</td><td style="padding:4px 0">Gaussian blur 3px, green 40%</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:var(--text-muted)">Shield opacity</td><td style="padding:4px 0">6% green overlay</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:var(--text-muted)">Digital rain</td><td style="padding:4px 0">Binary + katakana, 8-12% opacity</td></tr>
+          <tr><td style="padding:4px 12px 4px 0;color:var(--text-muted)">Min size</td><td style="padding:4px 0">16 x 16px (favicon)</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 3. CLEARSPACE ===== -->
+  <div class="section">
+    <div class="section-title">3. Clearspace &amp; Minimum Size</div>
+    <div style="display:flex;gap:32px;align-items:flex-start">
+      <div style="position:relative;display:inline-block;padding:48px;background:#0A0A0A;border:1px dashed var(--primary);border-radius:8px">
+        <img src="logo-horizontal-dark.png" alt="Clearspace demo" style="height:48px;display:block">
+        <!-- top -->
+        <div style="position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--primary);font-family:var(--font-mono)">1x</div>
+        <!-- bottom -->
+        <div style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--primary);font-family:var(--font-mono)">1x</div>
+        <!-- left -->
+        <div style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:9px;color:var(--primary);font-family:var(--font-mono)">1x</div>
+        <!-- right -->
+        <div style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:9px;color:var(--primary);font-family:var(--font-mono)">1x</div>
+      </div>
+      <div style="flex:1">
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">Maintain a minimum clearspace of <strong style="color:var(--text-primary)">1x</strong> around all logo variants, where <em>x</em> equals the height of the icon mark.</p>
+        <table style="font-size:11px;border-collapse:collapse;width:100%">
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:6px 12px 6px 0;color:var(--text-muted)">Horizontal lockup</td>
+            <td style="padding:6px 0">Min 120px wide</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:6px 12px 6px 0;color:var(--text-muted)">Icon mark</td>
+            <td style="padding:6px 0">Min 24px (app icon), 16px (favicon)</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:6px 12px 6px 0;color:var(--text-muted)">Wordmark</td>
+            <td style="padding:6px 0">Min 80px wide</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 12px 6px 0;color:var(--text-muted)">Sidebar use</td>
+            <td style="padding:6px 0">32 x 32px icon at rx=6</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 4. COLOR PALETTE ===== -->
+  <div class="section">
+    <div class="section-title">4. Color Palette</div>
+
+    <!-- Primary -->
+    <div class="color-group">
+      <div class="color-group-label">Primary (Matrix Green)</div>
+      <div class="color-row">
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#00FF41"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Matrix Green</div>
+            <div class="color-chip-hex">#00FF41</div>
+            <div class="color-chip-usage">M letterform, links, accent</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#00CC33"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Matrix Dark</div>
+            <div class="color-chip-hex">#00CC33</div>
+            <div class="color-chip-usage">Hover, technique IDs, body text</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#33FF66"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Matrix Light</div>
+            <div class="color-chip-hex">#33FF66</div>
+            <div class="color-chip-usage">Highlights, "Tac" accent</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#0A1A0E"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Matrix BG</div>
+            <div class="color-chip-hex">#0A1A0E</div>
+            <div class="color-chip-usage">Active nav, technique tags</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Severity -->
+    <div class="color-group">
+      <div class="color-group-label">Severity</div>
+      <div class="color-row">
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:linear-gradient(to bottom, #FF3333 60%, #1A0808 60%)"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Critical</div>
+            <div class="color-chip-hex">#FF3333 / #1A0808</div>
+            <div class="color-chip-usage">Score 9.0 &ndash; 10.0</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:linear-gradient(to bottom, #FF8800 60%, #1A1008 60%)"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">High</div>
+            <div class="color-chip-hex">#FF8800 / #1A1008</div>
+            <div class="color-chip-usage">Score 7.0 &ndash; 8.9</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:linear-gradient(to bottom, #00CC33 60%, #0A1A0E 60%)"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Medium</div>
+            <div class="color-chip-hex">#00CC33 / #0A1A0E</div>
+            <div class="color-chip-usage">Score 4.0 &ndash; 6.9</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:linear-gradient(to bottom, #446644 60%, #0D1A0D 60%)"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Low</div>
+            <div class="color-chip-hex">#446644 / #0D1A0D</div>
+            <div class="color-chip-usage">Score 0 &ndash; 3.9</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="color-group">
+      <div class="color-group-label">Status &amp; Integration</div>
+      <div class="color-row">
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:linear-gradient(to bottom, #FF3333 60%, #1A0808 60%)"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Active</div>
+            <div class="color-chip-hex">#FF3333 / #1A0808</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:linear-gradient(to bottom, #FF8800 60%, #1A1008 60%)"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Investigating</div>
+            <div class="color-chip-hex">#FF8800 / #1A1008</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:linear-gradient(to bottom, #00FF41 60%, #0A1A0E 60%)"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Resolved / Connected</div>
+            <div class="color-chip-hex">#00FF41 / #0A1A0E</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#334433"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Disabled</div>
+            <div class="color-chip-hex">#334433</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Neutrals (Dark Matrix) -->
+    <div class="color-group">
+      <div class="color-group-label">Neutrals (Dark Matrix)</div>
+      <div class="color-row">
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#00FF41"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Text Primary</div>
+            <div class="color-chip-hex">#00FF41</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#00CC33"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Text Secondary</div>
+            <div class="color-chip-hex">#00CC33</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#337733"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Text Muted</div>
+            <div class="color-chip-hex">#337733</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#1A3A1A"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Text Faint</div>
+            <div class="color-chip-hex">#1A3A1A</div>
+          </div>
+        </div>
+      </div>
+      <div class="color-row" style="margin-top:10px">
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#0D0D0D"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Surface</div>
+            <div class="color-chip-hex">#0D0D0D</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#050505"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Page BG</div>
+            <div class="color-chip-hex">#050505</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#1A2A1A"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Border</div>
+            <div class="color-chip-hex">#1A2A1A</div>
+          </div>
+        </div>
+        <div class="color-chip">
+          <div class="color-chip-swatch" style="background:#224422"></div>
+          <div class="color-chip-info">
+            <div class="color-chip-name">Border Strong</div>
+            <div class="color-chip-hex">#224422</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 5. TYPOGRAPHY ===== -->
+  <div class="section">
+    <div class="section-title">5. Typography</div>
+
+    <div class="type-row">
+      <div class="type-spec">
+        <div class="type-spec-name">Page Title</div>
+        <div class="type-spec-detail">15px / 600</div>
+      </div>
+      <div class="type-sample" style="font-size:15px;font-weight:600">Security Overview</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec">
+        <div class="type-spec-name">KPI Number</div>
+        <div class="type-spec-detail">32px / 700</div>
+      </div>
+      <div class="type-sample" style="font-size:32px;font-weight:700">2,847</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec">
+        <div class="type-spec-name">Card Title</div>
+        <div class="type-spec-detail">12-13px / 600</div>
+      </div>
+      <div class="type-sample" style="font-size:13px;font-weight:600">Detection Timeline</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec">
+        <div class="type-spec-name">Table Header</div>
+        <div class="type-spec-detail">9-10px / 500 / CAPS</div>
+      </div>
+      <div class="type-sample" style="font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted)">Technique &nbsp;&nbsp; Detection Name &nbsp;&nbsp; Host &nbsp;&nbsp; Status &nbsp;&nbsp; Time</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec">
+        <div class="type-spec-name">Table Body</div>
+        <div class="type-spec-detail">11px / 400</div>
+      </div>
+      <div class="type-sample" style="font-size:11px">DCSync via DRSUApi GetNCChanges</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec">
+        <div class="type-spec-name">Label / Caption</div>
+        <div class="type-spec-detail">10px / 400</div>
+      </div>
+      <div class="type-sample" style="font-size:10px;color:var(--text-muted)">312 critical &middot; 480 high &middot; +18 deployed this week</div>
+    </div>
+    <div class="type-row">
+      <div class="type-spec">
+        <div class="type-spec-name">Code / Technique ID</div>
+        <div class="type-spec-detail">10-11px / mono</div>
+      </div>
+      <div class="type-sample" style="font-family:var(--font-mono);font-size:11px;color:var(--primary)">T1003.006</div>
+    </div>
+    <div class="type-row" style="border-bottom:none">
+      <div class="type-spec">
+        <div class="type-spec-name">Font Stack</div>
+        <div class="type-spec-detail">Primary (Mono)</div>
+      </div>
+      <div class="type-sample" style="font-size:11px;color:var(--text-secondary);font-family:var(--font-mono)">'Courier New', Consolas, 'Fira Code', monospace</div>
+    </div>
+  </div>
+
+  <!-- ===== 6. SPACING ===== -->
+  <div class="section">
+    <div class="section-title">6. Spacing Scale (4px Grid)</div>
+    <div class="spacing-row"><span class="spacing-label">--sp-1</span><div class="spacing-bar" style="width:4px"></div><span class="spacing-px">4px</span></div>
+    <div class="spacing-row"><span class="spacing-label">--sp-2</span><div class="spacing-bar" style="width:8px"></div><span class="spacing-px">8px</span></div>
+    <div class="spacing-row"><span class="spacing-label">--sp-3</span><div class="spacing-bar" style="width:12px"></div><span class="spacing-px">12px</span></div>
+    <div class="spacing-row"><span class="spacing-label">--sp-4</span><div class="spacing-bar" style="width:16px"></div><span class="spacing-px">16px</span></div>
+    <div class="spacing-row"><span class="spacing-label">--sp-5</span><div class="spacing-bar" style="width:20px"></div><span class="spacing-px">20px</span></div>
+    <div class="spacing-row"><span class="spacing-label">--sp-6</span><div class="spacing-bar" style="width:24px"></div><span class="spacing-px">24px</span></div>
+    <div class="spacing-row"><span class="spacing-label">--sp-8</span><div class="spacing-bar" style="width:32px"></div><span class="spacing-px">32px</span></div>
+  </div>
+
+  <!-- ===== 7. COMPONENTS ===== -->
+  <div class="section">
+    <div class="section-title">7. UI Components</div>
+
+    <!-- Score Circles -->
+    <div class="component-row">
+      <span class="component-label">Score Circles</span>
+      <span class="score-circle" style="background:var(--critical-bg);color:var(--critical)">9.2</span>
+      <span class="score-circle" style="background:var(--high-bg);color:var(--high)">8.4</span>
+      <span class="score-circle" style="background:var(--medium-bg);color:var(--medium)">6.5</span>
+      <span class="score-circle" style="background:var(--low-bg);color:var(--low)">3.8</span>
+      <span style="font-size:10px;color:var(--text-muted);margin-left:8px">r=11, 9px 700</span>
+    </div>
+
+    <!-- Severity Pills -->
+    <div class="component-row">
+      <span class="component-label">Severity Pills</span>
+      <span class="pill" style="background:var(--critical-bg);color:var(--critical)">Critical</span>
+      <span class="pill" style="background:var(--high-bg);color:var(--high)">High</span>
+      <span class="pill" style="background:var(--medium-bg);color:var(--medium)">Medium</span>
+      <span class="pill" style="background:var(--low-bg);color:var(--low)">Low</span>
+      <span style="font-size:10px;color:var(--text-muted);margin-left:8px">rx=8, 9-10px 500</span>
+    </div>
+
+    <!-- Status Pills -->
+    <div class="component-row">
+      <span class="component-label">Status Pills</span>
+      <span class="pill" style="background:var(--critical-bg);color:var(--critical)">Active</span>
+      <span class="pill" style="background:var(--high-bg);color:var(--high)">Investigating</span>
+      <span class="pill" style="background:var(--connected-bg);color:var(--connected)">Resolved</span>
+    </div>
+
+    <!-- Filter Chips -->
+    <div class="component-row">
+      <span class="component-label">Filter Chips</span>
+      <span class="chip" style="background:var(--critical-bg);border:1px solid #661111;color:var(--critical)">Severity: Critical <span style="opacity:0.7">&times;</span></span>
+      <span class="chip" style="background:var(--primary-bg);border:1px solid #224422;color:var(--primary)">Last 24h <span style="opacity:0.7">&times;</span></span>
+      <span style="font-size:10px;color:var(--text-muted);margin-left:8px">rx=11, 22px h</span>
+    </div>
+
+    <!-- Buttons -->
+    <div class="component-row">
+      <span class="component-label">Buttons</span>
+      <button class="btn-sm" style="background:var(--primary);color:#000">Export</button>
+      <button class="btn-sm" style="background:var(--critical);color:#fff">Escalate</button>
+      <button class="btn-sm" style="background:transparent;border:1.5px solid var(--primary);color:var(--primary)">Investigate</button>
+      <button class="btn-sm" style="background:transparent;border:1.5px solid var(--border-strong);color:var(--text-secondary)">False Positive</button>
+    </div>
+
+    <!-- Group-By Toggles -->
+    <div class="component-row">
+      <span class="component-label">Group-By</span>
+      <button class="btn-sm" style="background:var(--primary);color:#000;border-radius:4px">None</button>
+      <button class="btn-sm" style="background:var(--surface);border:1px solid var(--border-strong);color:var(--text-secondary);border-radius:4px">Tactic</button>
+      <button class="btn-sm" style="background:var(--surface);border:1px solid var(--border-strong);color:var(--text-secondary);border-radius:4px">Host</button>
+    </div>
+
+    <!-- Integration Dots -->
+    <div class="component-row">
+      <span class="component-label">Integration Dots</span>
+      <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--connected)"></span><span style="font-size:10px">Connected</span></span>
+      <span style="display:inline-flex;align-items:center;gap:6px;margin-left:12px"><span style="width:8px;height:8px;border-radius:50%;background:var(--warning)"></span><span style="font-size:10px">Warning</span></span>
+      <span style="display:inline-flex;align-items:center;gap:6px;margin-left:12px"><span style="width:8px;height:8px;border-radius:50%;background:var(--disabled)"></span><span style="font-size:10px">Disabled</span></span>
+    </div>
+
+    <!-- Shadows & Radius -->
+    <div class="component-row" style="margin-top:20px;align-items:flex-start">
+      <span class="component-label">Shadows &amp; Radius</span>
+      <div style="display:flex;gap:16px">
+        <div style="background:var(--surface);padding:16px 20px;border-radius:6px;box-shadow:0 1px 4px rgba(0,255,65,0.08);border:1px solid var(--border)">
+          <div style="font-size:10px;font-weight:600;margin-bottom:2px">Card Shadow</div>
+          <div style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono)">0 1px 2px rgba(0,0,0,0.05)</div>
+          <div style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono)">rx=6</div>
+        </div>
+        <div style="background:var(--surface);padding:16px 20px;border-radius:6px;box-shadow:-2px 0 10px rgba(0,255,65,0.1);border:1px solid var(--border)">
+          <div style="font-size:10px;font-weight:600;margin-bottom:2px">Panel Shadow</div>
+          <div style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono)">-2px 0 10px rgba(0,0,0,0.08)</div>
+          <div style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono)">436px slide-out</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 8. USAGE RULES ===== -->
+  <div class="section">
+    <div class="section-title">8. Usage Rules</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px">
+        <div style="font-size:11px;font-weight:600;color:var(--connected);margin-bottom:8px">DO</div>
+        <ul style="font-size:11px;color:var(--text-secondary);padding-left:16px;line-height:1.8">
+          <li>Use the black icon mark on light backgrounds</li>
+          <li>Use the neon green glow mark on dark/black backgrounds</li>
+          <li>Maintain clearspace of at least 1x icon height</li>
+          <li>Scale proportionally &mdash; never stretch or distort</li>
+          <li>Use the wordmark variant (Mx<span style="color:var(--primary)">Tac</span>) for inline text references</li>
+          <li>Keep the digital rain at 8-15% opacity &mdash; never dominant</li>
+        </ul>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px">
+        <div style="font-size:11px;font-weight:600;color:var(--critical);margin-bottom:8px">DON'T</div>
+        <ul style="font-size:11px;color:var(--text-secondary);padding-left:16px;line-height:1.8">
+          <li>Place the green icon on green or bright backgrounds</li>
+          <li>Remove or modify the neon glow filter effect</li>
+          <li>Rotate, tilt, or animate the logo</li>
+          <li>Use the logo on backgrounds lighter than #333</li>
+          <li>Change the M letterform or digital rain pattern</li>
+          <li>Use the logo smaller than 16px (favicon excepted)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== FOOTER ===== -->
+  <div style="text-align:center;padding-top:24px;border-top:1px solid var(--border);font-size:10px;color:var(--text-muted)">
+    MxTac Brand &amp; CI Sheet v3.0 Matrix &middot; 2026-02-20 &middot; For internal use
+  </div>
+
+</div>
+</body>
+</html>

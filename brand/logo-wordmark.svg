@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 40" width="180" height="40">
+  <!-- Text-only wordmark — Matrix style for light backgrounds -->
+  <text x="0" y="28" font-family="'Courier New', 'Consolas', monospace"
+        font-size="30" font-weight="700" fill="#0A0A0A" letter-spacing="1">Mx<tspan fill="#00CC33">Tac</tspan></text>
+</svg>

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 168" width="128" height="168">
+  <defs>
+    <filter id="neonStrong">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur"/>
+      <feFlood flood-color="#00FF41" flood-opacity="0.4" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="textGlow">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="blur"/>
+      <feFlood flood-color="#00FF41" flood-opacity="0.3" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Icon: black rounded square -->
+  <rect x="16" y="0" width="96" height="96" rx="18" fill="#0A0A0A"/>
+  <!-- Digital rain in icon -->
+  <g opacity="0.12" fill="#00FF41" font-family="monospace" font-size="6">
+    <text x="22" y="14">1</text><text x="22" y="24">0</text><text x="22" y="34">1</text>
+    <text x="22" y="54">0</text><text x="22" y="64">1</text><text x="22" y="74">0</text>
+    <text x="22" y="84">1</text>
+    <text x="32" y="18">0</text><text x="32" y="28">1</text><text x="32" y="48">0</text>
+    <text x="32" y="68">1</text><text x="32" y="88">0</text>
+    <text x="92" y="16">1</text><text x="92" y="26">0</text><text x="92" y="46">1</text>
+    <text x="92" y="66">0</text><text x="92" y="86">1</text>
+    <text x="102" y="12">0</text><text x="102" y="22">1</text><text x="102" y="32">0</text>
+    <text x="102" y="52">1</text><text x="102" y="62">0</text><text x="102" y="72">1</text>
+    <text x="102" y="82">0</text>
+  </g>
+  <!-- M letterform -->
+  <path d="M40 70 V36 L64 50 L88 36 V70"
+        fill="none" stroke="#00FF41" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"
+        filter="url(#neonStrong)"/>
+  <!-- Wordmark -->
+  <text x="64" y="130" text-anchor="middle" font-family="'Courier New', 'Consolas', monospace"
+        font-size="28" font-weight="700" fill="#00FF41" letter-spacing="1"
+        filter="url(#textGlow)">MxTac</text>
+  <!-- Tagline -->
+  <text x="64" y="150" text-anchor="middle" font-family="'Courier New', 'Consolas', monospace"
+        font-size="8" font-weight="500" fill="rgba(0,255,65,0.45)" letter-spacing="2.5">SECURITY PLATFORM</text>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 40" width="180" height="40">
+  <defs>
+    <filter id="textGlow">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="blur"/>
+      <feFlood flood-color="#00FF41" flood-opacity="0.3" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Text-only wordmark — Matrix green glow for dark backgrounds -->
+  <text x="0" y="28" font-family="'Courier New', 'Consolas', monospace"
+        font-size="30" font-weight="700" fill="#00FF41" letter-spacing="1"
+        filter="url(#textGlow)">Mx<tspan fill="#33FF66">Tac</tspan></text>
+</svg>

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <filter id="neonStrong">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+      <feFlood flood-color="#00FF41" flood-opacity="0.4" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Black rounded square with green border -->
+  <rect width="128" height="128" rx="24" fill="#0D0D0D"/>
+  <rect x="2" y="2" width="124" height="124" rx="22" fill="none" stroke="#00FF41" stroke-width="1" opacity="0.3"/>
+  <!-- Digital rain columns -->
+  <g opacity="0.15" fill="#00FF41" font-family="monospace" font-size="8">
+    <text x="12" y="14">1</text><text x="12" y="26">0</text><text x="12" y="38">1</text>
+    <text x="12" y="50">1</text><text x="12" y="62">0</text><text x="12" y="86">0</text>
+    <text x="12" y="98">1</text><text x="12" y="110">0</text>
+    <text x="24" y="20">0</text><text x="24" y="32">1</text><text x="24" y="44">0</text>
+    <text x="24" y="68">1</text><text x="24" y="80">0</text><text x="24" y="104">1</text>
+    <text x="100" y="18">1</text><text x="100" y="30">0</text><text x="100" y="42">1</text>
+    <text x="100" y="66">0</text><text x="100" y="78">1</text><text x="100" y="102">0</text>
+    <text x="112" y="12">0</text><text x="112" y="24">1</text><text x="112" y="36">0</text>
+    <text x="112" y="48">1</text><text x="112" y="72">1</text><text x="112" y="84">0</text>
+    <text x="112" y="96">1</text><text x="112" y="108">0</text>
+  </g>
+  <!-- Katakana accent -->
+  <g opacity="0.10" fill="#00FF41" font-family="monospace" font-size="7">
+    <text x="6" y="74">&#x30A2;</text><text x="18" y="56">&#x30BF;</text>
+    <text x="106" y="54">&#x30DE;</text><text x="118" y="60">&#x30C8;</text>
+    <text x="6" y="120">&#x30EA;</text><text x="118" y="22">&#x30AF;</text>
+  </g>
+  <!-- Shield silhouette -->
+  <path d="M64 22 L96 38 V68 C96 88 80 104 64 110 C48 104 32 88 32 68 V38 Z"
+        fill="rgba(0,255,65,0.05)"/>
+  <!-- M letterform — bright neon green -->
+  <path d="M38 90 V48 L64 68 L90 48 V90"
+        fill="none" stroke="#00FF41" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"
+        filter="url(#neonStrong)"/>
+</svg>
