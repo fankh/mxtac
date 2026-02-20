@@ -10,6 +10,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from .api.v1.router import api_router
 from .core import metrics as _metrics  # noqa: F401 — registers all mxtac_ metrics
+from .core.access_log import AccessLogMiddleware
 from .core.config import settings
 from .core.database import AsyncSessionLocal
 from .core.exceptions import register_exception_handlers
@@ -75,6 +76,9 @@ app = FastAPI(
 
 # Prometheus metrics instrumentation
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+
+# Request access log — method, path, status, latency (feature 21.11)
+app.add_middleware(AccessLogMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
