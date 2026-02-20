@@ -1,6 +1,16 @@
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { TopBar } from '../../components/layout/TopBar'
+import { useAlertStream } from '../../hooks/useAlertStream'
+import type { ConnectionState } from '../../hooks/useAlertStream'
+
+// ---------------------------------------------------------------------------
+// Mock useAlertStream so TopBar renders without a real WebSocket connection
+// ---------------------------------------------------------------------------
+
+vi.mock('../../hooks/useAlertStream')
+
+const mockUseAlertStream = vi.mocked(useAlertStream)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -15,6 +25,11 @@ function renderTopBar(crumb: string, updatedAt?: string) {
 // ---------------------------------------------------------------------------
 
 describe('TopBar', () => {
+  beforeEach(() => {
+    // Default to "connected" state unless overridden per-test
+    mockUseAlertStream.mockReturnValue('connected')
+  })
+
   // -------------------------------------------------------------------------
   // Breadcrumb
   // -------------------------------------------------------------------------
@@ -173,6 +188,97 @@ describe('TopBar', () => {
   })
 
   // -------------------------------------------------------------------------
+  // Live connection indicator
+  // -------------------------------------------------------------------------
+  describe('Live connection indicator', () => {
+    const states: ConnectionState[] = ['connected', 'reconnecting', 'disconnected']
+
+    it('renders a live dot for all connection states', () => {
+      states.forEach(state => {
+        mockUseAlertStream.mockReturnValue(state)
+        const { unmount } = renderTopBar('Dashboard')
+        // Each state renders a span with a title attribute
+        expect(screen.getByTitle(
+          state === 'connected'    ? 'Live — connected' :
+          state === 'reconnecting' ? 'Reconnecting…'    : 'Disconnected'
+        )).toBeInTheDocument()
+        unmount()
+      })
+    })
+
+    it('shows "Live — connected" title when connected', () => {
+      mockUseAlertStream.mockReturnValue('connected')
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle('Live — connected')).toBeInTheDocument()
+    })
+
+    it('shows "Reconnecting…" title when reconnecting', () => {
+      mockUseAlertStream.mockReturnValue('reconnecting')
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle('Reconnecting…')).toBeInTheDocument()
+    })
+
+    it('shows "Disconnected" title when disconnected', () => {
+      mockUseAlertStream.mockReturnValue('disconnected')
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle('Disconnected')).toBeInTheDocument()
+    })
+
+    it('connected dot has ping animation class', () => {
+      mockUseAlertStream.mockReturnValue('connected')
+      const { container } = renderTopBar('Dashboard')
+      const liveWrapper = screen.getByTitle('Live — connected')
+      expect(liveWrapper.querySelector('.animate-ping')).toBeInTheDocument()
+    })
+
+    it('reconnecting dot has pulse animation class', () => {
+      mockUseAlertStream.mockReturnValue('reconnecting')
+      renderTopBar('Dashboard')
+      const liveWrapper = screen.getByTitle('Reconnecting…')
+      expect(liveWrapper.querySelector('.animate-pulse')).toBeInTheDocument()
+    })
+
+    it('disconnected dot has no animation class', () => {
+      mockUseAlertStream.mockReturnValue('disconnected')
+      renderTopBar('Dashboard')
+      const liveWrapper = screen.getByTitle('Disconnected')
+      expect(liveWrapper.querySelector('.animate-ping')).not.toBeInTheDocument()
+      expect(liveWrapper.querySelector('.animate-pulse')).not.toBeInTheDocument()
+    })
+
+    it('connected dot uses status-ok color', () => {
+      mockUseAlertStream.mockReturnValue('connected')
+      renderTopBar('Dashboard')
+      const liveWrapper = screen.getByTitle('Live — connected')
+      expect(liveWrapper.querySelector('.bg-status-ok')).toBeInTheDocument()
+    })
+
+    it('reconnecting dot uses status-warn color', () => {
+      mockUseAlertStream.mockReturnValue('reconnecting')
+      renderTopBar('Dashboard')
+      const liveWrapper = screen.getByTitle('Reconnecting…')
+      expect(liveWrapper.querySelector('.bg-status-warn')).toBeInTheDocument()
+    })
+
+    it('disconnected dot uses text-muted color', () => {
+      mockUseAlertStream.mockReturnValue('disconnected')
+      renderTopBar('Dashboard')
+      const liveWrapper = screen.getByTitle('Disconnected')
+      expect(liveWrapper.querySelector('.bg-text-muted')).toBeInTheDocument()
+    })
+
+    it('only one live dot is rendered', () => {
+      mockUseAlertStream.mockReturnValue('connected')
+      const { container } = renderTopBar('Dashboard')
+      const titles = ['Live — connected', 'Reconnecting…', 'Disconnected']
+      const dots = titles.flatMap(t =>
+        Array.from(container.querySelectorAll(`[title="${t}"]`))
+      )
+      expect(dots).toHaveLength(1)
+    })
+  })
+
+  // -------------------------------------------------------------------------
   // Layout structure
   // -------------------------------------------------------------------------
   describe('Layout structure', () => {
@@ -188,6 +294,7 @@ describe('TopBar', () => {
       expect(screen.getByText('Detections')).toBeInTheDocument()
       expect(screen.getByTitle('Refresh')).toBeInTheDocument()
       expect(screen.getByTitle('Notifications')).toBeInTheDocument()
+      expect(screen.getByTitle('Live — connected')).toBeInTheDocument()
     })
 
     it('renders only one Refresh button', () => {
