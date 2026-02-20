@@ -96,6 +96,8 @@ function renderPage() {
 
 describe('DetectionsPage', () => {
   beforeEach(() => {
+    // Clear call history between tests so toHaveBeenCalledTimes() counts are isolated
+    vi.clearAllMocks()
     // Default: pending forever → loading state
     mockApi.list.mockReturnValue(new Promise<never>(() => {}))
   })

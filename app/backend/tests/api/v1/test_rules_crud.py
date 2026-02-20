@@ -3,6 +3,7 @@
 Coverage:
   - List rules: unauthenticated → 401/403; viewer/analyst → 403 (rules:read requires hunter+)
   - GET rule by ID: 404 when not found (hunter+)
+  - Feature 13.1 — GET /rules with level/enabled filters (DB-backed)
   - Feature 28.8 — RBAC: engineer can create rules
       viewer / analyst / hunter → 403 on POST /rules (rules:write requires engineer+)
       engineer → 201 on POST /rules with valid Sigma YAML
@@ -12,9 +13,6 @@ Coverage:
   - POST /rules/import: bulk import returns imported count (engineer+)
   - GET /rules/stats/summary: total/enabled/by_level (hunter+)
   - POST /rules/test: test arbitrary YAML against a sample event (hunter+)
-
-The module-level ``_rule_store`` in the endpoint is reset by an autouse fixture
-so tests are fully isolated.
 """
 
 from __future__ import annotations
@@ -43,17 +41,20 @@ tags:
   - attack.t1003
 """
 
-
-@pytest.fixture(autouse=True)
-def _clear_rule_store():
-    """Reset module-level rule store and sigma engine before/after each test."""
-    from app.api.v1.endpoints import rules as rules_mod
-
-    rules_mod._rule_store.clear()
-    rules_mod._engine._rules.clear()
-    yield
-    rules_mod._rule_store.clear()
-    rules_mod._engine._rules.clear()
+_SIGMA_YAML_LOW = """\
+title: Low Severity Rule
+id: test-rule-0002
+status: experimental
+description: Low severity test rule
+logsource:
+  category: network_connection
+  product: linux
+detection:
+  selection:
+    dst_port: 8080
+  condition: selection
+level: low
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -84,10 +85,122 @@ async def test_list_rules_analyst_forbidden(client: AsyncClient, analyst_headers
 
 @pytest.mark.asyncio
 async def test_list_rules_hunter_empty(client: AsyncClient, hunter_headers: dict) -> None:
-    """GET /rules with hunter role and empty store returns []."""
+    """GET /rules with hunter role and empty DB returns []."""
     resp = await client.get(BASE_URL, headers=hunter_headers)
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+# ---------------------------------------------------------------------------
+# Feature 13.1 — GET /rules with level / enabled filters (DB-backed)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_rules_returns_created_rule(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """POST then GET /rules — created rule appears in listing."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.get(BASE_URL, headers=hunter_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["id"] == "test-rule-0001"
+    assert data[0]["level"] == "high"
+    assert data[0]["enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_rules_filter_by_level(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """GET /rules?level=high returns only high-level rules."""
+    # Create one high and one low rule
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "High Rule", "content": _SIGMA_YAML},
+    )
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Low Rule", "content": _SIGMA_YAML_LOW},
+    )
+
+    resp = await client.get(f"{BASE_URL}?level=high", headers=hunter_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["level"] == "high"
+
+    resp_low = await client.get(f"{BASE_URL}?level=low", headers=hunter_headers)
+    assert resp_low.status_code == 200
+    assert len(resp_low.json()) == 1
+    assert resp_low.json()[0]["level"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_list_rules_filter_by_enabled(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """GET /rules?enabled=true / false returns only matching rules."""
+    # Create one enabled and one disabled rule
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Enabled Rule", "content": _SIGMA_YAML, "enabled": True},
+    )
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Disabled Rule", "content": _SIGMA_YAML_LOW, "enabled": False},
+    )
+
+    resp_enabled = await client.get(f"{BASE_URL}?enabled=true", headers=hunter_headers)
+    assert resp_enabled.status_code == 200
+    enabled_rules = resp_enabled.json()
+    assert len(enabled_rules) == 1
+    assert enabled_rules[0]["enabled"] is True
+
+    resp_disabled = await client.get(f"{BASE_URL}?enabled=false", headers=hunter_headers)
+    assert resp_disabled.status_code == 200
+    disabled_rules = resp_disabled.json()
+    assert len(disabled_rules) == 1
+    assert disabled_rules[0]["enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_rules_response_schema(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """GET /rules response items have all required RuleResponse fields."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Schema Test", "content": _SIGMA_YAML},
+    )
+    resp = await client.get(BASE_URL, headers=hunter_headers)
+    assert resp.status_code == 200
+    item = resp.json()[0]
+    assert "id" in item
+    assert "title" in item
+    assert "level" in item
+    assert "status" in item
+    assert "enabled" in item
+    assert "technique_ids" in item
+    assert "tactic_ids" in item
+    assert "logsource" in item
+    assert "hit_count" in item
+    assert "fp_count" in item
+    # ATT&CK tags should be parsed
+    assert "T1003" in item["technique_ids"]
+    assert item["logsource"]["product"] == "windows"
+    assert item["logsource"]["category"] == "process_creation"
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +353,7 @@ async def test_import_single_rule(client: AsyncClient, engineer_headers: dict) -
 
 @pytest.mark.asyncio
 async def test_rules_summary_empty(client: AsyncClient, hunter_headers: dict) -> None:
-    """GET /rules/stats/summary with empty store → total=0, enabled=0."""
+    """GET /rules/stats/summary with empty DB → total=0, enabled=0."""
     resp = await client.get(f"{BASE_URL}/stats/summary", headers=hunter_headers)
     assert resp.status_code == 200
     data = resp.json()
