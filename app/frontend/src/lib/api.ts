@@ -3,6 +3,7 @@ import type {
   KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus,
   Detection, PaginatedResponse, DetectionUpdate,
   SearchRequest, SearchResponse, AggregationRequest, AggregationResponse, EntityTimeline,
+  AuditLogEntry,
 } from '../types/api'
 
 const http = axios.create({
@@ -113,4 +114,24 @@ export const eventsApi = {
 
   get: (id: string): Promise<import('../types/api').EventItem> =>
     http.get(`/events/${id}`).then(r => r.data),
+}
+
+// ── Audit Logs ────────────────────────────────────────────────────────────────
+
+export interface AuditLogListParams {
+  page?: number
+  page_size?: number
+  actor?: string
+  action?: string
+  resource_type?: string
+  from_ts?: string
+  to_ts?: string
+}
+
+export const auditLogsApi = {
+  list: (params: AuditLogListParams = {}): Promise<PaginatedResponse<AuditLogEntry>> =>
+    http.get('/audit-logs', { params }).then(r => r.data),
+
+  get: (id: string): Promise<AuditLogEntry> =>
+    http.get(`/audit-logs/${id}`).then(r => r.data),
 }

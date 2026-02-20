@@ -5,6 +5,10 @@ vi.mock('../../lib/api', () => ({
     get:   vi.fn(),
     patch: vi.fn(),
   },
+  auditLogsApi: {
+    list: vi.fn(),
+    get:  vi.fn(),
+  },
 }))
 
 vi.mock('../../components/layout/TopBar', () => ({
@@ -17,14 +21,15 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AdminPage } from '../../components/features/admin/AdminPage'
-import { apiClient } from '../../lib/api'
+import { apiClient, auditLogsApi } from '../../lib/api'
 
 // ---------------------------------------------------------------------------
-// Typed references to the mocked API
+// Typed references to the mocked APIs
 // ---------------------------------------------------------------------------
 
 const mockGet   = apiClient.get   as ReturnType<typeof vi.fn>
 const mockPatch = apiClient.patch as ReturnType<typeof vi.fn>
+const mockAudit = auditLogsApi.list as ReturnType<typeof vi.fn>
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -37,6 +42,36 @@ const makeUser = (overrides: Record<string, unknown> = {}) => ({
   role:      'admin',
   is_active: true,
   ...overrides,
+})
+
+const makeAuditEntry = (overrides: Record<string, unknown> = {}) => ({
+  id:             'audit-001',
+  timestamp:      '2024-01-15T10:30:00.000Z',
+  actor:          'admin@mxtac.local',
+  action:         'create',
+  resource_type:  'incident',
+  resource_id:    'inc-abc123',
+  details:        {},
+  request_ip:     '127.0.0.1',
+  request_method: 'POST',
+  request_path:   '/api/v1/incidents',
+  user_agent:     null,
+  ...overrides,
+})
+
+/** Returns a PaginatedResponse<AuditLogEntry> matching the /audit-logs backend format. */
+const makeAuditResponse = (
+  items: unknown[] = [],
+  paginationOverrides: Record<string, unknown> = {},
+) => ({
+  items,
+  pagination: {
+    page:        1,
+    page_size:   50,
+    total:       items.length,
+    total_pages: 1,
+    ...paginationOverrides,
+  },
 })
 
 // ---------------------------------------------------------------------------
@@ -69,6 +104,7 @@ describe('AdminPage', () => {
     // Default: pending forever → loading state
     mockGet.mockReturnValue(new Promise<never>(() => {}))
     mockPatch.mockReturnValue(new Promise<never>(() => {}))
+    mockAudit.mockReturnValue(new Promise<never>(() => {}))
   })
 
   // =========================================================================
@@ -130,31 +166,9 @@ describe('AdminPage', () => {
   })
 
   // =========================================================================
-  // Audit Log tab content
+  // Audit Log tab — column headers
   // =========================================================================
-  describe('audit log tab', () => {
-    const makeAuditEntry = (overrides: Record<string, unknown> = {}) => ({
-      id:              'audit-001',
-      timestamp:       '2024-01-15T10:30:00.000Z',
-      actor:           'admin@mxtac.local',
-      action:          'create',
-      resource_type:   'incident',
-      resource_id:     'inc-abc123',
-      details:         {},
-      request_ip:      '127.0.0.1',
-      request_method:  'POST',
-      request_path:    '/api/v1/incidents',
-      user_agent:      null,
-      ...overrides,
-    })
-
-    const makeAuditResponse = (items: unknown[] = [], total = 0) => ({
-      total,
-      page:      1,
-      page_size: 50,
-      items,
-    })
-
+  describe('audit log tab — column headers', () => {
     it('shows audit log column headers on the audit tab', () => {
       renderPage()
       fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
@@ -164,32 +178,51 @@ describe('AdminPage', () => {
       expect(screen.getByText('Resource')).toBeInTheDocument()
       expect(screen.getByText('Path')).toBeInTheDocument()
     })
+  })
 
+  // =========================================================================
+  // Audit Log tab — loading state
+  // =========================================================================
+  describe('audit log tab — loading state', () => {
     it('shows "Loading…" on the audit tab while the query is pending', () => {
-      // default mock returns a pending promise — audit query stays loading
       renderPage()
       fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
       expect(screen.getByText('Loading…')).toBeInTheDocument()
     })
 
+    it('does not show audit entries while loading', () => {
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      expect(screen.queryByText('admin@mxtac.local')).not.toBeInTheDocument()
+    })
+
+    it('does not show the empty-state message while loading', () => {
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      expect(screen.queryByText('No audit log entries found.')).not.toBeInTheDocument()
+    })
+  })
+
+  // =========================================================================
+  // Audit Log tab — empty state
+  // =========================================================================
+  describe('audit log tab — empty state', () => {
     it('shows "No audit log entries found." when the response is empty', async () => {
-      mockGet.mockImplementation((url: string) => {
-        if (url === '/admin/audit-log') return Promise.resolve({ data: makeAuditResponse([], 0) })
-        return Promise.resolve({ data: [] })
-      })
+      mockAudit.mockResolvedValue(makeAuditResponse([]))
       renderPage()
       fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
       await waitFor(() =>
         expect(screen.getByText('No audit log entries found.')).toBeInTheDocument(),
       )
     })
+  })
 
+  // =========================================================================
+  // Audit Log tab — success state
+  // =========================================================================
+  describe('audit log tab — success state', () => {
     it('renders an audit log entry row', async () => {
-      const entry = makeAuditEntry()
-      mockGet.mockImplementation((url: string) => {
-        if (url === '/admin/audit-log') return Promise.resolve({ data: makeAuditResponse([entry], 1) })
-        return Promise.resolve({ data: [] })
-      })
+      mockAudit.mockResolvedValue(makeAuditResponse([makeAuditEntry()]))
       renderPage()
       fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
       await waitFor(() => expect(screen.getByText('admin@mxtac.local')).toBeInTheDocument())
@@ -197,23 +230,51 @@ describe('AdminPage', () => {
       expect(screen.getByText('POST /api/v1/incidents')).toBeInTheDocument()
     })
 
-    it('does not call /admin/audit-log on initial mount (users tab is default)', async () => {
-      mockGet.mockResolvedValue({ data: [] })
-      renderPage()
-      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1))
-      expect(mockGet).toHaveBeenCalledWith('/users')
-      expect(mockGet).not.toHaveBeenCalledWith('/admin/audit-log', expect.anything())
-    })
-
-    it('calls /admin/audit-log when switching to the audit tab', async () => {
-      mockGet.mockResolvedValue({ data: [] })
+    it('renders the resource_type in the row', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse([makeAuditEntry()]))
       renderPage()
       fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
-      await waitFor(() =>
-        expect(mockGet).toHaveBeenCalledWith('/admin/audit-log', expect.objectContaining({ params: expect.any(Object) })),
-      )
+      // resource column renders "{resource_type} / {resource_id[:8]}"
+      await waitFor(() => expect(screen.getByText(/incident \/ inc-abc1/)).toBeInTheDocument())
     })
 
+    it('renders multiple audit entries', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse([
+        makeAuditEntry({ id: '1', actor: 'alice@example.com', action: 'login' }),
+        makeAuditEntry({ id: '2', actor: 'bob@example.com',   action: 'delete' }),
+      ]))
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => {
+        expect(screen.getByText('alice@example.com')).toBeInTheDocument()
+        expect(screen.getByText('bob@example.com')).toBeInTheDocument()
+      })
+    })
+
+    it('does not show "Loading…" in success state', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse([makeAuditEntry()]))
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument())
+    })
+  })
+
+  // =========================================================================
+  // Audit Log tab — entry count
+  // =========================================================================
+  describe('audit log tab — entry count', () => {
+    it('shows total entry count from pagination.total', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse([makeAuditEntry()], { total: 73 }))
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => expect(screen.getByText('73 entries')).toBeInTheDocument())
+    })
+  })
+
+  // =========================================================================
+  // Audit Log tab — filter bar
+  // =========================================================================
+  describe('audit log tab — filter bar', () => {
     it('shows filter inputs on the audit tab', () => {
       renderPage()
       fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
@@ -227,13 +288,146 @@ describe('AdminPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
       expect(screen.getByText('Last 7d')).toBeInTheDocument()
     })
+
+    it('passes actor filter to auditLogsApi.list when typed', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse())
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => expect(mockAudit).toHaveBeenCalledTimes(1))
+      fireEvent.change(screen.getByPlaceholderText('Actor'), { target: { value: 'admin@mxtac.local' } })
+      await waitFor(() => {
+        const lastCall = mockAudit.mock.calls.at(-1)![0]
+        expect(lastCall.actor).toBe('admin@mxtac.local')
+      })
+    })
+
+    it('passes action filter to auditLogsApi.list when typed', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse())
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => expect(mockAudit).toHaveBeenCalledTimes(1))
+      fireEvent.change(screen.getByPlaceholderText('Action'), { target: { value: 'delete' } })
+      await waitFor(() => {
+        const lastCall = mockAudit.mock.calls.at(-1)![0]
+        expect(lastCall.action).toBe('delete')
+      })
+    })
+
+    it('passes resource_type filter to auditLogsApi.list when typed', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse())
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => expect(mockAudit).toHaveBeenCalledTimes(1))
+      fireEvent.change(screen.getByPlaceholderText('Resource type'), { target: { value: 'user' } })
+      await waitFor(() => {
+        const lastCall = mockAudit.mock.calls.at(-1)![0]
+        expect(lastCall.resource_type).toBe('user')
+      })
+    })
+
+    it('passes an ISO 8601 from_ts (not OpenSearch date math) to auditLogsApi.list', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse())
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => expect(mockAudit).toHaveBeenCalledTimes(1))
+      const firstCall = mockAudit.mock.calls[0][0]
+      expect(firstCall.from_ts).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+    })
+
+    it('does not pass actor when the actor input is empty', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse())
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => expect(mockAudit).toHaveBeenCalledTimes(1))
+      expect(mockAudit.mock.calls[0][0].actor).toBeUndefined()
+    })
   })
 
   // =========================================================================
-  // Loading state
+  // Audit Log tab — API call lifecycle
+  // =========================================================================
+  describe('audit log tab — API call lifecycle', () => {
+    it('does not call auditLogsApi.list on initial mount (users tab is default)', async () => {
+      mockGet.mockResolvedValue({ data: [] })
+      renderPage()
+      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1))
+      expect(mockAudit).not.toHaveBeenCalled()
+    })
+
+    it('calls auditLogsApi.list when switching to the audit tab', async () => {
+      mockGet.mockResolvedValue({ data: [] })
+      mockAudit.mockResolvedValue(makeAuditResponse())
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => expect(mockAudit).toHaveBeenCalledTimes(1))
+    })
+  })
+
+  // =========================================================================
+  // Audit Log tab — pagination
+  // =========================================================================
+  describe('audit log tab — pagination', () => {
+    it('does not show pagination when total_pages is 1', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse([makeAuditEntry()], { total_pages: 1 }))
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => {
+        expect(screen.queryByText('Prev')).not.toBeInTheDocument()
+        expect(screen.queryByText('Next')).not.toBeInTheDocument()
+      })
+    })
+
+    it('shows pagination controls when total_pages > 1', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse([makeAuditEntry()], { total: 100, total_pages: 2 }))
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => {
+        expect(screen.getByText('Prev')).toBeInTheDocument()
+        expect(screen.getByText('Next')).toBeInTheDocument()
+      })
+    })
+
+    it('shows the current page and total pages', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse([makeAuditEntry()], { total: 150, total_pages: 3 }))
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => expect(screen.getByText('Page 1 of 3')).toBeInTheDocument())
+    })
+
+    it('Prev button is disabled on page 1', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse([makeAuditEntry()], { total: 100, total_pages: 2 }))
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      const prevBtn = await screen.findByText('Prev')
+      expect(prevBtn.closest('button')).toBeDisabled()
+    })
+
+    it('Next button is not disabled on page 1 of 2', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse([makeAuditEntry()], { total: 100, total_pages: 2 }))
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      const nextBtn = await screen.findByText('Next')
+      expect(nextBtn.closest('button')).not.toBeDisabled()
+    })
+
+    it('clicking Next requests page 2', async () => {
+      mockAudit.mockResolvedValue(makeAuditResponse([makeAuditEntry()], { total: 100, total_pages: 2 }))
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => expect(mockAudit).toHaveBeenCalledTimes(1))
+      fireEvent.click(await screen.findByText('Next'))
+      await waitFor(() => {
+        const lastCall = mockAudit.mock.calls.at(-1)![0]
+        expect(lastCall.page).toBe(2)
+      })
+    })
+  })
+
+  // =========================================================================
+  // Loading state — users tab
   // =========================================================================
   describe('loading state', () => {
-    it('shows "Loading…" while the query is pending', () => {
+    it('shows "Loading…" while the users query is pending', () => {
       renderPage()
       expect(screen.getByText('Loading…')).toBeInTheDocument()
     })
@@ -250,7 +444,7 @@ describe('AdminPage', () => {
   })
 
   // =========================================================================
-  // Column headers
+  // Column headers — users tab
   // =========================================================================
   describe('column headers', () => {
     beforeEach(() => {

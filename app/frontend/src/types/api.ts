@@ -176,3 +176,19 @@ export interface EntityTimeline {
   total: number
   events: EventItem[]
 }
+
+// ── Audit Logs ────────────────────────────────────────────────────────────────
+
+export interface AuditLogEntry {
+  id: string
+  timestamp: string
+  actor: string
+  action: string
+  resource_type: string
+  resource_id: string | null
+  details: Record<string, unknown> | null
+  request_ip: string | null
+  request_method: string | null
+  request_path: string | null
+  user_agent: string | null
+}

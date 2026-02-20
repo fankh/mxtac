@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopBar } from '../../layout/TopBar'
-import { apiClient } from '../../../lib/api'
+import { apiClient, auditLogsApi } from '../../../lib/api'
+import type { AuditLogEntry } from '../../../types/api'
 
 interface User {
   id: string
@@ -11,24 +12,16 @@ interface User {
   is_active: boolean
 }
 
-interface AuditLogEntry {
-  id: string
-  timestamp: string
-  actor: string
-  action: string
-  resource_type: string
-  resource_id: string
-  details: Record<string, unknown>
-  request_ip: string | null
-  request_method: string | null
-  request_path: string | null
-}
-
-interface AuditLogResponse {
-  total: number
-  page: number
-  page_size: number
-  items: AuditLogEntry[]
+/** Convert an OpenSearch-style range string (e.g. "now-7d") to an ISO 8601 datetime. */
+function fromTsForRange(range: string): string {
+  const now = new Date()
+  const match = range.match(/^now-(\d+)([hd])$/)
+  if (!match) return new Date(0).toISOString()
+  const [, num, unit] = match
+  const ms = unit === 'h'
+    ? parseInt(num) * 3_600_000
+    : parseInt(num) * 86_400_000
+  return new Date(now.getTime() - ms).toISOString()
 }
 
 const ROLE_COLORS: Record<string, string> = {
@@ -55,17 +48,6 @@ async function fetchUsers(): Promise<User[]> {
   return apiClient.get('/users').then(r => r.data)
 }
 
-async function fetchAuditLog(params: {
-  page: number
-  page_size: number
-  actor?: string
-  action?: string
-  resource_type?: string
-  time_from: string
-}): Promise<AuditLogResponse> {
-  return apiClient.get('/admin/audit-log', { params }).then(r => r.data)
-}
-
 export function AdminPage() {
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<'users' | 'audit'>('users')
@@ -82,12 +64,12 @@ export function AdminPage() {
 
   const { data: auditLog, isLoading: auditLoading } = useQuery({
     queryKey: ['audit-log', auditPage, timeRange, auditActorFilter, auditActionFilter, auditResourceFilter],
-    queryFn: () => fetchAuditLog({
+    queryFn: () => auditLogsApi.list({
       page: auditPage,
       page_size: PAGE_SIZE,
-      time_from: timeRange,
-      ...(auditActorFilter   ? { actor: auditActorFilter }           : {}),
-      ...(auditActionFilter  ? { action: auditActionFilter }         : {}),
+      from_ts: fromTsForRange(timeRange),
+      ...(auditActorFilter    ? { actor: auditActorFilter }            : {}),
+      ...(auditActionFilter   ? { action: auditActionFilter }          : {}),
       ...(auditResourceFilter ? { resource_type: auditResourceFilter } : {}),
     }),
     enabled: activeTab === 'audit',
@@ -237,7 +219,7 @@ export function AdminPage() {
                 <option value="now-90d">Last 90d</option>
               </select>
               <span className="ml-auto text-[10px] text-text-muted">
-                {auditLog ? `${auditLog.total} entries` : ''}
+                {auditLog ? `${auditLog.pagination.total} entries` : ''}
               </span>
             </div>
 
@@ -260,7 +242,7 @@ export function AdminPage() {
                 </div>
               )}
 
-              {auditLog?.items.map((entry) => (
+              {auditLog?.items.map((entry: AuditLogEntry) => (
                 <div
                   key={entry.id}
                   className="grid grid-cols-[150px_1fr_80px_130px_1fr] gap-2 px-4 py-[7px] border-b border-section items-center"
@@ -283,10 +265,10 @@ export function AdminPage() {
             </div>
 
             {/* Pagination */}
-            {auditLog && auditLog.total > PAGE_SIZE && (
+            {auditLog && auditLog.pagination.total_pages > 1 && (
               <div className="flex items-center justify-between mt-3">
                 <span className="text-[10px] text-text-muted">
-                  Page {auditPage} of {Math.ceil(auditLog.total / PAGE_SIZE)}
+                  Page {auditPage} of {auditLog.pagination.total_pages}
                 </span>
                 <div className="flex gap-2">
                   <button
@@ -298,7 +280,7 @@ export function AdminPage() {
                   </button>
                   <button
                     onClick={() => setAuditPage(p => p + 1)}
-                    disabled={auditPage >= Math.ceil(auditLog.total / PAGE_SIZE)}
+                    disabled={auditPage >= auditLog.pagination.total_pages}
                     className="h-[24px] px-3 text-[10px] bg-surface border border-border rounded text-text-muted hover:text-text-primary disabled:opacity-40"
                   >
                     Next
