@@ -1,13 +1,18 @@
 """
-Tests for WazuhConnector — Feature 6.1: Authenticate to Wazuh API (Basic → JWT).
+Tests for WazuhConnector.
 
-Coverage:
-  - Initialisation: client/token None, last_fetched_at ~5 min ago, topic, health status
+Feature 6.1 — Authenticate to Wazuh API (Basic → JWT):
   - _connect(): creates httpx client, basic-auth call, stores JWT, reuses client on
     re-auth, raises on non-2xx, respects verify_ssl, strips trailing slash
-  - _fetch_events(): empty when not connected, yields alerts, bearer token header,
-    pagination across multiple pages, updates last_fetched_at, re-auths on 401,
-    raises on non-401 errors, single page when results < page size
+
+Feature 6.2 — Poll /alerts endpoint — paginated:
+  - _fetch_events(): empty when not connected, yields alerts from single/multi pages,
+    bearer token header, correct query params (q/sort/limit/offset), pagination with
+    correct per-page offsets, updates last_fetched_at after all pages, re-auths on 401
+    and retries, raises on non-401 errors, empty results handled correctly
+
+Common:
+  - Initialisation: client/token None, last_fetched_at ~5 min ago, topic, health status
   - stop(): closes httpx client, clears _client and _token refs, safe when no client
   - WazuhConnectorFactory: creates WazuhConnector, name/poll_interval defaults,
     credentials in extra, verify_ssl default/override
@@ -301,6 +306,93 @@ class TestWazuhConnectorFetchEvents:
         events = [e async for e in conn._fetch_events()]
         assert events == []
         assert conn._last_fetched_at > old_time
+
+    async def test_first_page_uses_offset_zero(self) -> None:
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=_alerts_resp([], total=0))
+        conn._client = mock_client
+        conn._token = "tok"
+
+        [e async for e in conn._fetch_events()]
+
+        call_kwargs = mock_client.get.call_args[1]
+        assert call_kwargs["params"]["offset"] == 0
+
+    async def test_first_page_uses_default_page_size_limit(self) -> None:
+        from app.connectors.wazuh import DEFAULT_PAGE_SIZE
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=_alerts_resp([], total=0))
+        conn._client = mock_client
+        conn._token = "tok"
+
+        [e async for e in conn._fetch_events()]
+
+        call_kwargs = mock_client.get.call_args[1]
+        assert call_kwargs["params"]["limit"] == DEFAULT_PAGE_SIZE
+
+    async def test_query_param_filters_by_timestamp_since(self) -> None:
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=_alerts_resp([], total=0))
+        conn._client = mock_client
+        conn._token = "tok"
+
+        since_before = conn._last_fetched_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+        [e async for e in conn._fetch_events()]
+
+        call_kwargs = mock_client.get.call_args[1]
+        assert call_kwargs["params"]["q"] == f"timestamp>{since_before}"
+
+    async def test_query_param_sorts_by_timestamp_ascending(self) -> None:
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=_alerts_resp([], total=0))
+        conn._client = mock_client
+        conn._token = "tok"
+
+        [e async for e in conn._fetch_events()]
+
+        call_kwargs = mock_client.get.call_args[1]
+        assert call_kwargs["params"]["sort"] == "+timestamp"
+
+    async def test_second_page_offset_increments_by_page_size(self) -> None:
+        from app.connectors.wazuh import DEFAULT_PAGE_SIZE
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        page1 = [{"id": str(i)} for i in range(DEFAULT_PAGE_SIZE)]
+        page2 = [{"id": str(i)} for i in range(DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE + 10)]
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(
+            side_effect=[
+                _alerts_resp(page1, total=DEFAULT_PAGE_SIZE + 10),
+                _alerts_resp(page2, total=DEFAULT_PAGE_SIZE + 10),
+            ]
+        )
+        conn._client = mock_client
+        conn._token = "tok"
+
+        [e async for e in conn._fetch_events()]
+
+        # First call: offset=0, second call: offset=DEFAULT_PAGE_SIZE
+        first_call_offset = mock_client.get.call_args_list[0][1]["params"]["offset"]
+        second_call_offset = mock_client.get.call_args_list[1][1]["params"]["offset"]
+        assert first_call_offset == 0
+        assert second_call_offset == DEFAULT_PAGE_SIZE
+
+    async def test_fetches_alerts_endpoint(self) -> None:
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=_alerts_resp([], total=0))
+        conn._client = mock_client
+        conn._token = "tok"
+
+        [e async for e in conn._fetch_events()]
+
+        call_args = mock_client.get.call_args[0]
+        assert call_args[0] == "/alerts"
 
 
 # ── stop() ─────────────────────────────────────────────────────────────────────
