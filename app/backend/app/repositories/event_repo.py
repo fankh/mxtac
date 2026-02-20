@@ -204,6 +204,74 @@ class EventRepo:
                 for r in rows]
 
     @staticmethod
+    async def histogram_by_time(
+        session: AsyncSession,
+        *,
+        interval: str = "1h",
+        time_from: str = "now-7d",
+        time_to: str = "now",
+    ) -> list[dict]:
+        """Return event counts grouped by time interval (date_histogram aggregation).
+
+        Bucketing is done in Python after fetching the ``time`` column so the
+        method works across SQLite (tests) and PostgreSQL (production) without
+        dialect-specific SQL.
+
+        Supported *interval* values: ``1m``, ``1h``, ``1d``, ``1w``, ``1M``
+        (and long forms: ``minute``, ``hour``, ``day``, ``week``, ``month``).
+
+        Returns a list of ``{"key": iso_timestamp, "count": N}`` dicts sorted by
+        time ascending, ready for time-series charting.
+        """
+        def _trunc_minute(t: datetime) -> datetime:
+            return t.replace(second=0, microsecond=0)
+
+        def _trunc_hour(t: datetime) -> datetime:
+            return t.replace(minute=0, second=0, microsecond=0)
+
+        def _trunc_day(t: datetime) -> datetime:
+            return t.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        def _trunc_week(t: datetime) -> datetime:
+            # Truncate to ISO Monday 00:00:00
+            return (t - timedelta(
+                days=t.weekday(), hours=t.hour,
+                minutes=t.minute, seconds=t.second, microseconds=t.microsecond
+            ))
+
+        def _trunc_month(t: datetime) -> datetime:
+            return t.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        _TRUNC: dict[str, Any] = {
+            "1m": _trunc_minute, "minute": _trunc_minute,
+            "1h": _trunc_hour,   "hour":   _trunc_hour,
+            "1d": _trunc_day,    "24h":    _trunc_day,    "day":   _trunc_day,
+            "1w": _trunc_week,   "week":   _trunc_week,
+            "1M": _trunc_month,  "month":  _trunc_month,
+        }
+        trunc_fn = _TRUNC.get(interval)
+        if trunc_fn is None:
+            return []
+
+        t_from = _parse_time(time_from)
+        t_to   = _parse_time(time_to)
+
+        q = select(Event.time).where(Event.time >= t_from, Event.time <= t_to)
+        rows = await session.execute(q)
+
+        counts: dict[datetime, int] = {}
+        for (t,) in rows:
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            bucket = trunc_fn(t)
+            counts[bucket] = counts.get(bucket, 0) + 1
+
+        return [
+            {"key": dt.isoformat(), "count": cnt}
+            for dt, cnt in sorted(counts.items())
+        ]
+
+    @staticmethod
     async def entity_events(
         session: AsyncSession,
         entity_type: str,

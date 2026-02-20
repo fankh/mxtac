@@ -86,8 +86,9 @@ class SearchRequest(BaseModel):
 
 
 class AggregationRequest(BaseModel):
-    field: str
-    agg_type: str = "terms"  # terms, date_histogram, stats
+    field: str | None = None   # required for terms; unused for date_histogram
+    agg_type: str = "terms"    # terms | date_histogram
+    interval: str = "1h"       # bucket interval for date_histogram (1m, 1h, 1d, 1w, 1M)
     size: int = 10
     time_from: str = "now-7d"
     time_to: str = "now"
@@ -200,15 +201,38 @@ async def aggregate_events(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("events:search")),
 ):
-    """Aggregate events by a field (terms aggregation)."""
-    buckets = await EventRepo.count_by_field(
-        db,
-        field=body.field,
-        time_from=body.time_from,
-        time_to=body.time_to,
-        limit=body.size,
+    """Aggregate events by field (terms) or over time (date_histogram).
+
+    - ``agg_type=terms`` — count events grouped by a field value; requires *field*.
+    - ``agg_type=date_histogram`` — count events bucketed by time; uses *interval*.
+    """
+    if body.agg_type == "date_histogram":
+        buckets = await EventRepo.histogram_by_time(
+            db,
+            interval=body.interval,
+            time_from=body.time_from,
+            time_to=body.time_to,
+        )
+        return {
+            "agg_type": "date_histogram",
+            "interval": body.interval,
+            "buckets":  buckets,
+        }
+
+    if body.agg_type == "terms":
+        buckets = await EventRepo.count_by_field(
+            db,
+            field=body.field,
+            time_from=body.time_from,
+            time_to=body.time_to,
+            limit=body.size,
+        )
+        return {"field": body.field, "buckets": buckets}
+
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=f"Unsupported agg_type: {body.agg_type!r}. Supported: terms, date_histogram",
     )
-    return {"field": body.field, "buckets": buckets}
 
 
 @router.get("/entity/{entity_type}/{entity_value}")

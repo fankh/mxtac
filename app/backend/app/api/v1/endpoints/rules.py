@@ -121,7 +121,11 @@ async def _parse_and_persist(
     Returns the list of created ORM Rule objects.
     """
     created = []
-    for doc in yaml.safe_load_all(yaml_text):
+    try:
+        docs = list(yaml.safe_load_all(yaml_text))
+    except yaml.YAMLError:
+        return []
+    for doc in docs:
         if not isinstance(doc, dict):
             continue
         rule_yaml = yaml.dump(doc)

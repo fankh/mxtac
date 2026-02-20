@@ -585,6 +585,100 @@ async def test_aggregate_with_data(
     assert buckets.get("3") == 1
 
 
+@pytest.mark.asyncio
+async def test_aggregate_date_histogram_empty_db(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """POST /events/aggregate with date_histogram on empty DB returns empty buckets."""
+    resp = await client.post(
+        BASE_URL + "/aggregate",
+        headers=hunter_headers,
+        json={"agg_type": "date_histogram", "interval": "1h"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["agg_type"] == "date_histogram"
+    assert data["interval"] == "1h"
+    assert isinstance(data["buckets"], list)
+    assert len(data["buckets"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_aggregate_date_histogram_with_data(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """date_histogram groups events into correct hour buckets."""
+    base_hour = _NOW.replace(minute=0, second=0, microsecond=0)
+    # 2 events in hour N, 1 event in hour N-1
+    await _seed(
+        db_session,
+        {"time": base_hour - timedelta(minutes=10)},
+        {"time": base_hour - timedelta(minutes=20)},
+        {"time": base_hour - timedelta(hours=1, minutes=5)},
+    )
+
+    resp = await client.post(
+        BASE_URL + "/aggregate",
+        headers=hunter_headers,
+        json={"agg_type": "date_histogram", "interval": "1h", "time_from": "now-3h"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["agg_type"] == "date_histogram"
+    assert data["interval"] == "1h"
+    buckets = data["buckets"]
+    assert len(buckets) == 2  # two distinct hour buckets
+    counts = {b["key"][:13]: b["count"] for b in buckets}  # compare up to "YYYY-MM-DDTHH"
+    # Most-recent bucket has 2 events; previous bucket has 1
+    assert 2 in counts.values()
+    assert 1 in counts.values()
+    # Verify buckets are sorted oldest-first (ascending)
+    assert buckets[0]["key"] < buckets[1]["key"]
+
+
+@pytest.mark.asyncio
+async def test_aggregate_date_histogram_day_interval(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """date_histogram with 1d interval merges events from the same calendar day."""
+    today = _NOW.replace(hour=0, minute=0, second=0, microsecond=0)
+    await _seed(
+        db_session,
+        {"time": today + timedelta(hours=2)},
+        {"time": today + timedelta(hours=14)},
+    )
+
+    resp = await client.post(
+        BASE_URL + "/aggregate",
+        headers=hunter_headers,
+        json={"agg_type": "date_histogram", "interval": "1d", "time_from": "now-3d"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["buckets"]) == 1
+    assert data["buckets"][0]["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_aggregate_unknown_agg_type_returns_422(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """POST /events/aggregate with unsupported agg_type → 422."""
+    resp = await client.post(
+        BASE_URL + "/aggregate",
+        headers=hunter_headers,
+        json={"agg_type": "percentiles", "field": "severity_id"},
+    )
+    assert resp.status_code == 422
+    assert "agg_type" in resp.json()["detail"].lower() or "unsupported" in resp.json()["detail"].lower()
+
+
 # ---------------------------------------------------------------------------
 # GET /entity/{type}/{value}
 # ---------------------------------------------------------------------------
