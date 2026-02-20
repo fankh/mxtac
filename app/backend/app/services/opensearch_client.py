@@ -28,6 +28,193 @@ RULES_INDEX = "mxtac-rules"
 ILM_POLICY_NAME = "mxtac-90day-retention"
 ILM_RETENTION_DAYS = 90
 
+# ---------------------------------------------------------------------------
+# Index mapping constants — feature 12.10
+#
+# Extracted as module-level constants so that:
+#   a) ensure_indices() is kept DRY (references these dicts directly), and
+#   b) unit tests can assert field types without mocking the OpenSearch client.
+#
+# Field type decisions:
+#   - IP addresses  → "ip"       (enables CIDR and range queries)
+#   - Exact strings → "keyword"  (enables aggregations, sorting, exact-match)
+#   - Free text     → "text"     (tokenised for full-text search)
+#   - Text+keyword  → multi-field with ".keyword" sub-field
+#   - Timestamps    → "date"     (ISO-8601 / epoch-millis)
+#   - Scores/rates  → "float"    (risk_score, normalised score)
+#   - Counters/IDs  → "integer" or "long"
+# ---------------------------------------------------------------------------
+
+#: Mapping body for mxtac-events-* indices (OCSF-normalised security events).
+EVENTS_MAPPING: dict[str, Any] = {
+    "properties": {
+        # ── Top-level OCSF fields ────────────────────────────────────────
+        "metadata_uid":           {"type": "keyword"},
+        "time":                   {"type": "date"},
+        "class_name":             {"type": "keyword"},
+        "class_uid":              {"type": "integer"},
+        "severity_id":            {"type": "integer"},
+        "severity_name":          {"type": "keyword"},
+        "metadata_product":       {"type": "keyword"},
+        "metadata_version":       {"type": "keyword"},
+        "risk_score_normalized":  {"type": "float"},
+        # ── Source endpoint ──────────────────────────────────────────────
+        "src_endpoint": {
+            "type": "object",
+            "properties": {
+                "ip":       {"type": "ip"},
+                "hostname": {"type": "keyword"},
+                "port":     {"type": "integer"},
+                "domain":   {"type": "keyword"},
+                "os_name":  {"type": "keyword"},
+            },
+        },
+        # ── Destination endpoint ─────────────────────────────────────────
+        "dst_endpoint": {
+            "type": "object",
+            "properties": {
+                "ip":       {"type": "ip"},
+                "hostname": {"type": "keyword"},
+                "port":     {"type": "integer"},
+                "domain":   {"type": "keyword"},
+                "os_name":  {"type": "keyword"},
+            },
+        },
+        # ── Actor / user context ─────────────────────────────────────────
+        "actor_user": {
+            "type": "object",
+            "properties": {
+                "name":          {"type": "keyword"},
+                "uid":           {"type": "keyword"},
+                "domain":        {"type": "keyword"},
+                "email_addr":    {"type": "keyword"},
+                "full_name":     {
+                    "type": "text",
+                    "fields": {"keyword": {"type": "keyword"}},
+                },
+                "is_privileged": {"type": "boolean"},
+            },
+        },
+        # ── Process context ──────────────────────────────────────────────
+        "process": {
+            "type": "object",
+            "properties": {
+                "pid":         {"type": "integer"},
+                "name":        {"type": "keyword"},
+                "cmd_line":    {"type": "text"},
+                "path":        {"type": "keyword"},
+                "parent_pid":  {"type": "integer"},
+                "hash_sha256": {"type": "keyword"},
+                "hash_sha1":   {"type": "keyword"},
+                "hash_md5":    {"type": "keyword"},
+            },
+        },
+        # ── Network traffic details ──────────────────────────────────────
+        "network_traffic": {
+            "type": "object",
+            "properties": {
+                "bytes_in":      {"type": "long"},
+                "bytes_out":     {"type": "long"},
+                "packets_in":    {"type": "long"},
+                "packets_out":   {"type": "long"},
+                "protocol_name": {"type": "keyword"},
+                "protocol_ver":  {"type": "keyword"},
+                "direction":     {"type": "keyword"},
+            },
+        },
+        # ── File activity context ────────────────────────────────────────
+        "file": {
+            "type": "object",
+            "properties": {
+                "name":          {"type": "keyword"},
+                "path":          {"type": "keyword"},
+                "type":          {"type": "keyword"},
+                "hash_sha256":   {"type": "keyword"},
+                "hash_md5":      {"type": "keyword"},
+                "size":          {"type": "long"},
+                "created_time":  {"type": "date"},
+                "modified_time": {"type": "date"},
+                "accessed_time": {"type": "date"},
+            },
+        },
+        # ── Finding / detection context ──────────────────────────────────
+        "finding_info": {
+            "type": "object",
+            "properties": {
+                "title":    {
+                    "type": "text",
+                    "fields": {"keyword": {"type": "keyword"}},
+                },
+                "uid":      {"type": "keyword"},
+                "rule_uid": {"type": "keyword"},
+            },
+        },
+        # ── Catch-all buckets (dynamic mapping preserved) ────────────────
+        "unmapped": {"type": "object", "enabled": True},
+        "raw":      {"type": "object", "enabled": True},
+    }
+}
+
+#: Mapping body for mxtac-alerts-* indices (enriched detection alerts).
+ALERTS_MAPPING: dict[str, Any] = {
+    "properties": {
+        "rule_id":         {"type": "keyword"},
+        "rule_name":       {
+            "type": "text",
+            "fields": {"keyword": {"type": "keyword"}},
+        },
+        "severity_name":   {"type": "keyword"},
+        "severity_id":     {"type": "integer"},
+        "risk_score":      {"type": "float"},
+        "detection_count": {"type": "integer"},
+        "first_seen":      {"type": "date"},
+        "last_seen":       {"type": "date"},
+        "time":            {"type": "date"},
+        "status":          {"type": "keyword"},
+        "assigned_to":     {"type": "keyword"},
+        "tags":            {"type": "keyword"},
+        "class_name":      {"type": "keyword"},
+        "src_endpoint": {
+            "type": "object",
+            "properties": {
+                "ip":       {"type": "ip"},
+                "hostname": {"type": "keyword"},
+            },
+        },
+        "dst_endpoint": {
+            "type": "object",
+            "properties": {
+                "ip":       {"type": "ip"},
+                "hostname": {"type": "keyword"},
+            },
+        },
+    }
+}
+
+#: Mapping body for the mxtac-rules static index (Sigma detection rules).
+RULES_MAPPING: dict[str, Any] = {
+    "properties": {
+        "id":          {"type": "keyword"},
+        "title":       {
+            "type": "text",
+            "fields": {"keyword": {"type": "keyword"}},
+        },
+        "description": {"type": "text"},
+        "logsource":   {"type": "object", "enabled": True},
+        "detection":   {"type": "object", "enabled": True},
+        "tags":        {"type": "keyword"},
+        "level":       {"type": "keyword"},
+        "status":      {"type": "keyword"},
+        "author":      {
+            "type": "text",
+            "fields": {"keyword": {"type": "keyword"}},
+        },
+        "date":        {"type": "date"},
+        "modified":    {"type": "date"},
+        "references":  {"type": "text"},
+    }
+}
+
 # Maps EventFilter.field names to their OpenSearch document field paths.
 # Flat column aliases (e.g. "src_ip") are mapped to the nested OCSF paths
 # used in the indexed document; nested paths pass through unchanged.
@@ -329,62 +516,7 @@ class OpenSearchService:
                             "number_of_replicas": 1,
                             "plugins.index_state_management.policy_id": ILM_POLICY_NAME,
                         },
-                        "mappings": {
-                            "properties": {
-                                "metadata_uid":     {"type": "keyword"},
-                                "time":             {"type": "date"},
-                                "class_name":       {"type": "keyword"},
-                                "class_uid":        {"type": "integer"},
-                                "severity_id":      {"type": "integer"},
-                                "metadata_product": {"type": "keyword"},
-                                "metadata_version": {"type": "keyword"},
-                                "src_endpoint": {
-                                    "type": "object",
-                                    "properties": {
-                                        "ip":       {"type": "ip"},
-                                        "hostname": {"type": "keyword"},
-                                        "port":     {"type": "integer"},
-                                        "domain":   {"type": "keyword"},
-                                        "os_name":  {"type": "keyword"},
-                                    },
-                                },
-                                "dst_endpoint": {
-                                    "type": "object",
-                                    "properties": {
-                                        "ip":       {"type": "ip"},
-                                        "hostname": {"type": "keyword"},
-                                        "port":     {"type": "integer"},
-                                        "domain":   {"type": "keyword"},
-                                        "os_name":  {"type": "keyword"},
-                                    },
-                                },
-                                "actor_user": {
-                                    "type": "object",
-                                    "properties": {
-                                        "name":          {"type": "keyword"},
-                                        "uid":           {"type": "keyword"},
-                                        "domain":        {"type": "keyword"},
-                                        "is_privileged": {"type": "boolean"},
-                                    },
-                                },
-                                "process": {
-                                    "type": "object",
-                                    "properties": {
-                                        "pid":         {"type": "integer"},
-                                        "name":        {"type": "keyword"},
-                                        "cmd_line":    {"type": "text"},
-                                        "path":        {"type": "keyword"},
-                                        "parent_pid":  {"type": "integer"},
-                                        "hash_sha256": {"type": "keyword"},
-                                    },
-                                },
-                                "network_traffic": {"type": "object", "enabled": True},
-                                "file":            {"type": "object", "enabled": True},
-                                "finding_info":    {"type": "object", "enabled": True},
-                                "unmapped":        {"type": "object", "enabled": True},
-                                "raw":             {"type": "object", "enabled": True},
-                            }
-                        },
+                        "mappings": EVENTS_MAPPING,
                     },
                 },
             )
@@ -404,40 +536,7 @@ class OpenSearchService:
                             "number_of_replicas": 1,
                             "plugins.index_state_management.policy_id": ILM_POLICY_NAME,
                         },
-                        "mappings": {
-                            "properties": {
-                                "rule_id":         {"type": "keyword"},
-                                "rule_name":       {
-                                    "type": "text",
-                                    "fields": {"keyword": {"type": "keyword"}},
-                                },
-                                "severity_name":   {"type": "keyword"},
-                                "risk_score":      {"type": "float"},
-                                "detection_count": {"type": "integer"},
-                                "first_seen":      {"type": "date"},
-                                "last_seen":       {"type": "date"},
-                                "status":          {"type": "keyword"},
-                                "assigned_to":     {"type": "keyword"},
-                                "tags":            {"type": "keyword"},
-                                "time":            {"type": "date"},
-                                "class_name":      {"type": "keyword"},
-                                "severity_id":     {"type": "integer"},
-                                "src_endpoint": {
-                                    "type": "object",
-                                    "properties": {
-                                        "ip":       {"type": "ip"},
-                                        "hostname": {"type": "keyword"},
-                                    },
-                                },
-                                "dst_endpoint": {
-                                    "type": "object",
-                                    "properties": {
-                                        "ip":       {"type": "ip"},
-                                        "hostname": {"type": "keyword"},
-                                    },
-                                },
-                            }
-                        },
+                        "mappings": ALERTS_MAPPING,
                     },
                 },
             )
@@ -456,25 +555,7 @@ class OpenSearchService:
                             "number_of_shards": 1,
                             "number_of_replicas": 1,
                         },
-                        "mappings": {
-                            "properties": {
-                                "id":          {"type": "keyword"},
-                                "title":       {
-                                    "type": "text",
-                                    "fields": {"keyword": {"type": "keyword"}},
-                                },
-                                "description": {"type": "text"},
-                                "logsource":   {"type": "object", "enabled": True},
-                                "detection":   {"type": "object", "enabled": True},
-                                "tags":        {"type": "keyword"},
-                                "level":       {"type": "keyword"},
-                                "status":      {"type": "keyword"},
-                                "author":      {"type": "text"},
-                                "date":        {"type": "date"},
-                                "modified":    {"type": "date"},
-                                "references":  {"type": "text"},
-                            }
-                        },
+                        "mappings": RULES_MAPPING,
                     },
                 )
                 logger.info("Created rules index: %s", RULES_INDEX)

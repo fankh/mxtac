@@ -13,9 +13,12 @@ import pytest
 
 from app.services.opensearch_client import (
     ALERTS_INDEX_TEMPLATE,
+    ALERTS_MAPPING,
     EVENTS_INDEX_TEMPLATE,
+    EVENTS_MAPPING,
     ILM_POLICY_NAME,
     ILM_RETENTION_DAYS,
+    RULES_MAPPING,
     OpenSearchService,
     _daily_index,
     filter_to_dsl,
@@ -2323,3 +2326,294 @@ async def test_ensure_indices_alerts_template_has_ism_policy_id() -> None:
     assert alerts_body is not None
     settings = alerts_body["template"]["settings"]
     assert settings.get("plugins.index_state_management.policy_id") == ILM_POLICY_NAME
+
+
+# ---------------------------------------------------------------------------
+# feature 12.10 — Index mapping constants — correct field types
+#
+# These tests verify EVENTS_MAPPING, ALERTS_MAPPING, and RULES_MAPPING
+# directly (no client mock needed) to assert that every field carrying an
+# IP address, a timestamp, a float score, or an exact-match string is mapped
+# with the correct OpenSearch field type.
+# ---------------------------------------------------------------------------
+
+
+# ── Helper ────────────────────────────────────────────────────────────────────
+
+
+def _get_prop(mapping: dict, *path: str) -> dict:
+    """Walk nested 'properties' keys and return the leaf field definition."""
+    node = mapping
+    for key in path:
+        node = node["properties"][key]
+    return node
+
+
+# ── EVENTS_MAPPING — IP fields ────────────────────────────────────────────────
+
+
+def test_events_mapping_src_endpoint_ip_is_ip_type() -> None:
+    """src_endpoint.ip must be mapped as 'ip' for CIDR/range queries."""
+    assert _get_prop(EVENTS_MAPPING, "src_endpoint", "ip") == {"type": "ip"}
+
+
+def test_events_mapping_dst_endpoint_ip_is_ip_type() -> None:
+    """dst_endpoint.ip must be mapped as 'ip'."""
+    assert _get_prop(EVENTS_MAPPING, "dst_endpoint", "ip") == {"type": "ip"}
+
+
+# ── EVENTS_MAPPING — date fields ─────────────────────────────────────────────
+
+
+def test_events_mapping_time_is_date_type() -> None:
+    """'time' must be mapped as 'date' for range queries and sorting."""
+    assert _get_prop(EVENTS_MAPPING, "time") == {"type": "date"}
+
+
+def test_events_mapping_file_created_time_is_date_type() -> None:
+    """file.created_time must be mapped as 'date'."""
+    assert _get_prop(EVENTS_MAPPING, "file", "created_time") == {"type": "date"}
+
+
+def test_events_mapping_file_modified_time_is_date_type() -> None:
+    """file.modified_time must be mapped as 'date'."""
+    assert _get_prop(EVENTS_MAPPING, "file", "modified_time") == {"type": "date"}
+
+
+def test_events_mapping_file_accessed_time_is_date_type() -> None:
+    """file.accessed_time must be mapped as 'date'."""
+    assert _get_prop(EVENTS_MAPPING, "file", "accessed_time") == {"type": "date"}
+
+
+# ── EVENTS_MAPPING — float fields ────────────────────────────────────────────
+
+
+def test_events_mapping_risk_score_normalized_is_float() -> None:
+    """risk_score_normalized must be 'float' for numeric range filters."""
+    assert _get_prop(EVENTS_MAPPING, "risk_score_normalized") == {"type": "float"}
+
+
+# ── EVENTS_MAPPING — keyword fields ──────────────────────────────────────────
+
+
+def test_events_mapping_class_name_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "class_name") == {"type": "keyword"}
+
+
+def test_events_mapping_severity_name_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "severity_name") == {"type": "keyword"}
+
+
+def test_events_mapping_metadata_uid_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "metadata_uid") == {"type": "keyword"}
+
+
+def test_events_mapping_src_endpoint_hostname_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "src_endpoint", "hostname") == {"type": "keyword"}
+
+
+def test_events_mapping_dst_endpoint_hostname_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "dst_endpoint", "hostname") == {"type": "keyword"}
+
+
+def test_events_mapping_actor_user_name_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "actor_user", "name") == {"type": "keyword"}
+
+
+def test_events_mapping_actor_user_email_addr_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "actor_user", "email_addr") == {"type": "keyword"}
+
+
+def test_events_mapping_process_hash_sha256_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "process", "hash_sha256") == {"type": "keyword"}
+
+
+def test_events_mapping_process_hash_sha1_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "process", "hash_sha1") == {"type": "keyword"}
+
+
+def test_events_mapping_process_hash_md5_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "process", "hash_md5") == {"type": "keyword"}
+
+
+def test_events_mapping_file_name_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "file", "name") == {"type": "keyword"}
+
+
+def test_events_mapping_file_hash_sha256_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "file", "hash_sha256") == {"type": "keyword"}
+
+
+def test_events_mapping_network_traffic_protocol_name_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "network_traffic", "protocol_name") == {"type": "keyword"}
+
+
+def test_events_mapping_finding_info_uid_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "finding_info", "uid") == {"type": "keyword"}
+
+
+def test_events_mapping_finding_info_rule_uid_is_keyword() -> None:
+    assert _get_prop(EVENTS_MAPPING, "finding_info", "rule_uid") == {"type": "keyword"}
+
+
+# ── EVENTS_MAPPING — network_traffic byte fields are long ────────────────────
+
+
+def test_events_mapping_network_traffic_bytes_in_is_long() -> None:
+    assert _get_prop(EVENTS_MAPPING, "network_traffic", "bytes_in") == {"type": "long"}
+
+
+def test_events_mapping_network_traffic_bytes_out_is_long() -> None:
+    assert _get_prop(EVENTS_MAPPING, "network_traffic", "bytes_out") == {"type": "long"}
+
+
+# ── ALERTS_MAPPING — IP fields ────────────────────────────────────────────────
+
+
+def test_alerts_mapping_src_endpoint_ip_is_ip_type() -> None:
+    assert _get_prop(ALERTS_MAPPING, "src_endpoint", "ip") == {"type": "ip"}
+
+
+def test_alerts_mapping_dst_endpoint_ip_is_ip_type() -> None:
+    assert _get_prop(ALERTS_MAPPING, "dst_endpoint", "ip") == {"type": "ip"}
+
+
+# ── ALERTS_MAPPING — date fields ─────────────────────────────────────────────
+
+
+def test_alerts_mapping_time_is_date_type() -> None:
+    assert _get_prop(ALERTS_MAPPING, "time") == {"type": "date"}
+
+
+def test_alerts_mapping_first_seen_is_date_type() -> None:
+    assert _get_prop(ALERTS_MAPPING, "first_seen") == {"type": "date"}
+
+
+def test_alerts_mapping_last_seen_is_date_type() -> None:
+    assert _get_prop(ALERTS_MAPPING, "last_seen") == {"type": "date"}
+
+
+# ── ALERTS_MAPPING — float fields ────────────────────────────────────────────
+
+
+def test_alerts_mapping_risk_score_is_float() -> None:
+    assert _get_prop(ALERTS_MAPPING, "risk_score") == {"type": "float"}
+
+
+# ── ALERTS_MAPPING — keyword fields ──────────────────────────────────────────
+
+
+def test_alerts_mapping_rule_id_is_keyword() -> None:
+    assert _get_prop(ALERTS_MAPPING, "rule_id") == {"type": "keyword"}
+
+
+def test_alerts_mapping_status_is_keyword() -> None:
+    assert _get_prop(ALERTS_MAPPING, "status") == {"type": "keyword"}
+
+
+def test_alerts_mapping_severity_name_is_keyword() -> None:
+    assert _get_prop(ALERTS_MAPPING, "severity_name") == {"type": "keyword"}
+
+
+def test_alerts_mapping_tags_is_keyword() -> None:
+    assert _get_prop(ALERTS_MAPPING, "tags") == {"type": "keyword"}
+
+
+# ── RULES_MAPPING — date fields ───────────────────────────────────────────────
+
+
+def test_rules_mapping_date_is_date_type() -> None:
+    assert _get_prop(RULES_MAPPING, "date") == {"type": "date"}
+
+
+def test_rules_mapping_modified_is_date_type() -> None:
+    assert _get_prop(RULES_MAPPING, "modified") == {"type": "date"}
+
+
+# ── RULES_MAPPING — keyword fields ───────────────────────────────────────────
+
+
+def test_rules_mapping_id_is_keyword() -> None:
+    assert _get_prop(RULES_MAPPING, "id") == {"type": "keyword"}
+
+
+def test_rules_mapping_level_is_keyword() -> None:
+    assert _get_prop(RULES_MAPPING, "level") == {"type": "keyword"}
+
+
+def test_rules_mapping_status_is_keyword() -> None:
+    assert _get_prop(RULES_MAPPING, "status") == {"type": "keyword"}
+
+
+def test_rules_mapping_tags_is_keyword() -> None:
+    assert _get_prop(RULES_MAPPING, "tags") == {"type": "keyword"}
+
+
+# ── RULES_MAPPING — multi-field (text + .keyword) ────────────────────────────
+
+
+def test_rules_mapping_title_is_text_with_keyword_subfield() -> None:
+    """title must be text (full-text search) with a .keyword subfield (sorting/agg)."""
+    prop = _get_prop(RULES_MAPPING, "title")
+    assert prop["type"] == "text"
+    assert prop.get("fields", {}).get("keyword", {}).get("type") == "keyword"
+
+
+def test_rules_mapping_author_is_text_with_keyword_subfield() -> None:
+    """author must be text with a .keyword subfield for exact-match filtering."""
+    prop = _get_prop(RULES_MAPPING, "author")
+    assert prop["type"] == "text"
+    assert prop.get("fields", {}).get("keyword", {}).get("type") == "keyword"
+
+
+# ── ensure_indices() uses mapping constants ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_events_template_uses_events_mapping_constant() -> None:
+    """ensure_indices() must pass EVENTS_MAPPING as the template mappings body."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    calls = {
+        c.kwargs.get("name"): c.kwargs.get("body")
+        for c in mock_client.indices.put_index_template.call_args_list
+    }
+    body = calls.get("mxtac-events-template", {})
+    assert body["template"]["mappings"] is EVENTS_MAPPING
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_alerts_template_uses_alerts_mapping_constant() -> None:
+    """ensure_indices() must pass ALERTS_MAPPING as the template mappings body."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    calls = {
+        c.kwargs.get("name"): c.kwargs.get("body")
+        for c in mock_client.indices.put_index_template.call_args_list
+    }
+    body = calls.get("mxtac-alerts-template", {})
+    assert body["template"]["mappings"] is ALERTS_MAPPING
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_rules_index_uses_rules_mapping_constant() -> None:
+    """ensure_indices() must pass RULES_MAPPING when creating the rules index."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=False)
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    create_kwargs = mock_client.indices.create.call_args.kwargs
+    assert create_kwargs["body"]["mappings"] is RULES_MAPPING
