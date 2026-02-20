@@ -56,9 +56,12 @@ async def get_timeline(
     db_rows = await DetectionRepo.get_timeline(db, from_date=from_date, to_date=now)
     by_day = {row["day"]: row for row in db_rows}
 
+    # Walk forward from from_date to today, filling zeros for days with no detections.
+    # Use a while-loop to avoid shadowing the built-in range() with the `range` parameter.
     result: list[TimelinePoint] = []
-    for i in range(days - 1, -1, -1):
-        day = (now - timedelta(days=i)).date()
+    day = from_date.date()
+    end_day = now.date()
+    while day <= end_day:
         row = by_day.get(str(day))
         result.append(
             TimelinePoint(
@@ -69,6 +72,7 @@ async def get_timeline(
                 total=row["total"] if row else 0,
             )
         )
+        day += timedelta(days=1)
     return result
 
 
