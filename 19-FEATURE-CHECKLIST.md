@@ -366,7 +366,7 @@
 | 19.2 | `RedisStreamQueue` uses Valkey Streams | `[x]` | `[ ]` | P1 | Coded, not default |
 | 19.3 | `DistributedConnectionManager` — Valkey pub/sub | `[ ]` | `[ ]` | P1 | Task 3.1 |
 | 19.4 | Dedup cache via Valkey SETEX NX (atomic) | `[ ]` | `[ ]` | P1 | Task 3.2 |
-| 19.5 | `QUEUE_BACKEND=redis` as production default | `[ ]` | `[ ]` | P1 | docker-compose env var |
+| 19.5 | `QUEUE_BACKEND=redis` as production default | `[x]` | `[x]` | P1 | docker-compose env var |
 | 19.6 | `GET /ready` checks all dependencies | `[x]` | `[ ]` | P0 | Task 0.3 — PostgreSQL, Valkey, OpenSearch |
 | 19.7 | Docker Swarm stack manifest | `[ ]` | `[ ]` | P1 | Task 3.3 |
 | 19.8 | k3s / Kubernetes manifests | `[ ]` | `[ ]` | P1 | Task 3.3 |

@@ -257,6 +257,29 @@ async def import_rules(
         raise HTTPException(status_code=422, detail=f"Import failed: {exc}")
 
 
+@router.post("/reload", response_model=dict)
+async def reload_rules(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("rules:write")),
+):
+    """Hot-reload all Sigma rules from DB into the in-process engine.
+
+    Clears the current engine state and reloads every enabled/disabled rule
+    from the database.  Use this after bulk DB operations or to recover from
+    engine state drift without restarting the server.
+
+    Returns the number of rules loaded and the total rule count in DB.
+    """
+    engine = getattr(request.app.state, "sigma_engine", None)
+    if engine is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Sigma engine not initialized")
+    reloaded = await engine.reload_from_db(db)
+    total = await RuleRepo.count(db)
+    return {"reloaded": reloaded, "total_rules": total}
+
+
 @router.get("/{rule_id}", response_model=RuleDetailResponse)
 async def get_rule(
     rule_id: str,

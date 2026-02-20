@@ -349,6 +349,19 @@ class SigmaEngine:
         logger.info("SigmaEngine loaded rules from DB count=%d", loaded)
         return loaded
 
+    async def reload_from_db(self, session: Any) -> int:
+        """Hot-reload: clear all in-memory rules then reload from DB.
+
+        Unlike load_rules_from_db (which upserts), this method first clears
+        the engine state entirely so that rules deleted from the DB are also
+        removed from the engine.  Use this for admin-triggered full reloads.
+        """
+        self._rules.clear()
+        self._index.clear()
+        count = await self.load_rules_from_db(session)
+        logger.info("SigmaEngine hot-reload complete rules=%d", count)
+        return count
+
     # ── Evaluation ────────────────────────────────────────────────────────────
 
     async def evaluate(self, event: OCSFEvent) -> AsyncGenerator[SigmaAlert, None]:

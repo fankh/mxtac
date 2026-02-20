@@ -11,6 +11,7 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - DATABASE_URL=postgresql+asyncpg://mxtac:${POSTGRES_PASSWORD}@db:5432/mxtac
       - VALKEY_URL=redis://redis:6379/0
+      - QUEUE_BACKEND=redis
       - CORS_ORIGINS=["https://${DOMAIN}"]
     depends_on:
       db:
