@@ -313,10 +313,10 @@ class TestReadinessProbeContract:
 
     @pytest.mark.asyncio
     async def test_ready_has_required_check_keys(self, client: AsyncClient) -> None:
-        """/ready response must include postgres, valkey, and opensearch checks."""
+        """/ready response must include db, valkey, and opensearch checks."""
         resp = await client.get("/ready")
         checks = resp.json()["checks"]
-        for key in ("postgres", "valkey", "opensearch"):
+        for key in ("db", "valkey", "opensearch"):
             assert key in checks, f"Missing check key: {key!r}"
 
     @pytest.mark.asyncio
@@ -366,7 +366,7 @@ class TestReadinessProbeContract:
         assert resp.status_code == 503
         data = resp.json()
         assert data["status"] == "degraded"
-        assert data["checks"]["postgres"].startswith("error:")
+        assert data["checks"]["db"].startswith("error:")
 
 
 # ---------------------------------------------------------------------------
