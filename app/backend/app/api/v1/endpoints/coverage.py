@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ....core.database import get_db
 from ....core.rbac import require_permission
 from ....repositories.rule_repo import RuleRepo
-from ....schemas.overview import CoverageSummary, CoverageGaps
+from ....schemas.overview import CoverageSummary, CoverageGaps, CoverageByDataSource
 from ....services.mock_data import COVERAGE_SUMMARY
 
 router = APIRouter(prefix="/coverage", tags=["coverage"])
@@ -125,3 +125,21 @@ async def get_navigator_layer(
     }
 
     return JSONResponse(content=layer)
+
+
+@router.get("/by-datasource", response_model=CoverageByDataSource)
+async def get_coverage_by_datasource(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("detections:read")),
+):
+    """ATT&CK coverage breakdown by data source connector.
+
+    Groups enabled Sigma rules by their Sigma logsource (product/category/service)
+    and calculates distinct ATT&CK technique coverage per connector type
+    (Wazuh, Zeek, Suricata).  The aggregate total reflects all unique techniques
+    covered by any enabled rule across all sources combined.
+
+    Coverage is zero for a source when no enabled rules map to that connector.
+    """
+    data = await RuleRepo.get_coverage_by_datasource(db)
+    return CoverageByDataSource(**data)

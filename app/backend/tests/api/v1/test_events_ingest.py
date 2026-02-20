@@ -6,7 +6,7 @@ Coverage:
       - 401 when X-API-Key header is absent
       - 401 when key is unknown
       - 422 when batch size exceeds 1,000 events
-      - 429 when rate limit is exceeded
+      - 429 when rate limit is exceeded (Valkey reports counter > limit)
       - 202 when batch is valid; events published to queue
 """
 
@@ -14,13 +14,12 @@ from __future__ import annotations
 
 import secrets
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.api.v1.endpoints.events as events_module
 from app.main import app
 from app.pipeline.queue import Topic, get_queue
 from app.repositories.api_key_repo import APIKeyRepo
@@ -51,16 +50,18 @@ def _ocsf_event(**kwargs: Any) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Fixture: reset rate-limiter state between tests
-# ---------------------------------------------------------------------------
+def _valkey_allow() -> AsyncMock:
+    """Mock Valkey client that allows requests (counter within limit)."""
+    mock = AsyncMock()
+    mock.eval = AsyncMock(return_value=1)  # well within limit
+    return mock
 
 
-@pytest.fixture(autouse=True)
-def reset_rate_limiter():
-    events_module._rate_counters.clear()
-    yield
-    events_module._rate_counters.clear()
+def _valkey_deny() -> AsyncMock:
+    """Mock Valkey client that denies requests (counter exceeds limit)."""
+    mock = AsyncMock()
+    mock.eval = AsyncMock(return_value=10_001)  # over limit
+    return mock
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +170,7 @@ async def test_ingest_batch_exactly_1000(
 
     try:
         batch = [_ocsf_event() for _ in range(1000)]
+        # Valkey unavailable → fail-open → batch is accepted
         resp = await client.post(
             BASE + "/ingest",
             headers={"X-API-Key": raw},
@@ -181,7 +183,7 @@ async def test_ingest_batch_exactly_1000(
 
 
 # ---------------------------------------------------------------------------
-# POST /ingest — rate limiting
+# POST /ingest — rate limiting (distributed via Valkey)
 # ---------------------------------------------------------------------------
 
 
@@ -189,31 +191,80 @@ async def test_ingest_batch_exactly_1000(
 async def test_ingest_rate_limit_exceeded(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """When the rate counter is already at the limit, a new request → 429."""
+    """When Valkey reports the counter above the limit, a new request → 429."""
     raw = await _create_key(db_session)
 
-    # Look up the stored key's id so we can pre-seed the counter
-    from app.repositories.api_key_repo import APIKeyRepo as Repo
-    from app.models.api_key import hash_api_key
-    from sqlalchemy import select
-    from app.models.api_key import APIKey
-
-    result = await db_session.execute(
-        select(APIKey).where(APIKey.key_hash == hash_api_key(raw))
-    )
-    stored_key = result.scalar_one()
-
-    # Pre-fill the counter to exactly at-limit
-    import time
-    events_module._rate_counters[stored_key.id] = (10_000, time.monotonic())
-
-    resp = await client.post(
-        BASE + "/ingest",
-        headers={"X-API-Key": raw},
-        json={"events": [_ocsf_event()]},
-    )
+    with patch(
+        "app.core.valkey.get_valkey_client",
+        new=AsyncMock(return_value=_valkey_deny()),
+    ):
+        resp = await client.post(
+            BASE + "/ingest",
+            headers={"X-API-Key": raw},
+            json={"events": [_ocsf_event()]},
+        )
     assert resp.status_code == 429
     assert "Rate limit" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_rate_limit_at_boundary_allowed(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """When Valkey counter is exactly at the limit (10,000), the request is allowed."""
+    raw = await _create_key(db_session)
+
+    mock_valkey = AsyncMock()
+    mock_valkey.eval = AsyncMock(return_value=10_000)  # exactly at limit → allowed
+
+    mock_queue = MagicMock()
+    mock_queue.publish = AsyncMock()
+    app.dependency_overrides[get_queue] = lambda: mock_queue
+
+    try:
+        with patch(
+            "app.core.valkey.get_valkey_client",
+            new=AsyncMock(return_value=mock_valkey),
+        ):
+            resp = await client.post(
+                BASE + "/ingest",
+                headers={"X-API-Key": raw},
+                json={"events": [_ocsf_event()]},
+            )
+        assert resp.status_code == 202
+    finally:
+        app.dependency_overrides.pop(get_queue, None)
+
+
+@pytest.mark.asyncio
+async def test_ingest_rate_limit_window_resets(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """When Valkey is unreachable (rate limiting fails open), requests succeed.
+
+    The window-reset logic lives in the Valkey Lua script.  When Valkey is
+    unavailable we fail-open so agents are not silently dropped.
+    """
+    raw = await _create_key(db_session)
+
+    mock_queue = MagicMock()
+    mock_queue.publish = AsyncMock()
+    app.dependency_overrides[get_queue] = lambda: mock_queue
+
+    try:
+        # Valkey unavailable → check_ingest_rate_limit returns True → request succeeds
+        with patch(
+            "app.core.valkey.get_valkey_client",
+            new=AsyncMock(side_effect=Exception("connection refused")),
+        ):
+            resp = await client.post(
+                BASE + "/ingest",
+                headers={"X-API-Key": raw},
+                json={"events": [_ocsf_event()]},
+            )
+        assert resp.status_code == 202
+    finally:
+        app.dependency_overrides.pop(get_queue, None)
 
 
 # ---------------------------------------------------------------------------
@@ -299,40 +350,5 @@ async def test_ingest_single_event_accepted(
         )
         assert resp.status_code == 202
         assert resp.json()["accepted"] == 1
-    finally:
-        app.dependency_overrides.pop(get_queue, None)
-
-
-@pytest.mark.asyncio
-async def test_ingest_rate_limit_window_resets(
-    client: AsyncClient, db_session: AsyncSession
-) -> None:
-    """After the window expires, the rate counter resets and requests succeed."""
-    from app.models.api_key import APIKey, hash_api_key
-    from sqlalchemy import select
-
-    raw = await _create_key(db_session)
-
-    result = await db_session.execute(
-        select(APIKey).where(APIKey.key_hash == hash_api_key(raw))
-    )
-    stored_key = result.scalar_one()
-
-    # Seed counter with an old window (61 seconds ago) — should reset on next call
-    import time
-    events_module._rate_counters[stored_key.id] = (10_000, time.monotonic() - 61)
-
-    mock_queue = MagicMock()
-    mock_queue.publish = AsyncMock()
-    app.dependency_overrides[get_queue] = lambda: mock_queue
-
-    try:
-        resp = await client.post(
-            BASE + "/ingest",
-            headers={"X-API-Key": raw},
-            json={"events": [_ocsf_event()]},
-        )
-        # Window expired → counter reset → request succeeds
-        assert resp.status_code == 202
     finally:
         app.dependency_overrides.pop(get_queue, None)

@@ -13,6 +13,35 @@ from ..models.rule import Rule
 # ATT&CK v14 scope — total sub-techniques across the 9 tracked tactics (same as detection_repo)
 _RULE_COVERAGE_TOTAL = 105
 
+# ---------------------------------------------------------------------------
+# Logsource → connector type mapping (Sigma convention)
+# ---------------------------------------------------------------------------
+
+_WAZUH_PRODUCTS = frozenset({"windows", "linux", "macos", "unix", "endpoint"})
+_ZEEK_PRODUCTS = frozenset({"zeek"})
+_ZEEK_CATEGORIES = frozenset({"network_connection", "network_flow", "dns", "proxy", "http", "ssl", "network"})
+_SURICATA_PRODUCTS = frozenset({"suricata"})
+
+_KNOWN_SOURCES = ("wazuh", "zeek", "suricata")
+
+
+def _classify_logsource(product: str | None, category: str | None, service: str | None) -> str | None:
+    """Map Sigma logsource fields to a connector type name.
+
+    Returns "wazuh", "zeek", "suricata", or None when no match is found.
+    """
+    p = (product or "").lower().strip()
+    c = (category or "").lower().strip()
+    s = (service or "").lower().strip()
+
+    if p in _WAZUH_PRODUCTS:
+        return "wazuh"
+    if p in _ZEEK_PRODUCTS or c in _ZEEK_CATEGORIES:
+        return "zeek"
+    if p in _SURICATA_PRODUCTS or "suricata" in s:
+        return "suricata"
+    return None
+
 
 class RuleRepo:
 
@@ -183,6 +212,71 @@ class RuleRepo:
                 continue
 
         return technique_counts
+
+    @staticmethod
+    async def get_coverage_by_datasource(session: AsyncSession) -> dict:
+        """Return ATT&CK coverage broken down by data source connector.
+
+        Groups enabled rules by their Sigma logsource (product/category/service)
+        and counts distinct technique IDs per connector type (wazuh, zeek, suricata).
+        Rules whose logsource cannot be mapped to a known connector are skipped.
+
+        The aggregate ``total_covered_count`` reflects all unique techniques
+        covered across all sources combined (union, not sum).
+        """
+        result = await session.execute(
+            select(
+                Rule.technique_ids,
+                Rule.logsource_product,
+                Rule.logsource_category,
+                Rule.logsource_service,
+            )
+            .where(Rule.enabled == True)  # noqa: E712
+            .where(Rule.technique_ids.is_not(None))
+        )
+        rows = result.all()
+
+        covered_by_source: dict[str, set[str]] = {s: set() for s in _KNOWN_SOURCES}
+        rule_count_by_source: dict[str, int] = {s: 0 for s in _KNOWN_SOURCES}
+
+        for technique_ids_json, product, category, service in rows:
+            source = _classify_logsource(product, category, service)
+            if source is None:
+                continue
+            rule_count_by_source[source] += 1
+            try:
+                ids = json.loads(technique_ids_json)
+                for tid in ids:
+                    if isinstance(tid, str) and tid.strip():
+                        covered_by_source[source].add(tid.strip())
+            except (ValueError, TypeError):
+                continue
+
+        all_covered: set[str] = set()
+        for s in _KNOWN_SOURCES:
+            all_covered |= covered_by_source[s]
+
+        sources = [
+            {
+                "source": s,
+                "covered_count": min(len(covered_by_source[s]), _RULE_COVERAGE_TOTAL),
+                "total_count": _RULE_COVERAGE_TOTAL,
+                "coverage_pct": round(
+                    min(len(covered_by_source[s]), _RULE_COVERAGE_TOTAL) / _RULE_COVERAGE_TOTAL * 100,
+                    1,
+                ),
+                "rule_count": rule_count_by_source[s],
+            }
+            for s in _KNOWN_SOURCES
+        ]
+
+        total_covered = min(len(all_covered), _RULE_COVERAGE_TOTAL)
+        return {
+            "sources": sources,
+            "total_covered_count": total_covered,
+            "total_count": _RULE_COVERAGE_TOTAL,
+            "total_coverage_pct": round(total_covered / _RULE_COVERAGE_TOTAL * 100, 1),
+        }
 
     @staticmethod
     async def get_coverage_gaps(session: AsyncSession) -> dict:

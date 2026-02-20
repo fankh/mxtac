@@ -87,3 +87,28 @@ class CoverageGaps(BaseModel):
     gap_count: int
     coverage_pct: float
     uncovered_techniques: list[str]
+
+
+class DataSourceCoverage(BaseModel):
+    """Coverage metrics for a single data source connector."""
+
+    source: str          # "wazuh" | "zeek" | "suricata"
+    covered_count: int
+    total_count: int
+    coverage_pct: float
+    rule_count: int      # number of enabled rules mapped to this source
+
+
+class CoverageByDataSource(BaseModel):
+    """ATT&CK coverage breakdown by data source connector.
+
+    sources              — per-connector metrics (wazuh, zeek, suricata)
+    total_covered_count  — distinct techniques covered by ANY enabled rule across all sources
+    total_count          — fixed ATT&CK v14 scope (105)
+    total_coverage_pct   — total_covered_count / total_count * 100
+    """
+
+    sources: list[DataSourceCoverage]
+    total_covered_count: int
+    total_count: int
+    total_coverage_pct: float
