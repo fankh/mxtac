@@ -1,0 +1,295 @@
+# Docker Swarm Stack Manifest for MxTac
+# ========================================
+# Deploy:   docker stack deploy -c docker-stack.yml --with-registry-auth mxtac
+# Remove:   docker stack rm mxtac
+# Status:   docker stack services mxtac
+#
+# Prerequisites:
+#   1. Active swarm:  docker swarm init
+#   2. Node labels:   docker node update --label-add mxtac.db=true <node-id>
+#                     docker node update --label-add mxtac.redis=true <node-id>
+#   3. Secrets:       echo "$(openssl rand -hex 32)" | docker secret create mxtac_secret_key -
+#                     echo "your-db-password" | docker secret create mxtac_postgres_password -
+#   4. Images built and pushed to registry (see IMAGE_PREFIX in .env.swarm)
+
+version: '3.9'
+
+# ─── Secrets ─────────────────────────────────────────────────────────────────
+# Create before deploying:
+#   echo "$(openssl rand -hex 32)"   | docker secret create mxtac_secret_key -
+#   echo "strong-password-here"      | docker secret create mxtac_postgres_password -
+secrets:
+  mxtac_secret_key:
+    external: true
+  mxtac_postgres_password:
+    external: true
+
+# ─── Networks ────────────────────────────────────────────────────────────────
+networks:
+  mxtac_net:
+    driver: overlay
+    attachable: true  # allows manual container attachment for debugging
+
+# ─── Volumes ─────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# ─── Services ────────────────────────────────────────────────────────────────
+services:
+
+  # ── Backend API ─────────────────────────────────────────────────────────────
+  # Stateless — horizontally scalable.
+  # Reads SECRET_KEY and POSTGRES_PASSWORD from /run/secrets/* at runtime.
+  # Entrypoint wrapper (see backend/docker-entrypoint.sh) exports them as env vars.
+  backend:
+    image: ${IMAGE_PREFIX:-mxtac}/backend:${VERSION:-latest}
+    environment:
+      DEBUG: "false"
+      DATABASE_URL: "postgresql+asyncpg://mxtac@db:5432/mxtac"
+      VALKEY_URL: "redis://redis:6379/0"
+      QUEUE_BACKEND: "redis"
+      CORS_ORIGINS: '["https://${DOMAIN}"]'
+      # Secret files (read by docker-entrypoint.sh → exported as env vars)
+      SECRET_KEY_FILE: /run/secrets/mxtac_secret_key
+      POSTGRES_PASSWORD_FILE: /run/secrets/mxtac_postgres_password
+    secrets:
+      - mxtac_secret_key
+      - mxtac_postgres_password
+    networks:
+      - mxtac_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1        # roll one replica at a time
+        delay: 10s
+        order: start-first    # zero-downtime: new replica up before old torn down
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: pause
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+      labels:
+        - "com.mxtac.service=backend"
+        - "com.mxtac.tier=api"
+
+  # ── Frontend (nginx serving pre-built static assets) ───────────────────────
+  # Stateless — horizontally scalable.
+  # Built image contains /usr/share/nginx/html from Dockerfile.prod multi-stage build.
+  frontend:
+    image: ${IMAGE_PREFIX:-mxtac}/frontend:${VERSION:-latest}
+    networks:
+      - mxtac_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/index.html"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: pause
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          cpus: "0.10"
+          memory: 64M
+      labels:
+        - "com.mxtac.service=frontend"
+        - "com.mxtac.tier=web"
+
+  # ── Nginx Reverse Proxy (edge) ──────────────────────────────────────────────
+  # SSL termination, rate limiting, routing to frontend/backend upstreams.
+  # Uses host-mode port publishing for direct packet ingress (bypasses swarm LB).
+  # Requires nginx/nginx.swarm.conf and SSL certs mounted on the proxy node.
+  # Label the ingress node: docker node update --label-add mxtac.proxy=true <node>
+  proxy:
+    image: nginx:1.27-alpine
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host          # host mode = one published port per swarm node
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: host
+    configs:
+      - source: nginx_swarm_conf
+        target: /etc/nginx/nginx.conf
+        mode: 0444
+    volumes:
+      # SSL certificates — mount on the proxy node before deploying
+      - type: bind
+        source: /etc/mxtac/ssl
+        target: /etc/nginx/ssl
+        read_only: true
+    networks:
+      - mxtac_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.mxtac.proxy == true
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: stop-first   # stop old proxy before starting new (single-replica edge)
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          cpus: "0.10"
+          memory: 32M
+      labels:
+        - "com.mxtac.service=proxy"
+        - "com.mxtac.tier=edge"
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  # Stateful — single replica, pinned to a labeled node with persistent storage.
+  # Label the DB node: docker node update --label-add mxtac.db=true <node-id>
+  # POSTGRES_PASSWORD_FILE is natively supported by the postgres image.
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mxtac
+      POSTGRES_DB: mxtac
+      POSTGRES_PASSWORD_FILE: /run/secrets/mxtac_postgres_password
+    secrets:
+      - mxtac_postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mxtac_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mxtac"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.mxtac.db == true
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: stop-first   # must stop before update to prevent data corruption
+        failure_action: rollback
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 180s
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "0.50"
+          memory: 256M
+      labels:
+        - "com.mxtac.service=db"
+        - "com.mxtac.tier=data"
+
+  # ── Valkey (Redis-compatible) ────────────────────────────────────────────────
+  # Stateful — single replica, pinned to a labeled node.
+  # Used for queue backend (QUEUE_BACKEND=redis) and dedup cache (SETEX NX).
+  # Label the node: docker node update --label-add mxtac.redis=true <node-id>
+  redis:
+    image: valkey/valkey:8-alpine
+    command: valkey-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - mxtac_net
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.mxtac.redis == true
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: stop-first
+        failure_action: rollback
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.10"
+          memory: 64M
+      labels:
+        - "com.mxtac.service=redis"
+        - "com.mxtac.tier=data"
+
+# ─── Configs ─────────────────────────────────────────────────────────────────
+# Create before deploying:
+#   docker config create nginx_swarm_conf ./nginx/nginx.swarm.conf
+configs:
+  nginx_swarm_conf:
+    external: true
