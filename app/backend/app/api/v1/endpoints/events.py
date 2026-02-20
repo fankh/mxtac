@@ -199,13 +199,42 @@ async def search_events(
 async def aggregate_events(
     body: AggregationRequest,
     db: AsyncSession = Depends(get_db),
+    os_client: OpenSearchService = Depends(get_opensearch_dep),
     _: dict = Depends(require_permission("events:search")),
 ):
     """Aggregate events by field (terms) or over time (date_histogram).
 
+    Delegates to OpenSearch when a live connection is available, falling back
+    to PostgreSQL (EventRepo) otherwise.
+
     - ``agg_type=terms`` — count events grouped by a field value; requires *field*.
     - ``agg_type=date_histogram`` — count events bucketed by time; uses *interval*.
     """
+    if body.agg_type not in ("terms", "date_histogram"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported agg_type: {body.agg_type!r}. Supported: terms, date_histogram",
+        )
+
+    if os_client.is_available:
+        buckets = await os_client.aggregate(
+            body.agg_type,
+            field=body.field,
+            interval=body.interval,
+            time_from=body.time_from,
+            time_to=body.time_to,
+            size=body.size,
+        )
+        if body.agg_type == "date_histogram":
+            return {
+                "agg_type": "date_histogram",
+                "interval": body.interval,
+                "buckets":  buckets,
+                "backend":  "opensearch",
+            }
+        return {"field": body.field, "buckets": buckets, "backend": "opensearch"}
+
+    # Fallback: PostgreSQL
     if body.agg_type == "date_histogram":
         buckets = await EventRepo.histogram_by_time(
             db,
@@ -219,20 +248,14 @@ async def aggregate_events(
             "buckets":  buckets,
         }
 
-    if body.agg_type == "terms":
-        buckets = await EventRepo.count_by_field(
-            db,
-            field=body.field,
-            time_from=body.time_from,
-            time_to=body.time_to,
-            limit=body.size,
-        )
-        return {"field": body.field, "buckets": buckets}
-
-    raise HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        detail=f"Unsupported agg_type: {body.agg_type!r}. Supported: terms, date_histogram",
+    buckets = await EventRepo.count_by_field(
+        db,
+        field=body.field,
+        time_from=body.time_from,
+        time_to=body.time_to,
+        limit=body.size,
     )
+    return {"field": body.field, "buckets": buckets}
 
 
 @router.get("/entity/{entity_type}/{entity_value}")

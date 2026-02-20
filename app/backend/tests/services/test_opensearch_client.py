@@ -1800,3 +1800,261 @@ async def test_get_event_wildcard_index_not_an_alerts_index() -> None:
     assert "alerts" not in index_arg, (
         f"get_event() must not search alerts index, got {index_arg!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# OpenSearchService.aggregate — feature 12.7
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_aggregate_terms_returns_empty_when_unavailable() -> None:
+    """aggregate() returns [] when no client is connected."""
+    svc = OpenSearchService()
+    result = await svc.aggregate("terms", field="severity_id")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_aggregate_date_histogram_returns_empty_when_unavailable() -> None:
+    """aggregate(date_histogram) returns [] when no client is connected."""
+    svc = OpenSearchService()
+    result = await svc.aggregate("date_histogram", interval="1h")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_aggregate_terms_unknown_field_returns_empty() -> None:
+    """aggregate(terms) with an unknown field skips the query and returns []."""
+    svc = OpenSearchService()
+    svc._client = MagicMock()  # client is present but should not be called
+    svc._client.search = AsyncMock(side_effect=AssertionError("should not be called"))
+
+    result = await svc.aggregate("terms", field="nonexistent_field")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_aggregate_date_histogram_unknown_interval_returns_empty() -> None:
+    """aggregate(date_histogram) with an unknown interval returns [] without calling OS."""
+    svc = OpenSearchService()
+    svc._client = MagicMock()
+    svc._client.search = AsyncMock(side_effect=AssertionError("should not be called"))
+
+    result = await svc.aggregate("date_histogram", interval="99x")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_aggregate_unsupported_agg_type_returns_empty() -> None:
+    """aggregate() with an unknown agg_type returns [] without calling OS."""
+    svc = OpenSearchService()
+    svc._client = MagicMock()
+    svc._client.search = AsyncMock(side_effect=AssertionError("should not be called"))
+
+    result = await svc.aggregate("percentiles", field="severity_id")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_aggregate_terms_builds_correct_dsl() -> None:
+    """aggregate(terms) sends a terms aggregation DSL with the mapped field name."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(return_value={
+        "aggregations": {
+            "terms_agg": {
+                "buckets": [
+                    {"key": 5, "doc_count": 42},
+                    {"key": 3, "doc_count": 15},
+                ]
+            }
+        }
+    })
+    svc._client = mock_client
+
+    result = await svc.aggregate(
+        "terms",
+        field="severity_id",
+        time_from="now-7d",
+        time_to="now",
+        size=10,
+    )
+
+    mock_client.search.assert_called_once()
+    body = mock_client.search.call_args.kwargs.get("body") or mock_client.search.call_args.args[0]
+
+    # size=0 means no hits are returned, only aggregation buckets
+    assert body["size"] == 0
+    # Time range filter is always present
+    assert body["query"]["range"]["time"] == {"gte": "now-7d", "lte": "now"}
+    # Terms agg uses the correct (mapped) field
+    terms_agg = body["aggs"]["terms_agg"]["terms"]
+    assert terms_agg["field"] == "severity_id"
+    assert terms_agg["size"] == 10
+
+    # Response is normalized to {"key": str, "count": int}
+    assert result == [{"key": "5", "count": 42}, {"key": "3", "count": 15}]
+
+
+@pytest.mark.asyncio
+async def test_aggregate_terms_maps_flat_alias_to_os_field() -> None:
+    """aggregate(terms) on 'src_ip' maps to 'src_endpoint.ip' in the DSL."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(return_value={
+        "aggregations": {"terms_agg": {"buckets": []}}
+    })
+    svc._client = mock_client
+
+    await svc.aggregate("terms", field="src_ip", size=5)
+
+    body = mock_client.search.call_args.kwargs.get("body") or mock_client.search.call_args.args[0]
+    assert body["aggs"]["terms_agg"]["terms"]["field"] == "src_endpoint.ip"
+
+
+@pytest.mark.asyncio
+async def test_aggregate_terms_result_keys_are_strings() -> None:
+    """aggregate(terms) coerces all bucket keys to strings."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(return_value={
+        "aggregations": {
+            "terms_agg": {
+                "buckets": [
+                    {"key": 4, "doc_count": 10},   # integer key
+                    {"key": "critical", "doc_count": 5},  # string key
+                ]
+            }
+        }
+    })
+    svc._client = mock_client
+
+    result = await svc.aggregate("terms", field="severity_id")
+    assert all(isinstance(b["key"], str) for b in result)
+    assert result[0]["key"] == "4"
+    assert result[1]["key"] == "critical"
+
+
+@pytest.mark.asyncio
+async def test_aggregate_terms_exception_returns_empty() -> None:
+    """An exception from the OS client is caught; [] is returned."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(side_effect=Exception("connection refused"))
+    svc._client = mock_client
+
+    result = await svc.aggregate("terms", field="class_name")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_aggregate_date_histogram_builds_correct_dsl() -> None:
+    """aggregate(date_histogram) sends a date_histogram DSL with calendar_interval."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(return_value={
+        "aggregations": {
+            "histogram_agg": {
+                "buckets": [
+                    {"key_as_string": "2026-02-20T12:00:00.000Z", "doc_count": 8},
+                    {"key_as_string": "2026-02-20T13:00:00.000Z", "doc_count": 5},
+                ]
+            }
+        }
+    })
+    svc._client = mock_client
+
+    result = await svc.aggregate(
+        "date_histogram",
+        interval="1h",
+        time_from="now-24h",
+        time_to="now",
+    )
+
+    body = mock_client.search.call_args.kwargs.get("body") or mock_client.search.call_args.args[0]
+    assert body["size"] == 0
+    assert body["query"]["range"]["time"] == {"gte": "now-24h", "lte": "now"}
+
+    hist_agg = body["aggs"]["histogram_agg"]["date_histogram"]
+    assert hist_agg["field"] == "time"
+    assert hist_agg["calendar_interval"] == "hour"
+    assert hist_agg["min_doc_count"] == 1
+
+    # Response is normalized to {"key": key_as_string, "count": int}
+    assert result == [
+        {"key": "2026-02-20T12:00:00.000Z", "count": 8},
+        {"key": "2026-02-20T13:00:00.000Z", "count": 5},
+    ]
+
+
+@pytest.mark.parametrize("interval,expected_cal", [
+    ("1m",     "minute"),
+    ("minute", "minute"),
+    ("1h",     "hour"),
+    ("hour",   "hour"),
+    ("1d",     "day"),
+    ("24h",    "day"),
+    ("day",    "day"),
+    ("1w",     "week"),
+    ("week",   "week"),
+    ("1M",     "month"),
+    ("month",  "month"),
+])
+@pytest.mark.asyncio
+async def test_aggregate_date_histogram_interval_mapping(interval: str, expected_cal: str) -> None:
+    """All supported interval aliases map to the correct OpenSearch calendar_interval."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(return_value={
+        "aggregations": {"histogram_agg": {"buckets": []}}
+    })
+    svc._client = mock_client
+
+    await svc.aggregate("date_histogram", interval=interval)
+
+    body = mock_client.search.call_args.kwargs.get("body") or mock_client.search.call_args.args[0]
+    assert body["aggs"]["histogram_agg"]["date_histogram"]["calendar_interval"] == expected_cal
+
+
+@pytest.mark.asyncio
+async def test_aggregate_date_histogram_exception_returns_empty() -> None:
+    """An exception from the OS client during date_histogram is caught; [] returned."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(side_effect=Exception("timeout"))
+    svc._client = mock_client
+
+    result = await svc.aggregate("date_histogram", interval="1h")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_aggregate_terms_empty_buckets() -> None:
+    """aggregate(terms) on an index with no matching docs returns []."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(return_value={
+        "aggregations": {"terms_agg": {"buckets": []}}
+    })
+    svc._client = mock_client
+
+    result = await svc.aggregate("terms", field="severity_id")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_aggregate_queries_events_index_wildcard() -> None:
+    """aggregate() always targets the mxtac-events-* wildcard, not alerts or rules."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(return_value={
+        "aggregations": {"terms_agg": {"buckets": []}}
+    })
+    svc._client = mock_client
+
+    await svc.aggregate("terms", field="class_name")
+
+    index_arg = mock_client.search.call_args.kwargs.get("index")
+    assert index_arg == "mxtac-events-*"
+    assert "alerts" not in index_arg

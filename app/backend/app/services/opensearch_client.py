@@ -180,6 +180,101 @@ class OpenSearchService:
             logger.error("OpenSearch search_events failed: %s", exc)
             return {"hits": {"total": {"value": 0}, "hits": []}}
 
+    # ── Aggregation interval mapping ──────────────────────────────────────────
+    _CALENDAR_INTERVALS: dict[str, str] = {
+        "1m": "minute", "minute": "minute",
+        "1h": "hour",   "hour":   "hour",
+        "1d": "day",    "24h":    "day",    "day":   "day",
+        "1w": "week",   "week":   "week",
+        "1M": "month",  "month":  "month",
+    }
+
+    async def aggregate(
+        self,
+        agg_type: str,
+        *,
+        field: str | None = None,
+        interval: str = "1h",
+        time_from: str = "now-7d",
+        time_to: str = "now",
+        size: int = 10,
+    ) -> list[dict]:
+        """Run a terms or date_histogram aggregation over the events index.
+
+        - ``agg_type="terms"`` groups by *field* value; returns buckets sorted by
+          count descending: ``[{"key": value, "count": N}, ...]``.
+        - ``agg_type="date_histogram"`` buckets events by *interval*; returns
+          buckets sorted by time ascending: ``[{"key": iso_ts, "count": N}, ...]``.
+
+        Returns an empty list when the client is unavailable, when a required
+        parameter is missing/unknown, or on any OpenSearch error.
+        """
+        if self._client is None:
+            return []
+
+        base_query: dict[str, Any] = {
+            "size": 0,
+            "query": {"range": {"time": {"gte": time_from, "lte": time_to}}},
+        }
+
+        if agg_type == "terms":
+            os_field = _OS_FIELD_MAP.get(field or "")
+            if not os_field:
+                logger.warning("aggregate(terms): unknown field %r — returning []", field)
+                return []
+            body = {
+                **base_query,
+                "aggs": {
+                    "terms_agg": {
+                        "terms": {
+                            "field": os_field,
+                            "size":  size,
+                            "order": {"_count": "desc"},
+                        }
+                    }
+                },
+            }
+            try:
+                resp = await self._client.search(
+                    index=f"{EVENTS_INDEX_TEMPLATE}-*", body=body
+                )
+                raw = resp.get("aggregations", {}).get("terms_agg", {}).get("buckets", [])
+                return [{"key": str(b["key"]), "count": b["doc_count"]} for b in raw]
+            except Exception as exc:
+                logger.error("OpenSearch aggregate(terms) failed: %s", exc)
+                return []
+
+        if agg_type == "date_histogram":
+            cal_interval = self._CALENDAR_INTERVALS.get(interval)
+            if cal_interval is None:
+                logger.warning("aggregate(date_histogram): unknown interval %r — returning []", interval)
+                return []
+            body = {
+                **base_query,
+                "aggs": {
+                    "histogram_agg": {
+                        "date_histogram": {
+                            "field":             "time",
+                            "calendar_interval": cal_interval,
+                            "min_doc_count":     1,
+                            "order":             {"_key": "asc"},
+                        }
+                    }
+                },
+            }
+            try:
+                resp = await self._client.search(
+                    index=f"{EVENTS_INDEX_TEMPLATE}-*", body=body
+                )
+                raw = resp.get("aggregations", {}).get("histogram_agg", {}).get("buckets", [])
+                return [{"key": b.get("key_as_string", ""), "count": b["doc_count"]} for b in raw]
+            except Exception as exc:
+                logger.error("OpenSearch aggregate(date_histogram) failed: %s", exc)
+                return []
+
+        logger.warning("aggregate: unsupported agg_type %r — returning []", agg_type)
+        return []
+
     async def get_event(self, event_id: str, index: str | None = None) -> dict | None:
         if self._client is None:
             return None

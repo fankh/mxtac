@@ -680,6 +680,112 @@ async def test_aggregate_unknown_agg_type_returns_422(
 
 
 # ---------------------------------------------------------------------------
+# POST /aggregate — OpenSearch-backed path (feature 12.7)
+# ---------------------------------------------------------------------------
+
+
+def _make_os_agg_client(buckets: list[dict], agg_name: str = "terms_agg") -> MagicMock:
+    """Build a mock OpenSearchService whose aggregate() returns the given buckets."""
+    mock = MagicMock()
+    mock.is_available = True
+    mock.aggregate = AsyncMock(return_value=buckets)
+    return mock
+
+
+@pytest.mark.asyncio
+async def test_aggregate_opensearch_terms_path(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """When OpenSearch is available, POST /aggregate(terms) delegates to os_client.aggregate()."""
+    os_mock = _make_os_agg_client([
+        {"key": "5", "count": 42},
+        {"key": "3", "count": 15},
+    ])
+
+    app.dependency_overrides[get_opensearch_dep] = lambda: os_mock
+    try:
+        resp = await client.post(
+            BASE_URL + "/aggregate",
+            headers=hunter_headers,
+            json={"field": "severity_id", "agg_type": "terms", "size": 10, "time_from": "now-1h"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["backend"] == "opensearch"
+        assert data["field"] == "severity_id"
+        assert data["buckets"] == [{"key": "5", "count": 42}, {"key": "3", "count": 15}]
+        os_mock.aggregate.assert_called_once()
+        call_kwargs = os_mock.aggregate.call_args
+        assert call_kwargs.args[0] == "terms"
+        assert call_kwargs.kwargs["field"] == "severity_id"
+    finally:
+        app.dependency_overrides.pop(get_opensearch_dep, None)
+
+
+@pytest.mark.asyncio
+async def test_aggregate_opensearch_date_histogram_path(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """When OpenSearch is available, date_histogram is delegated to os_client.aggregate()."""
+    os_mock = _make_os_agg_client([
+        {"key": "2026-02-20T12:00:00.000Z", "count": 8},
+        {"key": "2026-02-20T13:00:00.000Z", "count": 5},
+    ])
+
+    app.dependency_overrides[get_opensearch_dep] = lambda: os_mock
+    try:
+        resp = await client.post(
+            BASE_URL + "/aggregate",
+            headers=hunter_headers,
+            json={"agg_type": "date_histogram", "interval": "1h", "time_from": "now-24h"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["backend"] == "opensearch"
+        assert data["agg_type"] == "date_histogram"
+        assert data["interval"] == "1h"
+        assert len(data["buckets"]) == 2
+        os_mock.aggregate.assert_called_once()
+        call_kwargs = os_mock.aggregate.call_args
+        assert call_kwargs.args[0] == "date_histogram"
+        assert call_kwargs.kwargs["interval"] == "1h"
+    finally:
+        app.dependency_overrides.pop(get_opensearch_dep, None)
+
+
+@pytest.mark.asyncio
+async def test_aggregate_falls_back_to_postgres_when_os_unavailable(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """When OpenSearch is unavailable, /aggregate falls back to PostgreSQL."""
+    await _seed(db_session, {"severity_id": 4}, {"severity_id": 4}, {"severity_id": 5})
+
+    os_mock = MagicMock()
+    os_mock.is_available = False
+
+    app.dependency_overrides[get_opensearch_dep] = lambda: os_mock
+    try:
+        resp = await client.post(
+            BASE_URL + "/aggregate",
+            headers=hunter_headers,
+            json={"field": "severity_id", "agg_type": "terms", "time_from": "now-1h"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # PostgreSQL path — no backend key in response
+        assert "backend" not in data
+        buckets = {b["key"]: b["count"] for b in data["buckets"]}
+        assert buckets.get("4") == 2
+        assert buckets.get("5") == 1
+    finally:
+        app.dependency_overrides.pop(get_opensearch_dep, None)
+
+
+# ---------------------------------------------------------------------------
 # GET /entity/{type}/{value}
 # ---------------------------------------------------------------------------
 
