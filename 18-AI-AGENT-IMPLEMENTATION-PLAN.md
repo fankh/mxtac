@@ -23,7 +23,7 @@ Tasks in later phases depend on earlier phases completing.
 
 | Layer | Status | Notes |
 |-------|--------|-------|
-| Docker dev stack | Done | postgres, redis, opensearch, redpanda all running |
+| Docker dev stack | Done | postgres, opensearch, redpanda, **Valkey 8** all running |
 | FastAPI skeleton | Done | 8 endpoint groups, all return mock data |
 | React UI | Done | Overview + Detections pages functional |
 | Message queue | Done | InMemory / Redis / Kafka backends coded |
@@ -33,29 +33,34 @@ Tasks in later phases depend on earlier phases completing.
 | Sigma engine | Stub | Data structures only, no evaluation |
 | OCSF normalizers | Stub | File structure only |
 | Connectors | Stub | Base class only |
-| DB persistence | Missing | All endpoints use mock_data.py |
-| RBAC enforcement | Missing | No permission checks |
-| WebSocket (real-time) | Missing | Framework only |
-| Horizontal scaling | Missing | In-process state, no Valkey pub/sub |
+| DB persistence | Partial | `seed.py` exists, repos missing |
+| RBAC enforcement | Partial | `rbac.py` exists, not applied to endpoints |
+| WebSocket (real-time) | Partial | Framework + wiring done |
+| Horizontal scaling | Partial | Valkey configured, no pub/sub yet |
+| Theme system | **Done** | Light / dark / matrix themes |
+| /ready endpoint | **Done** | Checks PostgreSQL, Valkey, OpenSearch |
+| Pipeline wiring | **Done** | Structural wiring in `main.py` startup |
+| Prometheus instrumentator | Partial | Imported and wired in `main.py` |
 
 ---
 
 ## Dependency Graph
 
 ```
-Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5
-Foundation   Storage     Pipeline    Detection    API/UI       Scale
+Phase 0 (DONE) ──► Phase 0.5 ──► Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4 ──► Phase 5 ──► Phase 6
+Foundation         Security       DB+Tests    Pipeline    Scale        API/UI       Agents       Observability
+(3 tasks)          (5 tasks)      (4 tasks)   (5 tasks)   (3 tasks)    (5 tasks)    (2 tasks)    (2 tasks)
 ```
 
 ---
 
-## Phase 0 — Foundation Fixes
+## Phase 0 — Foundation Fixes ✅ DONE
 
-*Prerequisites: None. Run all tasks in parallel.*
+*Prerequisites: None. All tasks confirmed implemented.*
 
 ---
 
-### TASK-0.1: Replace Redis with Valkey
+### TASK-0.1: Replace Redis with Valkey — **DONE**
 
 **Context**
 Redis changed its license to RSALv2/SSPLv1 in March 2024. Valkey is the Linux Foundation
@@ -80,7 +85,7 @@ All redis-py clients connect to Valkey without code changes.
 
 ---
 
-### TASK-0.2: Add Missing Config Fields
+### TASK-0.2: Add Missing Config Fields — **DONE**
 
 **Context**
 `app/backend/app/core/config.py` currently defines only basic fields (app_name, secret_key,
@@ -127,7 +132,7 @@ Also update `app/backend/.env.example` with all new fields and documentation com
 
 ---
 
-### TASK-0.3: Add /ready Endpoint
+### TASK-0.3: Add /ready Endpoint — **DONE**
 
 **Context**
 `app/backend/app/main.py` has a `/health` endpoint that always returns `{"status": "ok"}`.
@@ -181,9 +186,139 @@ async def readiness():
 
 ---
 
+## Phase 0.5 — Security & Project Hygiene
+
+*Prerequisites: Phase 0 complete. All 5 tasks can run in parallel.*
+
+---
+
+### TASK-0.5.1: Fix Credential Exposure & Security Hardening [CRITICAL]
+
+**Context**
+Committed `.env` files in `agent-scheduler/` contain plaintext credentials (`AUTH_PASSWORD=Passw0rd!@11`).
+The main backend's `config.py` does not warn when default `secret_key` is used in production.
+
+**Input files**
+- `agent-scheduler/.env`
+- `agent-scheduler/backend/.env`
+- `app/backend/app/core/config.py`
+
+**Deliverables**
+1. Remove committed `.env` files from `agent-scheduler/` and `agent-scheduler/backend/`
+2. Create `agent-scheduler/.gitignore` (modeled on `app/backend/.gitignore`)
+3. Create `agent-scheduler/.env.example` with placeholder values
+4. Create `agent-scheduler/backend/.env.example` with placeholder values
+5. Add startup warning in `config.py` when `secret_key` equals dev default in non-debug mode
+
+**Acceptance criteria**
+- `agent-scheduler/.env` is not tracked by git
+- No plaintext credentials in any tracked file
+- Backend logs a warning at startup when using default secret in production mode
+
+---
+
+### TASK-0.5.2: Project Governance & Documentation [HIGH]
+
+**Context**
+The project lacks standard governance files expected for an open-source or team project.
+
+**Input files**
+- `00-README.md`
+- `11-CONTRIBUTING.md`
+- All `.env.example` files across components
+
+**Deliverables**
+1. Create `CHANGELOG.md` (Keep a Changelog format, v2.0.0-alpha entry)
+2. Create `SECURITY.md` (disclosure policy, supported versions)
+3. Create `LICENSE` (placeholder or AGPL-3.0 — needs user decision)
+4. Create `.editorconfig` (indent_size=2 for ts/json/yaml, 4 for py)
+5. Create `app/frontend/.prettierrc`
+6. Create `ENV-REFERENCE.md` (all env vars across all components)
+7. Add API versioning strategy section to existing docs
+
+**Acceptance criteria**
+- All governance files present at repo root
+- `.editorconfig` enforces consistent formatting
+- `ENV-REFERENCE.md` documents every env var in the project
+
+---
+
+### TASK-0.5.3: Code Quality Standards Alignment [MEDIUM]
+
+**Context**
+Version strings are duplicated across `pyproject.toml`, `config.py`, and frontend `package.json`.
+ESLint rules are lenient with `no-explicit-any` as a warning.
+
+**Input files**
+- `pyproject.toml`
+- `requirements.txt`
+- `eslint.config.js`
+- `package.json`
+
+**Deliverables**
+1. Create `VERSION` file as single source of truth (read by `pyproject.toml` + `config.py`)
+2. Sync `pyproject.toml` dependencies with `requirements.txt`
+3. Strengthen ESLint: `no-explicit-any` → error, add `explicit-function-return-type` warn
+4. Document type coverage baseline
+
+**Acceptance criteria**
+- `cat VERSION` shows the canonical version string
+- `pyproject.toml` and `requirements.txt` have matching dependency specs
+- ESLint rules are stricter, CI catches `any` usage
+
+---
+
+### TASK-0.5.4: Agent-Scheduler Integration Documentation [HIGH]
+
+**Context**
+The `agent-scheduler/` component has no documentation, no pinned dependencies, and is not
+referenced from the main project README.
+
+**Input files**
+- `agent-scheduler/` directory
+- `18-AI-AGENT-IMPLEMENTATION-PLAN.md`
+
+**Deliverables**
+1. Create `agent-scheduler/README.md` (architecture, setup, API docs, config reference)
+2. Pin `agent-scheduler/backend` dependencies (create or update `requirements.txt`)
+3. Update `00-README.md` to reference agent-scheduler component
+
+**Acceptance criteria**
+- `agent-scheduler/README.md` provides setup instructions and API reference
+- All agent-scheduler Python dependencies are pinned
+- Main README links to agent-scheduler docs
+
+---
+
+### TASK-0.5.5: Docker Consistency & Security [MEDIUM]
+
+**Context**
+Dev and prod Docker Compose files have inconsistent service names and use the deprecated
+`version` key. Agent Dockerfiles are missing.
+
+**Input files**
+- `app/docker-compose.yml`
+- `app/docker-compose.prod.yml`
+- All existing Dockerfiles
+
+**Deliverables**
+1. Unify service names between dev and prod compose files
+2. Remove deprecated `version: '3.9'` key from all compose files
+3. Add resource limits to prod compose
+4. Create `agents/mxguard/Dockerfile` (multi-stage Rust build placeholder)
+5. Create `agents/mxwatch/Dockerfile` (multi-stage Rust build placeholder)
+6. Add `.dockerignore` files where missing
+
+**Acceptance criteria**
+- `docker compose config` runs without deprecation warnings
+- Service names match between dev and prod compose files
+- Agent Dockerfiles exist with valid multi-stage structure
+
+---
+
 ## Phase 1 — Database Persistence
 
-*Prerequisites: Phase 0 complete. Tasks 1.1 and 1.2 can run in parallel.*
+*Prerequisites: Phase 0.5 complete. Tasks 1.1 and 1.2 can run in parallel.*
 
 ---
 
@@ -225,7 +360,7 @@ Keep `mock_data.py` only for seeding initial data on first run.
 
 ---
 
-### TASK-1.2: Database Seed Data
+### TASK-1.2: Database Seed Data — **DONE**
 
 **Context**
 After switching to real DB queries, the UI will show empty tables. Seed data is needed for
@@ -262,9 +397,59 @@ Create default admin user:
 
 ---
 
+### TASK-1.3: Backend Test Coverage Foundation [NEW, HIGH]
+
+**Context**
+The backend has no test infrastructure. A `tests/` directory may exist but lacks a proper
+`conftest.py` with async fixtures. Minimum test coverage is needed before further development.
+
+**Input files**
+- Existing `tests/` directory (if any)
+- `pyproject.toml`
+- `app/backend/app/core/database.py`
+- All endpoint files in `app/backend/app/api/v1/endpoints/`
+
+**Deliverables**
+1. Create `tests/conftest.py` with async test client, in-memory SQLite override, role fixtures
+2. Add tests for all API endpoint groups: rules, connectors, users, events, health
+3. Target: 30 test functions minimum
+
+**Acceptance criteria**
+- `pytest` discovers and runs all tests
+- Async test client works with in-memory SQLite
+- At least 30 test functions covering endpoint groups
+- Tests pass in CI without external dependencies (PostgreSQL, OpenSearch)
+
+---
+
+### TASK-1.4: Frontend Test Coverage Foundation [NEW, HIGH]
+
+**Context**
+Frontend has minimal test coverage — only `SeverityBadge`, `StatusPill`, and `detectionStore`
+have tests. Major components and stores are untested.
+
+**Input files**
+- `src/tests/` directory
+- `src/components/` (ErrorBoundary, Sidebar, KpiCards, pages)
+- `src/stores/` (uiStore, authStore)
+- `src/lib/themeVars.ts`
+
+**Deliverables**
+1. Add component tests for 8+ components (ErrorBoundary, Sidebar, KpiCards, pages)
+2. Add store tests for uiStore (theme switching) and authStore
+3. Add utility tests for `themeVars.ts`
+4. Target: 25 test functions, >30% line coverage
+
+**Acceptance criteria**
+- `vitest run` passes all tests
+- At least 25 test functions across components, stores, and utilities
+- Line coverage exceeds 30%
+
+---
+
 ## Phase 2 — Event Pipeline
 
-*Prerequisites: Phase 0 complete. Tasks 2.1–2.4 can run in parallel.*
+*Prerequisites: Phase 1 complete. Tasks 2.1–2.4 can run in parallel.*
 
 ---
 
@@ -486,7 +671,7 @@ async def start_connectors_from_db(session: AsyncSession, queue: MessageQueue) -
 
 ---
 
-### TASK-2.4: Wire Pipeline in main.py Startup
+### TASK-2.4: Wire Pipeline in main.py Startup — **PARTIAL**
 
 **Context**
 The pipeline components (connectors, normalizers, sigma engine, alert manager) exist as
@@ -551,6 +736,34 @@ Create supporting consumers:
 - A synthetic Wazuh event published to `mxtac.raw.wazuh` flows through the full pipeline
 - The enriched alert appears in OpenSearch index `mxtac-alerts-YYYY.MM.DD`
 - The enriched alert is broadcast over WebSocket to connected UI clients
+
+---
+
+### TASK-2.5: OCSF Event Ingest Endpoint [NEW, HIGH]
+
+**Context**
+Agents (MxGuard, MxWatch) need to POST events directly to the backend. Currently there is
+no ingest endpoint. This task adds a high-throughput event ingest API with API key auth.
+
+**Input files**
+- `app/backend/app/api/v1/endpoints/events.py`
+- `app/backend/app/api/v1/router.py`
+- `app/backend/app/services/normalizers/ocsf.py`
+- `app/backend/app/pipeline/queue.py`
+- Agent architecture docs
+
+**Deliverables**
+1. Add `POST /api/v1/events/ingest` — accept batched OCSF events from agents
+2. Add API key authentication (alongside JWT) for agent-to-backend comms
+3. Add rate limiting (10,000 events/min) and batch size validation (max 1,000 per request)
+4. Add `POST /api/v1/events/ingest/test` for connectivity testing
+
+**Acceptance criteria**
+- POST with valid API key and batch of OCSF events returns 202 Accepted
+- Batch exceeding 1,000 events returns 422
+- Rate limit returns 429 when exceeded
+- Events are published to the internal message queue for processing
+- Test endpoint returns 200 with connectivity status
 
 ---
 
@@ -941,6 +1154,38 @@ Add import from file:
 
 ---
 
+### TASK-4.5: Agent Registry & Management API [NEW, HIGH]
+
+**Context**
+As agents (MxGuard, MxWatch) come online, the backend needs to track their registration,
+heartbeat status, and health. This task creates the agent lifecycle management layer.
+
+**Input files**
+- `app/backend/app/models/` (reference existing model patterns)
+- `app/backend/app/api/v1/endpoints/connectors.py` (reference pattern)
+- Agent architecture docs
+
+**Deliverables**
+1. Create `Agent` SQLAlchemy model:
+   - Fields: `id`, `hostname`, `agent_type` (mxguard/mxwatch), `version`, `status`, `last_heartbeat`, `config_json`, `created_at`, `updated_at`
+2. Create Alembic migration for `agents` table
+3. Add endpoints:
+   - `POST /api/v1/agents/register` — agent self-registration
+   - `POST /api/v1/agents/{id}/heartbeat` — periodic heartbeat
+   - `GET /api/v1/agents` — list all agents with status
+   - `GET /api/v1/agents/{id}` — agent detail
+   - `PATCH /api/v1/agents/{id}` — update agent config
+   - `DELETE /api/v1/agents/{id}` — deregister agent
+4. Auto-degradation logic: no heartbeat for 2 min → degraded, 10 min → offline
+
+**Acceptance criteria**
+- Agent can register and send heartbeats
+- Agent list shows current status for all registered agents
+- Agents that stop heartbeating are marked degraded then offline automatically
+- API key auth required for agent registration and heartbeat
+
+---
+
 ## Phase 5 — Agents (MxGuard + MxWatch)
 
 *Prerequisites: Phase 0–4 complete. These are separate Rust projects.*
@@ -999,12 +1244,19 @@ Core behavior:
 - Health endpoint at `http://0.0.0.0:9001/health`
 - Config via `mxguard.toml` + env var overrides
 
+Additional deliverables (added in v1.1):
+- `agents/mxguard/Dockerfile` — multi-stage Rust build (builder + runtime)
+- Agent registration: call `POST /api/v1/agents/register` on startup
+- Agent heartbeat: call `POST /api/v1/agents/{id}/heartbeat` every 60s
+
 **Acceptance criteria**
 - `cargo build --release` completes without error
 - `cargo test` passes
 - Running agent on Linux publishes process creation events to MxTac backend
 - Memory use under 30 MB in steady state (`/proc/self/status VmRSS`)
 - CPU use under 1% on idle system
+- Agent registers itself with the backend on startup
+- Agent sends periodic heartbeats
 
 ---
 
@@ -1065,11 +1317,18 @@ Minimum detections:
 2. **Port scan** — same src IP, >15 unique dst_ports in 60s window
 3. **Protocol anomaly** — non-HTTP traffic on port 80/443
 
+Additional deliverables (added in v1.1):
+- `agents/mxwatch/Dockerfile` — multi-stage Rust build (builder + runtime)
+- Agent registration: call `POST /api/v1/agents/register` on startup
+- Agent heartbeat: call `POST /api/v1/agents/{id}/heartbeat` every 60s
+
 **Acceptance criteria**
 - `cargo build --release` completes
 - `cargo test` passes (unit tests for DNS parser, port scan detector)
 - Captures packets from a live interface (requires root/CAP_NET_RAW)
 - Publishes `NetworkActivity` OCSF events to MxTac backend
+- Agent registers itself with the backend on startup
+- Agent sends periodic heartbeats
 
 ---
 
@@ -1079,7 +1338,7 @@ Minimum detections:
 
 ---
 
-### TASK-6.1: Structured Metrics (Prometheus)
+### TASK-6.1: Structured Metrics (Prometheus) — **PARTIAL**
 
 **Context**
 No metrics are currently exported. For on-prem multi-instance deployments, Prometheus
@@ -1168,28 +1427,37 @@ Update `AdminPage.tsx` audit tab to call `GET /admin/audit-log` and render resul
 
 ## Summary Table
 
-| Phase | Task | Description | Priority | Depends on |
-|-------|------|-------------|----------|------------|
-| 0 | 0.1 | Replace Redis → Valkey | P0 | — |
-| 0 | 0.2 | Complete config.py fields | P0 | — |
-| 0 | 0.3 | Add /ready endpoint | P0 | — |
-| 1 | 1.1 | Repository layer + real DB queries | P0 | Phase 0 |
-| 1 | 1.2 | DB seed data | P0 | 1.1 |
-| 2 | 2.1 | OCSF normalizers | P0 | Phase 0 |
-| 2 | 2.2 | Sigma engine | P0 | Phase 0 |
-| 2 | 2.3 | Connectors (Wazuh/Zeek/Suricata) | P0 | Phase 0 |
-| 2 | 2.4 | Wire pipeline in startup | P0 | 2.1, 2.2, 2.3 |
-| 3 | 3.1 | Distributed WebSocket (Valkey pub/sub) | P1 | Phase 0, 2.4 |
-| 3 | 3.2 | Distributed dedup cache (Valkey SETEX) | P1 | Phase 0, 2.4 |
-| 3 | 3.3 | Docker Swarm / k3s manifests | P1 | 3.1, 3.2 |
-| 4 | 4.1 | RBAC middleware | P1 | Phase 1 |
-| 4 | 4.2 | Event search (OpenSearch) | P1 | Phase 2 |
-| 4 | 4.3 | Real-time WebSocket frontend | P1 | 3.1 |
-| 4 | 4.4 | Sigma rule editor completion | P1 | Phase 1 |
-| 5 | 5.1 | MxGuard (Rust EDR agent) | P2 | Phase 2 |
-| 5 | 5.2 | MxWatch (Rust NDR agent) | P2 | Phase 2 |
-| 6 | 6.1 | Prometheus metrics + Grafana | P2 | Phase 3 |
-| 6 | 6.2 | Audit log | P2 | Phase 4 |
+| Phase | Task | Description | Status | Priority | Depends on |
+|-------|------|-------------|--------|----------|------------|
+| 0 | 0.1 | Replace Redis → Valkey | **DONE** | P0 | — |
+| 0 | 0.2 | Complete config.py fields | **DONE** | P0 | — |
+| 0 | 0.3 | Add /ready endpoint | **DONE** | P0 | — |
+| 0.5 | 0.5.1 | Fix credential exposure & security hardening | TODO | P0 | Phase 0 |
+| 0.5 | 0.5.2 | Project governance & documentation | TODO | P1 | Phase 0 |
+| 0.5 | 0.5.3 | Code quality standards alignment | TODO | P1 | Phase 0 |
+| 0.5 | 0.5.4 | Agent-scheduler integration documentation | TODO | P1 | Phase 0 |
+| 0.5 | 0.5.5 | Docker consistency & security | TODO | P1 | Phase 0 |
+| 1 | 1.1 | Repository layer + real DB queries | TODO | P0 | Phase 0.5 |
+| 1 | 1.2 | DB seed data | **DONE** | P0 | 1.1 |
+| 1 | 1.3 | Backend test coverage foundation | TODO | P0 | Phase 0.5 |
+| 1 | 1.4 | Frontend test coverage foundation | TODO | P0 | Phase 0.5 |
+| 2 | 2.1 | OCSF normalizers | TODO | P0 | Phase 1 |
+| 2 | 2.2 | Sigma engine | TODO | P0 | Phase 1 |
+| 2 | 2.3 | Connectors (Wazuh/Zeek/Suricata) | TODO | P0 | Phase 1 |
+| 2 | 2.4 | Wire pipeline in startup | **PARTIAL** | P0 | 2.1, 2.2, 2.3 |
+| 2 | 2.5 | OCSF event ingest endpoint | TODO | P0 | Phase 1 |
+| 3 | 3.1 | Distributed WebSocket (Valkey pub/sub) | TODO | P1 | Phase 2 |
+| 3 | 3.2 | Distributed dedup cache (Valkey SETEX) | TODO | P1 | Phase 2 |
+| 3 | 3.3 | Docker Swarm / k3s manifests | TODO | P1 | 3.1, 3.2 |
+| 4 | 4.1 | RBAC middleware | TODO | P1 | Phase 1 |
+| 4 | 4.2 | Event search (OpenSearch) | TODO | P1 | Phase 2 |
+| 4 | 4.3 | Real-time WebSocket frontend | TODO | P1 | 3.1 |
+| 4 | 4.4 | Sigma rule editor completion | TODO | P1 | Phase 1 |
+| 4 | 4.5 | Agent registry & management API | TODO | P1 | Phase 2 |
+| 5 | 5.1 | MxGuard (Rust EDR agent) | TODO | P2 | Phase 4 |
+| 5 | 5.2 | MxWatch (Rust NDR agent) | TODO | P2 | Phase 4 |
+| 6 | 6.1 | Prometheus metrics + Grafana | **PARTIAL** | P2 | Phase 3 |
+| 6 | 6.2 | Audit log | TODO | P2 | Phase 4 |
 
 ---
 
@@ -1206,5 +1474,7 @@ When assigning tasks to AI agents:
 
 ---
 
-*Document version: 1.0 — 2026-02-19*
-*Next review: After Phase 2 completion*
+*Document version: 1.1 — 2026-02-20*
+*Previous: 1.0 — 2026-02-19*
+*Changes in 1.1: Marked Phase 0 DONE, TASK-1.2 DONE, TASK-2.4/6.1 PARTIAL; added Phase 0.5 (5 tasks); added TASK-1.3, 1.4, 2.5, 4.5; updated TASK-5.1/5.2; 29 total tasks (was 20)*
+*Next review: After Phase 0.5 completion*

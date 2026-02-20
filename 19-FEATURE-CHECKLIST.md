@@ -87,7 +87,7 @@
 | 5.3 | `RedisStreamQueue` — Valkey Streams, multi-instance | `[x]` | `[ ]` | P1 | Consumer groups |
 | 5.4 | `KafkaQueue` — Kafka/Redpanda, enterprise | `[x]` | `[ ]` | P1 | aiokafka |
 | 5.5 | Topics: `mxtac.raw.*`, `normalized`, `alerts`, `enriched` | `[x]` | `[ ]` | P0 | Constants defined |
-| 5.6 | Pipeline wired in `main.py` startup | `[ ]` | `[ ]` | P0 | Task 2.4 |
+| 5.6 | Pipeline wired in `main.py` startup | `[x]` | `[ ]` | P0 | Task 2.4 — structural wiring done |
 | 5.7 | Graceful shutdown — drain queue before exit | `[ ]` | `[ ]` | P1 | `on_shutdown` handler |
 | 5.8 | Dead letter queue — failed events | `[ ]` | `[ ]` | P2 | `mxtac.dlq` topic |
 | 5.9 | Back-pressure handling — queue full → slow ingest | `[ ]` | `[ ]` | P2 | |
@@ -353,8 +353,8 @@
 | 18.6 | Repository layer — RuleRepo | `[ ]` | `[ ]` | P0 | Task 1.1 |
 | 18.7 | Repository layer — ConnectorRepo | `[ ]` | `[ ]` | P0 | Task 1.1 |
 | 18.8 | Repository layer — UserRepo | `[ ]` | `[ ]` | P0 | Task 1.1 |
-| 18.9 | Seed data on first startup (idempotent) | `[ ]` | `[ ]` | P0 | Task 1.2 |
-| 18.10 | `GET /ready` — check DB liveness | `[ ]` | `[ ]` | P0 | Task 0.3 |
+| 18.9 | Seed data on first startup (idempotent) | `[x]` | `[ ]` | P0 | Task 1.2 — `seed.py` exists, called from `main.py` |
+| 18.10 | `GET /ready` — check DB liveness | `[x]` | `[ ]` | P0 | Task 0.3 — checks PostgreSQL, Valkey, OpenSearch |
 
 ---
 
@@ -362,12 +362,12 @@
 
 | # | Feature | Impl | Test | Priority | Notes |
 |---|---------|:----:|:----:|----------|-------|
-| 19.1 | Replace Redis → Valkey (BSD license) | `[ ]` | `[ ]` | P0 | Task 0.1 |
+| 19.1 | Replace Redis → Valkey (BSD license) | `[x]` | `[ ]` | P0 | Task 0.1 — Valkey 8, `valkey[libvalkey]` |
 | 19.2 | `RedisStreamQueue` uses Valkey Streams | `[x]` | `[ ]` | P1 | Coded, not default |
 | 19.3 | `DistributedConnectionManager` — Valkey pub/sub | `[ ]` | `[ ]` | P1 | Task 3.1 |
 | 19.4 | Dedup cache via Valkey SETEX NX (atomic) | `[ ]` | `[ ]` | P1 | Task 3.2 |
 | 19.5 | `QUEUE_BACKEND=redis` as production default | `[ ]` | `[ ]` | P1 | docker-compose env var |
-| 19.6 | `GET /ready` checks all dependencies | `[ ]` | `[ ]` | P0 | Task 0.3 |
+| 19.6 | `GET /ready` checks all dependencies | `[x]` | `[ ]` | P0 | Task 0.3 — PostgreSQL, Valkey, OpenSearch |
 | 19.7 | Docker Swarm stack manifest | `[ ]` | `[ ]` | P1 | Task 3.3 |
 | 19.8 | k3s / Kubernetes manifests | `[ ]` | `[ ]` | P1 | Task 3.3 |
 | 19.9 | HAProxy config — `/ready` health check | `[ ]` | `[ ]` | P1 | Task 3.3 |
@@ -398,8 +398,8 @@
 | # | Feature | Impl | Test | Priority | Notes |
 |---|---------|:----:|:----:|----------|-------|
 | 21.1 | `GET /health` — always 200 | `[x]` | `[ ]` | P0 | `main.py` |
-| 21.2 | `GET /ready` — 200/503 based on dependencies | `[ ]` | `[ ]` | P0 | Task 0.3 |
-| 21.3 | `GET /metrics` — Prometheus format | `[ ]` | `[ ]` | P1 | Task 6.1 |
+| 21.2 | `GET /ready` — 200/503 based on dependencies | `[x]` | `[ ]` | P0 | Task 0.3 — implemented |
+| 21.3 | `GET /metrics` — Prometheus format | `[~]` | `[ ]` | P1 | Task 6.1 — instrumentator wired, custom metrics pending |
 | 21.4 | Counter: `mxtac_alerts_processed_total{severity}` | `[ ]` | `[ ]` | P1 | |
 | 21.5 | Counter: `mxtac_alerts_deduplicated_total` | `[ ]` | `[ ]` | P1 | |
 | 21.6 | Counter: `mxtac_rule_matches_total{rule_id,level}` | `[ ]` | `[ ]` | P1 | |
@@ -576,6 +576,50 @@
 
 ---
 
+## 29. Theme System
+
+| # | Feature | Impl | Test | Priority | Notes |
+|---|---------|:----:|:----:|----------|-------|
+| 29.1 | CSS custom properties theming (light/dark/matrix) | `[x]` | `[ ]` | P1 | `index.css` `[data-theme]` selectors |
+| 29.2 | Theme switcher in Sidebar | `[x]` | `[ ]` | P1 | Three-way popup |
+| 29.3 | Theme persistence (Zustand persist) | `[x]` | `[ ]` | P1 | localStorage `mxtac-ui` |
+| 29.4 | Flash prevention on page load | `[x]` | `[ ]` | P1 | `main.tsx` pre-render |
+| 29.5 | `themeVars.ts` for Recharts JS colors | `[x]` | `[ ]` | P1 | `cssVar()` + `chartColors()` |
+| 29.6 | Tailwind CSS variable integration | `[x]` | `[ ]` | P1 | All colors via `var()` |
+
+---
+
+## 30. Security & Project Hygiene
+
+| # | Feature | Impl | Test | Priority | Notes |
+|---|---------|:----:|:----:|----------|-------|
+| 30.1 | `.gitignore` for agent-scheduler | `[ ]` | n/a | P0 | TASK-0.5.1 |
+| 30.2 | Remove exposed `.env` credentials | `[ ]` | n/a | P0 | TASK-0.5.1 |
+| 30.3 | Production `secret_key` validation | `[ ]` | `[ ]` | P0 | TASK-0.5.1 |
+| 30.4 | `CHANGELOG.md` | `[ ]` | n/a | P1 | TASK-0.5.2 |
+| 30.5 | `SECURITY.md` | `[ ]` | n/a | P1 | TASK-0.5.2 |
+| 30.6 | `LICENSE` | `[ ]` | n/a | P1 | TASK-0.5.2 |
+| 30.7 | `.editorconfig` + `.prettierrc` | `[ ]` | n/a | P1 | TASK-0.5.2 |
+| 30.8 | `ENV-REFERENCE.md` | `[ ]` | n/a | P1 | TASK-0.5.2 |
+| 30.9 | `VERSION` single source of truth | `[ ]` | n/a | P1 | TASK-0.5.3 |
+| 30.10 | Dependency spec sync | `[ ]` | n/a | P1 | TASK-0.5.3 |
+| 30.11 | Agent-scheduler documentation | `[ ]` | n/a | P1 | TASK-0.5.4 |
+| 30.12 | Docker consistency | `[ ]` | n/a | P1 | TASK-0.5.5 |
+
+---
+
+## 31. Agent Management
+
+| # | Feature | Impl | Test | Priority | Notes |
+|---|---------|:----:|:----:|----------|-------|
+| 31.1 | `POST /events/ingest` endpoint | `[ ]` | `[ ]` | P0 | TASK-2.5 |
+| 31.2 | API key auth for agents | `[ ]` | `[ ]` | P0 | TASK-2.5 |
+| 31.3 | Agent registration API | `[ ]` | `[ ]` | P1 | TASK-4.5 |
+| 31.4 | Agent heartbeat API | `[ ]` | `[ ]` | P1 | TASK-4.5 |
+| 31.5 | Agent auto-degradation | `[ ]` | `[ ]` | P1 | TASK-4.5 |
+
+---
+
 ## Progress Summary
 
 > Auto-update this table after each implementation sprint.
@@ -586,7 +630,7 @@
 | 2. Password policy | 5 | 1 | 0 | 4 | 0 |
 | 3. RBAC | 9 | 1 | 0 | 8 | 0 |
 | 4. User management API | 8 | 0 | 5 | 3 | 0 |
-| 5. Event pipeline | 9 | 5 | 0 | 4 | 0 |
+| 5. Event pipeline | 9 | 6 | 0 | 3 | 0 |
 | 6. Connectors | 24 | 0 | 3 | 21 | 0 |
 | 7. OCSF normalizers | 15 | 1 | 4 | 10 | 0 |
 | 8. Sigma engine | 23 | 2 | 0 | 21 | 0 |
@@ -599,10 +643,10 @@
 | 15. Overview API | 8 | 0 | 7 | 1 | 0 |
 | 16. ATT&CK coverage | 8 | 1 | 0 | 7 | 0 |
 | 17. WebSocket | 11 | 3 | 1 | 7 | 0 |
-| 18. DB persistence | 10 | 3 | 0 | 7 | 0 |
-| 19. Horizontal scaling | 12 | 1 | 1 | 10 | 0 |
+| 18. DB persistence | 10 | 5 | 0 | 5 | 0 |
+| 19. Horizontal scaling | 12 | 3 | 1 | 8 | 0 |
 | 20. Headless operation | 9 | 0 | 1 | 8 | 0 |
-| 21. Observability | 14 | 2 | 1 | 11 | 0 |
+| 21. Observability | 14 | 3 | 2 | 9 | 0 |
 | 22. Frontend layout | 10 | 8 | 0 | 2 | 0 |
 | 23. Frontend pages | 13 | 6 | 1 | 6 | 0 |
 | 24. MxGuard (EDR) | 13 | 0 | 0 | 13 | 0 |
@@ -610,9 +654,14 @@
 | 26. Performance NFR | 8 | 0 | 0 | 8 | 0 |
 | 27. Reliability NFR | 6 | 0 | 0 | 6 | 0 |
 | 28. Tests | 46 | 3 | 0 | 43 | 0 |
-| **TOTAL** | **349** | **48 (14%)** | **55 (16%)** | **246 (70%)** | **0 (0%)** |
+| 29. Theme system | 6 | 6 | 0 | 0 | 0 |
+| 30. Security & hygiene | 12 | 0 | 0 | 12 | 0 |
+| 31. Agent management | 5 | 0 | 0 | 5 | 0 |
+| **TOTAL** | **372** | **60 (16%)** | **56 (15%)** | **256 (69%)** | **0 (0%)** |
 
 ---
 
-*Document version: 1.0 — 2026-02-19*
+*Document version: 1.1 — 2026-02-20*
+*Previous: 1.0 — 2026-02-19*
+*Changes in 1.1: Marked 7 items done/partial (5.6, 18.9, 18.10, 19.1, 19.6, 21.2, 21.3); added sections 29 (Theme System, 6 features), 30 (Security & Hygiene, 12 features), 31 (Agent Management, 5 features); 372 total features (was 349)*
 *Update this file as each feature is implemented and tested.*
