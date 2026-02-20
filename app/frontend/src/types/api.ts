@@ -105,3 +105,74 @@ export interface DetectionUpdate {
   assigned_to?: string
   priority?: string
 }
+
+// ── Events ────────────────────────────────────────────────────────────────────
+
+export interface EventFilter {
+  field: string
+  operator: 'eq' | 'ne' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte'
+  value: string | number | boolean
+}
+
+export interface EventItem {
+  id: string
+  event_uid?: string
+  time: string
+  class_name?: string
+  class_uid?: number
+  severity_id?: number
+  src_ip?: string
+  dst_ip?: string
+  hostname?: string
+  username?: string
+  process_hash?: string
+  source?: string
+  summary?: string
+  [key: string]: unknown
+}
+
+export interface SearchRequest {
+  query?: string
+  filters?: EventFilter[]
+  time_from?: string
+  time_to?: string
+  size?: number
+  from_?: number
+}
+
+export interface SearchResponse {
+  total: number
+  items: EventItem[]
+  from_: number
+  size: number
+  backend: 'opensearch' | 'postgres'
+}
+
+export interface AggregationBucket {
+  key: string
+  count: number
+}
+
+export interface AggregationRequest {
+  field?: string
+  agg_type?: 'terms' | 'date_histogram'
+  interval?: string
+  size?: number
+  time_from?: string
+  time_to?: string
+}
+
+export interface AggregationResponse {
+  agg_type?: string
+  interval?: string
+  field?: string
+  buckets: AggregationBucket[]
+  backend?: string
+}
+
+export interface EntityTimeline {
+  entity_type: string
+  entity_value: string
+  total: number
+  events: EventItem[]
+}

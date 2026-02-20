@@ -6,6 +6,7 @@ import { CoveragePage } from './components/features/coverage/CoveragePage'
 import { RulesPage } from './components/features/rules/RulesPage'
 import { ConnectorsPage } from './components/features/connectors/ConnectorsPage'
 import { AdminPage } from './components/features/admin/AdminPage'
+import { HuntPage } from './components/features/hunt/HuntPage'
 import { LoginPage } from './components/features/auth/LoginPage'
 import { ProtectedRoute } from './components/shared/ProtectedRoute'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
@@ -34,6 +35,7 @@ export default function App() {
                   <Routes>
                     <Route path="/"             element={<OverviewPage />} />
                     <Route path="/detections"   element={<DetectionsPage />} />
+                    <Route path="/hunt"         element={<HuntPage />} />
                     <Route path="/attack"       element={<CoveragePage />} />
                     <Route path="/rules"        element={<RulesPage />} />
                     <Route path="/integrations" element={<ConnectorsPage />} />

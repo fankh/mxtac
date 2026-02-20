@@ -2,6 +2,7 @@ import axios from 'axios'
 import type {
   KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus,
   Detection, PaginatedResponse, DetectionUpdate,
+  SearchRequest, SearchResponse, AggregationRequest, AggregationResponse, EntityTimeline,
 } from '../types/api'
 
 const http = axios.create({
@@ -91,4 +92,25 @@ export const detectionsApi = {
 
   update: (id: string, body: DetectionUpdate): Promise<Detection> =>
     http.patch(`/detections/${id}`, body).then(r => r.data),
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+
+export const eventsApi = {
+  search: (body: SearchRequest = {}): Promise<SearchResponse> =>
+    http.post('/events/search', body).then(r => r.data),
+
+  aggregate: (body: AggregationRequest = {}): Promise<AggregationResponse> =>
+    http.post('/events/aggregate', body).then(r => r.data),
+
+  entity: (type: string, value: string, time_from = 'now-7d'): Promise<EntityTimeline> =>
+    http.get(`/events/entity/${encodeURIComponent(type)}/${encodeURIComponent(value)}`, {
+      params: { time_from },
+    }).then(r => r.data),
+
+  queryDsl: (body: SearchRequest): Promise<{ lucene: string }> =>
+    http.post('/events/query-dsl', body).then(r => r.data),
+
+  get: (id: string): Promise<import('../types/api').EventItem> =>
+    http.get(`/events/${id}`).then(r => r.data),
 }
