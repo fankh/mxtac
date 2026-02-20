@@ -19,6 +19,7 @@ dependencies = [
     "alembic==1.14.0",
     "httpx==0.28.1",
     "valkey>=6.1.1",
+    "opensearch-py[async]>=2.7.0",
 ]
 
 [project.optional-dependencies]

@@ -1,10 +1,12 @@
 """
-Tests for feature 5.6: Pipeline wired in main.py startup/shutdown.
+Tests for feature 5.6 / 12.11: Pipeline and OpenSearch wired in main.py startup/shutdown.
 
 Coverage:
   - Startup initialises connectors and alert_mgr state before any external calls
   - Startup sets app.state.queue to the MessageQueue singleton
   - Startup sets app.state.os_client to the OpenSearchService singleton
+  - Startup calls os_client.connect() during initialisation  [12.11]
+  - Startup calls os_client.ensure_indices() after connect() [12.11]
   - Shutdown calls queue.stop() when queue is present
   - Shutdown calls alert_mgr.close() when alert_mgr is present
   - Shutdown calls os_client.close() when os_client is present
@@ -157,6 +159,60 @@ class TestStartupStateInit:
             await on_startup()
 
         mock_os.connect.assert_called_once()
+
+    async def test_startup_calls_ensure_indices(self) -> None:
+        """os_client.ensure_indices() is awaited after connect() during startup."""
+        with (
+            patch("app.main.seed_database", new_callable=AsyncMock),
+            patch("app.main.AsyncSessionLocal") as mock_session_cm,
+            patch("app.main.get_opensearch") as mock_get_os,
+            patch("app.main.get_queue") as mock_get_queue,
+        ):
+            mock_queue = AsyncMock(spec=MessageQueue)
+            mock_queue.subscribe = AsyncMock()
+            mock_get_queue.return_value = mock_queue
+
+            mock_os = AsyncMock()
+            mock_get_os.return_value = mock_os
+
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))))
+            mock_session_cm.return_value = mock_session
+
+            await on_startup()
+
+        mock_os.ensure_indices.assert_called_once()
+
+    async def test_startup_ensure_indices_called_after_connect(self) -> None:
+        """ensure_indices() is always called after connect() — ordering matters."""
+        call_order: list[str] = []
+
+        with (
+            patch("app.main.seed_database", new_callable=AsyncMock),
+            patch("app.main.AsyncSessionLocal") as mock_session_cm,
+            patch("app.main.get_opensearch") as mock_get_os,
+            patch("app.main.get_queue") as mock_get_queue,
+        ):
+            mock_queue = AsyncMock(spec=MessageQueue)
+            mock_queue.subscribe = AsyncMock()
+            mock_get_queue.return_value = mock_queue
+
+            mock_os = AsyncMock()
+            mock_os.connect = AsyncMock(side_effect=lambda: call_order.append("connect"))
+            mock_os.ensure_indices = AsyncMock(side_effect=lambda: call_order.append("ensure_indices"))
+            mock_get_os.return_value = mock_os
+
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))))
+            mock_session_cm.return_value = mock_session
+
+            await on_startup()
+
+        assert call_order.index("connect") < call_order.index("ensure_indices")
 
 
 # ── Shutdown: cleanup orchestration ───────────────────────────────────────────
