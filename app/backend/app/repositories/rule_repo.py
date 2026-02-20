@@ -156,3 +156,67 @@ class RuleRepo:
             "covered_count": covered_count,
             "total_count": _RULE_COVERAGE_TOTAL,
         }
+
+    @staticmethod
+    async def get_coverage_gaps(session: AsyncSession) -> dict:
+        """Return ATT&CK coverage gap data based on enabled vs. all rules.
+
+        Collects technique IDs from:
+          - enabled rules  → covered set
+          - all rules      → known set (enabled + disabled)
+
+        ``uncovered_techniques`` = technique IDs that appear in ANY rule but
+        are NOT covered by any enabled rule.  These are actionable: the operator
+        already has detection logic but it is disabled.
+
+        ``gap_count`` = total in scope (105) - covered_count.
+        ``coverage_pct`` = covered_count / total * 100 (capped at 100).
+        """
+        # Collect technique IDs from all enabled rules
+        enabled_result = await session.execute(
+            select(Rule.technique_ids)
+            .where(Rule.enabled == True)  # noqa: E712
+            .where(Rule.technique_ids.is_not(None))
+        )
+        enabled_rows = enabled_result.scalars().all()
+
+        covered: set[str] = set()
+        for technique_ids_json in enabled_rows:
+            try:
+                ids = json.loads(technique_ids_json)
+                for tid in ids:
+                    if isinstance(tid, str) and tid.strip():
+                        covered.add(tid.strip())
+            except (ValueError, TypeError):
+                continue
+
+        # Collect technique IDs from all rules (including disabled)
+        all_result = await session.execute(
+            select(Rule.technique_ids).where(Rule.technique_ids.is_not(None))
+        )
+        all_rows = all_result.scalars().all()
+
+        all_known: set[str] = set()
+        for technique_ids_json in all_rows:
+            try:
+                ids = json.loads(technique_ids_json)
+                for tid in ids:
+                    if isinstance(tid, str) and tid.strip():
+                        all_known.add(tid.strip())
+            except (ValueError, TypeError):
+                continue
+
+        # Techniques in any rule but NOT in enabled rules — actionable gaps
+        uncovered_techniques = sorted(all_known - covered)
+
+        covered_count = min(len(covered), _RULE_COVERAGE_TOTAL)
+        gap_count = _RULE_COVERAGE_TOTAL - covered_count
+        coverage_pct = round(covered_count / _RULE_COVERAGE_TOTAL * 100, 1)
+
+        return {
+            "covered_count": covered_count,
+            "total_count": _RULE_COVERAGE_TOTAL,
+            "gap_count": gap_count,
+            "coverage_pct": coverage_pct,
+            "uncovered_techniques": uncovered_techniques,
+        }

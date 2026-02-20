@@ -70,3 +70,20 @@ class CoverageSummary(BaseModel):
     coverage_pct: float
     covered_count: int
     total_count: int
+
+
+class CoverageGaps(BaseModel):
+    """ATT&CK technique coverage gaps — techniques not covered by any enabled rule.
+
+    covered_count         — distinct technique IDs in enabled rules
+    total_count           — fixed ATT&CK v14 scope (105 sub-techniques across 9 tactics)
+    gap_count             — total_count - covered_count
+    coverage_pct          — covered_count / total_count * 100
+    uncovered_techniques  — technique IDs present in any rule but NOT in any enabled rule
+                            (actionable: re-enabling those rules would close the gap)
+    """
+    covered_count: int
+    total_count: int
+    gap_count: int
+    coverage_pct: float
+    uncovered_techniques: list[str]

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....core.valkey import publish_rule_reload
 from ....engine.sigma_engine import SigmaEngine, _Condition
 from ....repositories.rule_repo import RuleRepo
 
@@ -252,6 +253,8 @@ async def import_rules(
         engine = getattr(request.app.state, "sigma_engine", None)
         created = await _parse_and_persist(body.yaml_content, db, engine=engine)
         total = await RuleRepo.count(db)
+        if created:
+            await publish_rule_reload()
         return {"imported": len(created), "total_rules": total}
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Import failed: {exc}")
@@ -305,6 +308,7 @@ async def create_rule(
     created = await _parse_and_persist(body.content, db, enabled=body.enabled, engine=engine)
     if not created:
         raise HTTPException(status_code=422, detail="Invalid Sigma YAML")
+    await publish_rule_reload()
     return _rule_to_response(created[0])
 
 
@@ -360,6 +364,7 @@ async def update_rule(
             if existing is not None:
                 existing.enabled = body.enabled
 
+    await publish_rule_reload()
     return _rule_to_response(updated)
 
 
@@ -376,6 +381,7 @@ async def delete_rule(
     engine = getattr(request.app.state, "sigma_engine", None)
     if engine is not None:
         engine.remove_rule(rule_id)
+    await publish_rule_reload()
 
 
 @router.post("/{rule_id}/test", response_model=RuleTestResponse)

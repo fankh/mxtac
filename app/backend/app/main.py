@@ -20,6 +20,50 @@ from .services.opensearch_client import get_opensearch
 configure_logging()
 logger = get_logger(__name__)
 
+
+async def _rule_reload_subscriber() -> None:
+    """Subscribe to the Valkey rule-reload channel and hot-reload the SigmaEngine.
+
+    Each API replica runs this background task.  When any replica modifies a
+    rule (create / update / delete / import), it publishes a signal to
+    RULE_RELOAD_CHANNEL.  This task receives that signal and reloads the
+    local SigmaEngine from the database so all replicas stay consistent
+    without manual POST /rules/reload calls.
+
+    Exits silently when Valkey is unavailable.
+    """
+    from .core.valkey import RULE_RELOAD_CHANNEL
+    from .core.database import AsyncSessionLocal
+    import valkey.asyncio as aioredis
+
+    sub_client = aioredis.from_url(settings.valkey_url, decode_responses=True)
+    try:
+        pubsub = sub_client.pubsub()
+        await pubsub.subscribe(RULE_RELOAD_CHANNEL)
+        logger.info("Rule reload subscriber listening on channel %s", RULE_RELOAD_CHANNEL)
+        async for message in pubsub.listen():
+            if message.get("type") != "message":
+                continue
+            engine = getattr(app.state, "sigma_engine", None)
+            if engine is None:
+                continue
+            try:
+                async with AsyncSessionLocal() as session:
+                    n = await engine.reload_from_db(session)
+                    logger.info("SigmaEngine reloaded from peer signal: %d rules", n)
+            except Exception:
+                logger.exception("SigmaEngine reload from peer signal failed")
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.debug("Rule reload subscriber exiting — Valkey may not be reachable")
+    finally:
+        try:
+            await sub_client.aclose()
+        except Exception:
+            pass
+
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.version,
@@ -143,6 +187,10 @@ async def on_startup() -> None:
         logger.info("Started %d connectors", len(connectors))
     except Exception:
         logger.exception("Connector start failed")
+
+    # 10. Subscribe to peer rule-change notifications — keep SigmaEngine in sync across replicas
+    asyncio.create_task(_rule_reload_subscriber(), name="rule-reload-subscriber")
+    logger.info("Rule reload subscriber started")
 
     logger.info("MxTac API startup complete")
 
