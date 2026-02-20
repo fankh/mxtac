@@ -47,6 +47,10 @@ app.include_router(api_router, prefix=settings.api_prefix)
 async def on_startup() -> None:
     logger.info("MxTac API starting — version=%s debug=%s", settings.version, settings.debug)
 
+    # Pre-initialise state so the shutdown handler always has valid references
+    app.state.connectors = []
+    app.state.alert_mgr = None
+
     # 1. Seed database (idempotent)
     try:
         async with AsyncSessionLocal() as session:
@@ -57,10 +61,12 @@ async def on_startup() -> None:
     # 2. Init message queue
     queue = get_queue()
     await queue.start()
+    app.state.queue = queue
 
     # 3. Connect OpenSearch
     os_client = get_opensearch()
     await os_client.connect()
+    app.state.os_client = os_client
 
     # 4. Load Sigma rules
     try:
@@ -75,48 +81,51 @@ async def on_startup() -> None:
         app.state.sigma_engine = engine
     except Exception:
         logger.exception("Sigma engine init failed")
+        app.state.sigma_engine = None
 
-    # 5. Start normalizer pipeline
+    # 5. Wire normalizer pipeline — subscribes to raw topics, publishes to mxtac.normalized
     try:
         from .services.normalizers.pipeline import NormalizerPipeline
         normalizer = NormalizerPipeline(queue)
-        asyncio.create_task(normalizer.start())
+        await normalizer.start()
         logger.info("Normalizer pipeline started")
     except Exception:
         logger.exception("Normalizer pipeline start failed")
 
-    # 6. Start Sigma evaluation consumer
+    # 6. Wire Sigma evaluation consumer — subscribes to mxtac.normalized, publishes alerts
     try:
         from .services.sigma_consumer import sigma_consumer
-        asyncio.create_task(sigma_consumer(queue, app.state.sigma_engine))
+        await sigma_consumer(queue, app.state.sigma_engine)
         logger.info("Sigma consumer started")
     except Exception:
         logger.exception("Sigma consumer start failed")
 
-    # 7. Start alert manager consumer
+    # 7. Wire alert manager — subscribes to mxtac.alerts, deduplicates, scores, enriches
     try:
         from .services.alert_manager import AlertManager
         alert_mgr = AlertManager(queue)
-        asyncio.create_task(alert_mgr_consumer(queue, alert_mgr))
+        await queue.subscribe(Topic.ALERTS, "alert-manager", alert_mgr.process)
+        app.state.alert_mgr = alert_mgr
         logger.info("Alert manager consumer started")
     except Exception:
         logger.exception("Alert manager start failed")
 
-    # 8. Start WebSocket broadcaster
+    # 8. Wire WebSocket broadcaster — subscribes to mxtac.enriched, broadcasts to WS clients
     try:
         from .services.ws_broadcaster import websocket_broadcaster
-        asyncio.create_task(websocket_broadcaster(queue))
+        await websocket_broadcaster(queue)
         logger.info("WebSocket broadcaster started")
     except Exception:
         logger.exception("WebSocket broadcaster start failed")
 
-    # 9. Start connectors from DB
+    # 9. Start connectors from DB — publish raw events into the pipeline
     try:
         from .connectors.registry import start_connectors_from_db
         async with AsyncSessionLocal() as session:
             connectors = await start_connectors_from_db(session, queue)
         for conn in connectors:
-            asyncio.create_task(conn.start())
+            asyncio.create_task(conn.start(), name=f"connector-start-{conn.config.name}")
+        app.state.connectors = connectors
         logger.info("Started %d connectors", len(connectors))
     except Exception:
         logger.exception("Connector start failed")
@@ -124,9 +133,42 @@ async def on_startup() -> None:
     logger.info("MxTac API startup complete")
 
 
-async def alert_mgr_consumer(queue, alert_mgr) -> None:
-    """Subscribe to mxtac.alerts and forward to AlertManager."""
-    await queue.subscribe(Topic.ALERTS, "alert-manager", alert_mgr.process)
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    logger.info("MxTac API shutting down")
+
+    # Stop connectors (cancels each connector's poll loop)
+    for conn in getattr(app.state, "connectors", []):
+        try:
+            await conn.stop()
+        except Exception:
+            logger.exception("Connector stop failed name=%s", conn.config.name)
+
+    # Stop message queue (cancels all consumer tasks)
+    try:
+        queue = getattr(app.state, "queue", None)
+        if queue is not None:
+            await queue.stop()
+    except Exception:
+        logger.exception("Queue stop failed")
+
+    # Close AlertManager (releases Valkey connection)
+    try:
+        alert_mgr = getattr(app.state, "alert_mgr", None)
+        if alert_mgr is not None:
+            await alert_mgr.close()
+    except Exception:
+        logger.exception("AlertManager close failed")
+
+    # Close OpenSearch client
+    try:
+        os_client = getattr(app.state, "os_client", None)
+        if os_client is not None:
+            await os_client.close()
+    except Exception:
+        logger.exception("OpenSearch close failed")
+
+    logger.info("MxTac API shutdown complete")
 
 
 @app.get("/health", tags=["ops"])
