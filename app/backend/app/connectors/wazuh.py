@@ -47,12 +47,14 @@ class WazuhConnector(BaseConnector):
         password   = extra["password"]
         verify_ssl = extra.get("verify_ssl", True)
 
-        self._client = httpx.AsyncClient(
-            base_url=base_url,
-            verify=verify_ssl,
-            timeout=30,
-            follow_redirects=True,
-        )
+        # Reuse the existing client on re-auth (e.g. token expiry)
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                base_url=base_url,
+                verify=verify_ssl,
+                timeout=30,
+                follow_redirects=True,
+            )
 
         # Authenticate — Wazuh uses Basic Auth → JWT
         resp = await self._client.get(
@@ -80,15 +82,16 @@ class WazuhConnector(BaseConnector):
                 "q":      f"timestamp>{since}",
                 "sort":   "+timestamp",
             }
-            try:
+
+            resp = await self._client.get("/alerts", headers=headers, params=params)
+
+            if resp.status_code == 401:
+                # Token expired — re-authenticate and retry once
+                await self._connect()
+                headers = {"Authorization": f"Bearer {self._token}"}
                 resp = await self._client.get("/alerts", headers=headers, params=params)
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 401:
-                    # Token expired — re-authenticate
-                    await self._connect()
-                    headers = {"Authorization": f"Bearer {self._token}"}
-                    continue
-                raise
+
+            resp.raise_for_status()
 
             data   = resp.json()
             alerts = data.get("data", {}).get("affected_items", [])
@@ -103,6 +106,16 @@ class WazuhConnector(BaseConnector):
                 break
 
         self._last_fetched_at = datetime.now(timezone.utc)
+
+    # ── Cleanup ──────────────────────────────────────────────────────────────
+
+    async def stop(self) -> None:
+        await super().stop()
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+            self._token = None
+        logger.info("WazuhConnector HTTP client closed name=%s", self.config.name)
 
 
 class WazuhConnectorFactory:

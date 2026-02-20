@@ -121,7 +121,8 @@ class WazuhNormalizer:
         # User
         user = UserInfo(name=data.get("dstuser") or data.get("srcuser"))
 
-        # Process (Windows event data)
+        # Feature 7.5: Windows event data → process
+        # Handles both camelCase (Sysmon) and PascalCase (WEC) field variants.
         process = ProcessInfo(
             cmd_line=win_data.get("commandLine") or win_data.get("CommandLine"),
             path=win_data.get("image") or win_data.get("Image"),
@@ -130,7 +131,13 @@ class WazuhNormalizer:
                 win_data.get("parentProcessId") or win_data.get("ParentProcessId")
             ),
             name=self._exe_name(
-                win_data.get("image") or win_data.get("Image", "")
+                win_data.get("image") or win_data.get("Image") or ""
+            ),
+            parent_name=self._exe_name(
+                win_data.get("parentImage") or win_data.get("ParentImage") or ""
+            ),
+            hash_sha256=self._parse_sha256(
+                win_data.get("hashes") or win_data.get("Hashes")
             ),
         )
 
@@ -245,3 +252,20 @@ class WazuhNormalizer:
         if not path:
             return None
         return path.replace("\\", "/").split("/")[-1]
+
+    def _parse_sha256(self, hashes_str: str | None) -> str | None:
+        """Extract SHA256 from a Sysmon/WEC composite hash string.
+
+        Sysmon format: "SHA1=<h>,MD5=<h>,SHA256=<h>,IMPHASH=<h>"
+        Also handles standalone SHA256 values (no prefix).
+
+        Returns the SHA256 hex string, or None if not present/parseable.
+        """
+        if not hashes_str:
+            return None
+        for part in hashes_str.split(","):
+            part = part.strip()
+            if part.upper().startswith("SHA256="):
+                value = part[7:]
+                return value if value else None
+        return None
