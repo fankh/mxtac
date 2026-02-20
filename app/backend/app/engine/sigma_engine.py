@@ -271,13 +271,14 @@ class SigmaEngine:
                 references=doc.get("references", []),
             )
 
-            # Extract ATT&CK tags  (attack.tXXXX, attack.taXXXX)
+            # Extract ATT&CK tags  (attack.tXXXX techniques, attack.taXXXX tactics)
+            # Check tactic prefix first — "attack.ta" is a subset of "attack.t"
             for tag in rule.tags:
                 tl = tag.lower()
-                if tl.startswith("attack.t"):
-                    rule.technique_ids.append(tag.split(".", 1)[1].upper())
-                elif tl.startswith("attack.ta"):
+                if tl.startswith("attack.ta"):
                     rule.tactic_ids.append(tag.split(".", 1)[1].upper())
+                elif tl.startswith("attack.t"):
+                    rule.technique_ids.append(tag.split(".", 1)[1].upper())
 
             rule._matcher = _Condition(rule.detection)
             return rule
