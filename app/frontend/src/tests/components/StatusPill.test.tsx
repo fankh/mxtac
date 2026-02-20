@@ -18,8 +18,8 @@ describe('StatusPill', () => {
     expect(screen.getByText('Resolved')).toBeInTheDocument()
   })
 
-  it('renders false positive as FP', () => {
+  it('renders false positive label', () => {
     render(<StatusPill status="false_positive" />)
-    expect(screen.getByText('FP')).toBeInTheDocument()
+    expect(screen.getByText('False Positive')).toBeInTheDocument()
   })
 })

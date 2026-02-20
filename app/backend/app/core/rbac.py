@@ -29,6 +29,8 @@ ROLES = ("viewer", "analyst", "hunter", "engineer", "admin")
 PERMISSIONS: dict[str, set[str]] = {
     "detections:read":  {"viewer", "analyst", "hunter", "engineer", "admin"},
     "detections:write": {"analyst", "hunter", "engineer", "admin"},
+    "incidents:read":   {"viewer", "analyst", "hunter", "engineer", "admin"},
+    "incidents:write":  {"analyst", "hunter", "engineer", "admin"},
     "rules:read":       {"hunter", "engineer", "admin"},
     "rules:write":      {"engineer", "admin"},
     "connectors:read":  {"engineer", "admin"},

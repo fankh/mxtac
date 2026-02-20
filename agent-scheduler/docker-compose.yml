@@ -1,0 +1,29 @@
+version: '3.9'
+
+services:
+  api:
+    build: ./backend
+    ports:
+      - "13002:13002"
+    environment:
+      - SCHEDULER_DB_URL=sqlite+aiosqlite:///./data/scheduler.db
+      - SCHEDULER_HOST=0.0.0.0
+      - SCHEDULER_PORT=13002
+      - SCHEDULER_AUTO_START=false
+      - AUTH_PASSWORD=${AUTH_PASSWORD}
+    volumes:
+      - ./backend/data:/app/data
+      - ./tasks:/app/tasks
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        API_HOST: api
+    ports:
+      - "13001:13001"
+    environment:
+      - NODE_ENV=production
+      - API_HOST=api
+    depends_on:
+      - api

@@ -1,10 +1,11 @@
 from fastapi import APIRouter
-from .endpoints import admin, auth, connectors, detections, events, overview, rules, users, websocket
+from .endpoints import admin, auth, connectors, detections, events, incidents, overview, rules, users, websocket
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(overview.router)
 api_router.include_router(detections.router)
+api_router.include_router(incidents.router)
 api_router.include_router(rules.router)
 api_router.include_router(connectors.router)
 api_router.include_router(users.router)

@@ -1,4 +1,10 @@
+import logging
+
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
+
+_DEV_SECRET = "dev-secret-change-in-production"
 
 
 class Settings(BaseSettings):
@@ -46,3 +52,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+if settings.secret_key == _DEV_SECRET and not settings.debug:
+    logger.warning(
+        "SECURITY WARNING: SECRET_KEY is set to the development default. "
+        "Set a strong, unique SECRET_KEY in production via the SECRET_KEY environment variable."
+    )

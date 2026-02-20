@@ -12,7 +12,7 @@ class Pagination(BaseModel):
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
-    data: list[T]
+    items: list[T]
     pagination: Pagination
 
 

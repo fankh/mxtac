@@ -1,0 +1,227 @@
+"use client";
+
+import { useState, useCallback } from "react";
+import { useApi } from "@/hooks/useApi";
+import { useSSE } from "@/hooks/useSSE";
+import {
+  controlScheduler,
+  getSchedulerStatus,
+  loadTasks,
+  updateSchedulerSettings,
+} from "@/lib/api";
+
+export default function SettingsPage() {
+  const {
+    data: schedulerStatus,
+    refetch,
+  } = useApi(() => getSchedulerStatus(), []);
+
+  const [maxConcurrent, setMaxConcurrent] = useState("2");
+  const [spawnDelay, setSpawnDelay] = useState("30");
+  const [taskTimeout, setTaskTimeout] = useState("1800");
+  const [model, setModel] = useState("sonnet");
+  const [taskPath, setTaskPath] = useState("");
+  const [loadResult, setLoadResult] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const handleSSE = useCallback(
+    (event: string) => {
+      if (event === "scheduler") refetch();
+    },
+    [refetch]
+  );
+  useSSE(handleSSE);
+
+  const handleControl = async (action: string) => {
+    setActionLoading(true);
+    try {
+      await controlScheduler(action);
+      refetch();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSettingsUpdate = async () => {
+    try {
+      await updateSchedulerSettings({
+        max_concurrent: parseInt(maxConcurrent, 10),
+        spawn_delay: parseInt(spawnDelay, 10),
+        task_timeout: parseInt(taskTimeout, 10),
+        model,
+      });
+      alert("Settings updated");
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const handleLoadTasks = async () => {
+    if (!taskPath.trim()) return;
+    setLoadResult(null);
+    try {
+      const result = (await loadTasks(taskPath.trim())) as {
+        created: number;
+        skipped: number;
+        total_parsed: number;
+      };
+      setLoadResult(
+        `Loaded: ${result.created} created, ${result.skipped} skipped (${result.total_parsed} parsed)`
+      );
+    } catch (e: unknown) {
+      setLoadResult(e instanceof Error ? e.message : "Failed to load");
+    }
+  };
+
+  return (
+    <div className="max-w-2xl">
+      <h1 className="text-2xl font-bold text-white mb-6">Settings</h1>
+
+      {/* Scheduler Control */}
+      <section className="bg-gray-800 rounded-lg p-4 border border-gray-700 mb-6">
+        <h2 className="text-lg font-semibold text-white mb-3">
+          Scheduler Control
+        </h2>
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-sm text-gray-400">Status:</span>
+          <span
+            className={`text-sm font-medium ${
+              schedulerStatus?.running
+                ? schedulerStatus?.paused
+                  ? "text-yellow-400"
+                  : "text-green-400"
+                : "text-red-400"
+            }`}
+          >
+            {schedulerStatus?.running
+              ? schedulerStatus?.paused
+                ? "Paused"
+                : "Running"
+              : "Stopped"}
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleControl("start")}
+            disabled={actionLoading || schedulerStatus?.running}
+            className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white text-sm rounded transition-colors"
+          >
+            Start
+          </button>
+          <button
+            onClick={() => handleControl("pause")}
+            disabled={
+              actionLoading ||
+              !schedulerStatus?.running ||
+              schedulerStatus?.paused
+            }
+            className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 text-white text-sm rounded transition-colors"
+          >
+            Pause
+          </button>
+          <button
+            onClick={() => handleControl("resume")}
+            disabled={actionLoading || !schedulerStatus?.paused}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 text-white text-sm rounded transition-colors"
+          >
+            Resume
+          </button>
+          <button
+            onClick={() => handleControl("stop")}
+            disabled={actionLoading || !schedulerStatus?.running}
+            className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 text-white text-sm rounded transition-colors"
+          >
+            Stop
+          </button>
+        </div>
+      </section>
+
+      {/* Scheduler Settings */}
+      <section className="bg-gray-800 rounded-lg p-4 border border-gray-700 mb-6">
+        <h2 className="text-lg font-semibold text-white mb-3">
+          Scheduler Settings
+        </h2>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              Max Concurrent Tasks
+            </label>
+            <input
+              type="number"
+              value={maxConcurrent}
+              onChange={(e) => setMaxConcurrent(e.target.value)}
+              className="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white w-32 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              Spawn Delay (seconds)
+            </label>
+            <input
+              type="number"
+              value={spawnDelay}
+              onChange={(e) => setSpawnDelay(e.target.value)}
+              className="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white w-32 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              Task Timeout (seconds)
+            </label>
+            <input
+              type="number"
+              value={taskTimeout}
+              onChange={(e) => setTaskTimeout(e.target.value)}
+              className="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white w-32 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              Claude Model
+            </label>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value="sonnet">Sonnet</option>
+              <option value="opus">Opus</option>
+              <option value="haiku">Haiku</option>
+            </select>
+          </div>
+          <button
+            onClick={handleSettingsUpdate}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition-colors"
+          >
+            Update Settings
+          </button>
+        </div>
+      </section>
+
+      {/* Task Loading */}
+      <section className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <h2 className="text-lg font-semibold text-white mb-3">Load Tasks</h2>
+        <div className="flex gap-2 mb-2">
+          <input
+            type="text"
+            placeholder="Path to YAML file or directory..."
+            value={taskPath}
+            onChange={(e) => setTaskPath(e.target.value)}
+            className="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+          />
+          <button
+            onClick={handleLoadTasks}
+            className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm rounded transition-colors"
+          >
+            Load
+          </button>
+        </div>
+        {loadResult && (
+          <p className="text-sm text-gray-300 mt-2">{loadResult}</p>
+        )}
+      </section>
+    </div>
+  );
+}

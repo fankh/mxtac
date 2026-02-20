@@ -5,6 +5,7 @@ from math import ceil
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
+from ....core.rbac import require_permission
 from ....core.security import get_current_user
 from ....schemas.detection import Detection, DetectionUpdate, SeverityLevel, DetectionStatus
 from ....schemas.common import PaginatedResponse, Pagination
@@ -71,7 +72,7 @@ async def list_detections(
         order=order,
     )
     return PaginatedResponse(
-        data=[_detection_to_schema(d) for d in items],
+        items=[_detection_to_schema(d) for d in items],
         pagination=Pagination(
             page=page,
             page_size=page_size,
@@ -98,7 +99,7 @@ async def update_detection(
     detection_id: str,
     body: DetectionUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("detections:write")),
 ):
     d = await DetectionRepo.update(db, detection_id, **body.model_dump(exclude_none=True))
     if not d:

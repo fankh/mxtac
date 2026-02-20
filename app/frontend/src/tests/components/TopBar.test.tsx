@@ -1,0 +1,203 @@
+import { render, screen } from '@testing-library/react'
+import { describe, it, expect } from 'vitest'
+import { TopBar } from '../../components/layout/TopBar'
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function renderTopBar(crumb: string, updatedAt?: string) {
+  return render(<TopBar crumb={crumb} updatedAt={updatedAt} />)
+}
+
+// ---------------------------------------------------------------------------
+// TopBar
+// ---------------------------------------------------------------------------
+
+describe('TopBar', () => {
+  // -------------------------------------------------------------------------
+  // Breadcrumb
+  // -------------------------------------------------------------------------
+  describe('Breadcrumb', () => {
+    it('renders the "MxTac" root label', () => {
+      renderTopBar('Dashboard')
+      expect(screen.getByText('MxTac')).toBeInTheDocument()
+    })
+
+    it('renders the "/" separator', () => {
+      renderTopBar('Dashboard')
+      expect(screen.getByText('/')).toBeInTheDocument()
+    })
+
+    it('renders the crumb label', () => {
+      renderTopBar('Dashboard')
+      expect(screen.getByText('Dashboard')).toBeInTheDocument()
+    })
+
+    it('renders different crumb values', () => {
+      const crumbs = [
+        'Overview',
+        'Detections',
+        'ATT&CK Coverage',
+        'Sigma Rules',
+        'Incidents',
+        'Threat Intel',
+        'Integrations',
+        'Admin',
+      ]
+      crumbs.forEach(crumb => {
+        const { unmount } = renderTopBar(crumb)
+        expect(screen.getByText(crumb)).toBeInTheDocument()
+        unmount()
+      })
+    })
+
+    it('renders a crumb with special characters', () => {
+      renderTopBar('ATT&CK Explorer')
+      expect(screen.getByText('ATT&CK Explorer')).toBeInTheDocument()
+    })
+
+    it('renders a crumb with a long label', () => {
+      const longCrumb = 'Very Long Page Name That Spans Multiple Words'
+      renderTopBar(longCrumb)
+      expect(screen.getByText(longCrumb)).toBeInTheDocument()
+    })
+
+    it('renders a crumb with a single character', () => {
+      renderTopBar('X')
+      expect(screen.getByText('X')).toBeInTheDocument()
+    })
+
+    it('renders a crumb containing numbers', () => {
+      renderTopBar('Rule #42')
+      expect(screen.getByText('Rule #42')).toBeInTheDocument()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Updated timestamp
+  // -------------------------------------------------------------------------
+  describe('updatedAt timestamp', () => {
+    it('shows "Updated {value}" when updatedAt is provided', () => {
+      renderTopBar('Dashboard', '2 min ago')
+      expect(screen.getByText('Updated 2 min ago')).toBeInTheDocument()
+    })
+
+    it('does not render timestamp when updatedAt is omitted', () => {
+      renderTopBar('Dashboard')
+      expect(screen.queryByText(/Updated/)).not.toBeInTheDocument()
+    })
+
+    it('does not render timestamp when updatedAt is undefined', () => {
+      renderTopBar('Dashboard', undefined)
+      expect(screen.queryByText(/Updated/)).not.toBeInTheDocument()
+    })
+
+    it('shows timestamp with relative time format', () => {
+      renderTopBar('Detections', 'just now')
+      expect(screen.getByText('Updated just now')).toBeInTheDocument()
+    })
+
+    it('shows timestamp with absolute date string', () => {
+      renderTopBar('Detections', '2024-01-15 14:30 UTC')
+      expect(screen.getByText('Updated 2024-01-15 14:30 UTC')).toBeInTheDocument()
+    })
+
+    it('shows timestamp with "X minutes ago" format', () => {
+      renderTopBar('Overview', '5 minutes ago')
+      expect(screen.getByText('Updated 5 minutes ago')).toBeInTheDocument()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Refresh button
+  // -------------------------------------------------------------------------
+  describe('Refresh button', () => {
+    it('renders the Refresh button', () => {
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle('Refresh')).toBeInTheDocument()
+    })
+
+    it('Refresh button is a <button> element', () => {
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle('Refresh').tagName).toBe('BUTTON')
+    })
+
+    it('Refresh button contains the ↻ icon', () => {
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle('Refresh')).toHaveTextContent('↻')
+    })
+
+    it('Refresh button is always rendered regardless of updatedAt', () => {
+      const { unmount } = renderTopBar('Dashboard')
+      expect(screen.getByTitle('Refresh')).toBeInTheDocument()
+      unmount()
+
+      renderTopBar('Dashboard', '2 min ago')
+      expect(screen.getByTitle('Refresh')).toBeInTheDocument()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Notifications button
+  // -------------------------------------------------------------------------
+  describe('Notifications button', () => {
+    it('renders the Notifications button', () => {
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle('Notifications')).toBeInTheDocument()
+    })
+
+    it('Notifications button is a <button> element', () => {
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle('Notifications').tagName).toBe('BUTTON')
+    })
+
+    it('Notifications button contains the 🔔 icon', () => {
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle('Notifications')).toHaveTextContent('🔔')
+    })
+
+    it('renders the notification alert indicator dot', () => {
+      renderTopBar('Dashboard')
+      // The dot is a sibling <span> inside the .relative container
+      const notifWrapper = screen.getByTitle('Notifications').closest('.relative')
+      expect(notifWrapper).not.toBeNull()
+      expect(notifWrapper!.querySelector('.bg-crit-text')).toBeInTheDocument()
+    })
+
+    it('alert indicator dot is always visible (static badge)', () => {
+      renderTopBar('Dashboard', '3 min ago')
+      const notifWrapper = screen.getByTitle('Notifications').closest('.relative')
+      expect(notifWrapper!.querySelector('.bg-crit-text')).toBeInTheDocument()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Layout structure
+  // -------------------------------------------------------------------------
+  describe('Layout structure', () => {
+    it('renders a <header> as the root element', () => {
+      const { container } = renderTopBar('Dashboard')
+      expect(container.querySelector('header')).toBeInTheDocument()
+    })
+
+    it('renders all required elements together', () => {
+      renderTopBar('Detections')
+      expect(screen.getByText('MxTac')).toBeInTheDocument()
+      expect(screen.getByText('/')).toBeInTheDocument()
+      expect(screen.getByText('Detections')).toBeInTheDocument()
+      expect(screen.getByTitle('Refresh')).toBeInTheDocument()
+      expect(screen.getByTitle('Notifications')).toBeInTheDocument()
+    })
+
+    it('renders only one Refresh button', () => {
+      const { container } = renderTopBar('Dashboard')
+      expect(container.querySelectorAll('[title="Refresh"]')).toHaveLength(1)
+    })
+
+    it('renders only one Notifications button', () => {
+      const { container } = renderTopBar('Dashboard')
+      expect(container.querySelectorAll('[title="Notifications"]')).toHaveLength(1)
+    })
+  })
+})

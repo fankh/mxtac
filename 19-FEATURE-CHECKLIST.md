@@ -419,7 +419,7 @@
 | # | Feature | Impl | Test | Priority | Notes |
 |---|---------|:----:|:----:|----------|-------|
 | 22.1 | Sidebar with nav links | `[x]` | `[ ]` | P0 | |
-| 22.2 | Active route highlight | `[x]` | `[ ]` | P0 | |
+| 22.2 | Active route highlight | `[x]` | `[x]` | P0 | |
 | 22.3 | TopBar with breadcrumb | `[x]` | `[ ]` | P0 | |
 | 22.4 | ErrorBoundary wrapper | `[x]` | `[ ]` | P0 | |
 | 22.5 | NotificationToast | `[x]` | `[ ]` | P0 | |
@@ -527,13 +527,13 @@
 
 | # | Test Area | Written | Passing | Priority | Notes |
 |---|-----------|:-------:|:-------:|----------|-------|
-| 28.1 | Auth: login success | `[ ]` | `[ ]` | P0 | |
-| 28.2 | Auth: wrong password → 401 | `[ ]` | `[ ]` | P0 | |
-| 28.3 | Auth: unknown user → 401 (same error) | `[ ]` | `[ ]` | P0 | No enumeration |
-| 28.4 | Auth: expired token → 401 | `[ ]` | `[ ]` | P0 | |
-| 28.5 | Auth: token refresh | `[ ]` | `[ ]` | P0 | |
-| 28.6 | RBAC: viewer cannot PATCH rules | `[ ]` | `[ ]` | P0 | |
-| 28.7 | RBAC: analyst can update detection status | `[ ]` | `[ ]` | P0 | |
+| 28.1 | Auth: login success | `[x]` | `[x]` | P0 | |
+| 28.2 | Auth: wrong password → 401 | `[x]` | `[T]` | P0 | |
+| 28.3 | Auth: unknown user → 401 (same error) | `[x]` | `[T]` | P0 | No enumeration |
+| 28.4 | Auth: expired token → 401 | `[x]` | `[T]` | P0 | 5 tests: access+refresh+role+epoch+no-prefix |
+| 28.5 | Auth: token refresh | `[x]` | `[x]` | P0 | 18 tests: happy path, type validation, inactive/unknown user, 422 |
+| 28.6 | RBAC: viewer cannot PATCH rules | `[x]` | `[T]` | P0 | 6 tests: viewer/analyst/hunter→403, engineer/admin→404, unauth→401/403 |
+| 28.7 | RBAC: analyst can update detection status | `[x]` | `[T]` | P0 | 8 tests: viewer→403 (×2), analyst/hunter/engineer/admin→200, assigned_to, priority |
 | 28.8 | RBAC: engineer can create rules | `[ ]` | `[ ]` | P0 | |
 | 28.9 | RBAC: admin can manage users | `[ ]` | `[ ]` | P0 | |
 | 28.10 | Normalizer: Wazuh level 14 → severity_id 5 | `[ ]` | `[ ]` | P0 | |
@@ -653,11 +653,11 @@
 | 25. MxWatch (NDR) | 17 | 0 | 0 | 17 | 0 |
 | 26. Performance NFR | 8 | 0 | 0 | 8 | 0 |
 | 27. Reliability NFR | 6 | 0 | 0 | 6 | 0 |
-| 28. Tests | 46 | 3 | 0 | 43 | 0 |
+| 28. Tests | 46 | 5 | 0 | 41 | 2 |
 | 29. Theme system | 6 | 6 | 0 | 0 | 0 |
 | 30. Security & hygiene | 12 | 0 | 0 | 12 | 0 |
 | 31. Agent management | 5 | 0 | 0 | 5 | 0 |
-| **TOTAL** | **372** | **60 (16%)** | **56 (15%)** | **256 (69%)** | **0 (0%)** |
+| **TOTAL** | **372** | **62 (17%)** | **56 (15%)** | **254 (68%)** | **2 (1%)** |
 
 ---
 

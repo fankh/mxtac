@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
-from ....core.security import create_access_token, verify_password, decode_token
+from ....core.security import create_access_token, create_refresh_token, verify_password, decode_token
 from ....repositories.user_repo import UserRepo
 from ....schemas.auth import LoginRequest, TokenResponse, RefreshRequest
 
@@ -23,7 +23,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
             detail="Account is disabled",
         )
     token = create_access_token({"sub": user.email, "role": user.role})
-    refresh = create_access_token({"sub": user.email, "type": "refresh"})
+    refresh = create_refresh_token({"sub": user.email})
     return TokenResponse(
         access_token=token,
         refresh_token=refresh,
@@ -34,6 +34,8 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
     payload = decode_token(body.refresh_token)
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
     email = payload.get("sub")
     if not email:
         raise HTTPException(status_code=401, detail="Invalid refresh token")

@@ -9,6 +9,7 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from ....core.rbac import require_permission
 from ....core.security import get_current_user
 from ....engine.sigma_engine import SigmaEngine, SigmaRule
 from ....services.mock_data import DETECTIONS   # reuse for now
@@ -86,7 +87,7 @@ def _load_into_engine(yaml_text: str) -> list[SigmaRule]:
 async def list_rules(
     enabled: bool | None = None,
     level: str | None = None,
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_permission("rules:read")),
 ):
     """List all Sigma rules. Supports filtering by enabled/level."""
     rules = list(_rule_store.values())
@@ -98,7 +99,7 @@ async def list_rules(
 
 
 @router.get("/{rule_id}", response_model=RuleResponse)
-async def get_rule(rule_id: str, _: str = Depends(get_current_user)):
+async def get_rule(rule_id: str, _: dict = Depends(require_permission("rules:read"))):
     rule = _rule_store.get(rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -106,7 +107,7 @@ async def get_rule(rule_id: str, _: str = Depends(get_current_user)):
 
 
 @router.post("", response_model=RuleResponse, status_code=201)
-async def create_rule(body: RuleCreate, _: str = Depends(get_current_user)):
+async def create_rule(body: RuleCreate, _: dict = Depends(require_permission("rules:write"))):
     """Create a custom Sigma rule from raw YAML."""
     loaded = _load_into_engine(body.content)
     if not loaded:
@@ -118,7 +119,7 @@ async def create_rule(body: RuleCreate, _: str = Depends(get_current_user)):
 
 
 @router.patch("/{rule_id}", response_model=RuleResponse)
-async def update_rule(rule_id: str, body: RuleUpdate, _: str = Depends(get_current_user)):
+async def update_rule(rule_id: str, body: RuleUpdate, _: dict = Depends(require_permission("rules:write"))):
     rule = _rule_store.get(rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
