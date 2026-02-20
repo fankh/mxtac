@@ -6,6 +6,8 @@ import { CoveragePage } from './components/features/coverage/CoveragePage'
 import { RulesPage } from './components/features/rules/RulesPage'
 import { ConnectorsPage } from './components/features/connectors/ConnectorsPage'
 import { AdminPage } from './components/features/admin/AdminPage'
+import { LoginPage } from './components/features/auth/LoginPage'
+import { ProtectedRoute } from './components/shared/ProtectedRoute'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { NotificationToast } from './components/shared/NotificationToast'
 
@@ -19,25 +21,35 @@ function Placeholder({ title }: { title: string }) {
 
 export default function App() {
   return (
-    <div className="flex min-h-screen bg-page">
-      <Sidebar />
-      <main className="ml-[52px] flex-1 min-h-screen">
-        <ErrorBoundary>
-          <Routes>
-            <Route path="/"              element={<OverviewPage />} />
-            <Route path="/detections"    element={<DetectionsPage />} />
-            <Route path="/attack"        element={<CoveragePage />} />
-            <Route path="/rules"         element={<RulesPage />} />
-            <Route path="/integrations"  element={<ConnectorsPage />} />
-            <Route path="/admin"         element={<AdminPage />} />
-            <Route path="/incidents"     element={<Placeholder title="Incidents" />} />
-            <Route path="/intel"         element={<Placeholder title="Threat Intel" />} />
-            <Route path="/assets"        element={<Placeholder title="Assets" />} />
-            <Route path="/reports"       element={<Placeholder title="Reports" />} />
-          </Routes>
-        </ErrorBoundary>
-      </main>
-      <NotificationToast />
-    </div>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/*"
+        element={
+          <ProtectedRoute>
+            <div className="flex min-h-screen bg-page">
+              <Sidebar />
+              <main className="ml-[52px] flex-1 min-h-screen">
+                <ErrorBoundary>
+                  <Routes>
+                    <Route path="/"             element={<OverviewPage />} />
+                    <Route path="/detections"   element={<DetectionsPage />} />
+                    <Route path="/attack"       element={<CoveragePage />} />
+                    <Route path="/rules"        element={<RulesPage />} />
+                    <Route path="/integrations" element={<ConnectorsPage />} />
+                    <Route path="/admin"        element={<AdminPage />} />
+                    <Route path="/incidents"    element={<Placeholder title="Incidents" />} />
+                    <Route path="/intel"        element={<Placeholder title="Threat Intel" />} />
+                    <Route path="/assets"       element={<Placeholder title="Assets" />} />
+                    <Route path="/reports"      element={<Placeholder title="Reports" />} />
+                  </Routes>
+                </ErrorBoundary>
+              </main>
+              <NotificationToast />
+            </div>
+          </ProtectedRoute>
+        }
+      />
+    </Routes>
   )
 }
