@@ -67,7 +67,7 @@ def _check_rate_limit(api_key_id: str, n_events: int) -> bool:
 
 
 class IngestRequest(BaseModel):
-    events: Annotated[list[dict[str, Any]], Field(max_length=1000)]
+    events: Annotated[list[dict[str, Any]], Field(min_length=1, max_length=1000)]
 
 
 class EventFilter(BaseModel):

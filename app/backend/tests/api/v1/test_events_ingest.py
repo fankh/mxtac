@@ -77,12 +77,12 @@ async def test_ingest_test_no_key(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_ingest_test_invalid_key(client: AsyncClient) -> None:
-    """Unknown X-API-Key → 401."""
+    """Unknown X-API-Key → 403."""
     resp = await client.post(
         BASE + "/ingest/test",
         headers={"X-API-Key": "mxtac_doesnotexist"},
     )
-    assert resp.status_code == 401
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -113,13 +113,13 @@ async def test_ingest_no_key(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_ingest_invalid_key(client: AsyncClient) -> None:
-    """Unknown X-API-Key → 401."""
+    """Unknown X-API-Key → 403."""
     resp = await client.post(
         BASE + "/ingest",
         headers={"X-API-Key": "mxtac_badkey"},
         json={"events": [_ocsf_event()]},
     )
-    assert resp.status_code == 401
+    assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +138,20 @@ async def test_ingest_batch_too_large(
         BASE + "/ingest",
         headers={"X-API-Key": raw},
         json={"events": oversized},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ingest_empty_batch(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Empty events list → 422 Unprocessable Entity."""
+    raw = await _create_key(db_session)
+    resp = await client.post(
+        BASE + "/ingest",
+        headers={"X-API-Key": raw},
+        json={"events": []},
     )
     assert resp.status_code == 422
 

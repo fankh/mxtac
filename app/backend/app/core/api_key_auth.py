@@ -26,7 +26,7 @@ async def get_api_key(
     api_key = await APIKeyRepo.get_by_raw_key(db, x_api_key)
     if api_key is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid or inactive API key",
         )
     return api_key
