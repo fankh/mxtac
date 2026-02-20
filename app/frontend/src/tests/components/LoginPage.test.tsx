@@ -25,9 +25,12 @@ const mockUseNavigate  = useNavigate  as unknown as ReturnType<typeof vi.fn>
 function makeStore(overrides: Record<string, unknown> = {}) {
   return {
     login: vi.fn(),
+    submitMfa: vi.fn(),
+    cancelMfa: vi.fn(),
     isLoading: false,
     error: null,
     isAuthenticated: false,
+    mfaPending: false,
     clearError: vi.fn(),
     ...overrides,
   }
@@ -225,6 +228,119 @@ describe('LoginPage', () => {
     it('does not navigate when isAuthenticated is false', () => {
       renderLoginPage()
       expect(mockNavigate).not.toHaveBeenCalled()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // MFA step — rendering
+  // ---------------------------------------------------------------------------
+  describe('MFA step rendering', () => {
+    it('renders the MFA heading when mfaPending is true', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
+      renderLoginPage()
+      expect(screen.getByRole('heading', { name: 'Two-factor authentication' })).toBeInTheDocument()
+    })
+
+    it('does not render the password form when mfaPending is true', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
+      renderLoginPage()
+      expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+    })
+
+    it('renders the authentication code input when mfaPending is true', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
+      renderLoginPage()
+      expect(screen.getByLabelText('Authentication code')).toBeInTheDocument()
+    })
+
+    it('renders the Verify submit button when mfaPending is true', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
+      renderLoginPage()
+      expect(screen.getByRole('button', { name: 'Verify' })).toBeInTheDocument()
+    })
+
+    it('renders the "Use a backup code" link when mfaPending is true', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
+      renderLoginPage()
+      expect(screen.getByText('Use a backup code')).toBeInTheDocument()
+    })
+
+    it('renders the "Back to sign in" link when mfaPending is true', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
+      renderLoginPage()
+      expect(screen.getByText('Back to sign in')).toBeInTheDocument()
+    })
+
+    it('renders the password form (not MFA) when mfaPending is false', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: false }))
+      renderLoginPage()
+      expect(screen.getByLabelText('Password')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Two-factor authentication' })).not.toBeInTheDocument()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // MFA step — submission
+  // ---------------------------------------------------------------------------
+  describe('MFA step submission', () => {
+    it('calls submitMfa with the entered code', async () => {
+      const submitMfa = vi.fn().mockResolvedValue(undefined)
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, submitMfa }))
+      renderLoginPage()
+
+      fireEvent.change(screen.getByLabelText('Authentication code'), { target: { value: '123456' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+
+      await waitFor(() => {
+        expect(submitMfa).toHaveBeenCalledWith('123456')
+      })
+    })
+
+    it('shows "Verifying…" on the button while isLoading is true during MFA', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, isLoading: true }))
+      renderLoginPage()
+      expect(screen.getByRole('button', { name: 'Verifying…' })).toBeInTheDocument()
+    })
+
+    it('disables the Verify button while isLoading is true', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, isLoading: true }))
+      renderLoginPage()
+      expect(screen.getByRole('button', { name: 'Verifying…' })).toBeDisabled()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // MFA step — backup code toggle
+  // ---------------------------------------------------------------------------
+  describe('MFA backup code toggle', () => {
+    it('switches label to "Backup code" when "Use a backup code" is clicked', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
+      renderLoginPage()
+
+      fireEvent.click(screen.getByText('Use a backup code'))
+      expect(screen.getByLabelText('Backup code')).toBeInTheDocument()
+    })
+
+    it('shows "Use authenticator app instead" after switching to backup mode', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
+      renderLoginPage()
+
+      fireEvent.click(screen.getByText('Use a backup code'))
+      expect(screen.getByText('Use authenticator app instead')).toBeInTheDocument()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // MFA step — cancel / back to sign in
+  // ---------------------------------------------------------------------------
+  describe('MFA step — cancel', () => {
+    it('calls cancelMfa when "Back to sign in" is clicked', () => {
+      const cancelMfa = vi.fn()
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, cancelMfa }))
+      renderLoginPage()
+
+      fireEvent.click(screen.getByText('Back to sign in'))
+      expect(cancelMfa).toHaveBeenCalled()
     })
   })
 })

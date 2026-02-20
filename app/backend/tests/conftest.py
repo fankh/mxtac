@@ -15,15 +15,40 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import app.core.rate_limit as _rl_module
 from app.core.database import get_db
 from app.core.security import create_access_token
 from app.main import app
 from app.models import Base
+
+# ---------------------------------------------------------------------------
+# Rate limiter reset — clear in-memory counters and force in-memory fallback
+# between tests so that accumulated request counts (from Valkey or in-memory)
+# do not cause spurious 429 responses.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter() -> None:
+    """Reset the rate limiter before every test.
+
+    Clears the in-memory counter dict AND patches the Valkey client within
+    the rate-limit module so that the in-memory fallback is always used.
+    This prevents Valkey state from leaking across test runs.
+    """
+    _rl_module._rate_limiter._mem.clear()
+    with patch(
+        "app.core.rate_limit.get_valkey_client",
+        side_effect=Exception("Valkey disabled in tests"),
+    ):
+        yield
+
 
 # ---------------------------------------------------------------------------
 # SQLite in-memory engine + session

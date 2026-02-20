@@ -211,4 +211,139 @@ describe('authStore', () => {
       expect(useAuthStore.getState().error).toBeNull()
     })
   })
+
+  // ---------------------------------------------------------------------------
+  // MFA initial state
+  // ---------------------------------------------------------------------------
+  describe('MFA initial state', () => {
+    it('mfaPending is false by default', () => {
+      expect(useAuthStore.getState().mfaPending).toBe(false)
+    })
+
+    it('mfaToken is null by default', () => {
+      expect(useAuthStore.getState().mfaToken).toBeNull()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // login — MFA required branch
+  // ---------------------------------------------------------------------------
+  describe('login — MFA required', () => {
+    it('sets mfaPending=true when API returns mfa_required', async () => {
+      loginMock.mockResolvedValueOnce({ mfa_required: true, mfa_token: 'mfa-jwt' })
+
+      await useAuthStore.getState().login('u@e.com', 'pass')
+      expect(useAuthStore.getState().mfaPending).toBe(true)
+    })
+
+    it('stores the mfa_token when API returns mfa_required', async () => {
+      loginMock.mockResolvedValueOnce({ mfa_required: true, mfa_token: 'mfa-jwt-abc' })
+
+      await useAuthStore.getState().login('u@e.com', 'pass')
+      expect(useAuthStore.getState().mfaToken).toBe('mfa-jwt-abc')
+    })
+
+    it('does NOT set isAuthenticated when MFA is required', async () => {
+      loginMock.mockResolvedValueOnce({ mfa_required: true, mfa_token: 'mfa-jwt' })
+
+      await useAuthStore.getState().login('u@e.com', 'pass')
+      expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    })
+
+    it('sets isLoading=false after MFA pending state is set', async () => {
+      loginMock.mockResolvedValueOnce({ mfa_required: true, mfa_token: 'mfa-jwt' })
+
+      await useAuthStore.getState().login('u@e.com', 'pass')
+      expect(useAuthStore.getState().isLoading).toBe(false)
+    })
+
+    it('does not store access_token in localStorage when MFA is required', async () => {
+      loginMock.mockResolvedValueOnce({ mfa_required: true, mfa_token: 'mfa-jwt' })
+
+      await useAuthStore.getState().login('u@e.com', 'pass')
+      expect(localStorage.getItem('access_token')).toBeNull()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // submitMfa
+  // ---------------------------------------------------------------------------
+  describe('submitMfa', () => {
+    beforeEach(() => {
+      useAuthStore.setState({ mfaPending: true, mfaToken: 'mfa-jwt-token' })
+    })
+
+    it('sets isAuthenticated=true on success', async () => {
+      mfaVerifyMock.mockResolvedValueOnce({ access_token: 'access-tok', role: 'analyst' })
+
+      await useAuthStore.getState().submitMfa('123456')
+      expect(useAuthStore.getState().isAuthenticated).toBe(true)
+    })
+
+    it('stores the access_token in localStorage on success', async () => {
+      mfaVerifyMock.mockResolvedValueOnce({ access_token: 'mfa-access-tok' })
+
+      await useAuthStore.getState().submitMfa('123456')
+      expect(localStorage.getItem('access_token')).toBe('mfa-access-tok')
+    })
+
+    it('clears mfaPending and mfaToken on success', async () => {
+      mfaVerifyMock.mockResolvedValueOnce({ access_token: 'tok', role: 'analyst' })
+
+      await useAuthStore.getState().submitMfa('123456')
+      expect(useAuthStore.getState().mfaPending).toBe(false)
+      expect(useAuthStore.getState().mfaToken).toBeNull()
+    })
+
+    it('sets error from detail on failure', async () => {
+      mfaVerifyMock.mockRejectedValueOnce({ response: { data: { detail: 'Invalid MFA code' } } })
+
+      await useAuthStore.getState().submitMfa('000000')
+      expect(useAuthStore.getState().error).toBe('Invalid MFA code')
+    })
+
+    it('falls back to "MFA verification failed" when error has no detail', async () => {
+      mfaVerifyMock.mockRejectedValueOnce(new Error('Network error'))
+
+      await useAuthStore.getState().submitMfa('000000')
+      expect(useAuthStore.getState().error).toBe('MFA verification failed')
+    })
+
+    it('leaves isAuthenticated=false on failure', async () => {
+      mfaVerifyMock.mockRejectedValueOnce({ response: { data: { detail: 'Invalid MFA code' } } })
+
+      await useAuthStore.getState().submitMfa('000000')
+      expect(useAuthStore.getState().isAuthenticated).toBe(false)
+    })
+
+    it('is a no-op when mfaToken is null', async () => {
+      useAuthStore.setState({ mfaToken: null })
+
+      await useAuthStore.getState().submitMfa('123456')
+      expect(mfaVerifyMock).not.toHaveBeenCalled()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // cancelMfa
+  // ---------------------------------------------------------------------------
+  describe('cancelMfa', () => {
+    it('clears mfaPending', () => {
+      useAuthStore.setState({ mfaPending: true, mfaToken: 'tok', error: 'err' })
+      useAuthStore.getState().cancelMfa()
+      expect(useAuthStore.getState().mfaPending).toBe(false)
+    })
+
+    it('clears mfaToken', () => {
+      useAuthStore.setState({ mfaPending: true, mfaToken: 'tok' })
+      useAuthStore.getState().cancelMfa()
+      expect(useAuthStore.getState().mfaToken).toBeNull()
+    })
+
+    it('clears error', () => {
+      useAuthStore.setState({ error: 'some mfa error' })
+      useAuthStore.getState().cancelMfa()
+      expect(useAuthStore.getState().error).toBeNull()
+    })
+  })
 })

@@ -12,6 +12,7 @@ from .api.v1.router import api_router
 from .core import metrics as _metrics  # noqa: F401 — registers all mxtac_ metrics
 from .core.access_log import AccessLogMiddleware
 from .core.config import settings
+from .core.rate_limit import RateLimitMiddleware
 from .core.database import AsyncSessionLocal
 from .core.exceptions import register_exception_handlers
 from .core.logging import configure_logging, get_logger
@@ -79,6 +80,10 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 # Request access log — method, path, status, latency (feature 21.11)
 app.add_middleware(AccessLogMiddleware)
+
+# Rate limiting — per-IP, per-endpoint-group (feature 33.1)
+# Added before CORSMiddleware so 429 responses still carry CORS headers.
+app.add_middleware(RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
