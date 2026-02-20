@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula.
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances).
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -24,6 +24,11 @@ Coverage:
   - process(): Valkey SET None → second identical alert is blocked end-to-end
   - process(): same alert after TTL expiry (Valkey SET True again) is published end-to-end
   - DEDUP_WINDOW_SECONDS: constant is 300 (5 minutes)
+  - distributed: two instances produce the same dedup key for the same (rule_id, host)
+  - distributed: instance B blocked when instance A processed the alert first
+  - distributed: concurrent instances — exactly one publishes via shared Valkey SET NX
+  - distributed: _is_duplicate() uses atomic SET NX (no GET-then-SET pattern)
+  - distributed: both instances can process after shared TTL expires
 """
 
 from __future__ import annotations
@@ -812,3 +817,240 @@ def test_score_formula_recurrence_bonus_is_currently_zero():
     #   raw would be (0.45 + 0.20 + 0.15) × 10 = 8.0 ≠ 6.5
     # Confirming it's 6.5 validates the bonus is 0.0
     assert result["score"] == pytest.approx(6.5, abs=0.05)
+
+
+# ---------------------------------------------------------------------------
+# Section 8 — Distributed dedup: two AlertManager instances (feature 28.26)
+# ---------------------------------------------------------------------------
+#
+# Verifies that the Valkey SET NX EX mechanism correctly coordinates dedup
+# across two separate AlertManager replicas sharing the same Valkey store.
+#
+# In production, both instances connect to the same Valkey server. The atomic
+# SET NX acts as a distributed mutex: whichever replica calls SET NX first wins
+# the dedup lock; all other replicas see the key and treat the alert as a dup.
+#
+# These tests use a shared in-memory dict as a stand-in for the Valkey keyspace,
+# giving two independent mock clients that exhibit true NX semantics.
+
+
+def _make_shared_valkey_pair() -> tuple:
+    """Return two Valkey mocks that share the same in-memory NX keyspace.
+
+    Simulates two AlertManager replicas connecting to the same Valkey server.
+    The shared ``store`` dict represents the Valkey keyspace:
+      - SET NX succeeds (True)  when the key is absent
+      - SET NX fails   (None)   when the key already exists
+
+    Returns (mock_a, mock_b, store).
+    """
+    store: dict[str, str] = {}
+
+    async def shared_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        if nx and key in store:
+            return None   # atomic NX: key already exists → fail
+        store[key] = value
+        return True       # key was set
+
+    mock_a = MagicMock()
+    mock_a.set = AsyncMock(side_effect=shared_set)
+    mock_a.aclose = AsyncMock()
+
+    mock_b = MagicMock()
+    mock_b.set = AsyncMock(side_effect=shared_set)
+    mock_b.aclose = AsyncMock()
+
+    return mock_a, mock_b, store
+
+
+def _make_sigma_alert(**overrides) -> "SigmaAlert":
+    from app.engine.sigma_engine import SigmaAlert
+    defaults = dict(
+        id="dist-001",
+        rule_id="sigma-T1059",
+        rule_title="Command Shell Execution",
+        level="high",
+        severity_id=4,
+        technique_ids=["T1059"],
+        tactic_ids=["execution"],
+        host="srv-01",
+        time=datetime.now(timezone.utc),
+        event_snapshot={"pid": 1234},
+    )
+    defaults.update(overrides)
+    return SigmaAlert(**defaults)
+
+
+def test_two_instances_produce_same_dedup_key():
+    """Two AlertManager instances must derive the same dedup key for the same (rule_id, host).
+
+    The key must be deterministic and instance-independent so either replica
+    can atomically check or set the distributed dedup lock in the shared Valkey store.
+    """
+    queue = InMemoryQueue()
+    mgr_a = AlertManager(queue)
+    mgr_b = AlertManager(queue)
+
+    alert = _make_sigma_alert()
+
+    assert mgr_a._dedup_key(alert) == mgr_b._dedup_key(alert)
+
+
+@pytest.mark.asyncio
+async def test_instance_b_blocked_when_instance_a_processes_first():
+    """Instance B must see the alert as a duplicate when Instance A processed it first.
+
+    Distributed dedup sequence:
+      1. Instance A calls SET NX → key absent → succeeds (True) → alert is new → published
+      2. Instance B calls SET NX → key exists → fails (None)  → alert is duplicate → blocked
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr_a = AlertManager(queue)
+    mgr_b = AlertManager(queue)
+
+    mock_valkey_a, mock_valkey_b, _ = _make_shared_valkey_pair()
+    mgr_a._valkey = mock_valkey_a
+    mgr_b._valkey = mock_valkey_b
+
+    alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="srv-01")
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    with (
+        patch.object(mgr_a, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr_b, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr_a.process(alert_dict)   # Instance A processes first → published
+        await mgr_b.process(alert_dict)   # Instance B sees key → blocked
+
+    assert len(published) == 1, (
+        "Instance A should publish; Instance B must be blocked by the shared Valkey key"
+    )
+    assert published[0][0] == Topic.ENRICHED
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_instances_only_one_publishes():
+    """When two instances race concurrently on the same alert, exactly one publishes.
+
+    Uses asyncio.gather to simulate concurrent processing. The shared Valkey
+    SET NX ensures that the first coroutine to reach the SET wins the dedup
+    lock; the other is blocked regardless of scheduling order.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr_a = AlertManager(queue)
+    mgr_b = AlertManager(queue)
+
+    mock_valkey_a, mock_valkey_b, _ = _make_shared_valkey_pair()
+    mgr_a._valkey = mock_valkey_a
+    mgr_b._valkey = mock_valkey_b
+
+    alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="srv-01")
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    with (
+        patch.object(mgr_a, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr_b, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await asyncio.gather(
+            mgr_a.process(alert_dict),
+            mgr_b.process(alert_dict),
+        )
+
+    assert len(published) == 1, (
+        "Exactly one instance should publish; the other must be blocked by the shared Valkey NX lock"
+    )
+    assert published[0][0] == Topic.ENRICHED
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_distributed_dedup_uses_atomic_set_nx_not_get_then_set():
+    """_is_duplicate() must use a single atomic SET NX — not a GET-then-SET sequence.
+
+    A GET-then-SET pattern would create a TOCTOU race window where two replicas
+    could both observe the key absent and both publish the same alert. The atomic
+    SET NX EX closes that window entirely.
+    """
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+
+    sigma_alert = _make_sigma_alert()
+
+    mock_set = AsyncMock(return_value=True)
+    mock_get = AsyncMock()   # must NOT be called
+
+    with (
+        patch.object(mgr._valkey, "set", new=mock_set),
+        patch.object(mgr._valkey, "get", new=mock_get),
+    ):
+        await mgr._is_duplicate(sigma_alert)
+
+    mock_set.assert_awaited_once()
+    mock_get.assert_not_awaited()   # no GET involved — only atomic SET NX
+
+
+@pytest.mark.asyncio
+async def test_both_instances_accept_alert_after_shared_ttl_expires():
+    """After the shared dedup TTL expires, either instance can process the alert again.
+
+    Sequence:
+      Instance A: SET NX → True  → published (starts 5-min TTL in shared store)
+      Instance B: SET NX → None  → blocked   (key still exists within window)
+      [Simulate TTL expiry: clear shared store]
+      Instance A: SET NX → True  → published again (new 5-min window begins)
+
+    This validates that the Valkey TTL mechanism restores availability across
+    the entire cluster — not just for the instance that originally set the key.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr_a = AlertManager(queue)
+    mgr_b = AlertManager(queue)
+
+    mock_valkey_a, mock_valkey_b, store = _make_shared_valkey_pair()
+    mgr_a._valkey = mock_valkey_a
+    mgr_b._valkey = mock_valkey_b
+
+    alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="srv-01")
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    with (
+        patch.object(mgr_a, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr_b, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr_a.process(alert_dict)   # Instance A: new → published
+        await mgr_b.process(alert_dict)   # Instance B: duplicate → blocked
+
+        # Simulate TTL expiry: evict all dedup keys from the shared store
+        store.clear()
+
+        await mgr_a.process(alert_dict)   # Instance A: post-expiry → published again
+
+    assert len(published) == 2, (
+        "Alert published by Instance A (1st call) and again after TTL expiry (3rd call); "
+        "Instance B within the window (2nd call) must be blocked"
+    )
+    assert published[0][0] == Topic.ENRICHED
+    assert published[1][0] == Topic.ENRICHED
+
+    await queue.stop()

@@ -221,27 +221,164 @@ cmd_images() {
 }
 
 # ---------------------------------------------------------------------------
+# update — rolling update to a new image tag (zero-downtime)
+# ---------------------------------------------------------------------------
+# Usage: ./deploy.sh update [--backend <tag>] [--frontend <tag>]
+#
+# Sets the container image on the relevant Deployment(s), annotates the
+# change-cause for kubectl rollout history, then waits for the rollout to
+# complete.  Runs smoke tests afterwards.
+#
+# The Deployment already has:
+#   strategy.rollingUpdate.maxUnavailable: 0   — no pod taken offline first
+#   strategy.rollingUpdate.maxSurge: 1         — one new pod starts before old stops
+#   initContainers.migrate                      — alembic upgrade head before traffic
+#   lifecycle.preStop (sleep 10 s)             — LB drain window before SIGTERM
+#   terminationGracePeriodSeconds: 30           — in-flight requests finish after SIGTERM
+#
+# This guarantees zero downtime: traffic is only routed to the new pod after
+# its readiness probe (/ready → 200) passes, and the old pod only receives
+# SIGTERM after the preStop hook completes.
+cmd_update() {
+  local backend_tag="" frontend_tag=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --backend)  backend_tag="$2";  shift 2 ;;
+      --frontend) frontend_tag="$2"; shift 2 ;;
+      *) die "Unknown argument: '$1'. Usage: $0 update [--backend <tag>] [--frontend <tag>]" ;;
+    esac
+  done
+
+  if [[ -z "$backend_tag" && -z "$frontend_tag" ]]; then
+    die "Specify at least one of --backend <tag> or --frontend <tag>"
+  fi
+
+  local change_cause
+  change_cause="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  if [[ -n "$backend_tag" ]]; then
+    info "Rolling update: backend → mxtac/backend:${backend_tag}"
+    $KUBE set image deployment/mxtac-backend \
+      backend="mxtac/backend:${backend_tag}" \
+      -n "$NAMESPACE"
+    $KUBE annotate deployment/mxtac-backend \
+      "kubernetes.io/change-cause=backend=${backend_tag} at ${change_cause}" \
+      -n "$NAMESPACE" --overwrite
+    wait_for_rollout deployment/mxtac-backend
+    success "Backend rollout complete."
+  fi
+
+  if [[ -n "$frontend_tag" ]]; then
+    info "Rolling update: frontend → mxtac/frontend:${frontend_tag}"
+    $KUBE set image deployment/mxtac-frontend \
+      frontend="mxtac/frontend:${frontend_tag}" \
+      -n "$NAMESPACE"
+    $KUBE annotate deployment/mxtac-frontend \
+      "kubernetes.io/change-cause=frontend=${frontend_tag} at ${change_cause}" \
+      -n "$NAMESPACE" --overwrite
+    wait_for_rollout deployment/mxtac-frontend
+    success "Frontend rollout complete."
+  fi
+
+  cmd_smoke
+}
+
+# ---------------------------------------------------------------------------
+# smoke — post-deployment smoke tests
+# ---------------------------------------------------------------------------
+# Hits key endpoints to confirm the deployed application is serving correctly.
+# Exits non-zero if any check fails.
+#
+# Environment:
+#   MXTAC_URL    Override base URL (default: https://<MXTAC_DOMAIN>)
+#   MXTAC_TOKEN  Bearer token for authenticated checks (optional)
+cmd_smoke() {
+  require_cmd curl
+
+  local base_url="${MXTAC_URL:-https://${DOMAIN}}"
+  info "Smoke tests → ${base_url}"
+
+  local failures=0
+
+  _smoke() {
+    local name="$1" url="$2" expected="${3:-200}"
+    local actual
+    actual=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 10 "${url}" 2>/dev/null || echo "000")
+    if [[ "$actual" == "$expected" ]]; then
+      success "[smoke] ${name} → HTTP ${actual}"
+    else
+      warn "[smoke] FAIL: ${name} → expected HTTP ${expected}, got HTTP ${actual}"
+      ((failures++)) || true
+    fi
+  }
+
+  # Ops endpoints (unauthenticated)
+  _smoke "GET /health"          "${base_url}/health"
+  _smoke "GET /ready"           "${base_url}/ready"
+  _smoke "GET /metrics"         "${base_url}/metrics"
+
+  # API endpoints — must reject unauthenticated requests with 401
+  _smoke "GET /api/v1/rules (unauth)"    "${base_url}/api/v1/rules"    401
+  _smoke "GET /api/v1/coverage (unauth)" "${base_url}/api/v1/coverage/navigator" 401
+
+  # Authenticated check (skipped if MXTAC_TOKEN is not set)
+  if [[ -n "${MXTAC_TOKEN:-}" ]]; then
+    _smoke_auth() {
+      local name="$1" url="$2" expected="${3:-200}"
+      local actual
+      actual=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 10 \
+        -H "Authorization: Bearer ${MXTAC_TOKEN}" "${url}" 2>/dev/null || echo "000")
+      if [[ "$actual" == "$expected" ]]; then
+        success "[smoke] ${name} → HTTP ${actual}"
+      else
+        warn "[smoke] FAIL: ${name} (auth) → expected HTTP ${expected}, got HTTP ${actual}"
+        ((failures++)) || true
+      fi
+    }
+    _smoke_auth "GET /api/v1/rules (auth)"    "${base_url}/api/v1/rules"
+    _smoke_auth "GET /api/v1/coverage (auth)" "${base_url}/api/v1/coverage/navigator"
+  else
+    info "[smoke] MXTAC_TOKEN not set — skipping authenticated endpoint checks"
+  fi
+
+  if [[ "$failures" -eq 0 ]]; then
+    success "All smoke tests passed."
+  else
+    die "${failures} smoke test(s) failed — inspect logs: kubectl logs -n ${NAMESPACE} -l app.kubernetes.io/name=backend --tail=50"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 case "${1:-help}" in
   bootstrap) cmd_bootstrap ;;
   apply)     cmd_apply ;;
   status)    cmd_status ;;
+  update)    shift; cmd_update "$@" ;;
+  smoke)     cmd_smoke ;;
   rollback)  cmd_rollback ;;
   destroy)   cmd_destroy "${2:-}" ;;
   images)    cmd_images ;;
   *)
-    echo "Usage: $0 {bootstrap|apply|status|rollback|destroy|images}"
+    echo "Usage: $0 {bootstrap|apply|status|update|smoke|rollback|destroy|images}"
     echo ""
-    echo "  bootstrap   First-time setup: generate secrets and deploy everything"
-    echo "  apply       Apply/update manifests (idempotent)"
-    echo "  status      Show pod/deployment/HPA/ingress status"
-    echo "  rollback    Undo last backend and frontend rollout"
-    echo "  destroy     Remove all MxTac resources (add --with-pvcs to also delete PVCs)"
-    echo "  images      Build Docker images and import into k3s containerd"
+    echo "  bootstrap            First-time setup: generate secrets and deploy everything"
+    echo "  apply                Apply/update manifests (idempotent)"
+    echo "  status               Show pod/deployment/HPA/ingress status"
+    echo "  update               Zero-downtime rolling update to a new image tag"
+    echo "    --backend  <tag>     Update backend image (e.g. v1.2.0)"
+    echo "    --frontend <tag>     Update frontend image"
+    echo "  smoke                Run post-deployment smoke tests"
+    echo "  rollback             Undo last backend and frontend rollout"
+    echo "  destroy              Remove all MxTac resources (add --with-pvcs to also delete PVCs)"
+    echo "  images               Build Docker images and import into k3s containerd"
     echo ""
     echo "Environment variables:"
     echo "  MXTAC_DOMAIN   Ingress hostname (default: mxtac.local)"
+    echo "  MXTAC_URL      Override full base URL for smoke tests (default: https://\$MXTAC_DOMAIN)"
+    echo "  MXTAC_TOKEN    Bearer token used for authenticated smoke test checks"
     echo "  KUBECTL        kubectl binary to use (default: kubectl)"
     exit 1
     ;;

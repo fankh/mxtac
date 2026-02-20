@@ -43,6 +43,33 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      # Run Alembic migrations before the backend starts.
+      # This ensures schema is current before any replica begins serving traffic.
+      # Alembic upgrade head is idempotent — safe to run from multiple replicas
+      # concurrently (Alembic uses DB-level locking via the alembic_version table).
+      initContainers:
+        - name: migrate
+          image: mxtac/backend:latest
+          imagePullPolicy: IfNotPresent
+          command: ["alembic", "upgrade", "head"]
+          workingDir: /app
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mxtac-secrets
+                  key: database-url
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: backend
           image: mxtac/backend:latest
@@ -51,6 +78,14 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+          # preStop delays SIGTERM by 10 s so the Kubernetes endpoints controller and
+          # ingress controller have time to drain in-flight connections before the pod
+          # exits. Combined with terminationGracePeriodSeconds: 30, the application
+          # still has ≥ 20 s to finish any requests already in progress.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
