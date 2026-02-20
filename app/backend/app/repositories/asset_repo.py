@@ -156,6 +156,38 @@ class AssetRepo:
         await session.flush()
 
     @staticmethod
+    async def stats(session: AsyncSession) -> dict:
+        """Return aggregate asset counts grouped by type, criticality, and OS family."""
+        total = await session.scalar(select(func.count(Asset.id))) or 0
+
+        type_rows = (
+            await session.execute(
+                select(Asset.asset_type, func.count(Asset.id)).group_by(Asset.asset_type)
+            )
+        ).all()
+
+        crit_rows = (
+            await session.execute(
+                select(Asset.criticality, func.count(Asset.id)).group_by(Asset.criticality)
+            )
+        ).all()
+
+        os_rows = (
+            await session.execute(
+                select(Asset.os_family, func.count(Asset.id))
+                .where(Asset.os_family.isnot(None))
+                .group_by(Asset.os_family)
+            )
+        ).all()
+
+        return {
+            "total": total,
+            "by_type": {r[0]: r[1] for r in type_rows},
+            "by_criticality": {str(r[0]): r[1] for r in crit_rows},
+            "by_os_family": {r[0]: r[1] for r in os_rows},
+        }
+
+    @staticmethod
     async def increment_detection_count(session: AsyncSession, hostname: str) -> None:
         """Atomically increment detection_count for the asset identified by *hostname*."""
         await session.execute(

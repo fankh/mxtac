@@ -1,8 +1,9 @@
 """Tests for GET /metrics — Prometheus format (feature 21.3),
 mxtac_alerts_processed_total{severity} counter (feature 21.4),
 mxtac_alerts_deduplicated_total counter (feature 21.5),
-mxtac_rule_matches_total{rule_id,level} counter (feature 21.6), and
-mxtac_pipeline_latency_seconds histogram (feature 21.7).
+mxtac_rule_matches_total{rule_id,level} counter (feature 21.6),
+mxtac_pipeline_latency_seconds histogram (feature 21.7), and
+mxtac_websocket_connections gauge (feature 21.8).
 
 Coverage:
   /metrics endpoint:
@@ -27,6 +28,7 @@ Coverage:
   - mxtac_rule_matches_total is present
   - mxtac_events_ingested_total is present
   - mxtac_connectors_active is present
+  - mxtac_websocket_connections is present
 
   mxtac_alerts_processed_total{severity} — feature 21.4:
   - Severity label appears in /metrics output after incrementing the counter
@@ -59,6 +61,15 @@ Coverage:
   - +Inf bucket is present
   - observe() can be called multiple times without error
   - _count increments by 1 for each observe() call
+
+  mxtac_websocket_connections — feature 21.8:
+  - Gauge is present in /metrics output
+  - Gauge declared as gauge type (not counter/histogram)
+  - Gauge has a # HELP line
+  - Gauge has no labels (label-free)
+  - Gauge value increases after inc()
+  - Gauge value decreases after dec()
+  - Gauge value is 0.0 when all connections are closed (inc then dec)
 """
 
 from __future__ import annotations
@@ -66,7 +77,7 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-from app.core.metrics import alerts_deduplicated, alerts_processed, pipeline_latency, rule_matches
+from app.core.metrics import alerts_deduplicated, alerts_processed, pipeline_latency, rule_matches, websocket_connections
 
 
 METRICS_URL = "/metrics"
@@ -270,6 +281,7 @@ _EXPECTED_MXTAC_METRICS = [
     "mxtac_rule_matches_total",
     "mxtac_events_ingested_total",
     "mxtac_connectors_active",
+    "mxtac_websocket_connections",
 ]
 
 
@@ -890,4 +902,170 @@ async def test_metrics_pipeline_latency_help_line_present(
     )
     assert len(help_line.split()) > 3, (
         "# HELP line must contain a non-empty description"
+    )
+
+
+# ---------------------------------------------------------------------------
+# mxtac_websocket_connections — feature 21.8
+# ---------------------------------------------------------------------------
+#
+# The gauge tracks the number of active WebSocket connections to the
+# real-time alert stream.  It is incremented on connect() and decremented
+# on disconnect() (or when dead connections are pruned by _fanout_local).
+#
+# Implementation:
+#   app/core/metrics.py          — websocket_connections Gauge definition
+#   app/api/v1/endpoints/websocket.py — inc() in connect(), dec() in disconnect()
+
+
+@pytest.mark.asyncio
+async def test_metrics_websocket_connections_present(client: AsyncClient) -> None:
+    """/metrics exposes mxtac_websocket_connections gauge."""
+    resp = await client.get(METRICS_URL)
+    assert "mxtac_websocket_connections" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_metrics_websocket_connections_declared_as_gauge(client: AsyncClient) -> None:
+    """/metrics declares mxtac_websocket_connections as a gauge."""
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    type_line = next(
+        (l for l in lines if l.startswith("# TYPE mxtac_websocket_connections")),
+        None,
+    )
+    assert type_line is not None, "No # TYPE line for mxtac_websocket_connections"
+    assert "gauge" in type_line, (
+        f"Expected 'gauge' in TYPE line; got: {type_line}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_websocket_connections_has_help_line(client: AsyncClient) -> None:
+    """/metrics includes a # HELP line for mxtac_websocket_connections."""
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    help_line = next(
+        (l for l in lines if l.startswith("# HELP mxtac_websocket_connections")),
+        None,
+    )
+    assert help_line is not None, (
+        "Expected '# HELP mxtac_websocket_connections' line in /metrics"
+    )
+    assert len(help_line.split()) > 3, (
+        "# HELP line must contain a non-empty description"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_websocket_connections_has_no_labels(client: AsyncClient) -> None:
+    """mxtac_websocket_connections is a label-free gauge.
+
+    The metric line must not contain a '{...}' label set.
+    """
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    data_lines = [
+        l for l in lines
+        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+    ]
+    assert len(data_lines) > 0, (
+        "Expected a mxtac_websocket_connections data line in /metrics"
+    )
+    for line in data_lines:
+        assert "{" not in line, (
+            f"mxtac_websocket_connections must have no labels; got: {line}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_metrics_websocket_connections_increases_after_inc(
+    client: AsyncClient,
+) -> None:
+    """Gauge value increases after websocket_connections.inc()."""
+    resp_before = await client.get(METRICS_URL)
+    lines_before = resp_before.text.splitlines()
+    before_lines = [
+        l for l in lines_before
+        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+    ]
+    before = float(before_lines[0].split()[-1]) if before_lines else 0.0
+
+    websocket_connections.inc()
+
+    resp_after = await client.get(METRICS_URL)
+    lines_after = resp_after.text.splitlines()
+    after_lines = [
+        l for l in lines_after
+        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+    ]
+    assert len(after_lines) > 0, "Expected mxtac_websocket_connections data line"
+    after = float(after_lines[0].split()[-1])
+    assert after == before + 1.0, (
+        f"Gauge must increase by 1 after inc(); expected {before + 1.0}, got {after}"
+    )
+
+    # Clean up: restore to original value
+    websocket_connections.dec()
+
+
+@pytest.mark.asyncio
+async def test_metrics_websocket_connections_decreases_after_dec(
+    client: AsyncClient,
+) -> None:
+    """Gauge value decreases after websocket_connections.dec()."""
+    websocket_connections.inc()
+
+    resp_before = await client.get(METRICS_URL)
+    lines_before = resp_before.text.splitlines()
+    before_lines = [
+        l for l in lines_before
+        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+    ]
+    before = float(before_lines[0].split()[-1])
+
+    websocket_connections.dec()
+
+    resp_after = await client.get(METRICS_URL)
+    lines_after = resp_after.text.splitlines()
+    after_lines = [
+        l for l in lines_after
+        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+    ]
+    assert len(after_lines) > 0, "Expected mxtac_websocket_connections data line"
+    after = float(after_lines[0].split()[-1])
+    assert after == before - 1.0, (
+        f"Gauge must decrease by 1 after dec(); expected {before - 1.0}, got {after}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_websocket_connections_returns_to_zero_after_connect_disconnect(
+    client: AsyncClient,
+) -> None:
+    """Gauge returns to its baseline after an equal number of inc() and dec() calls.
+
+    Simulates one connection being established and then closed.
+    """
+    resp_baseline = await client.get(METRICS_URL)
+    lines_baseline = resp_baseline.text.splitlines()
+    baseline_lines = [
+        l for l in lines_baseline
+        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+    ]
+    baseline = float(baseline_lines[0].split()[-1]) if baseline_lines else 0.0
+
+    websocket_connections.inc()  # simulate connect
+    websocket_connections.dec()  # simulate disconnect
+
+    resp_after = await client.get(METRICS_URL)
+    lines_after = resp_after.text.splitlines()
+    after_lines = [
+        l for l in lines_after
+        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+    ]
+    assert len(after_lines) > 0, "Expected mxtac_websocket_connections data line"
+    after = float(after_lines[0].split()[-1])
+    assert after == baseline, (
+        f"Gauge must return to baseline {baseline} after inc+dec; got {after}"
     )

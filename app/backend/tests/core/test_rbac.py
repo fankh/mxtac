@@ -118,13 +118,15 @@ class TestPermissionsMatrix:
         "events:search",
         "threat_intel:read",
         "threat_intel:write",
+        "assets:read",
+        "assets:write",
     }
 
     def test_permissions_is_dict(self) -> None:
         assert isinstance(PERMISSIONS, dict)
 
     def test_permissions_has_eleven_entries(self) -> None:
-        assert len(PERMISSIONS) == 15
+        assert len(PERMISSIONS) == 17
 
     @pytest.mark.parametrize("perm", list(_EXPECTED_PERMISSIONS))
     def test_expected_permission_exists(self, perm: str) -> None:
@@ -286,9 +288,9 @@ class TestRolePermissionsStructure:
 # ---------------------------------------------------------------------------
 
 _VIEWER_PERMS = frozenset({"detections:read", "incidents:read"})
-_ANALYST_PERMS = _VIEWER_PERMS | {"detections:write", "incidents:write"}
+_ANALYST_PERMS = _VIEWER_PERMS | {"detections:write", "incidents:write", "assets:read"}
 _HUNTER_PERMS = _ANALYST_PERMS | {"rules:read", "events:search", "threat_intel:read"}
-_ENGINEER_PERMS = _HUNTER_PERMS | {"rules:write", "connectors:read", "connectors:write", "threat_intel:write"}
+_ENGINEER_PERMS = _HUNTER_PERMS | {"rules:write", "connectors:read", "connectors:write", "threat_intel:write", "assets:write"}
 _ADMIN_PERMS = _ENGINEER_PERMS | {"users:read", "users:write", "incidents:delete", "detections:delete"}
 
 
@@ -311,19 +313,19 @@ class TestRolePermissionsCorrectness:
         assert ROLE_PERMISSIONS["admin"] == _ADMIN_PERMS
 
     def test_admin_has_all_eleven_permissions(self) -> None:
-        assert len(ROLE_PERMISSIONS["admin"]) == 15
+        assert len(ROLE_PERMISSIONS["admin"]) == 17
 
     def test_viewer_has_two_permissions(self) -> None:
         assert len(ROLE_PERMISSIONS["viewer"]) == 2
 
     def test_analyst_has_four_permissions(self) -> None:
-        assert len(ROLE_PERMISSIONS["analyst"]) == 4
+        assert len(ROLE_PERMISSIONS["analyst"]) == 5
 
     def test_hunter_has_six_permissions(self) -> None:
-        assert len(ROLE_PERMISSIONS["hunter"]) == 7
+        assert len(ROLE_PERMISSIONS["hunter"]) == 8
 
     def test_engineer_has_nine_permissions(self) -> None:
-        assert len(ROLE_PERMISSIONS["engineer"]) == 11
+        assert len(ROLE_PERMISSIONS["engineer"]) == 13
 
     # --- Specific inclusions ---
 
@@ -491,6 +493,7 @@ class TestRequirePermissionValidation:
         "users:read", "users:write",
         "events:search",
         "threat_intel:read", "threat_intel:write",
+        "assets:read", "assets:write",
     ])
     def test_all_known_permissions_return_callable(self, perm: str) -> None:
         checker = require_permission(perm)

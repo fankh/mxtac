@@ -30,6 +30,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ....core.config import settings
 from ....core.logging import get_logger
+from ....core.metrics import websocket_connections
 from ....services.mock_data import DETECTIONS
 
 logger = get_logger(__name__)
@@ -69,12 +70,16 @@ class DistributedConnectionManager:
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
         self._connections.add(ws)
+        websocket_connections.inc()
         logger.info("WebSocket connected total=%d", len(self._connections))
         # Lazily start the Valkey subscriber on first connection
         await self._ensure_subscriber()
 
     def disconnect(self, ws: WebSocket) -> None:
+        was_present = ws in self._connections
         self._connections.discard(ws)
+        if was_present:
+            websocket_connections.dec()
         logger.info("WebSocket disconnected total=%d", len(self._connections))
 
     # ── Publishing (goes through Valkey) ──────────────────────────────
@@ -165,6 +170,7 @@ class DistributedConnectionManager:
                 dead.add(ws)
         for ws in dead:
             self._connections.discard(ws)
+            websocket_connections.dec()
 
     # ── Valkey publish client (lazy singleton) ────────────────────────
 

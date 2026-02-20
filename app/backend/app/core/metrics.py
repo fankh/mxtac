@@ -26,6 +26,10 @@ Metrics exposed at GET /metrics (Prometheus text format):
   Connectors
   ──────────
   mxtac_connectors_active                  Gauge    — running connector count
+
+  WebSocket
+  ─────────
+  mxtac_websocket_connections              Gauge    — active WebSocket connections
 """
 
 from prometheus_client import Counter, Gauge, Histogram
@@ -89,4 +93,13 @@ events_ingested = Counter(
 connectors_active = Gauge(
     "mxtac_connectors_active",
     "Number of connectors currently in the running state",
+)
+
+# ---------------------------------------------------------------------------
+# WebSocket
+# ---------------------------------------------------------------------------
+
+websocket_connections = Gauge(
+    "mxtac_websocket_connections",
+    "Number of active WebSocket connections to the real-time alert stream",
 )
