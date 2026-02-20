@@ -1,4 +1,7 @@
-import type { Detection } from '../../../types/api'
+import { useState, useEffect } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import type { Detection, DetectionUpdate } from '../../../types/api'
+import { detectionsApi } from '../../../lib/api'
 import { ScoreCircle, SeverityPill } from '../../shared/SeverityBadge'
 import { StatusPill } from '../../shared/StatusPill'
 
@@ -17,7 +20,34 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export function DetectionPanel({ detection, onClose }: Props) {
+  const [assignMode, setAssignMode] = useState(false)
+  const [assignInput, setAssignInput] = useState('')
+
+  const queryClient = useQueryClient()
+
+  // Reset assign state when the selected detection changes
+  useEffect(() => {
+    setAssignMode(false)
+    setAssignInput('')
+  }, [detection?.id])
+
+  const mutation = useMutation({
+    mutationFn: (body: DetectionUpdate) => detectionsApi.update(detection!.id, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['detections'] })
+      onClose()
+    },
+  })
+
   if (!detection) return null
+
+  const isUpdating = mutation.isPending
+
+  function handleAssignConfirm() {
+    if (assignInput.trim()) {
+      mutation.mutate({ assigned_to: assignInput.trim() })
+    }
+  }
 
   return (
     <>
@@ -91,20 +121,71 @@ export function DetectionPanel({ detection, onClose }: Props) {
               </div>
             </div>
           )}
+
+          {mutation.isError && (
+            <p className="mt-3 text-[11px] text-crit-text">Update failed. Please try again.</p>
+          )}
         </div>
+
+        {/* Assign input row (shown when assign mode is active) */}
+        {assignMode && (
+          <div className="border-t border-section px-4 py-2 flex items-center gap-2">
+            <input
+              autoFocus
+              type="text"
+              placeholder="Assign to (email or username)"
+              value={assignInput}
+              onChange={(e) => setAssignInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && assignInput.trim()) handleAssignConfirm()
+                if (e.key === 'Escape') { setAssignMode(false); setAssignInput('') }
+              }}
+              className="flex-1 h-[28px] px-2 text-[11px] border border-border rounded-md bg-page text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
+            />
+            <button
+              onClick={handleAssignConfirm}
+              disabled={!assignInput.trim() || isUpdating}
+              className="h-[28px] px-3 text-[11px] bg-blue text-white rounded-md hover:opacity-90 disabled:opacity-50"
+            >
+              Confirm
+            </button>
+            <button
+              onClick={() => { setAssignMode(false); setAssignInput('') }}
+              className="text-[11px] text-text-muted hover:text-text-primary"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
 
         {/* Action footer */}
         <div className="border-t border-border px-4 py-3 flex items-center gap-2">
-          <button className="flex-1 h-[30px] bg-blue text-white text-[12px] font-medium rounded-md hover:opacity-90 transition-opacity">
+          <button
+            onClick={() => mutation.mutate({ status: 'investigating' })}
+            disabled={isUpdating}
+            className="flex-1 h-[30px] bg-blue text-white text-[12px] font-medium rounded-md hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
             Investigate
           </button>
-          <button className="h-[30px] px-3 border border-border text-[12px] text-text-secondary rounded-md hover:bg-page transition-colors">
+          <button
+            onClick={() => setAssignMode((v) => !v)}
+            disabled={isUpdating}
+            className="h-[30px] px-3 border border-border text-[12px] text-text-secondary rounded-md hover:bg-page transition-colors disabled:opacity-50"
+          >
             Assign
           </button>
-          <button className="h-[30px] px-3 border border-border text-[12px] text-text-secondary rounded-md hover:bg-page transition-colors">
+          <button
+            onClick={() => mutation.mutate({ status: 'resolved' })}
+            disabled={isUpdating}
+            className="h-[30px] px-3 border border-border text-[12px] text-text-secondary rounded-md hover:bg-page transition-colors disabled:opacity-50"
+          >
             Resolve
           </button>
-          <button className="h-[30px] px-3 border border-border text-[12px] text-text-muted rounded-md hover:bg-page transition-colors">
+          <button
+            onClick={() => mutation.mutate({ status: 'false_positive' })}
+            disabled={isUpdating}
+            className="h-[30px] px-3 border border-border text-[12px] text-text-muted rounded-md hover:bg-page transition-colors disabled:opacity-50"
+          >
             FP
           </button>
         </div>
