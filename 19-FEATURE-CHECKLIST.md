@@ -213,17 +213,17 @@
 
 | # | Feature | Impl | Test | Priority | Notes |
 |---|---------|:----:|:----:|----------|-------|
-| 10.1 | `GET /detections` — paginated list | `[~]` | `[ ]` | P0 | Returns mock data |
-| 10.2 | Filter by severity (multi-select) | `[~]` | `[ ]` | P0 | |
-| 10.3 | Filter by status | `[~]` | `[ ]` | P0 | |
-| 10.4 | Filter by tactic | `[~]` | `[ ]` | P0 | |
-| 10.5 | Filter by host | `[~]` | `[ ]` | P0 | |
-| 10.6 | Full-text search across title + description | `[~]` | `[ ]` | P0 | |
-| 10.7 | Sort by score / time / severity / host / tactic | `[~]` | `[ ]` | P0 | |
-| 10.8 | `GET /detections/{id}` — detail view | `[~]` | `[ ]` | P0 | |
-| 10.9 | `PATCH /detections/{id}` — update status / assignee | `[~]` | `[ ]` | P0 | |
+| 10.1 | `GET /detections` — paginated list | `[x]` | `[x]` | P0 | DetectionRepo.list(); 19 tests pass |
+| 10.2 | Filter by severity (multi-select) | `[x]` | `[x]` | P0 | `?severity=critical&severity=high` |
+| 10.3 | Filter by status | `[x]` | `[x]` | P0 | `?status=active` |
+| 10.4 | Filter by tactic | `[x]` | `[x]` | P0 | `?tactic=...` (ilike) |
+| 10.5 | Filter by host | `[x]` | `[x]` | P0 | `?host=...` (ilike) |
+| 10.6 | Full-text search across title + description | `[x]` | `[x]` | P0 | `?search=...` across name/technique_id/host |
+| 10.7 | Sort by score / time / severity / host / tactic | `[x]` | `[x]` | P0 | `?sort=score&order=desc` |
+| 10.8 | `GET /detections/{id}` — detail view | `[x]` | `[x]` | P0 | 404 on missing |
+| 10.9 | `PATCH /detections/{id}` — update status / assignee | `[x]` | `[x]` | P0 | RBAC: detections:write (analyst+) |
 | 10.10 | `POST /detections/bulk` — bulk status update | `[ ]` | `[ ]` | P1 | |
-| 10.11 | DB persistence for all operations | `[ ]` | `[ ]` | P0 | Task 1.1 |
+| 10.11 | DB persistence for all operations | `[x]` | `[x]` | P0 | SQLAlchemy async via DetectionRepo |
 
 ---
 
@@ -556,11 +556,11 @@
 | 28.27 | WebSocket: client receives broadcast alert | `[ ]` | `[ ]` | P0 | |
 | 28.28 | WebSocket: client on instance-2 receives alert from instance-1 | `[ ]` | `[ ]` | P1 | Distributed |
 | 28.29 | WebSocket: auto-reconnect after drop | `[ ]` | `[ ]` | P1 | |
-| 28.30 | Detections API: pagination (page / page_size) | `[ ]` | `[ ]` | P0 | |
-| 28.31 | Detections API: filter by severity | `[ ]` | `[ ]` | P0 | |
-| 28.32 | Detections API: sort by score descending | `[ ]` | `[ ]` | P0 | |
-| 28.33 | Detections API: 404 for unknown ID | `[ ]` | `[ ]` | P0 | |
-| 28.34 | Detections API: unauthenticated → 401 | `[ ]` | `[ ]` | P0 | |
+| 28.30 | Detections API: pagination (page / page_size) | `[x]` | `[x]` | P0 | |
+| 28.31 | Detections API: filter by severity | `[x]` | `[x]` | P0 | |
+| 28.32 | Detections API: sort by score descending | `[x]` | `[x]` | P0 | |
+| 28.33 | Detections API: 404 for unknown ID | `[x]` | `[x]` | P0 | |
+| 28.34 | Detections API: unauthenticated → 401 | `[x]` | `[x]` | P0 | |
 | 28.35 | Rules API: create rule persists to DB | `[ ]` | `[ ]` | P0 | |
 | 28.36 | Rules API: invalid YAML → 422 | `[ ]` | `[ ]` | P0 | |
 | 28.37 | Rules API: delete removes from engine | `[ ]` | `[ ]` | P1 | |

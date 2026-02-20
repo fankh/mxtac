@@ -63,8 +63,9 @@ class Scheduler:
         await sse_broadcaster.broadcast("scheduler", {"status": "running"})
 
     async def _recover_orphaned_tasks(self):
-        """Reset tasks stuck in RUNNING state from a previous process."""
+        """Reset tasks and runs stuck in RUNNING state from a previous process."""
         async with async_session() as session:
+            # Recover orphaned tasks
             result = await session.execute(
                 select(Task).where(Task.status == TaskStatus.RUNNING)
             )
@@ -72,8 +73,20 @@ class Scheduler:
             if orphaned:
                 for task in orphaned:
                     task.status = TaskStatus.PENDING
-                await session.commit()
                 logger.info(f"Recovered {len(orphaned)} orphaned tasks back to PENDING")
+
+            # Cancel orphaned running runs
+            run_result = await session.execute(
+                select(Run).where(Run.status == RunStatus.RUNNING)
+            )
+            orphaned_runs = run_result.scalars().all()
+            if orphaned_runs:
+                for run in orphaned_runs:
+                    run.status = RunStatus.CANCELLED
+                    run.finished_at = datetime.datetime.utcnow()
+                logger.info(f"Cancelled {len(orphaned_runs)} orphaned runs")
+
+            await session.commit()
 
     async def stop(self):
         self._running = False
@@ -210,6 +223,7 @@ class Scheduler:
             task = await session.get(Task, task_db_id)
             run_result = await session.execute(
                 select(Run).where(Run.task_id == task_db_id, Run.status == RunStatus.RUNNING)
+                .order_by(Run.id.desc()).limit(1)
             )
             run = run_result.scalar_one_or_none()
 
