@@ -129,18 +129,18 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
 async def start_connectors_from_db(
     session: AsyncSession,
     queue: MessageQueue,
-) -> list[BaseConnector]:
-    """Load enabled connectors from DB and return instantiated connector objects."""
+) -> dict[str, BaseConnector]:
+    """Load enabled connectors from DB and return {connector_id: connector} mapping."""
     result = await session.execute(
         select(Connector).where(Connector.enabled == True)
     )
     db_connectors = result.scalars().all()
 
-    connectors: list[BaseConnector] = []
+    connectors: dict[str, BaseConnector] = {}
     for db_conn in db_connectors:
         conn = build_connector(db_conn, queue)
         if conn:
-            connectors.append(conn)
+            connectors[db_conn.id] = conn
             logger.info("Registered connector name=%s type=%s", db_conn.name, db_conn.connector_type)
 
     return connectors

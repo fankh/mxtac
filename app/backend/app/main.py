@@ -48,7 +48,7 @@ async def on_startup() -> None:
     logger.info("MxTac API starting — version=%s debug=%s", settings.version, settings.debug)
 
     # Pre-initialise state so the shutdown handler always has valid references
-    app.state.connectors = []
+    app.state.connectors = {}
     app.state.alert_mgr = None
 
     # 1. Seed database (idempotent)
@@ -137,7 +137,7 @@ async def on_startup() -> None:
         from .connectors.registry import start_connectors_from_db
         async with AsyncSessionLocal() as session:
             connectors = await start_connectors_from_db(session, queue)
-        for conn in connectors:
+        for conn in connectors.values():
             asyncio.create_task(conn.start(), name=f"connector-start-{conn.config.name}")
         app.state.connectors = connectors
         logger.info("Started %d connectors", len(connectors))
@@ -152,7 +152,7 @@ async def on_shutdown() -> None:
     logger.info("MxTac API shutting down")
 
     # Stop connectors (cancels each connector's poll loop)
-    for conn in getattr(app.state, "connectors", []):
+    for conn in getattr(app.state, "connectors", {}).values():
         try:
             await conn.stop()
         except Exception:

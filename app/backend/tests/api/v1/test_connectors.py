@@ -11,6 +11,8 @@ Coverage:
   - DELETE: 204 on success; 404 when not found; gone after delete
   - POST /{id}/test: 200 with reachable=false stub; 404 when not found
   - GET /{id}/health: 200 with metrics fields; 404 when not found
+  - POST /{id}/start: 200 starts connector; 404 when not found; 422 for unsupported type
+  - POST /{id}/stop: 200 stops connector; 404 when not found; idempotent when not running
 
 Uses in-memory SQLite via the ``client`` fixture (get_db overridden).
 ``ConnectorRepo`` performs real SQL against SQLite — no mocks needed.
@@ -18,8 +20,12 @@ Uses in-memory SQLite via the ``client`` fixture (get_db overridden).
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from httpx import AsyncClient
+
+from app.main import app
 
 BASE_URL = "/api/v1/connectors"
 
@@ -340,3 +346,141 @@ async def test_deleted_connector_absent_from_list(
     list_resp = await client.get(BASE_URL, headers=engineer_headers)
     ids = [c["id"] for c in list_resp.json()]
     assert connector_id not in ids
+
+
+# ---------------------------------------------------------------------------
+# POST /{id}/start — runtime start
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_start_connector_not_found(client: AsyncClient, engineer_headers: dict) -> None:
+    """POST /connectors/{id}/start for unknown ID → 404."""
+    resp = await client.post(f"{BASE_URL}/nonexistent-id/start", headers=engineer_headers)
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Connector not found"
+
+
+@pytest.mark.asyncio
+async def test_start_connector_sets_status_connecting(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """POST /connectors/{id}/start for a wazuh connector → 200, status connecting."""
+    create_resp = await client.post(BASE_URL, headers=engineer_headers, json=_VALID_PAYLOAD)
+    connector_id = create_resp.json()["id"]
+
+    mock_queue = MagicMock()
+    mock_connector = MagicMock()
+    mock_connector.start = AsyncMock()
+    mock_connector.config = MagicMock()
+    mock_connector.config.name = _VALID_PAYLOAD["name"]
+
+    app.state.connectors = {}
+    app.state.queue = mock_queue
+
+    _PATCH_BUILD = "app.api.v1.endpoints.connectors.build_connector"
+    with patch(_PATCH_BUILD, return_value=mock_connector):
+        resp = await client.post(f"{BASE_URL}/{connector_id}/start", headers=engineer_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == connector_id
+    assert data["status"] == "connecting"
+
+
+@pytest.mark.asyncio
+async def test_start_connector_idempotent_when_already_running(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """POST /connectors/{id}/start when already in running dict → 200, no duplicate start."""
+    create_resp = await client.post(BASE_URL, headers=engineer_headers, json=_VALID_PAYLOAD)
+    connector_id = create_resp.json()["id"]
+
+    # Simulate connector already in the running dict
+    mock_connector = MagicMock()
+    app.state.connectors = {connector_id: mock_connector}
+
+    _PATCH_BUILD = "app.api.v1.endpoints.connectors.build_connector"
+    with patch(_PATCH_BUILD) as mock_build:
+        resp = await client.post(f"{BASE_URL}/{connector_id}/start", headers=engineer_headers)
+        mock_build.assert_not_called()
+
+    assert resp.status_code == 200
+    assert resp.json()["id"] == connector_id
+
+    # Cleanup
+    app.state.connectors = {}
+
+
+@pytest.mark.asyncio
+async def test_start_connector_unsupported_type_returns_422(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """POST /connectors/{id}/start for a type with no runtime impl → 422."""
+    payload = {"name": "prowler-test", "connector_type": "prowler", "config": {}}
+    create_resp = await client.post(BASE_URL, headers=engineer_headers, json=payload)
+    connector_id = create_resp.json()["id"]
+
+    mock_queue = MagicMock()
+    app.state.connectors = {}
+    app.state.queue = mock_queue
+
+    _PATCH_BUILD = "app.api.v1.endpoints.connectors.build_connector"
+    # build_connector returns None for unsupported types
+    with patch(_PATCH_BUILD, return_value=None):
+        resp = await client.post(f"{BASE_URL}/{connector_id}/start", headers=engineer_headers)
+
+    assert resp.status_code == 422
+    app.state.connectors = {}
+
+
+# ---------------------------------------------------------------------------
+# POST /{id}/stop — runtime stop
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stop_connector_not_found(client: AsyncClient, engineer_headers: dict) -> None:
+    """POST /connectors/{id}/stop for unknown ID → 404."""
+    resp = await client.post(f"{BASE_URL}/nonexistent-id/stop", headers=engineer_headers)
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Connector not found"
+
+
+@pytest.mark.asyncio
+async def test_stop_connector_sets_status_inactive(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """POST /connectors/{id}/stop for a running connector → 200, status inactive."""
+    create_resp = await client.post(BASE_URL, headers=engineer_headers, json=_VALID_PAYLOAD)
+    connector_id = create_resp.json()["id"]
+
+    mock_connector = MagicMock()
+    mock_connector.stop = AsyncMock()
+    app.state.connectors = {connector_id: mock_connector}
+
+    resp = await client.post(f"{BASE_URL}/{connector_id}/stop", headers=engineer_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == connector_id
+    assert data["status"] == "inactive"
+    mock_connector.stop.assert_called_once()
+    assert connector_id not in app.state.connectors
+
+
+@pytest.mark.asyncio
+async def test_stop_connector_idempotent_when_not_running(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """POST /connectors/{id}/stop when connector is not running → 200, status inactive."""
+    create_resp = await client.post(BASE_URL, headers=engineer_headers, json=_VALID_PAYLOAD)
+    connector_id = create_resp.json()["id"]
+
+    # Connector is NOT in the running dict
+    app.state.connectors = {}
+
+    resp = await client.post(f"{BASE_URL}/{connector_id}/stop", headers=engineer_headers)
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "inactive"

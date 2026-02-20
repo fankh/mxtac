@@ -205,7 +205,7 @@ class TestBuildConnector:
 
 
 class TestStartConnectorsFromDb:
-    async def _run_with_rows(self, db_rows: list) -> list:
+    async def _run_with_rows(self, db_rows: list) -> dict:
         """Helper: run start_connectors_from_db with given mock DB rows."""
         mock_session = AsyncMock()
         mock_result = MagicMock()
@@ -215,7 +215,7 @@ class TestStartConnectorsFromDb:
 
     async def test_returns_empty_list_when_no_connectors(self) -> None:
         connectors = await self._run_with_rows([])
-        assert connectors == []
+        assert connectors == {}
 
     async def test_returns_one_connector_per_valid_row(self) -> None:
         rows = [
@@ -239,7 +239,7 @@ class TestStartConnectorsFromDb:
         """Rows with unknown types (build_connector returns None) are skipped."""
         rows = [_make_db_connector(name="unknown-01", connector_type="unknown-source")]
         connectors = await self._run_with_rows(rows)
-        assert connectors == []
+        assert connectors == {}
 
     async def test_returns_wazuh_connector_instances(self) -> None:
         wazuh_row = _make_db_connector(
@@ -249,7 +249,7 @@ class TestStartConnectorsFromDb:
         )
         connectors = await self._run_with_rows([wazuh_row])
         assert len(connectors) == 1
-        assert isinstance(connectors[0], WazuhConnector)
+        assert isinstance(next(iter(connectors.values())), WazuhConnector)
 
     async def test_mixed_valid_and_invalid_types(self) -> None:
         """Only valid-type rows result in connectors; unknown types are skipped."""
@@ -268,7 +268,7 @@ class TestStartConnectorsFromDb:
         ]
         connectors = await self._run_with_rows(rows)
         assert len(connectors) == 1
-        assert isinstance(connectors[0], WazuhConnector)
+        assert isinstance(next(iter(connectors.values())), WazuhConnector)
 
 
 # ── Zeek state file helpers ────────────────────────────────────────────────────
@@ -401,7 +401,7 @@ class TestStartConnectorsFromDbIntegration:
             connectors = await start_connectors_from_db(db_session, InMemoryQueue())
 
         assert len(connectors) == 1
-        assert connectors[0].config.name == "wazuh-enabled"
+        assert next(iter(connectors.values())).config.name == "wazuh-enabled"
 
     async def test_returns_empty_when_only_disabled_connectors_in_db(
         self, db_session: AsyncSession
@@ -421,7 +421,7 @@ class TestStartConnectorsFromDbIntegration:
 
         connectors = await start_connectors_from_db(db_session, InMemoryQueue())
 
-        assert connectors == []
+        assert connectors == {}
 
     async def test_all_enabled_types_are_loaded(self, db_session: AsyncSession) -> None:
         """All enabled connectors across different types are returned."""
@@ -455,5 +455,5 @@ class TestStartConnectorsFromDbIntegration:
             connectors = await start_connectors_from_db(db_session, InMemoryQueue())
 
         assert len(connectors) == 2
-        names = {c.config.name for c in connectors}
+        names = {c.config.name for c in connectors.values()}
         assert names == {"wazuh-main", "suricata-main"}

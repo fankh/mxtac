@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ....connectors.registry import build_connector
 from ....core.database import get_db
 from ....core.rbac import require_permission
 from ....repositories.connector_repo import ConnectorRepo
@@ -249,3 +251,71 @@ async def connector_health(
         last_seen_at=conn.last_seen_at,
         error_message=conn.error_message,
     )
+
+
+# ── Runtime start / stop ──────────────────────────────────────────────────────
+
+
+@router.post("/{connector_id}/start", response_model=ConnectorResponse)
+async def start_connector(
+    connector_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("connectors:write")),
+):
+    """Start a connector at runtime without restarting the server.
+
+    Idempotent: if the connector is already running, returns its current state.
+    Returns 422 if the connector type has no runtime implementation.
+    Returns 503 if the message queue is unavailable.
+    """
+    conn = await ConnectorRepo.get_by_id(db, connector_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="Connector not found")
+
+    running: dict = getattr(request.app.state, "connectors", {})
+    if connector_id not in running:
+        queue = getattr(request.app.state, "queue", None)
+        if queue is None:
+            raise HTTPException(status_code=503, detail="Message queue not available")
+
+        connector = build_connector(conn, queue)
+        if connector is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Cannot start connector type: {conn.connector_type}",
+            )
+
+        asyncio.create_task(connector.start(), name=f"connector-start-{conn.name}")
+        running[connector_id] = connector
+        await ConnectorRepo.update_status(db, connector_id, "connecting")
+        conn = await ConnectorRepo.get_by_id(db, connector_id)
+
+    return _conn_to_response(conn)
+
+
+@router.post("/{connector_id}/stop", response_model=ConnectorResponse)
+async def stop_connector(
+    connector_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("connectors:write")),
+):
+    """Stop a running connector at runtime without restarting the server.
+
+    Idempotent: if the connector is not currently running, its DB status is
+    still set to 'inactive' and the current state is returned.
+    """
+    conn = await ConnectorRepo.get_by_id(db, connector_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="Connector not found")
+
+    running: dict = getattr(request.app.state, "connectors", {})
+    connector = running.pop(connector_id, None)
+    if connector is not None:
+        await connector.stop()
+
+    await ConnectorRepo.update_status(db, connector_id, "inactive")
+    conn = await ConnectorRepo.get_by_id(db, connector_id)
+
+    return _conn_to_response(conn)
