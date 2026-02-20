@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, JSON, String
+from sqlalchemy import Boolean, DateTime, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, TimestampMixin
@@ -62,11 +62,6 @@ class Asset(Base, TimestampMixin):
     )
     incident_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
-    )
-
-    __table_args__ = (
-        Index("ix_assets_hostname", "hostname"),  # explicit name for migration tracking
-        Index("ix_assets_asset_type", "asset_type"),
     )
 
     def __repr__(self) -> str:

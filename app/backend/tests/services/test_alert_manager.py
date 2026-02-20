@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter.
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter + feature 21.7 mxtac_pipeline_latency_seconds histogram.
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -37,6 +37,11 @@ Coverage:
   - dedup counter: alerts_deduplicated.inc() NOT called for non-duplicate alerts (feature 21.5)
   - dedup counter: alerts_deduplicated.inc() called exactly once per duplicate (feature 21.5)
   - dedup counter: two back-to-back duplicates each increment the counter once (feature 21.5)
+  - latency histogram: pipeline_latency.observe() called in process() finally block (feature 21.7)
+  - latency histogram: observe() called with a non-negative duration (feature 21.7)
+  - latency histogram: observe() called even when alert is a duplicate (feature 21.7)
+  - latency histogram: observe() called even when process() raises an exception (feature 21.7)
+  - latency histogram: observe() call count equals process() call count (feature 21.7)
 """
 
 from __future__ import annotations
@@ -1340,4 +1345,173 @@ async def test_process_increments_alerts_deduplicated_for_each_back_to_back_dupl
         f"expected 2, got {mock_dedup_counter.inc.call_count}"
     )
 
+
+# ---------------------------------------------------------------------------
+# Section 11 — mxtac_pipeline_latency_seconds histogram (feature 21.7)
+# ---------------------------------------------------------------------------
+#
+# The histogram captures end-to-end alert pipeline processing latency.
+# It is observed in the `finally` block of process() so that every call
+# is recorded — regardless of whether the alert was deduplicated, published,
+# or caused an exception.
+#
+# Implementation: alert_manager.py
+#   start_time = time.monotonic()
+#   try:
+#       ...
+#   except Exception:
+#       logger.exception(...)
+#   finally:
+#       pipeline_latency.observe(time.monotonic() - start_time)
+
+
+@pytest.mark.asyncio
+async def test_process_observes_pipeline_latency_on_success():
+    """process() must call pipeline_latency.observe() once for a successful alert."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="high")
+
+    with (
+        patch("app.services.alert_manager.pipeline_latency") as mock_hist,
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    mock_hist.observe.assert_called_once()
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_observe_called_with_nonnegative_duration():
+    """pipeline_latency.observe() must be called with a non-negative float (seconds elapsed)."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="medium")
+
+    observed_values: list[float] = []
+
+    def capture_observe(value):
+        observed_values.append(value)
+
+    with (
+        patch("app.services.alert_manager.pipeline_latency") as mock_hist,
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        mock_hist.observe.side_effect = capture_observe
+        await mgr.process(alert_dict)
+
+    assert len(observed_values) == 1, "observe() must be called exactly once"
+    assert observed_values[0] >= 0.0, (
+        f"Observed duration must be non-negative; got {observed_values[0]}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_observes_pipeline_latency_for_duplicate_alert():
+    """pipeline_latency.observe() must be called even when the alert is deduplicated.
+
+    The observe() call is in the finally block, so it executes for every
+    process() invocation — including those that return early due to dedup.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="critical")
+
+    with (
+        patch("app.services.alert_manager.pipeline_latency") as mock_hist,
+        patch.object(mgr, "_is_duplicate", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    mock_hist.observe.assert_called_once(), (
+        "pipeline_latency.observe() must be called even for deduplicated alerts"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_observes_pipeline_latency_on_exception():
+    """pipeline_latency.observe() must be called even when process() catches an exception.
+
+    The observe() call is in the finally block.  Even if the enrichment or
+    scoring step raises, the latency must still be recorded.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="low")
+
+    async def raise_on_enrich(alert):
+        raise RuntimeError("Enrichment failed")
+
+    with (
+        patch("app.services.alert_manager.pipeline_latency") as mock_hist,
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_enrich", side_effect=raise_on_enrich),
+    ):
+        await mgr.process(alert_dict)  # must not propagate the exception
+
+    mock_hist.observe.assert_called_once(), (
+        "pipeline_latency.observe() must be called even when process() catches an exception"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_observe_count_equals_process_call_count():
+    """pipeline_latency.observe() must be called once per process() invocation.
+
+    Three consecutive calls to process() must result in exactly three observe()
+    calls — one per pipeline execution, regardless of outcome.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="high")
+
+    set_returns = [True, None, True]
+    call_index = 0
+
+    async def mock_set(*args, **kwargs):
+        nonlocal call_index
+        rv = set_returns[call_index]
+        call_index += 1
+        return rv
+
+    with (
+        patch("app.services.alert_manager.pipeline_latency") as mock_hist,
+        patch.object(mgr._valkey, "set", side_effect=mock_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)   # new
+        await mgr.process(alert_dict)   # duplicate
+        await mgr.process(alert_dict)   # new again (TTL expired)
+
+    assert mock_hist.observe.call_count == 3, (
+        f"pipeline_latency.observe() must be called once per process() invocation; "
+        f"expected 3, got {mock_hist.observe.call_count}"
+    )
+
+    await queue.stop()
     await queue.stop()

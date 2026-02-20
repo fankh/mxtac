@@ -1,7 +1,8 @@
 """Tests for GET /metrics — Prometheus format (feature 21.3),
 mxtac_alerts_processed_total{severity} counter (feature 21.4),
-mxtac_alerts_deduplicated_total counter (feature 21.5), and
-mxtac_rule_matches_total{rule_id,level} counter (feature 21.6).
+mxtac_alerts_deduplicated_total counter (feature 21.5),
+mxtac_rule_matches_total{rule_id,level} counter (feature 21.6), and
+mxtac_pipeline_latency_seconds histogram (feature 21.7).
 
 Coverage:
   /metrics endpoint:
@@ -45,6 +46,19 @@ Coverage:
   - Distinct rule_id values produce separate labelled series
   - All five Sigma levels (informational/low/medium/high/critical) work as label values
   - Counter value is >= 1.0 after rule_matches.labels(...).inc()
+
+  mxtac_pipeline_latency_seconds — feature 21.7:
+  - Histogram declared as histogram type (not counter/gauge)
+  - _bucket lines appear in /metrics after observe()
+  - _count line appears in /metrics after observe()
+  - _sum line appears in /metrics after observe()
+  - le= label is present on bucket lines
+  - _count value is >= 1 after one observe()
+  - _sum value is >= 0 after observe() with a non-negative duration
+  - All custom bucket boundaries (0.005..10.0) appear as le= labels
+  - +Inf bucket is present
+  - observe() can be called multiple times without error
+  - _count increments by 1 for each observe() call
 """
 
 from __future__ import annotations
@@ -52,7 +66,7 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-from app.core.metrics import alerts_deduplicated, alerts_processed, rule_matches
+from app.core.metrics import alerts_deduplicated, alerts_processed, pipeline_latency, rule_matches
 
 
 METRICS_URL = "/metrics"
@@ -618,3 +632,262 @@ async def test_metrics_rule_matches_contains_both_label_keys(
     for line in match_lines:
         assert "rule_id=" in line, f"Missing 'rule_id' label in: {line}"
         assert "level=" in line, f"Missing 'level' label in: {line}"
+
+
+# ---------------------------------------------------------------------------
+# mxtac_pipeline_latency_seconds — feature 21.7
+# ---------------------------------------------------------------------------
+#
+# The histogram measures end-to-end alert processing latency in seconds.
+# Custom buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+# Implementation: app/core/metrics.py (pipeline_latency Histogram)
+#                 app/services/alert_manager.py (pipeline_latency.observe())
+#
+# Prometheus exposition format for histograms:
+#   mxtac_pipeline_latency_seconds_bucket{le="0.005"} 0.0
+#   ...
+#   mxtac_pipeline_latency_seconds_bucket{le="+Inf"}  N
+#   mxtac_pipeline_latency_seconds_count              N
+#   mxtac_pipeline_latency_seconds_sum                S
+
+_PIPELINE_LATENCY_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+
+
+@pytest.mark.asyncio
+async def test_metrics_pipeline_latency_declared_as_histogram_type(
+    client: AsyncClient,
+) -> None:
+    """/metrics declares mxtac_pipeline_latency_seconds as histogram type."""
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    type_line = next(
+        (l for l in lines if l.startswith("# TYPE mxtac_pipeline_latency_seconds")),
+        None,
+    )
+    assert type_line is not None, "No # TYPE line for mxtac_pipeline_latency_seconds"
+    assert "histogram" in type_line, (
+        f"Expected 'histogram' in TYPE line; got: {type_line}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_pipeline_latency_bucket_lines_appear_after_observe(
+    client: AsyncClient,
+) -> None:
+    """After observe(), _bucket lines appear in /metrics output."""
+    pipeline_latency.observe(0.042)
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    bucket_lines = [
+        l for l in lines
+        if l.startswith("mxtac_pipeline_latency_seconds_bucket{")
+    ]
+    assert len(bucket_lines) > 0, (
+        "Expected mxtac_pipeline_latency_seconds_bucket{...} lines in /metrics after observe()"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_pipeline_latency_count_line_appears_after_observe(
+    client: AsyncClient,
+) -> None:
+    """After observe(), _count line appears in /metrics output."""
+    pipeline_latency.observe(0.010)
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    count_lines = [
+        l for l in lines
+        if l.startswith("mxtac_pipeline_latency_seconds_count")
+    ]
+    assert len(count_lines) > 0, (
+        "Expected mxtac_pipeline_latency_seconds_count line in /metrics after observe()"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_pipeline_latency_sum_line_appears_after_observe(
+    client: AsyncClient,
+) -> None:
+    """After observe(), _sum line appears in /metrics output."""
+    pipeline_latency.observe(0.010)
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    sum_lines = [
+        l for l in lines
+        if l.startswith("mxtac_pipeline_latency_seconds_sum")
+    ]
+    assert len(sum_lines) > 0, (
+        "Expected mxtac_pipeline_latency_seconds_sum line in /metrics after observe()"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_pipeline_latency_bucket_lines_have_le_label(
+    client: AsyncClient,
+) -> None:
+    """Bucket lines must contain the 'le=' label (upper bound)."""
+    pipeline_latency.observe(0.010)
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    bucket_lines = [
+        l for l in lines
+        if l.startswith("mxtac_pipeline_latency_seconds_bucket{")
+    ]
+    assert len(bucket_lines) > 0, (
+        "Expected at least one mxtac_pipeline_latency_seconds_bucket{...} line"
+    )
+    for line in bucket_lines:
+        assert "le=" in line, f"Bucket line must contain 'le=' label; got: {line}"
+
+
+@pytest.mark.asyncio
+async def test_metrics_pipeline_latency_count_is_positive_after_observe(
+    client: AsyncClient,
+) -> None:
+    """_count value must be >= 1 after one pipeline_latency.observe() call."""
+    pipeline_latency.observe(0.025)
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    count_lines = [
+        l for l in lines
+        if l.startswith("mxtac_pipeline_latency_seconds_count") and not l.startswith("#")
+    ]
+    assert len(count_lines) > 0, (
+        "Expected mxtac_pipeline_latency_seconds_count data line"
+    )
+    value = float(count_lines[0].split()[-1])
+    assert value >= 1.0, (
+        f"_count must be >= 1 after observe(); got {value}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_pipeline_latency_sum_is_nonnegative_after_observe(
+    client: AsyncClient,
+) -> None:
+    """_sum value must be >= 0 after observe() with a non-negative duration."""
+    pipeline_latency.observe(0.050)
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    sum_lines = [
+        l for l in lines
+        if l.startswith("mxtac_pipeline_latency_seconds_sum") and not l.startswith("#")
+    ]
+    assert len(sum_lines) > 0, (
+        "Expected mxtac_pipeline_latency_seconds_sum data line"
+    )
+    value = float(sum_lines[0].split()[-1])
+    assert value >= 0.0, (
+        f"_sum must be >= 0 after observe(); got {value}"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bucket", _PIPELINE_LATENCY_BUCKETS)
+async def test_metrics_pipeline_latency_all_custom_buckets_present(
+    client: AsyncClient,
+    bucket: float,
+) -> None:
+    """Each custom bucket boundary appears as a le= label in /metrics output.
+
+    The histogram is configured with 11 custom upper bounds:
+    [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+    All must appear as le= values in the _bucket series.
+    """
+    pipeline_latency.observe(0.001)
+    resp = await client.get(METRICS_URL)
+    # Prometheus formats floats as-is; match the string representation
+    bucket_str = str(bucket) if "." in str(bucket) else f"{bucket}.0"
+    assert f'le="{bucket_str}"' in resp.text, (
+        f"Expected bucket le=\"{bucket_str}\" in /metrics for custom bucket {bucket}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_pipeline_latency_inf_bucket_present(
+    client: AsyncClient,
+) -> None:
+    """+Inf bucket must always be present in histogram output."""
+    pipeline_latency.observe(0.001)
+    resp = await client.get(METRICS_URL)
+    assert 'le="+Inf"' in resp.text, (
+        "Expected le=\"+Inf\" bucket in /metrics for mxtac_pipeline_latency_seconds"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_pipeline_latency_count_increments_per_observe(
+    client: AsyncClient,
+) -> None:
+    """_count must increment by exactly 1 for each observe() call."""
+    # Read baseline count
+    resp_before = await client.get(METRICS_URL)
+    lines_before = resp_before.text.splitlines()
+    count_lines_before = [
+        l for l in lines_before
+        if l.startswith("mxtac_pipeline_latency_seconds_count") and not l.startswith("#")
+    ]
+    before = float(count_lines_before[0].split()[-1]) if count_lines_before else 0.0
+
+    pipeline_latency.observe(0.100)
+    pipeline_latency.observe(0.200)
+    pipeline_latency.observe(0.300)
+
+    resp_after = await client.get(METRICS_URL)
+    lines_after = resp_after.text.splitlines()
+    count_lines_after = [
+        l for l in lines_after
+        if l.startswith("mxtac_pipeline_latency_seconds_count") and not l.startswith("#")
+    ]
+    after = float(count_lines_after[0].split()[-1])
+
+    assert after == before + 3, (
+        f"_count must increment by 1 per observe(); expected {before + 3}, got {after}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_pipeline_latency_observe_zero_duration(
+    client: AsyncClient,
+) -> None:
+    """observe(0.0) must be accepted without error and increment _count."""
+    resp_before = await client.get(METRICS_URL)
+    lines_before = resp_before.text.splitlines()
+    count_before_lines = [
+        l for l in lines_before
+        if l.startswith("mxtac_pipeline_latency_seconds_count") and not l.startswith("#")
+    ]
+    before = float(count_before_lines[0].split()[-1]) if count_before_lines else 0.0
+
+    pipeline_latency.observe(0.0)
+
+    resp_after = await client.get(METRICS_URL)
+    lines_after = resp_after.text.splitlines()
+    count_after_lines = [
+        l for l in lines_after
+        if l.startswith("mxtac_pipeline_latency_seconds_count") and not l.startswith("#")
+    ]
+    after = float(count_after_lines[0].split()[-1])
+
+    assert after == before + 1, (
+        f"observe(0.0) must increment _count; expected {before + 1}, got {after}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_pipeline_latency_help_line_present(
+    client: AsyncClient,
+) -> None:
+    """/metrics must include a # HELP line for mxtac_pipeline_latency_seconds."""
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    help_line = next(
+        (l for l in lines if l.startswith("# HELP mxtac_pipeline_latency_seconds")),
+        None,
+    )
+    assert help_line is not None, (
+        "Expected '# HELP mxtac_pipeline_latency_seconds' line in /metrics"
+    )
+    assert len(help_line.split()) > 3, (
+        "# HELP line must contain a non-empty description"
+    )

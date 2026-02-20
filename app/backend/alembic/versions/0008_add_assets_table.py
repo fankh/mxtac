@@ -51,8 +51,19 @@ def upgrade() -> None:
     op.create_index("ix_assets_hostname", "assets", ["hostname"], unique=True)
     op.create_index("ix_assets_asset_type", "assets", ["asset_type"])
 
+    # GIN index on ip_addresses for fast containment queries (PostgreSQL only)
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            "CREATE INDEX ix_assets_ip_addresses_gin ON assets USING GIN (ip_addresses jsonb_path_ops)"
+        )
+
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute("DROP INDEX IF EXISTS ix_assets_ip_addresses_gin")
+
     op.drop_index("ix_assets_asset_type", table_name="assets")
     op.drop_index("ix_assets_hostname", table_name="assets")
     op.drop_table("assets")
