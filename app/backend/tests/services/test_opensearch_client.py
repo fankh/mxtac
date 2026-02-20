@@ -13,6 +13,7 @@ import pytest
 
 from app.services.opensearch_client import (
     OpenSearchService,
+    _daily_index,
     filter_to_dsl,
 )
 
@@ -225,6 +226,275 @@ async def test_index_event_exception_returns_none() -> None:
 
     result = await svc.index_event({"class_name": "Network Activity"})
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _daily_index helper — feature 12.3 (daily rotation naming)
+# ---------------------------------------------------------------------------
+
+
+def test_daily_index_returns_base_with_date_suffix() -> None:
+    """_daily_index(base) appends today's UTC date in YYYY.MM.DD format."""
+    from datetime import datetime, timezone
+
+    result = _daily_index("mxtac-events")
+    today = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    assert result == f"mxtac-events-{today}"
+
+
+def test_daily_index_frozen_date() -> None:
+    """_daily_index() uses UTC time — verifiable by freezing datetime.now."""
+    from datetime import datetime, timezone
+
+    fixed_dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+    with patch("app.services.opensearch_client.datetime") as mock_dt:
+        mock_dt.now.return_value = fixed_dt
+        result = _daily_index("mxtac-events")
+
+    assert result == "mxtac-events-2026.02.20"
+
+
+def test_daily_index_uses_dot_separated_date() -> None:
+    """The date portion uses dots (YYYY.MM.DD) not dashes, per OpenSearch conventions."""
+    result = _daily_index("mxtac-events")
+    suffix = result.replace("mxtac-events-", "")
+    parts = suffix.split(".")
+    assert len(parts) == 3, f"Expected YYYY.MM.DD, got {suffix!r}"
+    assert all(p.isdigit() for p in parts), f"Non-digit part in {suffix!r}"
+
+
+def test_daily_index_works_for_alerts_base() -> None:
+    """_daily_index is reusable — produces the correct name for the alerts base."""
+    from datetime import datetime, timezone
+
+    result = _daily_index("mxtac-alerts")
+    today = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    assert result == f"mxtac-alerts-{today}"
+
+
+# ---------------------------------------------------------------------------
+# OpenSearchService.index_event — feature 12.3 (daily rotation)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_index_event_targets_mxtac_events_index() -> None:
+    """index_event() writes to a mxtac-events-* index, not mxtac-alerts or mxtac-rules."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "x"})
+    svc._client = mock_client
+
+    await svc.index_event({"class_name": "Network Activity"})
+
+    idx = mock_client.index.call_args.kwargs["index"]
+    assert idx.startswith("mxtac-events-")
+
+
+@pytest.mark.asyncio
+async def test_index_event_index_name_matches_daily_pattern() -> None:
+    """The index name follows the YYYY.MM.DD daily-rollover pattern."""
+    import re
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "x"})
+    svc._client = mock_client
+
+    await svc.index_event({"class_name": "Network Activity"})
+
+    idx = mock_client.index.call_args.kwargs["index"]
+    assert re.fullmatch(r"mxtac-events-\d{4}\.\d{2}\.\d{2}", idx), (
+        f"Expected mxtac-events-YYYY.MM.DD, got {idx!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_index_event_index_name_uses_utc_today() -> None:
+    """The daily index suffix reflects today's UTC date, not local time."""
+    from datetime import datetime, timezone
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "x"})
+    svc._client = mock_client
+
+    await svc.index_event({"class_name": "Process Activity"})
+
+    idx = mock_client.index.call_args.kwargs["index"]
+    today = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    assert idx == f"mxtac-events-{today}"
+
+
+@pytest.mark.asyncio
+async def test_index_event_index_name_frozen_date() -> None:
+    """index_event() uses the UTC date at call time — verifiable with frozen datetime."""
+    from datetime import datetime, timezone
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "x"})
+    svc._client = mock_client
+
+    fixed_dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+    with patch("app.services.opensearch_client.datetime") as mock_dt:
+        mock_dt.now.return_value = fixed_dt
+        await svc.index_event({"class_name": "Process Activity"})
+
+    idx = mock_client.index.call_args.kwargs["index"]
+    assert idx == "mxtac-events-2026.02.20"
+
+
+@pytest.mark.asyncio
+async def test_index_event_passes_event_as_body() -> None:
+    """The event dict is passed verbatim as the document body."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "abc"})
+    svc._client = mock_client
+
+    event = {
+        "class_name": "Network Activity",
+        "severity_id": 4,
+        "src_endpoint": {"ip": "10.0.0.1"},
+    }
+    await svc.index_event(event)
+
+    body = mock_client.index.call_args.kwargs["body"]
+    assert body is event
+
+
+@pytest.mark.asyncio
+async def test_index_event_passes_refresh_false() -> None:
+    """index_event() uses refresh='false' to avoid write-amplification on every call."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "abc"})
+    svc._client = mock_client
+
+    await svc.index_event({"class_name": "Network Activity"})
+
+    kw = mock_client.index.call_args.kwargs
+    assert kw.get("refresh") == "false"
+
+
+@pytest.mark.asyncio
+async def test_index_event_without_doc_id_passes_none_as_id() -> None:
+    """When doc_id is omitted, id=None is passed so OpenSearch auto-generates the _id."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "OS-autogenerated"})
+    svc._client = mock_client
+
+    result = await svc.index_event({"class_name": "Network Activity"})
+
+    kw = mock_client.index.call_args.kwargs
+    assert kw.get("id") is None
+    assert result == "OS-autogenerated"
+
+
+@pytest.mark.asyncio
+async def test_index_event_returns_id_from_response() -> None:
+    """index_event() returns the _id value from the OpenSearch index response."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(
+        return_value={"_id": "returned-uuid", "_index": "mxtac-events-2026.02.20", "result": "created"}
+    )
+    svc._client = mock_client
+
+    result = await svc.index_event({"class_name": "Network Activity"})
+
+    assert result == "returned-uuid"
+
+
+@pytest.mark.asyncio
+async def test_index_event_returns_none_when_response_missing_id() -> None:
+    """If the OS response dict has no _id key, index_event() returns None."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"result": "created"})  # _id absent
+    svc._client = mock_client
+
+    result = await svc.index_event({"class_name": "Network Activity"})
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_index_event_logs_error_on_exception(caplog: pytest.LogCaptureFixture) -> None:
+    """index_event() logs an ERROR-level message containing the exception text."""
+    import logging
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(side_effect=Exception("cluster unavailable"))
+    svc._client = mock_client
+
+    with caplog.at_level(logging.ERROR):
+        result = await svc.index_event({"class_name": "Network Activity"})
+
+    assert result is None
+    assert "cluster unavailable" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_index_event_with_full_ocsf_event() -> None:
+    """A fully-populated OCSF event is forwarded to OpenSearch without transformation."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "full-ocsf-id"})
+    svc._client = mock_client
+
+    ocsf_event = {
+        "metadata_uid": "evt-001",
+        "time": "2026-02-20T12:00:00Z",
+        "class_name": "Network Activity",
+        "class_uid": 4001,
+        "severity_id": 4,
+        "metadata_product": "wazuh",
+        "metadata_version": "1.0.0",
+        "src_endpoint": {
+            "ip": "192.168.1.10",
+            "hostname": "workstation-01",
+            "port": 54321,
+        },
+        "dst_endpoint": {
+            "ip": "10.0.0.1",
+            "hostname": "server-01",
+            "port": 443,
+        },
+        "actor_user": {"name": "jsmith", "uid": "S-1-5-21-001", "domain": "CORP"},
+        "process": {
+            "pid": 1234,
+            "name": "powershell.exe",
+            "cmd_line": "powershell.exe -enc JABXAG...",
+        },
+        "unmapped": {"raw_field": "raw_value"},
+    }
+    result = await svc.index_event(ocsf_event, doc_id="full-ocsf-id")
+
+    assert result == "full-ocsf-id"
+    call_kw = mock_client.index.call_args.kwargs
+    assert call_kw["body"] is ocsf_event
+    assert call_kw["id"] == "full-ocsf-id"
+    assert call_kw["refresh"] == "false"
+    assert call_kw["index"].startswith("mxtac-events-")
+
+
+@pytest.mark.asyncio
+async def test_index_event_with_empty_event_dict() -> None:
+    """index_event() accepts an empty event dict without raising."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "empty-id"})
+    svc._client = mock_client
+
+    result = await svc.index_event({})
+
+    assert result == "empty-id"
+    body = mock_client.index.call_args.kwargs["body"]
+    assert body == {}
 
 
 # ---------------------------------------------------------------------------
