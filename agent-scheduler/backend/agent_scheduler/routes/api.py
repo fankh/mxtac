@@ -245,6 +245,16 @@ async def scheduler_status():
     }
 
 
+@router.get("/scheduler/settings")
+async def get_scheduler_settings():
+    return {
+        "max_concurrent": settings.scheduler_max_concurrent,
+        "spawn_delay": settings.scheduler_spawn_delay,
+        "task_timeout": settings.scheduler_task_timeout,
+        "model": settings.claude_model,
+    }
+
+
 @router.put("/scheduler/settings")
 async def update_scheduler_settings(req: SchedulerSettingsUpdate):
     if req.max_concurrent is not None:

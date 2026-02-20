@@ -105,12 +105,20 @@ class WazuhNormalizer:
             ),
         )
 
-        # Endpoint (agent = destination host)
+        # Endpoint (agent = destination host being monitored)
+        # Feature 7.4: agent → dst_endpoint (full mapping)
+        agent_os = agent.get("os", {})
         dst = Endpoint(
             hostname=agent.get("name"),
             ip=agent.get("ip") or data.get("dstip"),
+            os_name=agent_os.get("name"),
         )
         src = Endpoint(ip=data.get("srcip"))
+
+        # Preserve agent.id in unmapped for traceability (no uid field on Endpoint)
+        unmapped: dict = {}
+        if agent.get("id"):
+            unmapped["agent_id"] = agent["id"]
 
         # User
         user = UserInfo(name=data.get("dstuser") or data.get("srcuser"))
@@ -142,6 +150,7 @@ class WazuhNormalizer:
             process=process,
             finding_info=finding,
             raw=raw,
+            unmapped=unmapped,
         )
 
     # ── Helpers ──────────────────────────────────────────────────────────────

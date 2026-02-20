@@ -99,6 +99,16 @@ export const loadTasks = (path: string) =>
 export const getSchedulerStatus = () =>
   fetchJson<{ running: boolean; paused: boolean }>("/scheduler/status");
 
+export interface SchedulerSettings {
+  max_concurrent: number;
+  spawn_delay: number;
+  task_timeout: number;
+  model: string;
+}
+
+export const getSchedulerSettings = () =>
+  fetchJson<SchedulerSettings>("/scheduler/settings");
+
 export const controlScheduler = (action: string) =>
   fetchJson("/scheduler/control", {
     method: "POST",

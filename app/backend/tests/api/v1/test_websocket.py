@@ -1,4 +1,4 @@
-"""Tests for WS /api/v1/ws/alerts — Feature 17.1
+"""Tests for WS /api/v1/ws/alerts — Features 17.1 and 17.3
 
 Coverage:
   - Happy path: WebSocket connection, "connected" handshake schema
@@ -19,6 +19,19 @@ Coverage:
   - _mock_replay: all streamed messages have type='alert' (unit)
   - _mock_replay: alert data includes required fields (unit)
   - _mock_replay: stops cleanly when send_to raises (unit)
+
+Feature 17.3 — Ping every 30s keep-alive (comprehensive):
+  - _ping_loop: asyncio.sleep is called with exactly 30 seconds
+  - _ping_loop: multiple pings sent continuously before any error
+  - _ping_loop: ts field is UTC-aware (non-naive datetime)
+  - _ping_loop: CancelledError during sleep propagates (task is cancellable)
+  - _ping_loop: CancelledError during send_to propagates (not swallowed)
+  - _ping_loop: sleep occurs before each send (delay-then-ping ordering)
+  - _ping_loop: sleep-before-send pattern holds for multiple iterations
+  - alerts_ws: _ping_loop is started as a background task on connect
+  - alerts_ws: _ping_loop receives the WebSocket instance
+  - alerts_ws: ping task is cancelled when the client disconnects
+  - alerts_ws: both ping and replay tasks are cancelled on disconnect
 """
 
 from __future__ import annotations
@@ -815,3 +828,248 @@ def test_ws_filter_with_no_data_key_acks_none(ws_mocks):
             ack = ws.receive_json()
     assert ack["type"] == "ack"
     assert ack["filter"] is None
+
+
+# ---------------------------------------------------------------------------
+# Section 12 — Feature 17.3: Ping every 30s keep-alive — comprehensive tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ping_loop_sleep_duration_is_30_seconds():
+    """_ping_loop() must call asyncio.sleep(30) between each ping — the '30s' requirement."""
+    ws = _make_ws()
+    sleep_args: list[float] = []
+
+    async def record_sleep(duration):
+        sleep_args.append(duration)
+
+    async def stop_on_first_send(w, msg):
+        raise RuntimeError("stop after first send")
+
+    with (
+        patch("asyncio.sleep", side_effect=record_sleep),
+        patch.object(manager, "send_to", side_effect=stop_on_first_send),
+    ):
+        await ws_module._ping_loop(ws)
+
+    assert sleep_args[0] == 30
+
+
+@pytest.mark.asyncio
+async def test_ping_loop_sends_multiple_pings_before_stopping():
+    """_ping_loop() must keep sending pings until an error occurs — continuous operation."""
+    ws = _make_ws()
+    send_count = 0
+
+    async def count_and_eventually_fail(w, msg):
+        nonlocal send_count
+        send_count += 1
+        if send_count >= 3:
+            raise RuntimeError("stop after 3 pings")
+
+    with (
+        patch("asyncio.sleep", new=AsyncMock()),
+        patch.object(manager, "send_to", side_effect=count_and_eventually_fail),
+    ):
+        await ws_module._ping_loop(ws)
+
+    assert send_count == 3
+
+
+@pytest.mark.asyncio
+async def test_ping_loop_ts_is_utc_timezone_aware():
+    """_ping_loop() must embed a UTC-aware timestamp in every ping message."""
+    from datetime import datetime
+
+    ws = _make_ws()
+    captured: list[dict] = []
+
+    async def capture_and_stop(w, msg):
+        captured.append(msg)
+        raise RuntimeError("stop")
+
+    with (
+        patch("asyncio.sleep", new=AsyncMock()),
+        patch.object(manager, "send_to", side_effect=capture_and_stop),
+    ):
+        await ws_module._ping_loop(ws)
+
+    ts = datetime.fromisoformat(captured[0]["ts"])
+    assert ts.tzinfo is not None, "timestamp must be timezone-aware (UTC)"
+    assert ts.utcoffset().total_seconds() == 0, "timestamp must be UTC (offset 0)"
+
+
+@pytest.mark.asyncio
+async def test_ping_loop_cancelled_error_during_sleep_propagates():
+    """_ping_loop() must NOT suppress CancelledError — the task must be cancellable."""
+    ws = _make_ws()
+
+    with patch("asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError())):
+        with pytest.raises(asyncio.CancelledError):
+            await ws_module._ping_loop(ws)
+
+
+@pytest.mark.asyncio
+async def test_ping_loop_cancelled_error_during_send_propagates():
+    """CancelledError during send_to must not be swallowed by the except Exception block."""
+    ws = _make_ws()
+
+    async def raise_cancelled(w, msg):
+        raise asyncio.CancelledError()
+
+    with (
+        patch("asyncio.sleep", new=AsyncMock()),
+        patch.object(manager, "send_to", side_effect=raise_cancelled),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await ws_module._ping_loop(ws)
+
+
+@pytest.mark.asyncio
+async def test_ping_loop_sleep_called_before_each_send():
+    """_ping_loop() must sleep *before* each send — delay-then-ping, not ping-then-delay."""
+    ws = _make_ws()
+    call_order: list[str] = []
+
+    async def record_sleep(duration):
+        call_order.append(f"sleep:{duration}")
+
+    async def record_send_and_stop(w, msg):
+        call_order.append("send")
+        raise RuntimeError("stop")
+
+    with (
+        patch("asyncio.sleep", side_effect=record_sleep),
+        patch.object(manager, "send_to", side_effect=record_send_and_stop),
+    ):
+        await ws_module._ping_loop(ws)
+
+    assert call_order == ["sleep:30", "send"], (
+        f"expected [sleep:30, send], got {call_order}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_ping_loop_sleep_called_before_every_send():
+    """Each ping must be preceded by a 30s sleep — pattern holds for multiple iterations."""
+    ws = _make_ws()
+    call_order: list[str] = []
+    iteration = 0
+
+    async def record_sleep(duration):
+        call_order.append(f"sleep:{duration}")
+
+    async def record_and_stop_after_two(w, msg):
+        nonlocal iteration
+        call_order.append("send")
+        iteration += 1
+        if iteration >= 2:
+            raise RuntimeError("stop")
+
+    with (
+        patch("asyncio.sleep", side_effect=record_sleep),
+        patch.object(manager, "send_to", side_effect=record_and_stop_after_two),
+    ):
+        await ws_module._ping_loop(ws)
+
+    assert call_order == ["sleep:30", "send", "sleep:30", "send"]
+
+
+# ---------------------------------------------------------------------------
+# Section 12b — Feature 17.3: Integration tests (ping task lifecycle)
+# ---------------------------------------------------------------------------
+
+
+def test_alerts_ws_starts_ping_loop_on_connect():
+    """alerts_ws must launch _ping_loop as a background task on every new connection."""
+    mock_ping = AsyncMock()
+
+    with (
+        patch.object(manager, "_ensure_subscriber", new=AsyncMock()),
+        patch("app.api.v1.endpoints.websocket._ping_loop", new=mock_ping),
+        patch("app.api.v1.endpoints.websocket._mock_replay", new=AsyncMock()),
+    ):
+        with TestClient(app) as client:
+            with client.websocket_connect(WS_URL) as ws:
+                ws.receive_json()  # consume "connected"
+
+    mock_ping.assert_called_once()
+
+
+def test_alerts_ws_ping_loop_receives_websocket_object():
+    """alerts_ws must pass the WebSocket instance to _ping_loop."""
+    mock_ping = AsyncMock()
+
+    with (
+        patch.object(manager, "_ensure_subscriber", new=AsyncMock()),
+        patch("app.api.v1.endpoints.websocket._ping_loop", new=mock_ping),
+        patch("app.api.v1.endpoints.websocket._mock_replay", new=AsyncMock()),
+    ):
+        with TestClient(app) as client:
+            with client.websocket_connect(WS_URL) as ws:
+                ws.receive_json()
+
+    # First positional arg to _ping_loop must be a WebSocket-like object
+    call_ws_arg = mock_ping.call_args[0][0]
+    assert call_ws_arg is not None
+
+
+def test_alerts_ws_ping_task_cancelled_on_disconnect():
+    """alerts_ws must cancel the ping task in its finally block when the client disconnects."""
+    import threading
+
+    ping_was_cancelled = threading.Event()
+
+    async def cancellable_ping(ws):
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            ping_was_cancelled.set()
+            raise
+
+    with (
+        patch.object(manager, "_ensure_subscriber", new=AsyncMock()),
+        patch("app.api.v1.endpoints.websocket._ping_loop", new=cancellable_ping),
+        patch("app.api.v1.endpoints.websocket._mock_replay", new=AsyncMock()),
+    ):
+        with TestClient(app) as client:
+            with client.websocket_connect(WS_URL) as ws:
+                ws.receive_json()  # consume "connected", then disconnect
+
+    assert ping_was_cancelled.wait(timeout=2.0), "ping task was not cancelled on disconnect"
+
+
+def test_alerts_ws_both_tasks_cancelled_on_disconnect():
+    """alerts_ws must cancel both ping_task and replay_task in its finally block."""
+    import threading
+
+    ping_cancelled = threading.Event()
+    replay_cancelled = threading.Event()
+
+    async def cancellable_ping(ws):
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            ping_cancelled.set()
+            raise
+
+    async def cancellable_replay(ws):
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            replay_cancelled.set()
+            raise
+
+    with (
+        patch.object(manager, "_ensure_subscriber", new=AsyncMock()),
+        patch("app.api.v1.endpoints.websocket._ping_loop", new=cancellable_ping),
+        patch("app.api.v1.endpoints.websocket._mock_replay", new=cancellable_replay),
+    ):
+        with TestClient(app) as client:
+            with client.websocket_connect(WS_URL) as ws:
+                ws.receive_json()
+
+    assert ping_cancelled.wait(timeout=2.0), "ping task was not cancelled"
+    assert replay_cancelled.wait(timeout=2.0), "replay task was not cancelled"

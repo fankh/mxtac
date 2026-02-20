@@ -174,6 +174,44 @@ async def test_list_detections_filter_status(client: AsyncClient, auth_headers: 
 
 
 @pytest.mark.asyncio
+async def test_list_detections_filter_tactic(client: AsyncClient, auth_headers: dict) -> None:
+    """?tactic=Credential%20Access returns only Credential Access detections."""
+    cred_det = _make_detection(id="DET-CRED", tactic="Credential Access")
+    with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([cred_det], 1))):
+        resp = await client.get(
+            "/api/v1/detections?tactic=Credential%20Access", headers=auth_headers
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pagination"]["total"] == 1
+    for item in data["items"]:
+        assert "Credential Access" in item["tactic"]
+
+
+@pytest.mark.asyncio
+async def test_list_detections_filter_tactic_partial(client: AsyncClient, auth_headers: dict) -> None:
+    """?tactic=lateral matches Lateral Movement (partial, case-insensitive)."""
+    lateral_det = _make_detection(id="DET-LAT", tactic="Lateral Movement")
+    with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([lateral_det], 1))):
+        resp = await client.get("/api/v1/detections?tactic=lateral", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pagination"]["total"] == 1
+    assert data["items"][0]["tactic"] == "Lateral Movement"
+
+
+@pytest.mark.asyncio
+async def test_list_detections_filter_tactic_no_match(client: AsyncClient, auth_headers: dict) -> None:
+    """?tactic=nonexistent returns empty results."""
+    with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([], 0))):
+        resp = await client.get("/api/v1/detections?tactic=nonexistent", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["items"] == []
+    assert data["pagination"]["total"] == 0
+
+
+@pytest.mark.asyncio
 async def test_list_detections_search(client: AsyncClient, auth_headers: dict) -> None:
     """?search=lsass passes the term to the repo and returns a list."""
     with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([_LSASS_DET], 1))):

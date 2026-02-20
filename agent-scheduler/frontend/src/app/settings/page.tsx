@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useApi } from "@/hooks/useApi";
 import { useSSE } from "@/hooks/useSSE";
 import {
   controlScheduler,
+  getSchedulerSettings,
   getSchedulerStatus,
   loadTasks,
   updateSchedulerSettings,
@@ -16,13 +17,25 @@ export default function SettingsPage() {
     refetch,
   } = useApi(() => getSchedulerStatus(), []);
 
-  const [maxConcurrent, setMaxConcurrent] = useState("2");
-  const [spawnDelay, setSpawnDelay] = useState("30");
-  const [taskTimeout, setTaskTimeout] = useState("1800");
-  const [model, setModel] = useState("sonnet");
+  const { data: currentSettings } = useApi(() => getSchedulerSettings(), []);
+
+  const [maxConcurrent, setMaxConcurrent] = useState("");
+  const [spawnDelay, setSpawnDelay] = useState("");
+  const [taskTimeout, setTaskTimeout] = useState("");
+  const [model, setModel] = useState("");
   const [taskPath, setTaskPath] = useState("");
   const [loadResult, setLoadResult] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Populate form with current backend values once loaded
+  useEffect(() => {
+    if (currentSettings) {
+      setMaxConcurrent(String(currentSettings.max_concurrent));
+      setSpawnDelay(String(currentSettings.spawn_delay));
+      setTaskTimeout(String(currentSettings.task_timeout));
+      setModel(currentSettings.model);
+    }
+  }, [currentSettings]);
 
   const handleSSE = useCallback(
     (event: string) => {
