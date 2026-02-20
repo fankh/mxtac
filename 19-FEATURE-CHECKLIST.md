@@ -270,7 +270,7 @@
 | 13.4 | `PATCH /rules/{id}` — enable / disable / update | `[~]` | `[ ]` | P0 | |
 | 13.5 | `DELETE /rules/{id}` — remove rule | `[~]` | `[ ]` | P1 | |
 | 13.6 | `POST /rules/test` — validate YAML + test against sample | `[~]` | `[ ]` | P1 | |
-| 13.7 | `POST /rules/import` — bulk YAML multi-doc import | `[~]` | `[ ]` | P1 | |
+| 13.7 | `POST /rules/import` — bulk YAML multi-doc import | `[x]` | `[x]` | P1 | |
 | 13.8 | `GET /rules/stats/summary` — count by level | `[~]` | `[ ]` | P1 | |
 | 13.9 | DB persistence for all rule operations | `[ ]` | `[ ]` | P0 | Task 1.1 |
 | 13.10 | SigmaEngine reloads on rule create/update/delete | `[ ]` | `[ ]` | P1 | Hot reload |
