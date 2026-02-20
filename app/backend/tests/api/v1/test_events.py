@@ -645,3 +645,174 @@ async def test_search_opensearch_hit_id_falls_back_to_doc_id(
         assert data["items"][0]["id"] == "auto-gen-id"
     finally:
         app.dependency_overrides.pop(get_opensearch_dep, None)
+
+
+# ---------------------------------------------------------------------------
+# POST /query-dsl — Lucene DSL builder (feature 11.6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_query_dsl_unauthenticated(client: AsyncClient) -> None:
+    """POST /events/query-dsl without auth → 401 or 403."""
+    resp = await client.post(BASE_URL + "/query-dsl", json={})
+    assert resp.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_query_dsl_analyst_denied(client: AsyncClient, analyst_headers: dict) -> None:
+    """POST /events/query-dsl with analyst role → 403 (requires hunter+)."""
+    resp = await client.post(BASE_URL + "/query-dsl", headers=analyst_headers, json={})
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_query_dsl_empty_request_returns_time_range(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """Empty body → Lucene string with only the default time range."""
+    resp = await client.post(
+        BASE_URL + "/query-dsl",
+        headers=hunter_headers,
+        json={},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "lucene" in data
+    assert "time:[now-7d TO now]" in data["lucene"]
+
+
+@pytest.mark.asyncio
+async def test_query_dsl_text_query_only(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """Text query with no filters → query prepended to time range."""
+    resp = await client.post(
+        BASE_URL + "/query-dsl",
+        headers=hunter_headers,
+        json={"query": "mimikatz", "time_from": "now-1h", "time_to": "now"},
+    )
+    assert resp.status_code == 200
+    lucene = resp.json()["lucene"]
+    assert lucene.startswith("mimikatz")
+    assert "time:[now-1h TO now]" in lucene
+
+
+@pytest.mark.asyncio
+async def test_query_dsl_single_filter(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """Single filter generates correct Lucene clause."""
+    resp = await client.post(
+        BASE_URL + "/query-dsl",
+        headers=hunter_headers,
+        json={
+            "filters": [{"field": "severity_id", "operator": "gte", "value": 4}],
+            "time_from": "now-7d",
+            "time_to": "now",
+        },
+    )
+    assert resp.status_code == 200
+    lucene = resp.json()["lucene"]
+    assert "severity_id:[4 TO *]" in lucene
+    assert "time:[now-7d TO now]" in lucene
+
+
+@pytest.mark.asyncio
+async def test_query_dsl_multiple_filters(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """Multiple filters are ANDed together in the Lucene string."""
+    resp = await client.post(
+        BASE_URL + "/query-dsl",
+        headers=hunter_headers,
+        json={
+            "filters": [
+                {"field": "severity_id", "operator": "gte", "value": 4},
+                {"field": "hostname", "operator": "contains", "value": "dc-"},
+            ],
+            "time_from": "now-24h",
+            "time_to": "now",
+        },
+    )
+    assert resp.status_code == 200
+    lucene = resp.json()["lucene"]
+    assert "severity_id:[4 TO *]" in lucene
+    assert "src_endpoint.hostname:*dc-*" in lucene
+    assert " AND " in lucene
+
+
+@pytest.mark.asyncio
+async def test_query_dsl_full_hunt_query(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """Text + filters + custom time range → correct combined Lucene query."""
+    resp = await client.post(
+        BASE_URL + "/query-dsl",
+        headers=hunter_headers,
+        json={
+            "query": "lsass",
+            "filters": [
+                {"field": "severity_id", "operator": "gte", "value": 4},
+                {"field": "class_name", "operator": "eq", "value": "Process Activity"},
+            ],
+            "time_from": "now-12h",
+            "time_to": "now",
+        },
+    )
+    assert resp.status_code == 200
+    lucene = resp.json()["lucene"]
+    assert lucene.startswith("lsass")
+    assert "severity_id:[4 TO *]" in lucene
+    assert 'class_name:"Process Activity"' in lucene
+    assert "time:[now-12h TO now]" in lucene
+
+
+@pytest.mark.asyncio
+async def test_query_dsl_unknown_filter_field_skipped(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """Filters on unknown fields are silently dropped; response is still 200."""
+    resp = await client.post(
+        BASE_URL + "/query-dsl",
+        headers=hunter_headers,
+        json={
+            "filters": [{"field": "nonexistent", "operator": "eq", "value": "x"}],
+            "time_from": "now-7d",
+            "time_to": "now",
+        },
+    )
+    assert resp.status_code == 200
+    lucene = resp.json()["lucene"]
+    # Unknown field should not appear; time range should still be present
+    assert "nonexistent" not in lucene
+    assert "time:[now-7d TO now]" in lucene
+
+
+@pytest.mark.asyncio
+async def test_query_dsl_no_db_call(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """/query-dsl is a pure translation — no OpenSearch dependency needed."""
+    # Override OpenSearch to confirm it is never called
+    os_mock = MagicMock()
+    os_mock.is_available = True
+    os_mock.search_events = AsyncMock(side_effect=AssertionError("OS should not be called"))
+
+    app.dependency_overrides[get_opensearch_dep] = lambda: os_mock
+    try:
+        resp = await client.post(
+            BASE_URL + "/query-dsl",
+            headers=hunter_headers,
+            json={"query": "test"},
+        )
+        assert resp.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_opensearch_dep, None)

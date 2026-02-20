@@ -28,6 +28,7 @@ from ....services.opensearch_client import (
     filter_to_dsl,
     get_opensearch_dep,
 )
+from ....services.query_builder import build_lucene_query
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -198,6 +199,29 @@ async def entity_timeline(
         "total":        total,
         "events":       [_event_to_dict(e) for e in events],
     }
+
+
+@router.post("/query-dsl")
+async def build_query_dsl(
+    body: SearchRequest,
+    _: dict = Depends(require_permission("events:search")),
+):
+    """Translate a SearchRequest into a Lucene query string.
+
+    Returns the Lucene DSL that represents the same search as the supplied
+    *query* + *filters* + time range.  The string can be used directly in
+    OpenSearch / Elasticsearch ``query_string.query``, or pasted into
+    OpenSearch Dashboards / Kibana for interactive hunting.
+
+    No database or OpenSearch call is made — this is a pure translation.
+    """
+    lucene = build_lucene_query(
+        query=body.query,
+        filters=body.filters,
+        time_from=body.time_from,
+        time_to=body.time_to,
+    )
+    return {"lucene": lucene}
 
 
 @router.get("/{event_id}")
