@@ -234,6 +234,33 @@ class DetectionRepo:
         }
 
     @staticmethod
+    async def get_coverage_summary(session: AsyncSession) -> dict | None:
+        """Return overall ATT&CK coverage: distinct technique_ids detected vs. total in scope.
+
+        total_count is the sum of all sub-technique slots tracked across the 9 heatmap tactics
+        (ATT&CK v14 scope = 105). Returns None when no detections exist (caller falls back to mock).
+        """
+        total_count = sum(_TACTIC_TOTALS.values())  # 105
+
+        covered_count = await session.scalar(
+            select(func.count(func.distinct(Detection.technique_id))).where(
+                Detection.technique_id.is_not(None)
+            )
+        ) or 0
+
+        if covered_count == 0:
+            return None
+
+        covered_count = min(covered_count, total_count)
+        coverage_pct = round(covered_count / total_count * 100, 1)
+
+        return {
+            "coverage_pct": coverage_pct,
+            "covered_count": covered_count,
+            "total_count": total_count,
+        }
+
+    @staticmethod
     async def get_heatmap(session: AsyncSession) -> list[dict] | None:
         """Build heatmap coverage from distinct (technique_id, tactic) detection pairs.
 

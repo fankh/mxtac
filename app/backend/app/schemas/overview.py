@@ -64,3 +64,9 @@ class IntegrationStatus(BaseModel):
     status: str  # "connected" | "warning" | "disabled"
     metric: str
     detail: str | None = None
+
+
+class CoverageSummary(BaseModel):
+    coverage_pct: float
+    covered_count: int
+    total_count: int

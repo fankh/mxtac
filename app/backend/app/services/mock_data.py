@@ -5,7 +5,7 @@ Replace with real DB queries / OpenSearch calls in production.
 from datetime import datetime, timezone
 from ..schemas.detection import Detection
 from ..schemas.overview import (
-    KpiMetrics, TimelinePoint, TacticBar, HeatCell, HeatRow, IntegrationStatus
+    KpiMetrics, TimelinePoint, TacticBar, HeatCell, HeatRow, IntegrationStatus, CoverageSummary
 )
 
 # ── Detections ────────────────────────────────────────────────────────────────
@@ -251,6 +251,12 @@ HEATMAP: list[HeatRow] = [
         HeatCell(tactic="DISC",  covered=7, total=13),
     ]),
 ]
+
+COVERAGE_SUMMARY = CoverageSummary(
+    coverage_pct=73.3,
+    covered_count=77,
+    total_count=105,
+)
 
 INTEGRATIONS: list[IntegrationStatus] = [
     IntegrationStatus(id="elastic",      name="Elastic SIEM",  status="connected", metric="14,204 events/min"),
