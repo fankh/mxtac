@@ -94,6 +94,7 @@ async def on_startup() -> None:
     # Pre-initialise state so the shutdown handler always has valid references
     app.state.connectors = {}
     app.state.alert_mgr = None
+    app.state.alert_file_writer = None
 
     # 1. Seed database (idempotent)
     try:
@@ -176,6 +177,21 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("WebSocket broadcaster start failed")
 
+    # 8.5. Wire alert file writer — appends enriched alerts as JSON Lines to file
+    if settings.alert_file_output_enabled:
+        try:
+            from .services.alert_file_writer import alert_file_writer
+            afw = await alert_file_writer(
+                queue,
+                path=settings.alert_file_output_path,
+                max_bytes=settings.alert_file_max_bytes,
+                backup_count=settings.alert_file_backup_count,
+            )
+            app.state.alert_file_writer = afw
+            logger.info("Alert file writer started → %s", settings.alert_file_output_path)
+        except Exception:
+            logger.exception("Alert file writer start failed")
+
     # 9. Start connectors from DB — publish raw events into the pipeline
     try:
         from .connectors.registry import start_connectors_from_db
@@ -221,6 +237,14 @@ async def on_shutdown() -> None:
             await alert_mgr.close()
     except Exception:
         logger.exception("AlertManager close failed")
+
+    # Close alert file writer (flush + close file handle)
+    try:
+        afw = getattr(app.state, "alert_file_writer", None)
+        if afw is not None:
+            await afw.close()
+    except Exception:
+        logger.exception("AlertFileWriter close failed")
 
     # Close OpenSearch client
     try:

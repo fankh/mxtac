@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     opensearch_password: str = ""
     opensearch_use_ssl: bool = False
 
+    # Alert file output (JSON Lines)
+    alert_file_output_enabled: bool = False
+    alert_file_output_path: str = "/var/log/mxtac/alerts.jsonl"
+    alert_file_max_bytes: int = 100 * 1024 * 1024  # 100 MB per file
+    alert_file_backup_count: int = 5  # keep up to 5 rotated files
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 

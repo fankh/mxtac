@@ -1,4 +1,4 @@
-"""Tests for WS /api/v1/ws/alerts — Features 17.1, 17.3, 17.4, 17.5, 17.6, 28.27, and 28.28
+"""Tests for WS /api/v1/ws/alerts — Features 17.1, 17.3, 17.4, 17.5, 17.6, 28.27, 28.28, and 28.29
 
 Coverage:
   - Happy path: WebSocket connection, "connected" handshake schema
@@ -85,6 +85,23 @@ Feature 28.28 — WebSocket: client on instance-2 receives alert from instance-1
   - Sequential alerts from instance-1 arrive at instance-2 client in order
   - Dead client on instance-2 pruned; live client still receives from instance-1
   - Instance-1 Valkey publish failure falls back to local fanout only (instance-2 not reached)
+
+Feature 28.29 — WebSocket: auto-reconnect after drop:
+  - Reconnected WebSocket is added to manager._connections
+  - Dropped WebSocket is removed from manager._connections
+  - Connection count is exactly 1 after one drop-then-reconnect cycle
+  - Reconnected client receives _fanout_local() payloads; dropped client does not
+  - Dropped client does not receive broadcasts when connections set is empty
+  - Multiple drop-reconnect cycles (×3) each produce a fresh receiving WebSocket
+  - broadcast() via local-fanout fallback reaches reconnected client, not dropped client
+  - Each new WebSocket connection receives its own 'connected' handshake via send_to
+  - Integration: second connection (reconnect) receives 'connected' handshake
+  - Integration: each reconnect handshake has a valid ISO 8601 timestamp
+  - Integration: first disconnect triggers manager.disconnect exactly once
+  - subscriber_loop retries when listen() generator terminates without error
+  - Alerts resume reaching WS clients after Valkey subscriber reconnects following a drop
+  - Each subscriber reconnect attempt creates a fresh Valkey client (from_url called per attempt)
+  - Sub client aclose() called after every connection attempt (success or failure)
 """
 
 from __future__ import annotations
@@ -2496,3 +2513,393 @@ async def test_28_28_instance1_valkey_down_instance2_not_reached():
 
     # Instance-2's subscriber loop received nothing — no message was published to Valkey
     ws_2.send_text.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Section 17 — Feature 28.29: WebSocket auto-reconnect after drop
+#
+# When a client's TCP connection drops, the frontend reconnects with a new
+# WebSocket object after a fixed delay (5 s in the hook).  The backend must:
+#   - Remove the dead WebSocket from manager._connections on disconnect
+#   - Register the new WebSocket when the client reconnects
+#   - Send a fresh "connected" handshake to the reconnected client
+#   - Resume broadcasting to the reconnected client normally
+#   - Support multiple drop/reconnect cycles without resource leaks
+#
+# Valkey subscriber-side reconnect (exponential backoff) is already covered in
+# Sections 10 and 16.  Tests here extend that coverage with scenarios specific
+# to the client-side reconnect path and subscriber-loop resilience after
+# listen() terminates or Valkey drops mid-stream.
+# ---------------------------------------------------------------------------
+
+
+# ── Unit: connection lifecycle after drop ────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_28_29_reconnected_ws_added_to_connections():
+    """After a client drops and reconnects, the new WebSocket must be in manager._connections."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    ws_first = _make_ws()
+    ws_reconnect = _make_ws()
+
+    with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+        await m.connect(ws_first)
+    assert ws_first in m._connections
+
+    # Simulate network drop
+    m.disconnect(ws_first)
+    assert ws_first not in m._connections
+
+    # Client reconnects with a fresh WebSocket object
+    with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+        await m.connect(ws_reconnect)
+
+    assert ws_reconnect in m._connections
+
+
+@pytest.mark.asyncio
+async def test_28_29_dropped_ws_not_in_connections():
+    """After disconnect, the old WebSocket must be fully removed from manager._connections."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    ws = _make_ws()
+
+    with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+        await m.connect(ws)
+    m.disconnect(ws)
+
+    assert ws not in m._connections
+    assert len(m._connections) == 0
+
+
+@pytest.mark.asyncio
+async def test_28_29_connection_count_accurate_after_reconnect():
+    """Exactly one connection must be tracked after one drop-then-reconnect cycle."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    ws_first = _make_ws()
+    ws_reconnect = _make_ws()
+
+    with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+        await m.connect(ws_first)
+    m.disconnect(ws_first)
+
+    with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+        await m.connect(ws_reconnect)
+
+    assert len(m._connections) == 1
+
+
+# ── Unit: broadcast delivery after drop / reconnect ──────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_28_29_reconnected_client_receives_fanout():
+    """After drop+reconnect, _fanout_local() must deliver to the new WebSocket only."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    ws_first = _make_ws()
+    ws_reconnect = _make_ws()
+
+    with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+        await m.connect(ws_first)
+    m.disconnect(ws_first)
+
+    with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+        await m.connect(ws_reconnect)
+
+    payload = json.dumps({"type": "alert", "data": {"id": "28-29-fanout", "level": "high"}})
+    await m._fanout_local(payload)
+
+    ws_reconnect.send_text.assert_awaited_once_with(payload)
+    ws_first.send_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_28_29_dropped_client_does_not_receive_fanout():
+    """After disconnect, _fanout_local() with empty connections must not call send_text."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    ws = _make_ws()
+
+    with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+        await m.connect(ws)
+    m.disconnect(ws)
+
+    await m._fanout_local(json.dumps({"type": "alert", "data": {"id": "28-29-dropped"}}))
+
+    ws.send_text.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_28_29_multiple_reconnect_cycles_each_client_receives():
+    """Each reconnect cycle produces a fresh WebSocket that receives exactly one broadcast."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+
+    for cycle in range(3):
+        ws = _make_ws()
+        with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+            await m.connect(ws)
+
+        payload = json.dumps({"type": "alert", "data": {"id": f"28-29-cycle-{cycle}"}})
+        await m._fanout_local(payload)
+
+        ws.send_text.assert_awaited_once_with(payload)
+
+        # Simulate drop before the next cycle
+        m.disconnect(ws)
+
+
+@pytest.mark.asyncio
+async def test_28_29_reconnect_and_subsequent_broadcast_reaches_new_client():
+    """broadcast() via Valkey fallback must deliver to the reconnected client, not the old one."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    ws_old = _make_ws()
+    ws_new = _make_ws()
+
+    with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+        await m.connect(ws_old)
+    m.disconnect(ws_old)
+
+    with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+        await m.connect(ws_new)
+
+    alert_data = {"id": "28-29-bcast", "level": "critical", "score": 9.0}
+    mock_pub = AsyncMock()
+    mock_pub.publish.side_effect = ConnectionError("valkey down")
+
+    with patch.object(m, "_get_pub_client", new=AsyncMock(return_value=mock_pub)):
+        await m.broadcast({"type": "alert", "data": alert_data})
+
+    # Reconnected client receives the alert via local fanout fallback
+    ws_new.send_text.assert_awaited_once()
+    received = json.loads(ws_new.send_text.call_args[0][0])
+    assert received["type"] == "alert"
+    assert received["data"] == alert_data
+
+    # Old dropped client did not receive anything
+    ws_old.send_text.assert_not_awaited()
+
+
+# ── Unit: handshake on reconnect ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_28_29_reconnected_client_receives_connected_handshake():
+    """Each new WebSocket must receive an independent 'connected' handshake via send_to."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+
+    for i in range(2):
+        ws = _make_ws()
+        with patch.object(m, "_ensure_subscriber", new=AsyncMock()):
+            await m.connect(ws)
+        await m.send_to(ws, {
+            "type": "connected",
+            "message": "Subscribed to real-time alert stream",
+            "ts": f"2026-02-21T00:0{i}:00+00:00",
+        })
+        msg = json.loads(ws.send_text.call_args[0][0])
+        assert msg["type"] == "connected"
+        m.disconnect(ws)
+
+
+# ── Integration: reconnect via TestClient ────────────────────────────────────
+
+
+def test_28_29_integration_second_connection_receives_handshake(ws_mocks):
+    """Second WebSocket connection (simulating client reconnect) must receive its own 'connected' handshake."""
+    with TestClient(app) as client:
+        # First connection
+        with client.websocket_connect(WS_URL) as ws1:
+            handshake1 = ws1.receive_json()
+        assert handshake1["type"] == "connected"
+
+        # Second connection — simulates auto-reconnect after the first dropped
+        with client.websocket_connect(WS_URL) as ws2:
+            handshake2 = ws2.receive_json()
+        assert handshake2["type"] == "connected"
+
+
+def test_28_29_integration_each_reconnect_handshake_has_valid_ts(ws_mocks):
+    """Each reconnect handshake must include a valid ISO 8601 timestamp."""
+    from datetime import datetime
+
+    with TestClient(app) as client:
+        with client.websocket_connect(WS_URL) as ws1:
+            h1 = ws1.receive_json()
+        with client.websocket_connect(WS_URL) as ws2:
+            h2 = ws2.receive_json()
+
+    datetime.fromisoformat(h1["ts"])  # raises ValueError if malformed
+    datetime.fromisoformat(h2["ts"])  # raises ValueError if malformed
+
+
+def test_28_29_integration_first_disconnect_triggers_manager_remove(ws_mocks):
+    """When the first connection drops, manager.disconnect must be called exactly once."""
+    call_count = 0
+    original_disconnect = manager.disconnect
+
+    def counting_disconnect(ws):
+        nonlocal call_count
+        call_count += 1
+        original_disconnect(ws)
+
+    with patch.object(manager, "disconnect", side_effect=counting_disconnect):
+        with TestClient(app) as client:
+            with client.websocket_connect(WS_URL) as ws:
+                ws.receive_json()  # consume "connected"
+    assert call_count == 1
+
+
+# ── Subscriber loop: resilience after listen() terminates ────────────────────
+
+
+@pytest.mark.asyncio
+async def test_28_29_subscriber_loop_reconnects_when_listen_exhausts():
+    """subscriber_loop must retry Valkey connection when listen() generator terminates without error."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    subscribe_calls: list[int] = []
+
+    async def mock_subscribe(_channel):
+        call_num = len(subscribe_calls) + 1
+        subscribe_calls.append(call_num)
+        if call_num >= 2:
+            # Second iteration: exit via CancelledError so the loop terminates cleanly
+            raise asyncio.CancelledError()
+        # First iteration: succeed — listen() will exhaust immediately
+
+    async def fake_listen():
+        # Terminates without yielding any message — simulates server closing the stream
+        return
+        yield  # noqa: unreachable — makes this an async generator
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_pubsub.listen = fake_listen
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    # Loop must have retried after the first listen() exhausted
+    assert len(subscribe_calls) >= 2, (
+        f"Expected at least 2 subscribe attempts after listen() termination, got {subscribe_calls}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_28_29_alerts_resume_after_valkey_subscriber_reconnects():
+    """Alerts must reach WS clients after the Valkey subscriber reconnects following a drop."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    ws = _make_ws()
+    m._connections.add(ws)
+
+    alert_data = {"id": "28-29-resume", "level": "critical", "score": 9.0, "host": "dc-01"}
+    alert_payload = json.dumps({"type": "alert", "data": alert_data})
+
+    subscribe_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal subscribe_count
+        subscribe_count += 1
+        if subscribe_count == 1:
+            raise ConnectionError("Valkey connection dropped mid-session")
+        if subscribe_count >= 3:
+            raise asyncio.CancelledError()
+        # subscribe_count == 2: second attempt succeeds
+
+    async def fake_listen():
+        # Only deliver the alert on the second (successful) connect
+        if subscribe_count == 2:
+            yield {"type": "message", "data": alert_payload}
+        raise RuntimeError("end of stream")
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_pubsub.listen = fake_listen
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    # Client must have received the alert after the subscriber reconnected
+    ws.send_text.assert_awaited_once_with(alert_payload)
+    received = json.loads(ws.send_text.call_args[0][0])
+    assert received["type"] == "alert"
+    assert received["data"] == alert_data
+
+
+@pytest.mark.asyncio
+async def test_28_29_subscriber_fresh_connection_per_reconnect_attempt():
+    """Each reconnect attempt in subscriber_loop must create a distinct Valkey client object."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    call_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise ConnectionError("first attempt failed")
+        raise asyncio.CancelledError()
+
+    # Two distinct mock clients returned on successive from_url() calls
+    mock_client_a = MagicMock()
+    mock_client_a.aclose = AsyncMock()
+    mock_pubsub_a = MagicMock()
+    mock_pubsub_a.subscribe = mock_subscribe
+    mock_client_a.pubsub.return_value = mock_pubsub_a
+
+    mock_client_b = MagicMock()
+    mock_client_b.aclose = AsyncMock()
+    mock_pubsub_b = MagicMock()
+    mock_pubsub_b.subscribe = mock_subscribe
+    mock_client_b.pubsub.return_value = mock_pubsub_b
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.side_effect = [mock_client_a, mock_client_b]
+        await m._subscriber_loop()
+
+    # Two iterations → two separate from_url() calls (fresh connection per attempt)
+    assert mock_aioredis.from_url.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_28_29_subscriber_closed_after_each_reconnect_attempt():
+    """Sub client's aclose() must be called after every connection attempt (success or failure)."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    call_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise ConnectionError("first drop")
+        raise asyncio.CancelledError()
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    # aclose() must be called once per iteration (2 iterations here)
+    assert mock_client.aclose.await_count == 2

@@ -10,6 +10,8 @@
  *  - Reconnect on close (state + timing)
  *  - Reconnect on error (via onerror → close chain)
  *  - Cleanup on unmount (no spurious reconnect)
+ *  - Feature 28.29: auto-reconnect after drop — multiple cycles, token refresh,
+ *    alert delivery after reconnect, state machine across two drop-reconnect cycles
  */
 
 import { renderHook, act } from '@testing-library/react'
@@ -427,6 +429,152 @@ describe('useAlertStream', () => {
       act(() => vi.advanceTimersByTime(5_000))
       // No additional WebSocket instances
       expect(MockWebSocket.instances).toHaveLength(1)
+    })
+  })
+
+  // ── Feature 28.29: auto-reconnect after drop ─────────────────────────────
+
+  describe('28.29 — auto-reconnect after drop', () => {
+    it('reconnects a second time after a second connection drop', () => {
+      renderHook(() => useAlertStream())
+      act(() => latestWs().simulateOpen())
+
+      // First drop → first reconnect
+      act(() => latestWs().simulateClose())
+      act(() => vi.advanceTimersByTime(5_000))
+      act(() => latestWs().simulateOpen())
+
+      // Second drop → second reconnect
+      act(() => latestWs().simulateClose())
+      act(() => vi.advanceTimersByTime(5_000))
+
+      expect(MockWebSocket.instances).toHaveLength(3)
+    })
+
+    it('state transitions correctly through two drop-reconnect cycles', () => {
+      const { result } = renderHook(() => useAlertStream())
+
+      // Initial open
+      act(() => latestWs().simulateOpen())
+      expect(result.current).toBe('connected')
+
+      // First drop
+      act(() => latestWs().simulateClose())
+      expect(result.current).toBe('reconnecting')
+
+      // First reconnect
+      act(() => vi.advanceTimersByTime(5_000))
+      act(() => latestWs().simulateOpen())
+      expect(result.current).toBe('connected')
+
+      // Second drop
+      act(() => latestWs().simulateClose())
+      expect(result.current).toBe('reconnecting')
+
+      // Second reconnect
+      act(() => vi.advanceTimersByTime(5_000))
+      act(() => latestWs().simulateOpen())
+      expect(result.current).toBe('connected')
+    })
+
+    it('alerts received on the reconnected WebSocket reach the store', () => {
+      renderHook(() => useAlertStream())
+      act(() => latestWs().simulateOpen())
+
+      // Drop and reconnect
+      act(() => latestWs().simulateClose())
+      act(() => vi.advanceTimersByTime(5_000))
+      act(() => latestWs().simulateOpen())
+
+      // Alert arrives on the new (reconnected) WebSocket
+      act(() => {
+        latestWs().simulateMessage({ type: 'alert', data: MOCK_DETECTION })
+      })
+
+      const { liveAlerts } = useDetectionStore.getState()
+      expect(liveAlerts).toHaveLength(1)
+      expect(liveAlerts[0]).toEqual(MOCK_DETECTION)
+    })
+
+    it('reads the fresh token from localStorage on each reconnect attempt', () => {
+      renderHook(() => useAlertStream())
+      act(() => latestWs().simulateOpen())
+
+      // Update the token before the reconnect timer fires
+      const NEW_TOKEN = 'refreshed-jwt-token-xyz'
+      localStorage.setItem('access_token', NEW_TOKEN)
+
+      act(() => latestWs().simulateClose())
+      act(() => vi.advanceTimersByTime(5_000))
+
+      // The second WebSocket must use the updated token
+      expect(latestWs().url).toContain(`token=${encodeURIComponent(NEW_TOKEN)}`)
+    })
+
+    it('does not reconnect when token is removed before the reconnect timer fires', () => {
+      renderHook(() => useAlertStream())
+      act(() => latestWs().simulateOpen())
+      act(() => latestWs().simulateClose())
+
+      // Remove token while in 'reconnecting' state
+      localStorage.removeItem('access_token')
+      act(() => vi.advanceTimersByTime(5_000))
+
+      // No new WebSocket should be created — no token means no reconnect
+      expect(MockWebSocket.instances).toHaveLength(1)
+    })
+
+    it('each reconnect creates a distinct new WebSocket instance', () => {
+      renderHook(() => useAlertStream())
+      act(() => latestWs().simulateOpen())
+
+      const firstWs = latestWs()
+
+      act(() => latestWs().simulateClose())
+      act(() => vi.advanceTimersByTime(5_000))
+
+      const secondWs = latestWs()
+
+      expect(secondWs).not.toBe(firstWs)
+      expect(MockWebSocket.instances).toHaveLength(2)
+    })
+
+    it('reconnected WebSocket uses the same /api/v1/ws/alerts path', () => {
+      renderHook(() => useAlertStream())
+      act(() => latestWs().simulateOpen())
+      act(() => latestWs().simulateClose())
+      act(() => vi.advanceTimersByTime(5_000))
+
+      expect(latestWs().url).toContain('/api/v1/ws/alerts')
+    })
+
+    it('three consecutive drops each produce an independent reconnect WebSocket', () => {
+      renderHook(() => useAlertStream())
+
+      for (let i = 0; i < 3; i++) {
+        act(() => latestWs().simulateOpen())
+        act(() => latestWs().simulateClose())
+        act(() => vi.advanceTimersByTime(5_000))
+      }
+
+      // Initial WS + 3 reconnect WS instances
+      expect(MockWebSocket.instances).toHaveLength(4)
+    })
+
+    it('only one pending reconnect timer exists after a second close', () => {
+      renderHook(() => useAlertStream())
+      act(() => latestWs().simulateOpen())
+      act(() => latestWs().simulateClose())
+
+      // Reconnect fires but the second WS closes immediately before it opens
+      act(() => vi.advanceTimersByTime(5_000))
+      act(() => latestWs().simulateClose())
+
+      // Only one additional timer should be pending — not two stacked timers
+      act(() => vi.advanceTimersByTime(5_000))
+
+      // Two drops + one initial → 3 WebSockets created (each drop triggers one reconnect)
+      expect(MockWebSocket.instances).toHaveLength(3)
     })
   })
 })
