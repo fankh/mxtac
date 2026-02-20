@@ -596,9 +596,7 @@ describe('RulesPage', () => {
     it('pre-fills the textarea with the EXAMPLE_SIGMA template', async () => {
       renderPage()
       await openEditor()
-      expect(getEditorTextarea()).toHaveValue(
-        expect.stringContaining('title: Suspicious LSASS Memory Access'),
-      )
+      expect(getEditorTextarea().value).toContain('title: Suspicious LSASS Memory Access')
     })
 
     it('template contains all three required Sigma fields', async () => {
@@ -657,9 +655,7 @@ describe('RulesPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
       // Reopen
       fireEvent.click(screen.getByRole('button', { name: '+ New Rule' }))
-      expect(getEditorTextarea()).toHaveValue(
-        expect.stringContaining('title: Suspicious LSASS Memory Access'),
-      )
+      expect(getEditorTextarea().value).toContain('title: Suspicious LSASS Memory Access')
     })
 
     it('reopening the modal clears any previous validation errors', async () => {
@@ -866,19 +862,17 @@ describe('RulesPage', () => {
       renderPage()
       await openEditor()
       // "title:" with no value passes validation but has no extractable title
-      fireEvent.change(getEditorTextarea(), {
-        target: {
-          value:
-            'title:\ndetection:\n  selection:\n    x: y\n  condition: selection\nlogsource:\n  product: linux\n',
-        },
-      })
+      const emptyTitleYaml =
+        'title:\ndetection:\n  selection:\n    x: y\n  condition: selection\nlogsource:\n  product: linux\n'
+      fireEvent.change(getEditorTextarea(), { target: { value: emptyTitleYaml } })
+      // Confirm the state update took effect before clicking Save
+      await waitFor(() => expect(getEditorTextarea().value).toBe(emptyTitleYaml))
       fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => {
-        expect(mockPost).toHaveBeenCalledWith(
-          '/rules',
-          expect.objectContaining({ title: 'Untitled Rule' }),
-        )
-      })
+      // Wait for the API to be called (any args), then verify the title fallback
+      await waitFor(() => expect(mockPost).toHaveBeenCalled())
+      const [endpoint, payload] = mockPost.mock.calls[0] as [string, Record<string, unknown>]
+      expect(endpoint).toBe('/rules')
+      expect(payload.title).toBe('Untitled Rule')
     })
   })
 
