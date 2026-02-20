@@ -78,11 +78,22 @@ async def get_timeline(
 
 @router.get("/tactics", response_model=list[TacticBar])
 async def get_tactics(
-    range: str = Query("7d"),
+    range: str = Query("7d", description="Time range: 24h | 7d | 30d | 90d"),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("detections:read")),
 ):
     """Top ATT&CK tactic breakdown with counts and trend percentage."""
-    return TACTICS
+    days = _parse_range_days(range)
+    now = datetime.now(timezone.utc)
+    from_date = now - timedelta(days=days)
+    prev_from_date = from_date - timedelta(days=days)
+
+    rows = await DetectionRepo.get_tactics(
+        db, from_date=from_date, to_date=now, prev_from_date=prev_from_date
+    )
+    if not rows:
+        return TACTICS  # fallback to mock data when DB has no detections
+    return [TacticBar(**r) for r in rows]
 
 
 @router.get("/coverage/heatmap", response_model=list[HeatRow])

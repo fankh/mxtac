@@ -102,6 +102,59 @@ class DetectionRepo:
         return result or 0
 
     @staticmethod
+    async def get_tactics(
+        session: AsyncSession,
+        *,
+        from_date: datetime,
+        to_date: datetime,
+        prev_from_date: datetime,
+    ) -> list[dict]:
+        """Return per-tactic detection counts + trend_pct for a date range.
+
+        trend_pct compares the current period (from_date..to_date) to the
+        immediately preceding period of equal length (prev_from_date..from_date).
+        Returns an empty list when no detections exist in the current period.
+        """
+        current_q = (
+            select(
+                Detection.tactic.label("tactic"),
+                func.count().label("count"),
+            )
+            .where(Detection.time >= from_date)
+            .where(Detection.time <= to_date)
+            .group_by(Detection.tactic)
+            .order_by(func.count().desc())
+        )
+        current_result = await session.execute(current_q)
+        current_rows = {row.tactic: int(row.count) for row in current_result.all()}
+
+        if not current_rows:
+            return []
+
+        prev_q = (
+            select(
+                Detection.tactic.label("tactic"),
+                func.count().label("count"),
+            )
+            .where(Detection.time >= prev_from_date)
+            .where(Detection.time < from_date)
+            .group_by(Detection.tactic)
+        )
+        prev_result = await session.execute(prev_q)
+        prev_rows = {row.tactic: int(row.count) for row in prev_result.all()}
+
+        result = []
+        for tactic, count in sorted(current_rows.items(), key=lambda x: -x[1]):
+            prev_count = prev_rows.get(tactic, 0)
+            if prev_count > 0:
+                trend_pct = round((count - prev_count) / prev_count * 100, 1)
+            else:
+                trend_pct = 0.0
+            result.append({"tactic": tactic, "count": count, "trend_pct": trend_pct})
+
+        return result
+
+    @staticmethod
     async def get_timeline(
         session: AsyncSession,
         *,

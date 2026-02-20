@@ -36,6 +36,16 @@ async def test_tactics(client: AsyncClient, auth_headers: dict) -> None:
     assert len(items) > 0
     assert "tactic" in items[0]
     assert "count" in items[0]
+    assert "trend_pct" in items[0]
+
+
+@pytest.mark.asyncio
+async def test_tactics_range_param(client: AsyncClient, auth_headers: dict) -> None:
+    for range_val in ("24h", "7d", "30d", "90d"):
+        resp = await client.get(
+            f"/api/v1/overview/tactics?range={range_val}", headers=auth_headers
+        )
+        assert resp.status_code == 200, f"Failed for range={range_val}"
 
 
 @pytest.mark.asyncio
