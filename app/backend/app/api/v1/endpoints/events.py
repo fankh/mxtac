@@ -8,20 +8,30 @@ Search path (POST /search):
 
 All other endpoints (GET /{id}, POST /aggregate, GET /entity/…) always use
 PostgreSQL as the authoritative store.
+
+Ingest path (POST /ingest):
+  - Accepts batched OCSF events from agents authenticated with X-API-Key.
+  - Validates batch size (max 1000 per request).
+  - Rate limited to 10,000 events/minute per API key.
+  - Publishes events to the internal message queue.
 """
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ....core.api_key_auth import get_api_key
 from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....models.api_key import APIKey
 from ....models.event import Event
+from ....pipeline.queue import MessageQueue, Topic, get_queue
 from ....repositories.event_repo import EventRepo
 from ....services.opensearch_client import (
     OpenSearchService,
@@ -32,8 +42,32 @@ from ....services.query_builder import build_lucene_query
 
 router = APIRouter(prefix="/events", tags=["events"])
 
+# ── Rate limiter (in-memory, per API key) ────────────────────────────────────
+
+_RATE_LIMIT_EVENTS = 10_000   # max events per window
+_RATE_WINDOW_SECS  = 60.0     # sliding window in seconds
+
+# Maps api_key_id → (event_count, window_start_epoch)
+_rate_counters: dict[str, tuple[int, float]] = {}
+
+
+def _check_rate_limit(api_key_id: str, n_events: int) -> bool:
+    """Return True if the request is within the rate limit, False if exceeded."""
+    now = time.monotonic()
+    count, window_start = _rate_counters.get(api_key_id, (0, now))
+    if now - window_start >= _RATE_WINDOW_SECS:
+        count, window_start = 0, now
+    if count + n_events > _RATE_LIMIT_EVENTS:
+        return False
+    _rate_counters[api_key_id] = (count + n_events, window_start)
+    return True
+
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
+
+
+class IngestRequest(BaseModel):
+    events: Annotated[list[dict[str, Any]], Field(max_length=1000)]
 
 
 class EventFilter(BaseModel):
@@ -222,6 +256,39 @@ async def build_query_dsl(
         time_to=body.time_to,
     )
     return {"lucene": lucene}
+
+
+@router.post("/ingest/test", status_code=200)
+async def ingest_test(
+    _api_key: APIKey = Depends(get_api_key),
+) -> dict[str, str]:
+    """Connectivity test for agents. Returns 200 when the API key is valid."""
+    return {"status": "ok"}
+
+
+@router.post("/ingest", status_code=202)
+async def ingest_events(
+    body: IngestRequest,
+    api_key: APIKey = Depends(get_api_key),
+    queue: MessageQueue = Depends(get_queue),
+) -> dict[str, Any]:
+    """Batch-ingest OCSF events from agents.
+
+    Validates batch size (≤ 1,000), enforces per-key rate limit (10,000 events/min),
+    then publishes each event to the internal message queue.
+    Returns 202 Accepted on success.
+    """
+    n = len(body.events)
+    if not _check_rate_limit(api_key.id, n):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded: 10,000 events per minute per API key",
+        )
+
+    for event in body.events:
+        await queue.publish(Topic.NORMALIZED, event)
+
+    return {"accepted": n, "status": "queued"}
 
 
 @router.get("/{event_id}")

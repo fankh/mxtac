@@ -1,4 +1,4 @@
-"""Tests for WS /api/v1/ws/alerts — Features 17.1, 17.3, and 17.5
+"""Tests for WS /api/v1/ws/alerts — Features 17.1, 17.3, 17.5, and 28.27
 
 Coverage:
   - Happy path: WebSocket connection, "connected" handshake schema
@@ -36,6 +36,17 @@ Feature 17.5 — Broadcast enriched alerts to all clients (single instance):
   - ws_broadcaster subscribes to mxtac.enriched topic
   - ws_broadcaster forwards each enriched alert to broadcast_alert()
   - broadcast_alert() delivers enriched alert to every connected WebSocket client
+
+Feature 28.27 — WebSocket client receives broadcast alert:
+  - Client receives JSON message with type='alert' from broadcast_alert()
+  - Client receives exact alert data dict that was passed to broadcast_alert()
+  - Three simultaneously-connected clients each receive the same broadcast
+  - Sequential broadcast alerts are received in the order they were sent
+  - Dead client is pruned while live clients continue to receive broadcasts
+  - Valkey subscriber loop fans out published message to local WebSocket clients
+  - Full pipeline: ENRICHED queue publish → ws_broadcaster → client receives alert
+  - broadcast_alert() with no connected clients completes without error
+  - Received JSON is valid and decodable by the client
 """
 
 from __future__ import annotations
@@ -1153,3 +1164,235 @@ async def test_17_5_broadcast_alert_wraps_with_type_alert():
     call_arg = mock_bcast.call_args[0][0]
     assert call_arg["type"] == "alert"
     assert call_arg["data"] is alert_data
+
+
+# ---------------------------------------------------------------------------
+# Section 14 — Feature 28.27: WebSocket client receives broadcast alert
+# ---------------------------------------------------------------------------
+
+
+def _mock_pub_down() -> AsyncMock:
+    """Return a mock Valkey pub client that fails publish (triggers local fanout)."""
+    mock_pub = AsyncMock()
+    mock_pub.publish.side_effect = ConnectionError("valkey down in test")
+    return mock_pub
+
+
+@pytest.mark.asyncio
+async def test_28_27_client_receives_type_alert():
+    """Connected client must receive a JSON message with type='alert' from broadcast_alert()."""
+    ws = _make_ws()
+    manager._connections.add(ws)
+
+    alert_data = {"id": "28-27-001", "level": "high", "host": "srv-01", "score": 7.0}
+
+    with patch.object(manager, "_get_pub_client", new=AsyncMock(return_value=_mock_pub_down())):
+        await broadcast_alert(alert_data)
+
+    ws.send_text.assert_awaited_once()
+    received = json.loads(ws.send_text.call_args[0][0])
+    assert received["type"] == "alert"
+
+
+@pytest.mark.asyncio
+async def test_28_27_alert_data_field_matches_broadcast():
+    """Client must receive the exact alert data dict that was passed to broadcast_alert()."""
+    ws = _make_ws()
+    manager._connections.add(ws)
+
+    alert_data = {
+        "id": "28-27-002",
+        "rule_title": "Suspicious PowerShell Execution",
+        "level": "critical",
+        "score": 8.5,
+        "host": "dc-01",
+        "technique_ids": ["T1059.001"],
+        "tactic_ids": ["TA0002"],
+    }
+
+    with patch.object(manager, "_get_pub_client", new=AsyncMock(return_value=_mock_pub_down())):
+        await broadcast_alert(alert_data)
+
+    received = json.loads(ws.send_text.call_args[0][0])
+    assert received["data"] == alert_data
+
+
+@pytest.mark.asyncio
+async def test_28_27_three_simultaneous_clients_each_receive():
+    """Every connected client (including multiple simultaneous connections) must receive the broadcast."""
+    ws_a, ws_b, ws_c = _make_ws(), _make_ws(), _make_ws()
+    manager._connections.update({ws_a, ws_b, ws_c})
+
+    alert_data = {"id": "28-27-003", "level": "high", "host": "srv-02", "score": 6.5}
+
+    with patch.object(manager, "_get_pub_client", new=AsyncMock(return_value=_mock_pub_down())):
+        await broadcast_alert(alert_data)
+
+    for ws in (ws_a, ws_b, ws_c):
+        ws.send_text.assert_awaited_once()
+        received = json.loads(ws.send_text.call_args[0][0])
+        assert received["type"] == "alert"
+        assert received["data"] == alert_data
+
+
+@pytest.mark.asyncio
+async def test_28_27_sequential_alerts_received_in_order():
+    """Multiple broadcast_alert() calls must be received by the client in the same order."""
+    ws = _make_ws()
+    manager._connections.add(ws)
+
+    alerts = [
+        {"id": f"28-27-seq-{i}", "level": "medium", "host": f"host-{i}", "score": float(i)}
+        for i in range(3)
+    ]
+
+    with patch.object(manager, "_get_pub_client", new=AsyncMock(return_value=_mock_pub_down())):
+        for alert in alerts:
+            await broadcast_alert(alert)
+
+    assert ws.send_text.await_count == 3
+    received_ids = [
+        json.loads(call[0][0])["data"]["id"]
+        for call in ws.send_text.call_args_list
+    ]
+    assert received_ids == ["28-27-seq-0", "28-27-seq-1", "28-27-seq-2"]
+
+
+@pytest.mark.asyncio
+async def test_28_27_dead_client_pruned_live_client_receives():
+    """A dead connection must be pruned while live clients still receive the broadcast."""
+    alive = _make_ws()
+    dead = _make_ws()
+    dead.send_text.side_effect = RuntimeError("connection reset")
+    manager._connections.update({alive, dead})
+
+    alert_data = {"id": "28-27-dead", "level": "medium", "host": "win-01", "score": 4.0}
+
+    with patch.object(manager, "_get_pub_client", new=AsyncMock(return_value=_mock_pub_down())):
+        await broadcast_alert(alert_data)
+
+    # Live client received the alert
+    alive.send_text.assert_awaited_once()
+    received = json.loads(alive.send_text.call_args[0][0])
+    assert received["type"] == "alert"
+    assert received["data"] == alert_data
+    # Dead client was pruned from connection set
+    assert dead not in manager._connections
+
+
+@pytest.mark.asyncio
+async def test_28_27_subscriber_loop_fanouts_alert_to_local_client():
+    """Valkey subscriber loop must deliver a received channel message to all local clients."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    ws = _make_ws()
+    m._connections.add(ws)
+
+    alert_payload = json.dumps({"type": "alert", "data": {"id": "28-27-sub", "level": "high", "score": 8.0}})
+    subscribe_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal subscribe_count
+        subscribe_count += 1
+        if subscribe_count >= 2:
+            raise asyncio.CancelledError()
+
+    async def fake_listen():
+        # Yield the alert message then exit via RuntimeError → retry → CancelledError
+        yield {"type": "message", "data": alert_payload}
+        raise RuntimeError("connection lost")
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_pubsub.listen = fake_listen
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    # The client must have received the exact JSON payload from the channel
+    ws.send_text.assert_awaited_once_with(alert_payload)
+    received = json.loads(ws.send_text.call_args[0][0])
+    assert received["type"] == "alert"
+    assert received["data"]["id"] == "28-27-sub"
+
+
+@pytest.mark.asyncio
+async def test_28_27_full_pipeline_enriched_queue_to_ws_client():
+    """Full pipeline: publish enriched alert to queue → ws_broadcaster → client receives alert."""
+    from app.pipeline.queue import InMemoryQueue, Topic
+    from app.services.ws_broadcaster import websocket_broadcaster
+
+    queue = InMemoryQueue()
+    await queue.start()
+
+    ws = _make_ws()
+    manager._connections.add(ws)
+
+    enriched_alert = {
+        "id": "28-27-pipeline",
+        "rule_title": "Credential Dumping Detected",
+        "level": "critical",
+        "severity_id": 5,
+        "score": 9.5,
+        "host": "dc-01",
+        "technique_ids": ["T1003"],
+        "tactic_ids": ["TA0006"],
+    }
+
+    with patch.object(manager, "_get_pub_client", new=AsyncMock(return_value=_mock_pub_down())):
+        await websocket_broadcaster(queue)
+        await queue.publish(Topic.ENRICHED, enriched_alert)
+        # Yield to allow the consumer task to process the message
+        await asyncio.sleep(0)
+
+    ws.send_text.assert_awaited_once()
+    received = json.loads(ws.send_text.call_args[0][0])
+    assert received["type"] == "alert"
+    assert received["data"] == enriched_alert
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_28_27_no_clients_broadcast_completes_silently():
+    """broadcast_alert() with no connected clients must complete without raising."""
+    assert not manager._connections  # confirm clean state
+
+    with patch.object(manager, "_get_pub_client", new=AsyncMock(return_value=_mock_pub_down())):
+        await broadcast_alert({"id": "28-27-empty", "level": "low", "score": 1.0})
+    # Reaching here without exception satisfies the assertion
+
+
+@pytest.mark.asyncio
+async def test_28_27_received_json_is_valid_and_decodable():
+    """The raw bytes received by the client must be valid JSON with the expected envelope."""
+    ws = _make_ws()
+    manager._connections.add(ws)
+
+    alert_data = {
+        "id": "28-27-json",
+        "rule_title": "Lateral Movement Detected",
+        "level": "high",
+        "score": 7.8,
+        "host": "srv-03",
+    }
+
+    with patch.object(manager, "_get_pub_client", new=AsyncMock(return_value=_mock_pub_down())):
+        await broadcast_alert(alert_data)
+
+    raw = ws.send_text.call_args[0][0]
+    # Must be decodable JSON
+    decoded = json.loads(raw)
+    # Must have required envelope keys
+    assert "type" in decoded
+    assert "data" in decoded
+    # Data content must match
+    assert decoded["type"] == "alert"
+    assert decoded["data"]["id"] == "28-27-json"
+    assert decoded["data"]["score"] == 7.8
