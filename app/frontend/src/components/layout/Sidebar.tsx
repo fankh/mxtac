@@ -10,6 +10,7 @@ const NAV = [
   { to: '/rules',        icon: '\u03C3',       label: 'Sigma Rules' },
   { to: '/incidents',    icon: '\uD83D\uDD14', label: 'Incidents' },
   { to: '/intel',        icon: '\uD83C\uDF10', label: 'Threat Intel' },
+  { to: '/assets',       icon: '\uD83D\uDCBB', label: 'Assets' },
   { to: '/integrations', icon: '\u21C4',       label: 'Integrations' },
   { to: '/admin',        icon: '\u2699',       label: 'Admin' },
 ]

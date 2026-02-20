@@ -14,17 +14,20 @@ from ....core.config import settings
 from ....core.database import get_db
 from ....core.security import (
     create_access_token,
+    create_mfa_token,
     create_refresh_token,
     decode_token,
     get_current_user,
     verify_password,
 )
-from ....core.valkey import blacklist_token
+from ....core.valkey import blacklist_token, increment_mfa_attempts
 from ....repositories.user_repo import UserRepo
 from ....schemas.auth import (
     LoginRequest,
     LogoutResponse,
+    MfaLoginResponse,
     MfaSetupResponse,
+    MfaVerifyLoginRequest,
     MfaVerifyRequest,
     MfaVerifyResponse,
     RefreshRequest,
@@ -63,7 +66,7 @@ def _hash_backup_code(code: str) -> str:
     return hmac.new(settings.secret_key.encode(), code.encode(), hashlib.sha256).hexdigest()
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login")
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     user = await UserRepo.get_by_email(db, body.email)
     if not user or not verify_password(body.password, user.hashed_password):
@@ -76,6 +79,67 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled",
         )
+    if user.mfa_enabled:
+        mfa_token = create_mfa_token(str(user.id))
+        return MfaLoginResponse(mfa_token=mfa_token)
+    token = create_access_token({"sub": user.email, "role": user.role})
+    refresh = create_refresh_token({"sub": user.email})
+    return TokenResponse(
+        access_token=token,
+        refresh_token=refresh,
+        expires_in=settings.access_token_expire_minutes * 60,
+    )
+
+
+@router.post("/mfa/verify", response_model=TokenResponse)
+async def mfa_verify_login(body: MfaVerifyLoginRequest, db: AsyncSession = Depends(get_db)):
+    """Verify TOTP code (or backup code) after password authentication.
+
+    Accepts the mfa_token issued by POST /auth/login when mfa_enabled=True.
+    Rate-limited to 5 attempts per mfa_token. On success, returns full
+    access + refresh tokens.
+    """
+    # 1. Validate mfa_token JWT
+    payload = decode_token(body.mfa_token)
+    if payload.get("purpose") != "mfa":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA token")
+
+    user_id = payload.get("sub")
+    jti = payload.get("jti", "")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA token")
+
+    # 2. Rate limit: max 5 attempts per mfa_token
+    attempts = await increment_mfa_attempts(jti)
+    if attempts > 5:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many MFA attempts",
+        )
+
+    # 3. Look up user
+    user = await UserRepo.get_by_id(db, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA token")
+    if not user.mfa_secret:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MFA not configured")
+
+    # 4. Verify TOTP (±1 window for clock skew) or backup code
+    secret = _decrypt_secret(user.mfa_secret)
+    code = body.code.strip()
+
+    if pyotp.TOTP(secret).verify(code, valid_window=1):
+        pass  # valid TOTP
+    else:
+        code_hash = _hash_backup_code(code.upper())
+        if user.mfa_backup_codes and code_hash in user.mfa_backup_codes:
+            # Consume the backup code — remove it so it can't be reused
+            user.mfa_backup_codes = [c for c in user.mfa_backup_codes if c != code_hash]
+            await db.flush()
+        else:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA code")
+
+    # 5. Issue full access + refresh tokens
     token = create_access_token({"sub": user.email, "role": user.role})
     refresh = create_refresh_token({"sub": user.email})
     return TokenResponse(

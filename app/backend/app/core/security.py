@@ -21,6 +21,21 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
 
 
+def create_mfa_token(user_id: str) -> str:
+    """Create a short-lived MFA verification token (5-minute TTL).
+
+    Claims: sub=user_id, purpose="mfa", jti, exp.
+    Used between password-auth success and TOTP verification.
+    """
+    to_encode = {
+        "sub": user_id,
+        "purpose": "mfa",
+        "jti": str(uuid4()),
+        "exp": datetime.utcnow() + timedelta(minutes=5),
+    }
+    return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
+
+
 def create_refresh_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)

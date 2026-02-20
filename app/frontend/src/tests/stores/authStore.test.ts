@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 vi.mock('../../lib/api', () => ({
   authApi: {
     login: vi.fn(),
+    mfaVerify: vi.fn(),
     logout: vi.fn(),
   },
 }))
@@ -12,6 +13,7 @@ import { useAuthStore } from '../../stores/authStore'
 import { authApi } from '../../lib/api'
 
 const loginMock = authApi.login as ReturnType<typeof vi.fn>
+const mfaVerifyMock = authApi.mfaVerify as ReturnType<typeof vi.fn>
 const logoutMock = authApi.logout as ReturnType<typeof vi.fn>
 
 describe('authStore', () => {
@@ -22,6 +24,8 @@ describe('authStore', () => {
       isAuthenticated: false,
       isLoading: false,
       error: null,
+      mfaPending: false,
+      mfaToken: null,
     })
     vi.clearAllMocks()
     localStorage.clear()

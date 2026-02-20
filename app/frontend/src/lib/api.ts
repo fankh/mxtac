@@ -4,6 +4,7 @@ import type {
   Detection, PaginatedResponse, DetectionUpdate,
   SearchRequest, SearchResponse, AggregationRequest, AggregationResponse, EntityTimeline,
   AuditLogEntry,
+  Asset, AssetCreate, AssetStats, BulkAssetResult,
 } from '../types/api'
 
 const http = axios.create({
@@ -42,6 +43,8 @@ export const apiClient = http
 export const authApi = {
   login: (email: string, password: string) =>
     http.post('/auth/login', { email, password }).then(r => r.data),
+  mfaVerify: (mfa_token: string, code: string) =>
+    http.post('/auth/mfa/verify', { mfa_token, code }).then(r => r.data),
   logout: () => http.post('/auth/logout'),
 }
 
@@ -134,4 +137,41 @@ export const auditLogsApi = {
 
   get: (id: string): Promise<AuditLogEntry> =>
     http.get(`/audit-logs/${id}`).then(r => r.data),
+}
+
+// ── Assets ────────────────────────────────────────────────────────────────────
+
+export interface AssetListParams {
+  page?: number
+  page_size?: number
+  asset_type?: string
+  criticality?: number
+  is_active?: boolean
+  search?: string
+}
+
+export const assetsApi = {
+  list: (params: AssetListParams = {}): Promise<PaginatedResponse<Asset>> =>
+    http.get('/assets', { params }).then(r => r.data),
+
+  stats: (): Promise<AssetStats> =>
+    http.get('/assets/stats').then(r => r.data),
+
+  get: (id: number): Promise<Asset> =>
+    http.get(`/assets/${id}`).then(r => r.data),
+
+  create: (body: AssetCreate): Promise<Asset> =>
+    http.post('/assets', body).then(r => r.data),
+
+  update: (id: number, body: Partial<AssetCreate>): Promise<Asset> =>
+    http.patch(`/assets/${id}`, body).then(r => r.data),
+
+  bulkImport: (assets: AssetCreate[]): Promise<BulkAssetResult> =>
+    http.post('/assets/bulk', assets).then(r => r.data),
+
+  getDetections: (id: number, params: { page?: number; page_size?: number } = {}): Promise<PaginatedResponse<Record<string, unknown>>> =>
+    http.get(`/assets/${id}/detections`, { params }).then(r => r.data),
+
+  getIncidents: (id: number, params: { page?: number; page_size?: number } = {}): Promise<PaginatedResponse<Record<string, unknown>>> =>
+    http.get(`/assets/${id}/incidents`, { params }).then(r => r.data),
 }

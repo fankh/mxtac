@@ -46,3 +46,14 @@ class MfaVerifyRequest(BaseModel):
 
 class MfaVerifyResponse(BaseModel):
     message: str
+
+
+# Feature 32.2 — MFA login flow
+class MfaLoginResponse(BaseModel):
+    mfa_required: bool = True
+    mfa_token: str
+
+
+class MfaVerifyLoginRequest(BaseModel):
+    mfa_token: str
+    code: str

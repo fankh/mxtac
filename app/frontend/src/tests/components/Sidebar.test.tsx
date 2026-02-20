@@ -44,14 +44,15 @@ describe('Sidebar', () => {
       { label: 'Sigma Rules',     href: '/rules' },
       { label: 'Incidents',       href: '/incidents' },
       { label: 'Threat Intel',    href: '/intel' },
+      { label: 'Assets',          href: '/assets' },
       { label: 'Integrations',    href: '/integrations' },
       { label: 'Admin',           href: '/admin' },
     ]
 
-    it('renders exactly 9 nav links', () => {
+    it('renders exactly 10 nav links', () => {
       renderSidebar()
       const nav = screen.getByRole('navigation')
-      expect(nav.querySelectorAll('a')).toHaveLength(9)
+      expect(nav.querySelectorAll('a')).toHaveLength(10)
     })
 
     NAV_ITEMS.forEach(({ label, href }) => {

@@ -49,6 +49,27 @@ async def blacklist_token(jti: str, ttl_seconds: int) -> None:
         )
 
 
+# ── MFA attempt rate limiting ─────────────────────────────────────────────────
+
+
+async def increment_mfa_attempts(jti: str) -> int:
+    """Increment and return the MFA attempt count for a given mfa_token JTI.
+
+    Key auto-expires in 300 seconds (5 minutes, matching the mfa_token TTL).
+    Returns 0 on Valkey failure (fail-open: prefer availability).
+    """
+    try:
+        client = await get_valkey_client()
+        key = f"mfa_attempts:{jti}"
+        count = await client.incr(key)
+        if count == 1:
+            await client.expire(key, 300)
+        return int(count)
+    except Exception:
+        logger.debug("Valkey unavailable — skipping MFA rate limit for jti=%s", jti)
+        return 0  # fail-open
+
+
 # ── Distributed ingest rate limiting ─────────────────────────────────────────
 # Atomic fixed-window counter: INCRBY the key by n, set EXPIRE only on creation
 # so the window resets automatically.  Single round-trip via Lua eval.

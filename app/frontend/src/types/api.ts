@@ -177,6 +177,59 @@ export interface EntityTimeline {
   events: EventItem[]
 }
 
+// ── Assets ────────────────────────────────────────────────────────────────────
+
+export type AssetType = 'server' | 'workstation' | 'network' | 'cloud' | 'container'
+export type OsFamily  = 'linux' | 'windows' | 'macos' | 'other'
+
+export interface Asset {
+  id: number
+  hostname: string
+  ip_addresses: string[]
+  os: string | null
+  os_family: OsFamily | null
+  asset_type: AssetType
+  criticality: number          // 1 (low) – 5 (mission-critical)
+  owner: string | null
+  department: string | null
+  location: string | null
+  tags: string[]
+  is_active: boolean
+  last_seen_at: string | null
+  agent_id: string | null
+  detection_count: number
+  incident_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AssetCreate {
+  hostname: string
+  ip_addresses?: string[]
+  os?: string | null
+  os_family?: OsFamily | null
+  asset_type: AssetType
+  criticality?: number
+  owner?: string | null
+  department?: string | null
+  location?: string | null
+  tags?: string[]
+  is_active?: boolean
+  agent_id?: string | null
+}
+
+export interface AssetStats {
+  total: number
+  by_type: Record<string, number>
+  by_criticality: Record<string, number>
+  by_os_family: Record<string, number>
+}
+
+export interface BulkAssetResult {
+  created: number
+  skipped: number
+}
+
 // ── Audit Logs ────────────────────────────────────────────────────────────────
 
 export interface AuditLogEntry {
