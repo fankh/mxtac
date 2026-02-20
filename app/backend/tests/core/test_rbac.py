@@ -250,6 +250,203 @@ class TestPermissionsCorrectness:
 
 
 # ---------------------------------------------------------------------------
+# ROLE_PERMISSIONS map (Feature 3.2) — structure
+# ---------------------------------------------------------------------------
+
+
+class TestRolePermissionsStructure:
+    """ROLE_PERMISSIONS is a dict with one frozenset per role."""
+
+    def test_role_permissions_is_dict(self) -> None:
+        assert isinstance(ROLE_PERMISSIONS, dict)
+
+    def test_role_permissions_has_five_keys(self) -> None:
+        assert len(ROLE_PERMISSIONS) == 5
+
+    @pytest.mark.parametrize("role", _ALL_ROLES)
+    def test_all_roles_are_keys(self, role: str) -> None:
+        assert role in ROLE_PERMISSIONS
+
+    @pytest.mark.parametrize("role", _ALL_ROLES)
+    def test_each_value_is_frozenset(self, role: str) -> None:
+        assert isinstance(ROLE_PERMISSIONS[role], frozenset)
+
+    @pytest.mark.parametrize("role", _ALL_ROLES)
+    def test_each_permission_in_role_is_valid(self, role: str) -> None:
+        for perm in ROLE_PERMISSIONS[role]:
+            assert perm in PERMISSIONS, f"Unknown permission '{perm}' in ROLE_PERMISSIONS['{role}']"
+
+
+# ---------------------------------------------------------------------------
+# ROLE_PERMISSIONS map — correctness for each role
+# ---------------------------------------------------------------------------
+
+_VIEWER_PERMS = frozenset({"detections:read", "incidents:read"})
+_ANALYST_PERMS = _VIEWER_PERMS | {"detections:write", "incidents:write"}
+_HUNTER_PERMS = _ANALYST_PERMS | {"rules:read", "events:search"}
+_ENGINEER_PERMS = _HUNTER_PERMS | {"rules:write", "connectors:read", "connectors:write"}
+_ADMIN_PERMS = _ENGINEER_PERMS | {"users:read", "users:write"}
+
+
+class TestRolePermissionsCorrectness:
+    """Each role has exactly the documented permission set."""
+
+    def test_viewer_permissions(self) -> None:
+        assert ROLE_PERMISSIONS["viewer"] == _VIEWER_PERMS
+
+    def test_analyst_permissions(self) -> None:
+        assert ROLE_PERMISSIONS["analyst"] == _ANALYST_PERMS
+
+    def test_hunter_permissions(self) -> None:
+        assert ROLE_PERMISSIONS["hunter"] == _HUNTER_PERMS
+
+    def test_engineer_permissions(self) -> None:
+        assert ROLE_PERMISSIONS["engineer"] == _ENGINEER_PERMS
+
+    def test_admin_permissions(self) -> None:
+        assert ROLE_PERMISSIONS["admin"] == _ADMIN_PERMS
+
+    def test_admin_has_all_eleven_permissions(self) -> None:
+        assert len(ROLE_PERMISSIONS["admin"]) == 11
+
+    def test_viewer_has_two_permissions(self) -> None:
+        assert len(ROLE_PERMISSIONS["viewer"]) == 2
+
+    def test_analyst_has_four_permissions(self) -> None:
+        assert len(ROLE_PERMISSIONS["analyst"]) == 4
+
+    def test_hunter_has_six_permissions(self) -> None:
+        assert len(ROLE_PERMISSIONS["hunter"]) == 6
+
+    def test_engineer_has_nine_permissions(self) -> None:
+        assert len(ROLE_PERMISSIONS["engineer"]) == 9
+
+    # --- Specific inclusions ---
+
+    @pytest.mark.parametrize("perm", ["detections:read", "incidents:read"])
+    def test_viewer_has_read_only_permissions(self, perm: str) -> None:
+        assert perm in ROLE_PERMISSIONS["viewer"]
+
+    def test_viewer_cannot_write_detections(self) -> None:
+        assert "detections:write" not in ROLE_PERMISSIONS["viewer"]
+
+    def test_viewer_cannot_write_incidents(self) -> None:
+        assert "incidents:write" not in ROLE_PERMISSIONS["viewer"]
+
+    def test_analyst_can_write_detections(self) -> None:
+        assert "detections:write" in ROLE_PERMISSIONS["analyst"]
+
+    def test_analyst_cannot_read_rules(self) -> None:
+        assert "rules:read" not in ROLE_PERMISSIONS["analyst"]
+
+    def test_hunter_can_read_rules(self) -> None:
+        assert "rules:read" in ROLE_PERMISSIONS["hunter"]
+
+    def test_hunter_cannot_write_rules(self) -> None:
+        assert "rules:write" not in ROLE_PERMISSIONS["hunter"]
+
+    def test_hunter_can_search_events(self) -> None:
+        assert "events:search" in ROLE_PERMISSIONS["hunter"]
+
+    def test_engineer_can_write_rules(self) -> None:
+        assert "rules:write" in ROLE_PERMISSIONS["engineer"]
+
+    def test_engineer_can_read_connectors(self) -> None:
+        assert "connectors:read" in ROLE_PERMISSIONS["engineer"]
+
+    def test_engineer_cannot_read_users(self) -> None:
+        assert "users:read" not in ROLE_PERMISSIONS["engineer"]
+
+    def test_admin_can_read_users(self) -> None:
+        assert "users:read" in ROLE_PERMISSIONS["admin"]
+
+    def test_admin_can_write_users(self) -> None:
+        assert "users:write" in ROLE_PERMISSIONS["admin"]
+
+
+class TestRolePermissionsMonotonicity:
+    """Higher privilege roles have a strict superset of lower roles' permissions."""
+
+    def test_analyst_is_superset_of_viewer(self) -> None:
+        assert ROLE_PERMISSIONS["viewer"] < ROLE_PERMISSIONS["analyst"]
+
+    def test_hunter_is_superset_of_analyst(self) -> None:
+        assert ROLE_PERMISSIONS["analyst"] < ROLE_PERMISSIONS["hunter"]
+
+    def test_engineer_is_superset_of_hunter(self) -> None:
+        assert ROLE_PERMISSIONS["hunter"] < ROLE_PERMISSIONS["engineer"]
+
+    def test_admin_is_superset_of_engineer(self) -> None:
+        assert ROLE_PERMISSIONS["engineer"] < ROLE_PERMISSIONS["admin"]
+
+
+class TestRolePermissionsConsistency:
+    """ROLE_PERMISSIONS and PERMISSIONS are consistent inverses of each other."""
+
+    @pytest.mark.parametrize("role", _ALL_ROLES)
+    def test_role_perms_match_permissions_inverse(self, role: str) -> None:
+        """For every permission, role is in the allowed set iff it's in ROLE_PERMISSIONS."""
+        for perm, allowed_roles in PERMISSIONS.items():
+            if role in allowed_roles:
+                assert perm in ROLE_PERMISSIONS[role], (
+                    f"'{perm}' should be in ROLE_PERMISSIONS['{role}']"
+                )
+            else:
+                assert perm not in ROLE_PERMISSIONS[role], (
+                    f"'{perm}' should NOT be in ROLE_PERMISSIONS['{role}']"
+                )
+
+
+# ---------------------------------------------------------------------------
+# permissions_for_role() helper (Feature 3.2)
+# ---------------------------------------------------------------------------
+
+
+class TestPermissionsForRole:
+    """permissions_for_role() returns the correct frozenset."""
+
+    @pytest.mark.parametrize("role", _ALL_ROLES)
+    def test_returns_frozenset_for_known_roles(self, role: str) -> None:
+        result = permissions_for_role(role)
+        assert isinstance(result, frozenset)
+
+    @pytest.mark.parametrize("role", _ALL_ROLES)
+    def test_matches_role_permissions_dict(self, role: str) -> None:
+        assert permissions_for_role(role) == ROLE_PERMISSIONS[role]
+
+    def test_viewer_result(self) -> None:
+        assert permissions_for_role("viewer") == _VIEWER_PERMS
+
+    def test_analyst_result(self) -> None:
+        assert permissions_for_role("analyst") == _ANALYST_PERMS
+
+    def test_hunter_result(self) -> None:
+        assert permissions_for_role("hunter") == _HUNTER_PERMS
+
+    def test_engineer_result(self) -> None:
+        assert permissions_for_role("engineer") == _ENGINEER_PERMS
+
+    def test_admin_result(self) -> None:
+        assert permissions_for_role("admin") == _ADMIN_PERMS
+
+    def test_unknown_role_returns_empty_frozenset(self) -> None:
+        assert permissions_for_role("superuser") == frozenset()
+
+    def test_empty_string_returns_empty_frozenset(self) -> None:
+        assert permissions_for_role("") == frozenset()
+
+    def test_unknown_role_return_type_is_frozenset(self) -> None:
+        result = permissions_for_role("nonexistent")
+        assert isinstance(result, frozenset)
+
+    def test_result_is_immutable(self) -> None:
+        """The returned frozenset cannot be mutated."""
+        result = permissions_for_role("admin")
+        with pytest.raises(AttributeError):
+            result.add("new:permission")  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
 # require_permission() — validation
 # ---------------------------------------------------------------------------
 
