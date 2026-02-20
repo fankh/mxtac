@@ -144,7 +144,122 @@ async def test_integrations_from_db(
 
 @pytest.mark.asyncio
 async def test_recent_detections(client: AsyncClient, auth_headers: dict) -> None:
+    """Empty DB falls back to mock data — only critical/high, at most 6 items."""
     resp = await client.get("/api/v1/overview/recent-detections", headers=auth_headers)
     assert resp.status_code == 200
     items = resp.json()
     assert isinstance(items, list)
+    assert len(items) <= 6
+    for item in items:
+        assert item["severity"] in ("critical", "high")
+        assert "id" in item
+        assert "name" in item
+        assert "host" in item
+        assert "tactic" in item
+        assert "time" in item
+        assert "score" in item
+
+
+@pytest.mark.asyncio
+async def test_recent_detections_limit(client: AsyncClient, auth_headers: dict) -> None:
+    """?limit param is respected."""
+    resp = await client.get(
+        "/api/v1/overview/recent-detections?limit=3", headers=auth_headers
+    )
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) <= 3
+
+
+@pytest.mark.asyncio
+async def test_recent_detections_from_db(
+    client: AsyncClient, db_session, auth_headers: dict
+) -> None:
+    """When DB has detections, endpoint returns real data — only critical/high, sorted newest first."""
+    from datetime import datetime, timezone
+    from app.models.detection import Detection as DetectionModel
+
+    now = datetime.now(timezone.utc)
+    rows = [
+        DetectionModel(
+            score=9.5,
+            severity="critical",
+            technique_id="T1059",
+            technique_name="Command and Scripting Interpreter",
+            name="Critical Alert",
+            host="host-a",
+            tactic="execution",
+            tactic_id="TA0002",
+            status="active",
+            time=now,
+            description="test",
+            user="root",
+            process="bash",
+            rule_name="rule1",
+            log_source="syslog",
+            event_id="evt1",
+            occurrence_count=1,
+            cvss_v3=9.0,
+            confidence=90,
+            assigned_to="analyst",
+            priority="P1",
+        ),
+        DetectionModel(
+            score=7.0,
+            severity="high",
+            technique_id="T1078",
+            technique_name="Valid Accounts",
+            name="High Alert",
+            host="host-b",
+            tactic="persistence",
+            tactic_id="TA0003",
+            status="investigating",
+            time=now,
+            description="test",
+            user="user1",
+            process="sshd",
+            rule_name="rule2",
+            log_source="auth",
+            event_id="evt2",
+            occurrence_count=2,
+            cvss_v3=7.0,
+            confidence=80,
+            assigned_to=None,
+            priority="P2",
+        ),
+        DetectionModel(
+            score=3.0,
+            severity="medium",
+            technique_id="T1110",
+            technique_name="Brute Force",
+            name="Medium Alert",
+            host="host-c",
+            tactic="credential_access",
+            tactic_id="TA0006",
+            status="active",
+            time=now,
+            description="test",
+            user="user2",
+            process="login",
+            rule_name="rule3",
+            log_source="auth",
+            event_id="evt3",
+            occurrence_count=5,
+            cvss_v3=5.0,
+            confidence=60,
+            assigned_to=None,
+            priority="P3",
+        ),
+    ]
+    db_session.add_all(rows)
+    await db_session.flush()
+
+    resp = await client.get("/api/v1/overview/recent-detections", headers=auth_headers)
+    assert resp.status_code == 200
+    items = resp.json()
+
+    # Only critical and high — medium is excluded
+    assert len(items) == 2
+    severities = {i["severity"] for i in items}
+    assert severities <= {"critical", "high"}
+    assert "medium" not in severities

@@ -162,8 +162,46 @@ async def get_integrations(
 @router.get("/recent-detections", response_model=list[Detection])
 async def get_recent_detections(
     limit: int = Query(6, le=20),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("detections:read")),
 ):
     """Recent critical/high detections for the overview table."""
-    critical_high = [d for d in DETECTIONS if d.severity in ("critical", "high")]
-    return sorted(critical_high, key=lambda d: d.time, reverse=True)[:limit]
+    items, total = await DetectionRepo.list(
+        db,
+        severity=["critical", "high"],
+        sort="time",
+        order="desc",
+        page_size=limit,
+    )
+    if total == 0:
+        # fallback to mock data when DB has no detections
+        critical_high = [d for d in DETECTIONS if d.severity in ("critical", "high")]
+        return sorted(critical_high, key=lambda d: d.time, reverse=True)[:limit]
+    return [
+        {
+            "id": d.id,
+            "score": d.score,
+            "severity": d.severity,
+            "technique_id": d.technique_id,
+            "technique_name": d.technique_name,
+            "name": d.name,
+            "host": d.host,
+            "tactic": d.tactic,
+            "status": d.status,
+            "time": d.time,
+            "user": d.user,
+            "process": d.process,
+            "rule_name": d.rule_name,
+            "log_source": d.log_source,
+            "event_id": d.event_id,
+            "occurrence_count": d.occurrence_count,
+            "description": d.description,
+            "cvss_v3": d.cvss_v3,
+            "confidence": d.confidence,
+            "tactic_id": d.tactic_id,
+            "related_technique_ids": [],
+            "assigned_to": d.assigned_to,
+            "priority": d.priority,
+        }
+        for d in items
+    ]
