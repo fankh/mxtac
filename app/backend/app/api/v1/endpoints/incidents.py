@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import ceil
 from typing import Literal
 
@@ -15,7 +15,7 @@ from ....core.rbac import require_permission
 from ....repositories.detection_repo import DetectionRepo
 from ....repositories.incident_repo import IncidentRepo, SortField
 from ....schemas.common import Pagination, PaginatedResponse
-from ....schemas.incident import Incident, IncidentCreate, IncidentDetail, IncidentNote, IncidentUpdate, NoteCreate
+from ....schemas.incident import Incident, IncidentCreate, IncidentDetail, IncidentMetrics, IncidentNote, IncidentUpdate, NoteCreate
 from ....services.audit import get_audit_logger
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])

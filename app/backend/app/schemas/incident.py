@@ -73,3 +73,25 @@ class IncidentDetail(Incident):
     detections: list[DetectionSchema]
     notes: list[IncidentNote]
     duration_seconds: int
+
+
+class IncidentsByStatus(BaseModel):
+    new: int = 0
+    investigating: int = 0
+    contained: int = 0
+    resolved: int = 0
+    closed: int = 0
+
+
+class IncidentMetrics(BaseModel):
+    """SLA metrics for incidents within a date range."""
+
+    total_incidents: IncidentsByStatus
+    mttr_seconds: float | None  # None when no closed incidents in range
+    mttd_seconds: float | None  # None when no incidents with TTD data in range
+    open_incidents_count: int
+    incidents_by_severity: dict[str, int]
+    incidents_this_week: int
+    incidents_this_month: int
+    from_date: datetime
+    to_date: datetime

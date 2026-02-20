@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.incident import Incident
@@ -126,3 +127,88 @@ class IncidentRepo:
             .order_by(Incident.created_at.desc())
         )
         return list(result.scalars().all())
+
+    @staticmethod
+    async def get_metrics(
+        session: AsyncSession,
+        from_date: datetime,
+        to_date: datetime,
+    ) -> dict:
+        """Compute incident SLA metrics within the given date range.
+
+        Returns a dict with keys:
+          status_counts, avg_ttr, avg_ttd, open_count,
+          severity_counts, week_count, month_count
+        """
+        date_filter = and_(
+            Incident.created_at >= from_date,
+            Incident.created_at <= to_date,
+        )
+
+        # Counts by status within range
+        status_result = await session.execute(
+            select(Incident.status, func.count().label("cnt"))
+            .where(date_filter)
+            .group_by(Incident.status)
+        )
+        status_counts: dict[str, int] = {row.status: row.cnt for row in status_result}
+
+        # Average TTR for closed incidents in range
+        avg_ttr = await session.scalar(
+            select(func.avg(Incident.ttr_seconds))
+            .where(date_filter)
+            .where(Incident.status == "closed")
+            .where(Incident.ttr_seconds.is_not(None))
+        )
+
+        # Average TTD for all incidents with TTD set in range
+        avg_ttd = await session.scalar(
+            select(func.avg(Incident.ttd_seconds))
+            .where(date_filter)
+            .where(Incident.ttd_seconds.is_not(None))
+        )
+
+        # Open incidents (not resolved or closed) within range
+        open_count = await session.scalar(
+            select(func.count())
+            .select_from(Incident)
+            .where(date_filter)
+            .where(Incident.status.not_in(["resolved", "closed"]))
+        ) or 0
+
+        # Counts by severity within range
+        severity_result = await session.execute(
+            select(Incident.severity, func.count().label("cnt"))
+            .where(date_filter)
+            .group_by(Incident.severity)
+        )
+        severity_counts: dict[str, int] = {row.severity: row.cnt for row in severity_result}
+
+        # Incidents created this calendar week (Monday 00:00 UTC)
+        now = datetime.now(timezone.utc)
+        week_start = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        week_count = await session.scalar(
+            select(func.count())
+            .select_from(Incident)
+            .where(Incident.created_at >= week_start)
+        ) or 0
+
+        # Incidents created this calendar month (1st day 00:00 UTC)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_count = await session.scalar(
+            select(func.count())
+            .select_from(Incident)
+            .where(Incident.created_at >= month_start)
+        ) or 0
+
+        return {
+            "status_counts": status_counts,
+            "avg_ttr": float(avg_ttr) if avg_ttr is not None else None,
+            "avg_ttd": float(avg_ttd) if avg_ttd is not None else None,
+            "open_count": open_count,
+            "severity_counts": severity_counts,
+            "week_count": week_count,
+            "month_count": month_count,
+        }
