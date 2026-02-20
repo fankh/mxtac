@@ -1192,3 +1192,438 @@ async def test_ensure_indices_logs_success(caplog: pytest.LogCaptureFixture) -> 
     assert "mxtac-events-template" in caplog.text
     assert "mxtac-alerts-template" in caplog.text
     assert "mxtac-rules" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# feature 12.5 — search_events() bool query with filters — query construction
+# ---------------------------------------------------------------------------
+
+
+def _make_search_client(hits: list[dict] | None = None, total: int = 0) -> MagicMock:
+    """Return a mock client whose .search() returns a standard hits envelope."""
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(return_value={
+        "hits": {
+            "total": {"value": total},
+            "hits": hits or [],
+        }
+    })
+    return mock_client
+
+
+def _get_search_body(mock_client: MagicMock) -> dict:
+    """Extract the body kwarg from the most recent .search() call."""
+    call = mock_client.search.call_args
+    return call.kwargs.get("body") or call.args[0]
+
+
+@pytest.mark.asyncio
+async def test_search_events_query_string_value_matches_input() -> None:
+    """The query_string clause carries the exact query text passed in."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events(query="mimikatz lsass")
+
+    body = _get_search_body(svc._client)
+    must = body["query"]["bool"]["must"]
+    qs_clauses = [c for c in must if "query_string" in c]
+    assert len(qs_clauses) == 1
+    assert qs_clauses[0]["query_string"]["query"] == "mimikatz lsass"
+
+
+@pytest.mark.asyncio
+async def test_search_events_query_only_has_two_must_clauses() -> None:
+    """With a query but no filters, must has exactly: query_string + time range."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events(query="powershell")
+
+    body = _get_search_body(svc._client)
+    must = body["query"]["bool"]["must"]
+    assert len(must) == 2
+    assert any("query_string" in c for c in must)
+    assert any("range" in c for c in must)
+
+
+@pytest.mark.asyncio
+async def test_search_events_filters_only_no_query_string_clause() -> None:
+    """With filters but no query, must has no query_string clause."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events(filters=[{"term": {"severity_id": 4}}])
+
+    body = _get_search_body(svc._client)
+    must = body["query"]["bool"]["must"]
+    assert not any("query_string" in c for c in must)
+    assert {"term": {"severity_id": 4}} in must
+
+
+@pytest.mark.asyncio
+async def test_search_events_multiple_filters_all_in_must() -> None:
+    """Each filter dict is appended as a separate must clause."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    filters = [
+        {"term": {"severity_id": 4}},
+        {"term": {"class_name": "Process Activity"}},
+        {"wildcard": {"src_endpoint.hostname": "*dc-*"}},
+    ]
+    await svc.search_events(filters=filters)
+
+    body = _get_search_body(svc._client)
+    must = body["query"]["bool"]["must"]
+    for f in filters:
+        assert f in must, f"Expected filter clause {f!r} in must"
+
+
+@pytest.mark.asyncio
+async def test_search_events_empty_string_query_not_added() -> None:
+    """An empty string query is falsy — no query_string clause is added."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events(query="")
+
+    body = _get_search_body(svc._client)
+    must = body["query"]["bool"]["must"]
+    assert not any("query_string" in c for c in must)
+
+
+@pytest.mark.asyncio
+async def test_search_events_empty_filters_list_not_added() -> None:
+    """An empty filters list is falsy — no extra clauses are added to must."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events(filters=[])
+
+    body = _get_search_body(svc._client)
+    must = body["query"]["bool"]["must"]
+    # Only the time range clause should be present
+    assert len(must) == 1
+    assert "range" in must[0]
+
+
+# ---------------------------------------------------------------------------
+# feature 12.5 — search_events() — request body structure
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_search_events_sort_is_time_descending() -> None:
+    """The sort field is time in descending order (newest-first)."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events()
+
+    body = _get_search_body(svc._client)
+    assert body["sort"] == [{"time": {"order": "desc"}}]
+
+
+@pytest.mark.asyncio
+async def test_search_events_size_forwarded_to_body() -> None:
+    """The size parameter is included in the OpenSearch request body."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events(size=25)
+
+    body = _get_search_body(svc._client)
+    assert body["size"] == 25
+
+
+@pytest.mark.asyncio
+async def test_search_events_from_forwarded_to_body() -> None:
+    """The from_ parameter is included in the OpenSearch request body as 'from'."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events(from_=50)
+
+    body = _get_search_body(svc._client)
+    assert body["from"] == 50
+
+
+@pytest.mark.asyncio
+async def test_search_events_default_size_is_100() -> None:
+    """Default size is 100 when not specified."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events()
+
+    body = _get_search_body(svc._client)
+    assert body["size"] == 100
+
+
+@pytest.mark.asyncio
+async def test_search_events_default_from_is_0() -> None:
+    """Default from_ is 0 when not specified."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events()
+
+    body = _get_search_body(svc._client)
+    assert body["from"] == 0
+
+
+@pytest.mark.asyncio
+async def test_search_events_time_range_uses_gte_and_lte() -> None:
+    """The time range clause uses 'gte' / 'lte' (inclusive), not 'gt' / 'lt'."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events(time_from="now-24h", time_to="now")
+
+    body = _get_search_body(svc._client)
+    must = body["query"]["bool"]["must"]
+    range_clauses = [c for c in must if "range" in c and "time" in c.get("range", {})]
+    assert len(range_clauses) == 1
+    time_range = range_clauses[0]["range"]["time"]
+    assert "gte" in time_range, "time range must use 'gte', not 'gt'"
+    assert "lte" in time_range, "time range must use 'lte', not 'lt'"
+    assert "gt" not in time_range
+    assert "lt" not in time_range
+
+
+@pytest.mark.asyncio
+async def test_search_events_time_range_values_match_params() -> None:
+    """The gte/lte values match the time_from/time_to arguments exactly."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events(time_from="now-6h", time_to="2026-02-20T23:59:59Z")
+
+    body = _get_search_body(svc._client)
+    must = body["query"]["bool"]["must"]
+    time_range = next(
+        c["range"]["time"]
+        for c in must
+        if "range" in c and "time" in c.get("range", {})
+    )
+    assert time_range["gte"] == "now-6h"
+    assert time_range["lte"] == "2026-02-20T23:59:59Z"
+
+
+@pytest.mark.asyncio
+async def test_search_events_default_time_from_is_now_minus_7d() -> None:
+    """Default time_from is 'now-7d' when not specified."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events()
+
+    body = _get_search_body(svc._client)
+    must = body["query"]["bool"]["must"]
+    time_range = next(
+        c["range"]["time"]
+        for c in must
+        if "range" in c and "time" in c.get("range", {})
+    )
+    assert time_range["gte"] == "now-7d"
+    assert time_range["lte"] == "now"
+
+
+# ---------------------------------------------------------------------------
+# feature 12.5 — search_events() — index targeting
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_search_events_targets_events_wildcard_index() -> None:
+    """search_events() searches across mxtac-events-* (all daily indices)."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events()
+
+    call = svc._client.search.call_args
+    index_arg = call.kwargs.get("index") or call.args[0]
+    assert index_arg == "mxtac-events-*"
+
+
+@pytest.mark.asyncio
+async def test_search_events_does_not_target_alerts_index() -> None:
+    """search_events() must never search the alerts index."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    await svc.search_events()
+
+    call = svc._client.search.call_args
+    index_arg = call.kwargs.get("index") or call.args[0]
+    assert "alerts" not in index_arg, (
+        f"search_events() must not target alerts index, got {index_arg!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# feature 12.5 — search_events() — result passthrough and logging
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_search_events_returns_full_response_verbatim() -> None:
+    """The raw OpenSearch response dict is returned as-is, without transformation."""
+    os_response = {
+        "hits": {
+            "total": {"value": 3, "relation": "eq"},
+            "hits": [
+                {"_id": "a", "_score": 1.5, "_source": {"class_name": "Network Activity"}},
+                {"_id": "b", "_score": 1.2, "_source": {"class_name": "Process Activity"}},
+                {"_id": "c", "_score": 0.8, "_source": {"class_name": "Authentication"}},
+            ],
+        },
+        "_shards": {"total": 3, "successful": 3, "failed": 0},
+        "timed_out": False,
+        "took": 12,
+    }
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(return_value=os_response)
+    svc._client = mock_client
+
+    result = await svc.search_events(query="test")
+
+    assert result is os_response
+
+
+@pytest.mark.asyncio
+async def test_search_events_logs_error_on_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An exception from OS search is logged at ERROR level with exception text."""
+    import logging
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(side_effect=Exception("cluster not reachable"))
+    svc._client = mock_client
+
+    with caplog.at_level(logging.ERROR):
+        result = await svc.search_events(query="anything")
+
+    assert result == {"hits": {"total": {"value": 0}, "hits": []}}
+    assert "cluster not reachable" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_search_events_combined_query_and_multiple_filters() -> None:
+    """With query + 2 filters, must has: query_string + 2 filters + time range = 4 clauses."""
+    svc = OpenSearchService()
+    svc._client = _make_search_client()
+
+    filters = [
+        {"term": {"severity_id": 5}},
+        {"wildcard": {"src_endpoint.hostname": "*dc*"}},
+    ]
+    await svc.search_events(query="lsass", filters=filters)
+
+    body = _get_search_body(svc._client)
+    must = body["query"]["bool"]["must"]
+    assert len(must) == 4  # query_string + 2 filters + time range
+    assert any("query_string" in c for c in must)
+    assert {"term": {"severity_id": 5}} in must
+    assert {"wildcard": {"src_endpoint.hostname": "*dc*"}} in must
+    assert any("range" in c and "time" in c["range"] for c in must)
+
+
+# ---------------------------------------------------------------------------
+# feature 12.5 — filter_to_dsl() — additional field mapping coverage
+# ---------------------------------------------------------------------------
+
+
+def test_filter_to_dsl_dst_ip_maps_to_nested_field() -> None:
+    """'dst_ip' flat alias maps to 'dst_endpoint.ip' in OpenSearch."""
+    clause = filter_to_dsl("dst_ip", "eq", "10.0.0.1")
+    assert clause == {"term": {"dst_endpoint.ip": "10.0.0.1"}}
+
+
+def test_filter_to_dsl_username_maps_to_actor_user_name() -> None:
+    """'username' flat alias maps to 'actor_user.name'."""
+    clause = filter_to_dsl("username", "eq", "CORP\\admin")
+    assert clause == {"term": {"actor_user.name": "CORP\\admin"}}
+
+
+def test_filter_to_dsl_process_hash_maps_to_hash_sha256() -> None:
+    """'process_hash' flat alias maps to 'process.hash_sha256'."""
+    clause = filter_to_dsl("process_hash", "eq", "abc123def456")
+    assert clause == {"term": {"process.hash_sha256": "abc123def456"}}
+
+
+def test_filter_to_dsl_source_maps_to_metadata_product() -> None:
+    """'source' flat alias maps to 'metadata_product'."""
+    clause = filter_to_dsl("source", "eq", "wazuh")
+    assert clause == {"term": {"metadata_product": "wazuh"}}
+
+
+def test_filter_to_dsl_class_uid_maps_to_itself() -> None:
+    """'class_uid' maps to 'class_uid' (no renaming)."""
+    clause = filter_to_dsl("class_uid", "eq", 4001)
+    assert clause == {"term": {"class_uid": 4001}}
+
+
+def test_filter_to_dsl_dst_endpoint_hostname_passthrough() -> None:
+    """'dst_endpoint.hostname' nested path passes through unchanged."""
+    clause = filter_to_dsl("dst_endpoint.hostname", "eq", "server-01")
+    assert clause == {"term": {"dst_endpoint.hostname": "server-01"}}
+
+
+def test_filter_to_dsl_dst_endpoint_ip_passthrough() -> None:
+    """'dst_endpoint.ip' nested path passes through unchanged."""
+    clause = filter_to_dsl("dst_endpoint.ip", "eq", "172.16.0.1")
+    assert clause == {"term": {"dst_endpoint.ip": "172.16.0.1"}}
+
+
+def test_filter_to_dsl_process_hash_sha256_passthrough() -> None:
+    """'process.hash_sha256' nested path passes through unchanged."""
+    clause = filter_to_dsl("process.hash_sha256", "eq", "deadbeef")
+    assert clause == {"term": {"process.hash_sha256": "deadbeef"}}
+
+
+def test_filter_to_dsl_contains_wraps_value_with_wildcards() -> None:
+    """'contains' operator wraps the value with leading and trailing wildcards."""
+    clause = filter_to_dsl("username", "contains", "admin")
+    assert clause is not None
+    wc_field, wc_pattern = next(iter(clause["wildcard"].items()))
+    assert wc_pattern.startswith("*"), "wildcard pattern must start with *"
+    assert wc_pattern.endswith("*"), "wildcard pattern must end with *"
+    assert "admin" in wc_pattern
+
+
+def test_filter_to_dsl_ne_generates_bool_must_not_structure() -> None:
+    """'ne' operator produces a bool/must_not clause (not a simple term)."""
+    clause = filter_to_dsl("severity_id", "ne", 1)
+    assert clause is not None
+    assert "bool" in clause
+    assert "must_not" in clause["bool"]
+    inner = clause["bool"]["must_not"]
+    assert isinstance(inner, list) and len(inner) == 1
+    assert inner[0] == {"term": {"severity_id": 1}}
+
+
+def test_filter_to_dsl_ne_with_nested_field() -> None:
+    """'ne' with a nested-path field generates a correct bool/must_not."""
+    clause = filter_to_dsl("actor_user.name", "ne", "SYSTEM")
+    assert clause == {"bool": {"must_not": [{"term": {"actor_user.name": "SYSTEM"}}]}}
+
+
+def test_filter_to_dsl_range_operators_with_string_value() -> None:
+    """Range operators (gt, lt, gte, lte) work with string values (e.g. dates)."""
+    date_str = "2026-02-20T00:00:00Z"
+    assert filter_to_dsl("severity_id", "gt", date_str) == {"range": {"severity_id": {"gt": date_str}}}
+    assert filter_to_dsl("severity_id", "lt", date_str) == {"range": {"severity_id": {"lt": date_str}}}
+    assert filter_to_dsl("severity_id", "gte", date_str) == {"range": {"severity_id": {"gte": date_str}}}
+    assert filter_to_dsl("severity_id", "lte", date_str) == {"range": {"severity_id": {"lte": date_str}}}
+
+
+def test_filter_to_dsl_src_endpoint_ip_passthrough() -> None:
+    """'src_endpoint.ip' nested path passes through unchanged."""
+    clause = filter_to_dsl("src_endpoint.ip", "eq", "192.168.1.1")
+    assert clause == {"term": {"src_endpoint.ip": "192.168.1.1"}}
