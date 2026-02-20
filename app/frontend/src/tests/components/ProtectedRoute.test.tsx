@@ -70,7 +70,7 @@ describe('ProtectedRoute', () => {
   // ---------------------------------------------------------------------------
   describe('unauthenticated user', () => {
     beforeEach(() => {
-      mockUseAuthStore.mockReturnValue({ isAuthenticated: false })
+      mockAuth(false)
     })
 
     it('redirects to /login when user is not authenticated', () => {
