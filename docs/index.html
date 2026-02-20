@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MxTac Documentation</title>
+<link rel="icon" href="../brand/favicon.ico">
+<style>
+/* ── Reset & Variables ───────────────────────────────────────────── */
+:root {
+  --green: #00FF41;
+  --green-dim: #00CC33;
+  --green-muted: #337733;
+  --green-faint: #1A3A1A;
+  --green-bg: #0A1A0E;
+  --red: #FF3333;
+  --orange: #FF8800;
+  --bg: #0A0A0A;
+  --surface: #111111;
+  --surface-2: #1A1A1A;
+  --border: #1A2A1A;
+  --border-strong: #224422;
+  --font: 'Courier New', Consolas, 'Fira Code', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: #CCCCCC;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Top Navbar ──────────────────────────────────────────────────── */
+.navbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(10,10,10,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 56px;
+  display: flex; align-items: center; gap: 24px;
+}
+.navbar-brand {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none; color: var(--green);
+  font-weight: 700; font-size: 16px; white-space: nowrap;
+}
+.navbar-brand img { height: 28px; border-radius: 4px; }
+.navbar-brand span { opacity: 0.4; font-weight: 400; margin: 0 4px; }
+.navbar-links {
+  display: flex; gap: 4px; margin-left: auto;
+}
+.navbar-links a {
+  color: var(--green-muted); text-decoration: none;
+  font-size: 11px; padding: 6px 12px; border-radius: 4px;
+  transition: all 0.15s;
+}
+.navbar-links a:hover, .navbar-links a.active {
+  color: var(--green); background: var(--green-bg);
+}
+
+/* ── Layout ──────────────────────────────────────────────────────── */
+.layout {
+  display: flex; margin-top: 56px; min-height: calc(100vh - 56px);
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────── */
+.sidebar {
+  width: 260px; flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 0;
+  position: fixed; top: 56px; bottom: 0;
+  overflow-y: auto;
+}
+.sidebar-section {
+  padding: 0 16px; margin-bottom: 20px;
+}
+.sidebar-label {
+  font-size: 9px; font-weight: 600;
+  color: var(--green-muted); text-transform: uppercase;
+  letter-spacing: 1.5px; padding: 0 8px; margin-bottom: 6px;
+}
+.sidebar a {
+  display: block; padding: 5px 8px;
+  color: #888; text-decoration: none;
+  font-size: 12px; border-radius: 4px;
+  transition: all 0.12s; border-left: 2px solid transparent;
+}
+.sidebar a:hover {
+  color: var(--green); background: rgba(0,255,65,0.04);
+  border-left-color: var(--green-muted);
+}
+.sidebar a.active {
+  color: var(--green); background: var(--green-bg);
+  border-left-color: var(--green);
+}
+
+/* ── Main Content ────────────────────────────────────────────────── */
+.main {
+  margin-left: 260px; flex: 1;
+  padding: 40px 48px 80px;
+  max-width: 900px;
+}
+
+/* ── Typography ──────────────────────────────────────────────────── */
+h1 {
+  font-size: 28px; color: var(--green); font-weight: 700;
+  margin-bottom: 8px;
+  text-shadow: 0 0 20px rgba(0,255,65,0.15);
+}
+h1 + .subtitle {
+  font-size: 13px; color: var(--green-muted); margin-bottom: 32px;
+}
+h2 {
+  font-size: 20px; color: var(--green); font-weight: 700;
+  margin: 48px 0 16px; padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+h2:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+h3 {
+  font-size: 15px; color: var(--green-dim); font-weight: 600;
+  margin: 28px 0 10px;
+}
+h4 {
+  font-size: 13px; color: #AAAAAA; font-weight: 600;
+  margin: 20px 0 8px;
+}
+p { margin-bottom: 14px; font-size: 13px; }
+a { color: var(--green-dim); }
+a:hover { color: var(--green); }
+strong { color: #EEEEEE; }
+em { color: var(--green-muted); font-style: normal; }
+
+ul, ol {
+  margin: 0 0 16px 20px; font-size: 13px;
+}
+li { margin-bottom: 4px; }
+li code { font-size: 12px; }
+
+/* ── Code Blocks ─────────────────────────────────────────────────── */
+code {
+  font-family: var(--font);
+  background: var(--surface-2);
+  color: var(--green);
+  padding: 1px 5px; border-radius: 3px;
+  font-size: 12px;
+}
+pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin: 0 0 20px;
+  overflow-x: auto;
+  position: relative;
+}
+pre code {
+  background: none; padding: 0;
+  color: #CCCCCC; font-size: 12px;
+  line-height: 1.6;
+}
+pre .comment { color: var(--green-muted); }
+pre .keyword { color: var(--green); }
+pre .string { color: #33FF66; }
+pre .flag { color: var(--orange); }
+pre .value { color: #66CCFF; }
+
+/* ── Callout Boxes ───────────────────────────────────────────────── */
+.callout {
+  border-radius: 6px; padding: 14px 18px;
+  margin: 0 0 20px; font-size: 12px;
+  border-left: 3px solid;
+}
+.callout-title {
+  font-weight: 700; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+.callout.info {
+  background: rgba(0,255,65,0.04);
+  border-color: var(--green-dim);
+}
+.callout.info .callout-title { color: var(--green); }
+.callout.warn {
+  background: rgba(255,136,0,0.06);
+  border-color: var(--orange);
+}
+.callout.warn .callout-title { color: var(--orange); }
+.callout.danger {
+  background: rgba(255,51,51,0.06);
+  border-color: var(--red);
+}
+.callout.danger .callout-title { color: var(--red); }
+
+/* ── Tables ──────────────────────────────────────────────────────── */
+table {
+  width: 100%; border-collapse: collapse;
+  margin: 0 0 20px; font-size: 12px;
+}
+th {
+  text-align: left; padding: 8px 12px;
+  background: var(--surface);
+  color: var(--green-muted);
+  font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.5px; font-weight: 600;
+  border-bottom: 1px solid var(--border-strong);
+}
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+td code { font-size: 11px; }
+tr:hover td { background: rgba(0,255,65,0.02); }
+
+/* ── Step blocks ─────────────────────────────────────────────────── */
+.step {
+  display: flex; gap: 14px;
+  margin-bottom: 24px;
+}
+.step-num {
+  width: 28px; height: 28px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--green-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--green); font-size: 12px; font-weight: 700;
+}
+.step-body { flex: 1; padding-top: 3px; }
+
+/* ── Architecture diagram ────────────────────────────────────────── */
+.arch-diagram {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 24px; margin: 0 0 24px;
+  text-align: center;
+}
+.arch-diagram pre {
+  background: none; border: none; padding: 0; margin: 0;
+  display: inline-block; text-align: left;
+}
+.arch-diagram pre code { color: var(--green); font-size: 11px; }
+
+/* ── Footer ──────────────────────────────────────────────────────── */
+.footer {
+  margin-top: 60px; padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-size: 10px; color: var(--green-muted);
+  text-align: center;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .main { margin-left: 0; padding: 24px 20px 60px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════════ NAVBAR ════════════════ -->
+<nav class="navbar">
+  <a href="#" class="navbar-brand">
+    <img src="../brand/favicon-32.png" alt="MxTac">
+    MxTac <span>|</span> Docs
+  </a>
+  <div class="navbar-links">
+    <a href="#installation" class="active">Installation</a>
+    <a href="#configuration">Configuration</a>
+    <a href="#agents">Agents</a>
+    <a href="#integrations">Integrations</a>
+    <a href="#kubernetes">Kubernetes</a>
+    <a href="https://github.com/fankh/new-research" target="_blank">GitHub</a>
+  </div>
+</nav>
+
+<!-- ════════════════ LAYOUT ════════════════ -->
+<div class="layout">
+
+<!-- ════════════════ SIDEBAR ════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-section">
+    <div class="sidebar-label">Getting Started</div>
+    <a href="#overview">Overview</a>
+    <a href="#prerequisites">Prerequisites</a>
+    <a href="#quickstart">Quick Start</a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-label">Installation</div>
+    <a href="#install-docker">Docker Compose (Dev)</a>
+    <a href="#install-prod">Docker Compose (Prod)</a>
+    <a href="#install-manual">Manual Setup</a>
+    <a href="#install-verify">Verify Installation</a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-label">Configuration</div>
+    <a href="#config-backend">Backend Environment</a>
+    <a href="#config-frontend">Frontend Environment</a>
+    <a href="#config-auth">Authentication</a>
+    <a href="#config-database">Database</a>
+    <a href="#config-opensearch">OpenSearch</a>
+    <a href="#config-queue">Message Queue</a>
+    <a href="#config-cors">CORS & Security</a>
+    <a href="#config-tls">TLS / HTTPS</a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-label">Agents</div>
+    <a href="#agent-overview">Agent Overview</a>
+    <a href="#agent-mxguard">MxGuard (EDR)</a>
+    <a href="#agent-mxwatch">MxWatch (NDR)</a>
+    <a href="#agent-scheduler">Agent Scheduler</a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-label">Integrations</div>
+    <a href="#int-wazuh">Wazuh</a>
+    <a href="#int-zeek">Zeek</a>
+    <a href="#int-suricata">Suricata</a>
+    <a href="#int-sigma">Sigma Rules</a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-label">Deployment</div>
+    <a href="#kubernetes">Kubernetes (K3s)</a>
+    <a href="#monitoring">Monitoring</a>
+    <a href="#backup">Backup & Restore</a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-label">Reference</div>
+    <a href="#api-ref">API Reference</a>
+    <a href="#env-ref">Environment Variables</a>
+    <a href="#ports">Port Reference</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+  </div>
+</aside>
+
+<!-- ════════════════ MAIN CONTENT ════════════════ -->
+<main class="main">
+
+<!-- ──────────────────── OVERVIEW ──────────────────── -->
+<h1 id="overview">MxTac Documentation</h1>
+<p class="subtitle">Installation, Configuration & Operations Manual &mdash; v2.0</p>
+
+<p>MxTac is an open-source security integration platform that unifies best-of-breed OSS security tools under a single <strong>MITRE ATT&CK-native interface</strong>. It normalizes events via <strong>OCSF</strong>, executes <strong>Sigma rules</strong> natively, and provides cross-tool attack chain detection.</p>
+
+<div class="arch-diagram">
+<pre><code>  +------------------+     +------------------+     +------------------+
+  |    <span class="keyword">Wazuh</span> 4.7+    |     |    <span class="keyword">Zeek</span> 6.x      |     |  <span class="keyword">Suricata</span> 7.x   |
+  +--------+---------+     +--------+---------+     +--------+---------+
+           |                         |                         |
+           +------------+------------+------------+------------+
+                        |       <span class="string">Connectors</span>        |
+                        v                         v
+               +--------+---------+      +--------+---------+
+               |  <span class="keyword">OCSF Normalizer</span> |      |  <span class="keyword">Kafka / Redpanda</span> |
+               +--------+---------+      +--------+---------+
+                        |                         |
+                        v                         v
+               +--------+-------------------------+---------+
+               |               <span class="keyword">MxTac Core</span>                   |
+               |  FastAPI  |  Sigma Engine  |  PostgreSQL   |
+               +--------+-------------------------+---------+
+                        |                         |
+               +--------+---------+      +--------+---------+
+               | <span class="keyword">OpenSearch</span> 2.17  |      |  <span class="keyword">React Dashboard</span> |
+               +------------------+      +------------------+</code></pre>
+</div>
+
+<!-- ──────────────────── PREREQUISITES ──────────────────── -->
+<h2 id="prerequisites">Prerequisites</h2>
+
+<h3>System Requirements</h3>
+<table>
+  <thead>
+    <tr><th>Component</th><th>Minimum</th><th>Recommended</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>CPU</td><td>4 cores</td><td>8+ cores</td></tr>
+    <tr><td>RAM</td><td>8 GB</td><td>16+ GB</td></tr>
+    <tr><td>Disk</td><td>40 GB SSD</td><td>100+ GB SSD</td></tr>
+    <tr><td>OS</td><td colspan="2">Linux (Ubuntu 22.04+, Rocky 9+), macOS 13+</td></tr>
+  </tbody>
+</table>
+
+<h3>Software Requirements</h3>
+<table>
+  <thead>
+    <tr><th>Software</th><th>Version</th><th>Required For</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>Docker</code></td><td>24+</td><td>Container runtime</td></tr>
+    <tr><td><code>Docker Compose</code></td><td>2.x</td><td>Service orchestration</td></tr>
+    <tr><td><code>Python</code></td><td>3.12+</td><td>Backend (manual install)</td></tr>
+    <tr><td><code>Node.js</code></td><td>20+</td><td>Frontend (manual install)</td></tr>
+    <tr><td><code>PostgreSQL</code></td><td>16</td><td>Metadata DB (manual install)</td></tr>
+    <tr><td><code>OpenSearch</code></td><td>2.17</td><td>Event store (manual install)</td></tr>
+    <tr><td><code>Git</code></td><td>2.x</td><td>Source code</td></tr>
+  </tbody>
+</table>
+
+<!-- ──────────────────── QUICK START ──────────────────── -->
+<h2 id="quickstart">Quick Start</h2>
+<p>Get MxTac running in under 5 minutes with Docker Compose.</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Clone the repository</h4>
+    <pre><code>git clone https://github.com/fankh/new-research.git
+cd new-research/mitre-attack/mxtac/app</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Configure environment</h4>
+    <pre><code>cp backend/.env.example backend/.env
+<span class="comment"># Generate a secret key</span>
+sed -i "s/CHANGE_ME_GENERATE_WITH_OPENSSL_RAND_HEX_32/$(openssl rand -hex 32)/" backend/.env</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Start all services</h4>
+    <pre><code>docker compose up -d</code></pre>
+    <p>This starts: <strong>Backend API</strong> (port 8080), <strong>Frontend</strong> (port 5173), <strong>PostgreSQL</strong> (5432), <strong>Valkey</strong> (6379), and <strong>OpenSearch</strong> (9200).</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Access MxTac</h4>
+    <table>
+      <tr><td><strong>Dashboard</strong></td><td><a href="http://localhost:5173">http://localhost:5173</a></td></tr>
+      <tr><td><strong>API</strong></td><td><a href="http://localhost:8080">http://localhost:8080</a></td></tr>
+      <tr><td><strong>API Docs</strong></td><td><a href="http://localhost:8080/docs">http://localhost:8080/docs</a></td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Login</h4>
+    <pre><code><span class="comment"># Default development credentials</span>
+Email:    analyst@mxtac.local
+Password: mxtac2026</code></pre>
+  </div>
+</div>
+
+<div class="callout warn">
+  <div class="callout-title">Warning</div>
+  Change the default credentials and <code>SECRET_KEY</code> before deploying to production.
+</div>
+
+<!-- ──────────────────── INSTALLATION ──────────────────── -->
+<h2 id="installation">Installation</h2>
+
+<!-- Docker Dev -->
+<h3 id="install-docker">Docker Compose (Development)</h3>
+<p>The development setup includes hot-reload for both backend and frontend, with source code mounted as volumes.</p>
+
+<pre><code><span class="comment"># Start core services (backend, frontend, postgres, valkey, opensearch)</span>
+docker compose up -d
+
+<span class="comment"># Optional: Start with OpenSearch Dashboards</span>
+docker compose <span class="flag">--profile dashboards</span> up -d
+
+<span class="comment"># Optional: Start with Kafka (Redpanda)</span>
+docker compose <span class="flag">--profile kafka</span> up -d
+
+<span class="comment"># Optional: Start everything</span>
+docker compose <span class="flag">--profile dashboards --profile kafka</span> up -d</code></pre>
+
+<h4>Service Overview</h4>
+<table>
+  <thead>
+    <tr><th>Service</th><th>Image</th><th>Port</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>backend</code></td><td>Python 3.12-slim</td><td>8080</td><td>FastAPI + Uvicorn (--reload)</td></tr>
+    <tr><td><code>frontend</code></td><td>Node 20-slim</td><td>5173</td><td>Vite dev server (HMR)</td></tr>
+    <tr><td><code>postgres</code></td><td>postgres:16-alpine</td><td>5432</td><td>User: mxtac / Pass: mxtac</td></tr>
+    <tr><td><code>redis</code></td><td>valkey/valkey:8-alpine</td><td>6379</td><td>BSD-licensed Redis alternative</td></tr>
+    <tr><td><code>opensearch</code></td><td>opensearch:2.17.0</td><td>9200</td><td>Security plugin disabled</td></tr>
+    <tr><td><code>redpanda</code></td><td>redpanda:v24.3.1</td><td>19092</td><td>Optional, <code>--profile kafka</code></td></tr>
+    <tr><td><code>opensearch-dashboards</code></td><td>opensearch-dashboards:2.17.0</td><td>5601</td><td>Optional, <code>--profile dashboards</code></td></tr>
+  </tbody>
+</table>
+
+<h4>Manage Services</h4>
+<pre><code><span class="comment"># View logs</span>
+docker compose logs <span class="flag">-f</span> backend
+
+<span class="comment"># Restart a single service</span>
+docker compose restart backend
+
+<span class="comment"># Stop everything</span>
+docker compose down
+
+<span class="comment"># Stop and remove volumes (clean reset)</span>
+docker compose down <span class="flag">-v</span></code></pre>
+
+<!-- Docker Prod -->
+<h3 id="install-prod">Docker Compose (Production)</h3>
+<p>The production setup uses pre-built images, Nginx reverse proxy, and secure defaults.</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Create production environment file</h4>
+    <pre><code><span class="comment"># Create .env for production</span>
+cat &gt; .env &lt;&lt;'EOF'
+DOMAIN=mxtac.example.com
+SECRET_KEY=<span class="value">$(openssl rand -hex 32)</span>
+POSTGRES_PASSWORD=<span class="value">$(openssl rand -base64 24)</span>
+EOF</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Prepare TLS certificates</h4>
+    <pre><code>mkdir -p nginx/ssl
+<span class="comment"># Copy your certificates</span>
+cp /path/to/fullchain.pem nginx/ssl/
+cp /path/to/privkey.pem nginx/ssl/</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Deploy</h4>
+    <pre><code>docker compose <span class="flag">-f docker-compose.prod.yml</span> up -d</code></pre>
+  </div>
+</div>
+
+<div class="callout danger">
+  <div class="callout-title">Security Checklist (Production)</div>
+  <ul style="margin-top:6px;margin-bottom:0">
+    <li>Replace <code>SECRET_KEY</code> with a strong random value</li>
+    <li>Set a strong <code>POSTGRES_PASSWORD</code></li>
+    <li>Enable TLS/HTTPS via Nginx</li>
+    <li>Set <code>DEBUG=false</code></li>
+    <li>Restrict <code>CORS_ORIGINS</code> to your domain only</li>
+    <li>Enable OpenSearch security plugin</li>
+    <li>Change default user credentials on first login</li>
+  </ul>
+</div>
+
+<!-- Manual -->
+<h3 id="install-manual">Manual Setup</h3>
+<p>For environments where Docker is not available. Requires Python 3.12+, Node.js 20+, PostgreSQL 16, and OpenSearch 2.17.</p>
+
+<h4>Backend</h4>
+<pre><code>cd app/backend
+
+<span class="comment"># Create virtual environment</span>
+python3 -m venv .venv
+source .venv/bin/activate
+
+<span class="comment"># Install dependencies</span>
+pip install -r requirements.txt
+
+<span class="comment"># Configure environment</span>
+cp .env.example .env
+<span class="comment"># Edit .env with your database credentials, OpenSearch host, etc.</span>
+
+<span class="comment"># Run database migrations</span>
+alembic upgrade head
+
+<span class="comment"># Start the API server</span>
+uvicorn app.main:app <span class="flag">--host</span> 0.0.0.0 <span class="flag">--port</span> 8080</code></pre>
+
+<h4>Frontend</h4>
+<pre><code>cd app/frontend
+
+<span class="comment"># Install dependencies</span>
+npm install
+
+<span class="comment"># Development mode</span>
+npm run dev
+
+<span class="comment"># Production build</span>
+npm run build
+<span class="comment"># Serve dist/ with Nginx or any static file server</span></code></pre>
+
+<!-- Verify -->
+<h3 id="install-verify">Verify Installation</h3>
+<pre><code><span class="comment"># Health check</span>
+curl http://localhost:8080/ready
+<span class="comment"># Expected: {"status": "ok"}</span>
+
+<span class="comment"># API docs (Swagger UI)</span>
+curl -s http://localhost:8080/docs | head -1
+
+<span class="comment"># OpenSearch connectivity</span>
+curl http://localhost:9200/_cluster/health?pretty
+
+<span class="comment"># PostgreSQL connectivity</span>
+docker compose exec postgres pg_isready -U mxtac
+<span class="comment"># Expected: accepting connections</span>
+
+<span class="comment"># Check all containers are healthy</span>
+docker compose ps</code></pre>
+
+<!-- ──────────────────── CONFIGURATION ──────────────────── -->
+<h2 id="configuration">Configuration</h2>
+
+<h3 id="config-backend">Backend Environment Variables</h3>
+<p>All backend configuration is via environment variables, loaded from <code>.env</code> in the backend directory.</p>
+
+<table>
+  <thead>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>APP_NAME</code></td><td><em>MxTac API</em></td><td>Application display name</td></tr>
+    <tr><td><code>VERSION</code></td><td><em>2.0.0</em></td><td>API version string</td></tr>
+    <tr><td><code>DEBUG</code></td><td><em>false</em></td><td>Enable debug mode (never in production)</td></tr>
+    <tr><td><code>SECRET_KEY</code></td><td>&mdash;</td><td><strong>Required.</strong> JWT signing key. Generate with <code>openssl rand -hex 32</code></td></tr>
+    <tr><td><code>ACCESS_TOKEN_EXPIRE_MINUTES</code></td><td><em>60</em></td><td>JWT access token TTL</td></tr>
+    <tr><td><code>REFRESH_TOKEN_EXPIRE_DAYS</code></td><td><em>7</em></td><td>JWT refresh token TTL</td></tr>
+    <tr><td><code>DATABASE_URL</code></td><td>&mdash;</td><td>PostgreSQL async URL. Format: <code>postgresql+asyncpg://user:pass@host:5432/db</code></td></tr>
+    <tr><td><code>VALKEY_URL</code></td><td><em>redis://localhost:6379/0</em></td><td>Valkey/Redis connection URL</td></tr>
+    <tr><td><code>OPENSEARCH_HOST</code></td><td><em>localhost</em></td><td>OpenSearch hostname</td></tr>
+    <tr><td><code>OPENSEARCH_PORT</code></td><td><em>9200</em></td><td>OpenSearch port</td></tr>
+    <tr><td><code>OPENSEARCH_USERNAME</code></td><td>&mdash;</td><td>OpenSearch user (if security enabled)</td></tr>
+    <tr><td><code>OPENSEARCH_PASSWORD</code></td><td>&mdash;</td><td>OpenSearch password (if security enabled)</td></tr>
+    <tr><td><code>OPENSEARCH_USE_SSL</code></td><td><em>false</em></td><td>Enable TLS to OpenSearch</td></tr>
+    <tr><td><code>QUEUE_BACKEND</code></td><td><em>memory</em></td><td>Queue type: <code>memory</code> or <code>kafka</code></td></tr>
+    <tr><td><code>KAFKA_BOOTSTRAP_SERVERS</code></td><td><em>localhost:9092</em></td><td>Kafka/Redpanda broker addresses</td></tr>
+    <tr><td><code>KAFKA_CONSUMER_GROUP</code></td><td><em>mxtac</em></td><td>Kafka consumer group ID</td></tr>
+    <tr><td><code>RATE_LIMIT_PER_MINUTE</code></td><td><em>300</em></td><td>API rate limit per client per minute</td></tr>
+    <tr><td><code>CORS_ORIGINS</code></td><td><em>["http://localhost:5173"]</em></td><td>Allowed CORS origins (JSON array)</td></tr>
+  </tbody>
+</table>
+
+<h3 id="config-frontend">Frontend Environment Variables</h3>
+<table>
+  <thead>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>VITE_API_BASE_URL</code></td><td><em>http://localhost:8080</em></td><td>Backend API URL. Set to production URL when deploying.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout info">
+  <div class="callout-title">Note</div>
+  Frontend variables prefixed with <code>VITE_</code> are embedded at build time. After changing them, you must rebuild the frontend.
+</div>
+
+<!-- Auth -->
+<h3 id="config-auth">Authentication</h3>
+<p>MxTac supports two authentication methods:</p>
+
+<h4>JWT Bearer Tokens (Web UI)</h4>
+<pre><code><span class="comment"># Login to get tokens</span>
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "analyst@mxtac.local", "password": "mxtac2026"}'
+
+<span class="comment"># Response: {"access_token": "eyJ...", "refresh_token": "eyJ...", "token_type": "bearer"}</span>
+
+<span class="comment"># Use access token for API calls</span>
+curl http://localhost:8080/api/v1/overview/kpis \
+  -H "Authorization: Bearer eyJ..."</code></pre>
+
+<h4>API Keys (Automation)</h4>
+<pre><code><span class="comment"># Generate an API key via the Admin panel or API</span>
+curl http://localhost:8080/api/v1/detections \
+  -H "X-API-Key: mx_key_..."</code></pre>
+
+<h4>Token Lifetime Configuration</h4>
+<table>
+  <tr><td><code>ACCESS_TOKEN_EXPIRE_MINUTES</code></td><td>Short-lived (default: 60 min). Used for API requests.</td></tr>
+  <tr><td><code>REFRESH_TOKEN_EXPIRE_DAYS</code></td><td>Long-lived (default: 7 days). Used to rotate access tokens.</td></tr>
+</table>
+
+<!-- Database -->
+<h3 id="config-database">Database (PostgreSQL)</h3>
+<p>PostgreSQL 16 stores user accounts, rule metadata, connector configurations, and alert state.</p>
+
+<pre><code><span class="comment"># Connection string format</span>
+DATABASE_URL=postgresql+asyncpg://<span class="value">user</span>:<span class="value">password</span>@<span class="value">host</span>:<span class="value">5432</span>/<span class="value">database</span>
+
+<span class="comment"># Run migrations</span>
+cd app/backend
+alembic upgrade head
+
+<span class="comment"># Check migration status</span>
+alembic current
+
+<span class="comment"># Create a new migration</span>
+alembic revision --autogenerate -m "description"</code></pre>
+
+<div class="callout info">
+  <div class="callout-title">Tip</div>
+  In Docker Compose, migrations run automatically on container start. For manual installs, run <code>alembic upgrade head</code> after every update.
+</div>
+
+<!-- OpenSearch -->
+<h3 id="config-opensearch">OpenSearch</h3>
+<p>OpenSearch 2.17 serves as the event store for normalized security events (OCSF schema).</p>
+
+<pre><code><span class="comment"># Basic (no auth)</span>
+OPENSEARCH_HOST=opensearch
+OPENSEARCH_PORT=9200
+OPENSEARCH_USE_SSL=false
+
+<span class="comment"># With security enabled</span>
+OPENSEARCH_HOST=opensearch.internal
+OPENSEARCH_PORT=9200
+OPENSEARCH_USERNAME=admin
+OPENSEARCH_PASSWORD=<span class="value">StrongP@ss</span>
+OPENSEARCH_USE_SSL=true</code></pre>
+
+<h4>Performance Tuning</h4>
+<pre><code><span class="comment"># docker-compose.yml — increase JVM heap for production</span>
+environment:
+  - "OPENSEARCH_JAVA_OPTS=<span class="flag">-Xms2g -Xmx2g</span>"  <span class="comment"># 50% of available RAM, max 32g</span></code></pre>
+
+<h4>Index Lifecycle</h4>
+<p>MxTac creates daily indices with the pattern <code>mxtac-events-YYYY.MM.DD</code>. Configure retention with ISM (Index State Management) policies:</p>
+<pre><code><span class="comment"># Example: Delete indices older than 90 days</span>
+curl -X PUT "http://localhost:9200/_plugins/_ism/policies/mxtac-retention" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "policy": {
+      "description": "MxTac event retention",
+      "states": [
+        { "name": "hot", "actions": [], "transitions": [
+          { "state_name": "delete", "conditions": { "min_index_age": "90d" } }
+        ]},
+        { "name": "delete", "actions": [{ "delete": {} }] }
+      ]
+    }
+  }'</code></pre>
+
+<!-- Queue -->
+<h3 id="config-queue">Message Queue</h3>
+<p>MxTac supports two queue backends:</p>
+
+<table>
+  <thead>
+    <tr><th>Backend</th><th>Config Value</th><th>Use Case</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>In-Memory</strong></td><td><code>QUEUE_BACKEND=memory</code></td><td>Development, single-instance deployments</td></tr>
+    <tr><td><strong>Kafka / Redpanda</strong></td><td><code>QUEUE_BACKEND=kafka</code></td><td>Production, multi-instance, high throughput</td></tr>
+  </tbody>
+</table>
+
+<pre><code><span class="comment"># Enable Kafka (Redpanda)</span>
+QUEUE_BACKEND=kafka
+KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+KAFKA_CONSUMER_GROUP=mxtac
+
+<span class="comment"># Start Redpanda with docker compose</span>
+docker compose <span class="flag">--profile kafka</span> up -d</code></pre>
+
+<!-- CORS -->
+<h3 id="config-cors">CORS & Security</h3>
+<pre><code><span class="comment"># Development (allow localhost)</span>
+CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
+
+<span class="comment"># Production (restrict to your domain)</span>
+CORS_ORIGINS=["https://mxtac.example.com"]
+
+<span class="comment"># Rate limiting</span>
+RATE_LIMIT_PER_MINUTE=300  <span class="comment"># Reduce in production if needed</span></code></pre>
+
+<!-- TLS -->
+<h3 id="config-tls">TLS / HTTPS</h3>
+<p>In production, terminate TLS at the Nginx reverse proxy.</p>
+
+<pre><code><span class="comment"># nginx/nginx.conf (minimal example)</span>
+server {
+    listen 443 ssl http2;
+    server_name mxtac.example.com;
+
+    ssl_certificate     /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    <span class="comment"># Frontend (static files)</span>
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    <span class="comment"># Backend API proxy</span>
+    location /api/ {
+        proxy_pass http://backend:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    <span class="comment"># WebSocket proxy</span>
+    location /ws {
+        proxy_pass http://backend:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+<span class="comment"># HTTP redirect</span>
+server {
+    listen 80;
+    server_name mxtac.example.com;
+    return 301 https://$host$request_uri;
+}</code></pre>
+
+<!-- ──────────────────── AGENTS ──────────────────── -->
+<h2 id="agents">Agents</h2>
+
+<h3 id="agent-overview">Agent Overview</h3>
+<p>MxTac ships two lightweight detection agents, both written in <strong>Rust</strong> for minimal resource footprint. They output native <strong>OCSF events</strong> directly &mdash; no conversion layer required.</p>
+
+<table>
+  <thead>
+    <tr><th>Agent</th><th>Type</th><th>RAM</th><th>CPU</th><th>Binary Size</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>MxGuard</strong></td><td>EDR (Endpoint)</td><td>10-30 MB</td><td>0.5-1%</td><td>Single static binary</td></tr>
+    <tr><td><strong>MxWatch</strong></td><td>NDR (Network)</td><td>40-120 MB</td><td>1-3% per core</td><td>Single static binary</td></tr>
+  </tbody>
+</table>
+
+<!-- MxGuard -->
+<h3 id="agent-mxguard">MxGuard (Endpoint Detection & Response)</h3>
+<p>MxGuard monitors file integrity, processes, network connections, authentication, registry, and scheduled tasks.</p>
+
+<h4>Installation</h4>
+<pre><code><span class="comment"># Download the latest release (Linux x86_64)</span>
+curl -LO https://github.com/fankh/new-research/releases/latest/download/mxguard-linux-amd64
+chmod +x mxguard-linux-amd64
+sudo mv mxguard-linux-amd64 /usr/local/bin/mxguard
+
+<span class="comment"># Or build from source</span>
+cd agents/mxguard
+cargo build <span class="flag">--release</span>
+sudo cp target/release/mxguard /usr/local/bin/</code></pre>
+
+<h4>Configuration</h4>
+<pre><code><span class="comment"># /etc/mxguard/config.toml</span>
+[server]
+mxtac_url = <span class="string">"https://mxtac.example.com"</span>
+api_key   = <span class="string">"mx_key_..."</span>
+interval  = <span class="value">30</span>   <span class="comment"># seconds between collection cycles</span>
+
+[modules]
+file_integrity  = <span class="keyword">true</span>     <span class="comment"># T1105, T1547, T1574, T1036</span>
+process_monitor = <span class="keyword">true</span>     <span class="comment"># T1059, T1106, T1055, T1003</span>
+network_monitor = <span class="keyword">true</span>     <span class="comment"># T1071, T1095, T1021</span>
+auth_monitor    = <span class="keyword">true</span>     <span class="comment"># T1078, T1110, T1136</span>
+registry_watch  = <span class="keyword">true</span>     <span class="comment"># T1547, T1112, T1574 (Windows only)</span>
+schtask_watch   = <span class="keyword">true</span>     <span class="comment"># T1053</span>
+
+[file_integrity]
+watch_paths = [<span class="string">"/etc"</span>, <span class="string">"/usr/bin"</span>, <span class="string">"/usr/sbin"</span>]
+exclude     = [<span class="string">"*.log"</span>, <span class="string">"*.tmp"</span>]</code></pre>
+
+<h4>Run as a systemd service</h4>
+<pre><code><span class="comment"># /etc/systemd/system/mxguard.service</span>
+[Unit]
+Description=MxGuard EDR Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mxguard <span class="flag">--config</span> /etc/mxguard/config.toml
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target</code></pre>
+
+<pre><code>sudo systemctl daemon-reload
+sudo systemctl enable <span class="flag">--now</span> mxguard
+sudo systemctl status mxguard</code></pre>
+
+<!-- MxWatch -->
+<h3 id="agent-mxwatch">MxWatch (Network Detection & Response)</h3>
+<p>MxWatch captures and analyzes network traffic for C2 beacons, port scans, data exfiltration, and DNS tunneling.</p>
+
+<h4>Performance</h4>
+<table>
+  <thead>
+    <tr><th>Platform</th><th>Capture Engine</th><th>Throughput</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Linux</td><td>AF_PACKET + MMAP</td><td>1-5M pps</td></tr>
+    <tr><td>Windows / macOS</td><td>libpcap</td><td>~100K pps</td></tr>
+  </tbody>
+</table>
+
+<h4>Supported Protocols</h4>
+<p><code>HTTP/HTTPS</code> <code>DNS</code> <code>TLS/SSL</code> <code>SMB</code> <code>SSH</code> <code>FTP</code> <code>SMTP</code> <code>LDAP</code> <code>RDP</code> <code>DHCP</code> <code>NTP</code> <code>ICMP</code></p>
+
+<h4>Configuration</h4>
+<pre><code><span class="comment"># /etc/mxwatch/config.toml</span>
+[server]
+mxtac_url = <span class="string">"https://mxtac.example.com"</span>
+api_key   = <span class="string">"mx_key_..."</span>
+
+[capture]
+interface = <span class="string">"eth0"</span>
+bpf_filter = <span class="string">"not port 22"</span>    <span class="comment"># Exclude SSH management traffic</span>
+
+[detection]
+c2_beacon     = <span class="keyword">true</span>    <span class="comment"># Timing analysis for periodic callbacks</span>
+port_scan     = <span class="keyword">true</span>    <span class="comment"># SYN scan / connect scan detection</span>
+exfiltration  = <span class="keyword">true</span>    <span class="comment"># Large outbound data transfer alerts</span>
+dns_tunnel    = <span class="keyword">true</span>    <span class="comment"># High-entropy DNS query detection</span></code></pre>
+
+<!-- Agent Scheduler -->
+<h3 id="agent-scheduler">Agent Scheduler</h3>
+<p>The Agent Scheduler manages distributed task execution across MxGuard and MxWatch instances. It provides centralized task scheduling, status monitoring, and result collection.</p>
+<pre><code><span class="comment"># Start the scheduler service</span>
+cd agent-scheduler/backend
+source .venv/bin/activate
+python -m agent_scheduler
+
+<span class="comment"># Start the scheduler UI</span>
+cd agent-scheduler/frontend
+npm run dev</code></pre>
+
+<!-- ──────────────────── INTEGRATIONS ──────────────────── -->
+<h2 id="integrations">Integrations</h2>
+<p>MxTac integrates with existing OSS security tools via <strong>connectors</strong>. Each connector normalizes events to the <strong>OCSF</strong> (Open Cybersecurity Schema Framework) standard.</p>
+
+<!-- Wazuh -->
+<h3 id="int-wazuh">Wazuh (HIDS / EDR)</h3>
+<p>Wazuh 4.7+ provides host-based intrusion detection, file integrity monitoring, and vulnerability assessment.</p>
+
+<h4>Connect to Wazuh</h4>
+<ol>
+  <li>Navigate to <strong>Settings &gt; Integrations</strong> in the MxTac dashboard</li>
+  <li>Click <strong>Add Integration</strong> &gt; <strong>Wazuh</strong></li>
+  <li>Enter your Wazuh API credentials:</li>
+</ol>
+
+<table>
+  <tr><td><strong>API URL</strong></td><td><code>https://wazuh-manager:55000</code></td></tr>
+  <tr><td><strong>Username</strong></td><td>Wazuh API user</td></tr>
+  <tr><td><strong>Password</strong></td><td>Wazuh API password</td></tr>
+  <tr><td><strong>Verify SSL</strong></td><td>true (recommended)</td></tr>
+</table>
+
+<h4>API Configuration (Alternative)</h4>
+<pre><code>curl -X POST http://localhost:8080/api/v1/integrations \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "wazuh",
+    "name": "Production Wazuh",
+    "config": {
+      "api_url": "<span class="string">https://wazuh-manager:55000</span>",
+      "username": "<span class="value">wazuh-user</span>",
+      "password": "<span class="value">wazuh-pass</span>",
+      "verify_ssl": true
+    }
+  }'</code></pre>
+
+<!-- Zeek -->
+<h3 id="int-zeek">Zeek (Network Analysis)</h3>
+<p>Zeek 6.x provides deep network traffic analysis, protocol parsing, and connection logging.</p>
+
+<h4>Connect to Zeek</h4>
+<ol>
+  <li>Configure Zeek to output JSON logs to a shared directory or Kafka topic</li>
+  <li>In MxTac: <strong>Settings &gt; Integrations &gt; Add &gt; Zeek</strong></li>
+</ol>
+
+<table>
+  <tr><td><strong>Log Path</strong></td><td><code>/opt/zeek/logs/current/</code></td></tr>
+  <tr><td><strong>Format</strong></td><td>JSON (set <code>@load policy/tuning/json-logs.zeek</code>)</td></tr>
+  <tr><td><strong>Kafka Topic</strong></td><td><code>zeek-events</code> (if using Kafka output)</td></tr>
+</table>
+
+<div class="callout info">
+  <div class="callout-title">Zeek JSON Output</div>
+  Ensure Zeek is configured for JSON output. Add <code>@load policy/tuning/json-logs.zeek</code> to your <code>local.zeek</code> configuration.
+</div>
+
+<!-- Suricata -->
+<h3 id="int-suricata">Suricata (IDS/IPS)</h3>
+<p>Suricata 7.x provides signature-based and anomaly-based intrusion detection.</p>
+
+<h4>Connect to Suricata</h4>
+<table>
+  <tr><td><strong>EVE Log Path</strong></td><td><code>/var/log/suricata/eve.json</code></td></tr>
+  <tr><td><strong>Format</strong></td><td>EVE JSON (default)</td></tr>
+  <tr><td><strong>Kafka Topic</strong></td><td><code>suricata-events</code> (if using Kafka output)</td></tr>
+</table>
+
+<pre><code><span class="comment"># suricata.yaml — ensure EVE JSON output</span>
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert
+        - dns
+        - http
+        - tls
+        - flow</code></pre>
+
+<!-- Sigma -->
+<h3 id="int-sigma">Sigma Rules</h3>
+<p>MxTac executes Sigma rules natively via <strong>pySigma</strong>. No conversion to backend-specific query language needed.</p>
+
+<h4>Upload Rules</h4>
+<pre><code><span class="comment"># Upload a single rule</span>
+curl -X POST http://localhost:8080/api/v1/rules \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@proc_creation_win_powershell_download.yml"
+
+<span class="comment"># Upload a directory of rules</span>
+for f in sigma_rules/*.yml; do
+  curl -X POST http://localhost:8080/api/v1/rules \
+    -H "Authorization: Bearer $TOKEN" \
+    -F "file=@$f"
+done</code></pre>
+
+<h4>Rule Directory</h4>
+<p>Place Sigma rules in <code>app/backend/sigma_rules/</code> for automatic loading at startup.</p>
+
+<pre><code>sigma_rules/
+  windows/
+    process_creation/
+    file_event/
+  linux/
+    auditd/
+  network/
+    dns/
+    proxy/</code></pre>
+
+<!-- ──────────────────── KUBERNETES ──────────────────── -->
+<h2 id="kubernetes">Kubernetes Deployment (K3s)</h2>
+<p>MxTac ships with K3s manifests for production-grade Kubernetes deployment.</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h4>Install K3s</h4>
+    <pre><code>curl -sfL https://get.k3s.io | sh -</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h4>Create namespace</h4>
+    <pre><code>kubectl apply -f app/deploy/k3s/namespace.yaml</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h4>Deploy data stores</h4>
+    <pre><code>kubectl apply -f app/deploy/k3s/postgres-statefulset.yaml
+kubectl apply -f app/deploy/k3s/opensearch-statefulset.yaml
+kubectl apply -f app/deploy/k3s/valkey-statefulset.yaml</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <h4>Deploy application</h4>
+    <pre><code>kubectl apply -f app/deploy/k3s/backend-deployment.yaml
+kubectl apply -f app/deploy/k3s/backend-service.yaml
+kubectl apply -f app/deploy/k3s/frontend-deployment.yaml
+kubectl apply -f app/deploy/k3s/ingress.yaml</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <h4>Enable autoscaling</h4>
+    <pre><code>kubectl apply -f app/deploy/k3s/hpa.yaml
+
+<span class="comment"># Verify HPA</span>
+kubectl get hpa -n mxtac</code></pre>
+  </div>
+</div>
+
+<h4>Available K3s Manifests</h4>
+<table>
+  <thead>
+    <tr><th>File</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>namespace.yaml</code></td><td>MxTac namespace</td></tr>
+    <tr><td><code>postgres-statefulset.yaml</code></td><td>PostgreSQL 16 with PV</td></tr>
+    <tr><td><code>opensearch-statefulset.yaml</code></td><td>OpenSearch 2.17 cluster</td></tr>
+    <tr><td><code>valkey-statefulset.yaml</code></td><td>Valkey cache with persistence</td></tr>
+    <tr><td><code>backend-deployment.yaml</code></td><td>FastAPI backend pods</td></tr>
+    <tr><td><code>backend-service.yaml</code></td><td>Backend ClusterIP service</td></tr>
+    <tr><td><code>frontend-deployment.yaml</code></td><td>Nginx + static frontend</td></tr>
+    <tr><td><code>ingress.yaml</code></td><td>Traefik ingress (K3s default)</td></tr>
+    <tr><td><code>hpa.yaml</code></td><td>Horizontal Pod Autoscaler</td></tr>
+  </tbody>
+</table>
+
+<!-- ──────────────────── MONITORING ──────────────────── -->
+<h2 id="monitoring">Monitoring</h2>
+<p>MxTac exposes <strong>Prometheus metrics</strong> at <code>/metrics</code> on the backend.</p>
+
+<h4>Key Metrics</h4>
+<table>
+  <thead>
+    <tr><th>Metric</th><th>Type</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>http_requests_total</code></td><td>Counter</td><td>Total HTTP requests by method, path, status</td></tr>
+    <tr><td><code>http_request_duration_seconds</code></td><td>Histogram</td><td>Request latency distribution</td></tr>
+    <tr><td><code>mxtac_events_ingested_total</code></td><td>Counter</td><td>Events ingested per source</td></tr>
+    <tr><td><code>mxtac_sigma_rules_loaded</code></td><td>Gauge</td><td>Number of active Sigma rules</td></tr>
+    <tr><td><code>mxtac_alerts_generated_total</code></td><td>Counter</td><td>Alerts generated per severity</td></tr>
+  </tbody>
+</table>
+
+<h4>Grafana Dashboard</h4>
+<p>Import the included Grafana dashboard from <code>app/deploy/monitoring/</code>:</p>
+<pre><code><span class="comment"># Prometheus scrape config</span>
+scrape_configs:
+  - job_name: mxtac
+    static_configs:
+      - targets: ['backend:8080']</code></pre>
+
+<!-- ──────────────────── BACKUP ──────────────────── -->
+<h2 id="backup">Backup & Restore</h2>
+
+<h4>PostgreSQL</h4>
+<pre><code><span class="comment"># Backup</span>
+docker compose exec postgres pg_dump -U mxtac mxtac | gzip > mxtac_db_$(date +%F).sql.gz
+
+<span class="comment"># Restore</span>
+gunzip -c mxtac_db_2026-02-20.sql.gz | docker compose exec -T postgres psql -U mxtac mxtac</code></pre>
+
+<h4>OpenSearch</h4>
+<pre><code><span class="comment"># Register snapshot repository</span>
+curl -X PUT "http://localhost:9200/_snapshot/backup" \
+  -H "Content-Type: application/json" \
+  -d '{"type": "fs", "settings": {"location": "/snapshots"}}'
+
+<span class="comment"># Create snapshot</span>
+curl -X PUT "http://localhost:9200/_snapshot/backup/snap_$(date +%F)?wait_for_completion=true"
+
+<span class="comment"># Restore</span>
+curl -X POST "http://localhost:9200/_snapshot/backup/snap_2026-02-20/_restore"</code></pre>
+
+<!-- ──────────────────── API REFERENCE ──────────────────── -->
+<h2 id="api-ref">API Reference</h2>
+<p>Full interactive API documentation is available at <code>/docs</code> (Swagger UI) and <code>/redoc</code> (ReDoc) when the backend is running.</p>
+
+<h4>Key Endpoints</h4>
+<table>
+  <thead>
+    <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>POST</code></td><td><code>/api/v1/auth/login</code></td><td>Authenticate and get JWT tokens</td></tr>
+    <tr><td><code>POST</code></td><td><code>/api/v1/auth/refresh</code></td><td>Refresh access token</td></tr>
+    <tr><td><code>GET</code></td><td><code>/api/v1/overview/kpis</code></td><td>Dashboard KPI metrics</td></tr>
+    <tr><td><code>GET</code></td><td><code>/api/v1/overview/tactics</code></td><td>ATT&CK tactics breakdown</td></tr>
+    <tr><td><code>GET</code></td><td><code>/api/v1/detections</code></td><td>Paginated alert list with filters</td></tr>
+    <tr><td><code>GET</code></td><td><code>/api/v1/detections/{id}</code></td><td>Single alert detail with raw event</td></tr>
+    <tr><td><code>PATCH</code></td><td><code>/api/v1/detections/{id}</code></td><td>Update alert status / assignment</td></tr>
+    <tr><td><code>GET</code></td><td><code>/api/v1/coverage/heatmap</code></td><td>ATT&CK coverage heatmap data</td></tr>
+    <tr><td><code>GET</code></td><td><code>/api/v1/integrations</code></td><td>List configured integrations</td></tr>
+    <tr><td><code>POST</code></td><td><code>/api/v1/integrations</code></td><td>Add new integration connector</td></tr>
+    <tr><td><code>GET</code></td><td><code>/api/v1/rules</code></td><td>List Sigma rules</td></tr>
+    <tr><td><code>POST</code></td><td><code>/api/v1/rules</code></td><td>Upload Sigma rule</td></tr>
+    <tr><td><code>GET</code></td><td><code>/ready</code></td><td>Health check endpoint</td></tr>
+    <tr><td><code>GET</code></td><td><code>/metrics</code></td><td>Prometheus metrics</td></tr>
+  </tbody>
+</table>
+
+<!-- ──────────────────── ENV REFERENCE ──────────────────── -->
+<h2 id="env-ref">Environment Variable Reference</h2>
+<p>Complete list of all environment variables. See <a href="#config-backend">Configuration</a> section for detailed descriptions.</p>
+
+<pre><code><span class="comment"># ── App ─────────────────────────────────────────────</span>
+APP_NAME=<span class="string">MxTac API</span>
+VERSION=<span class="string">2.0.0</span>
+DEBUG=<span class="value">false</span>
+
+<span class="comment"># ── Auth ────────────────────────────────────────────</span>
+SECRET_KEY=<span class="value">&lt;openssl rand -hex 32&gt;</span>
+ACCESS_TOKEN_EXPIRE_MINUTES=<span class="value">60</span>
+REFRESH_TOKEN_EXPIRE_DAYS=<span class="value">7</span>
+
+<span class="comment"># ── Database ────────────────────────────────────────</span>
+DATABASE_URL=<span class="string">postgresql+asyncpg://mxtac:password@postgres:5432/mxtac</span>
+
+<span class="comment"># ── Valkey ──────────────────────────────────────────</span>
+VALKEY_URL=<span class="string">redis://redis:6379/0</span>
+
+<span class="comment"># ── Queue ───────────────────────────────────────────</span>
+QUEUE_BACKEND=<span class="value">memory</span>
+KAFKA_BOOTSTRAP_SERVERS=<span class="string">redpanda:9092</span>
+KAFKA_CONSUMER_GROUP=<span class="string">mxtac</span>
+
+<span class="comment"># ── OpenSearch ──────────────────────────────────────</span>
+OPENSEARCH_HOST=<span class="string">opensearch</span>
+OPENSEARCH_PORT=<span class="value">9200</span>
+OPENSEARCH_USERNAME=
+OPENSEARCH_PASSWORD=
+OPENSEARCH_USE_SSL=<span class="value">false</span>
+
+<span class="comment"># ── Rate Limiting ───────────────────────────────────</span>
+RATE_LIMIT_PER_MINUTE=<span class="value">300</span>
+
+<span class="comment"># ── CORS ────────────────────────────────────────────</span>
+CORS_ORIGINS=<span class="string">["http://localhost:5173"]</span>
+
+<span class="comment"># ── Frontend ────────────────────────────────────────</span>
+VITE_API_BASE_URL=<span class="string">http://localhost:8080</span></code></pre>
+
+<!-- ──────────────────── PORT REFERENCE ──────────────────── -->
+<h2 id="ports">Port Reference</h2>
+<table>
+  <thead>
+    <tr><th>Port</th><th>Service</th><th>Protocol</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>80</code></td><td>Nginx (HTTP)</td><td>TCP</td><td>Production only, redirects to 443</td></tr>
+    <tr><td><code>443</code></td><td>Nginx (HTTPS)</td><td>TCP</td><td>Production reverse proxy</td></tr>
+    <tr><td><code>5173</code></td><td>Frontend (Vite)</td><td>TCP</td><td>Development only</td></tr>
+    <tr><td><code>8080</code></td><td>Backend API</td><td>TCP</td><td>FastAPI + Uvicorn</td></tr>
+    <tr><td><code>5432</code></td><td>PostgreSQL</td><td>TCP</td><td>Metadata database</td></tr>
+    <tr><td><code>6379</code></td><td>Valkey / Redis</td><td>TCP</td><td>Cache and sessions</td></tr>
+    <tr><td><code>9200</code></td><td>OpenSearch</td><td>TCP</td><td>REST API + event store</td></tr>
+    <tr><td><code>9600</code></td><td>OpenSearch Performance</td><td>TCP</td><td>Performance Analyzer</td></tr>
+    <tr><td><code>5601</code></td><td>OpenSearch Dashboards</td><td>TCP</td><td>Optional (--profile dashboards)</td></tr>
+    <tr><td><code>19092</code></td><td>Redpanda (Kafka)</td><td>TCP</td><td>Optional (--profile kafka)</td></tr>
+    <tr><td><code>9644</code></td><td>Redpanda Admin</td><td>TCP</td><td>Redpanda HTTP admin API</td></tr>
+  </tbody>
+</table>
+
+<!-- ──────────────────── TROUBLESHOOTING ──────────────────── -->
+<h2 id="troubleshooting">Troubleshooting</h2>
+
+<h3>Common Issues</h3>
+
+<h4>Backend won't start: "Connection refused" to PostgreSQL</h4>
+<pre><code><span class="comment"># Ensure PostgreSQL is healthy</span>
+docker compose ps postgres
+docker compose logs postgres
+
+<span class="comment"># Check database exists</span>
+docker compose exec postgres psql -U mxtac -c '\l'</code></pre>
+
+<h4>OpenSearch: "max virtual memory areas vm.max_map_count [65530] is too low"</h4>
+<pre><code><span class="comment"># Fix (temporary)</span>
+sudo sysctl -w vm.max_map_count=262144
+
+<span class="comment"># Fix (persistent)</span>
+echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p</code></pre>
+
+<h4>Frontend can't reach backend API</h4>
+<pre><code><span class="comment"># Check CORS_ORIGINS includes your frontend URL</span>
+<span class="comment"># Check VITE_API_BASE_URL points to backend</span>
+<span class="comment"># Check backend is healthy</span>
+curl http://localhost:8080/ready</code></pre>
+
+<h4>High memory usage from OpenSearch</h4>
+<pre><code><span class="comment"># Reduce JVM heap (default is 512m)</span>
+<span class="comment"># In docker-compose.yml:</span>
+environment:
+  - "OPENSEARCH_JAVA_OPTS=<span class="flag">-Xms256m -Xmx256m</span>"</code></pre>
+
+<h4>Containers keep restarting</h4>
+<pre><code><span class="comment"># Check logs for the failing container</span>
+docker compose logs <span class="flag">--tail 50</span> backend
+
+<span class="comment"># Check health status</span>
+docker compose ps
+
+<span class="comment"># Rebuild images after code changes</span>
+docker compose build <span class="flag">--no-cache</span> backend</code></pre>
+
+<h4>Database migration errors</h4>
+<pre><code><span class="comment"># Check current migration state</span>
+docker compose exec backend alembic current
+
+<span class="comment"># Force migration to latest</span>
+docker compose exec backend alembic upgrade head
+
+<span class="comment"># Reset (destructive!)</span>
+docker compose exec backend alembic downgrade base
+docker compose exec backend alembic upgrade head</code></pre>
+
+<!-- ──────────────────── FOOTER ──────────────────── -->
+<div class="footer">
+  MxTac Documentation v2.0 &mdash; 2026-02-20 &mdash; <a href="https://github.com/fankh/new-research">GitHub</a>
+</div>
+
+</main>
+</div>
+
+<!-- ════════════════ Sidebar active state ════════════════ -->
+<script>
+(function() {
+  const links = document.querySelectorAll('.sidebar a');
+  const sections = [];
+  links.forEach(a => {
+    const id = a.getAttribute('href');
+    if (id && id.startsWith('#')) {
+      const el = document.querySelector(id);
+      if (el) sections.push({ el, link: a });
+    }
+  });
+  function update() {
+    let current = sections[0];
+    const scrollY = window.scrollY + 100;
+    for (const s of sections) {
+      if (s.el.offsetTop <= scrollY) current = s;
+    }
+    links.forEach(a => a.classList.remove('active'));
+    if (current) current.link.classList.add('active');
+  }
+  window.addEventListener('scroll', update, { passive: true });
+  update();
+
+  // Navbar active state
+  const navLinks = document.querySelectorAll('.navbar-links a[href^="#"]');
+  navLinks.forEach(a => {
+    a.addEventListener('click', () => {
+      navLinks.forEach(l => l.classList.remove('active'));
+      a.classList.add('active');
+    });
+  });
+})();
+</script>
+</body>
+</html>
