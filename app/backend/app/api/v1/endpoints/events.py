@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ....core.security import get_current_user
+from ....core.rbac import require_permission
 from ....services.opensearch_client import get_opensearch
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -52,7 +52,7 @@ def _build_os_filter(f: EventFilter) -> dict:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/search")
-async def search_events(body: SearchRequest, _: str = Depends(get_current_user)):
+async def search_events(body: SearchRequest, _: dict = Depends(require_permission("events:search"))):
     """Full-text + filtered event search across all indexed data sources."""
     os_filters = [_build_os_filter(f) for f in body.filters]
     result = await get_opensearch().search_events(
@@ -73,7 +73,7 @@ async def search_events(body: SearchRequest, _: str = Depends(get_current_user))
 
 
 @router.get("/{event_id}")
-async def get_event(event_id: str, _: str = Depends(get_current_user)):
+async def get_event(event_id: str, _: dict = Depends(require_permission("events:search"))):
     """Retrieve a single event by ID."""
     event = await get_opensearch().get_event(event_id)
     if not event:
@@ -82,7 +82,7 @@ async def get_event(event_id: str, _: str = Depends(get_current_user)):
 
 
 @router.post("/aggregate")
-async def aggregate_events(body: AggregationRequest, _: str = Depends(get_current_user)):
+async def aggregate_events(body: AggregationRequest, _: dict = Depends(require_permission("events:search"))):
     """Aggregate events by a field (terms, date_histogram)."""
     os = get_opensearch()
     if os._client is None:
@@ -124,7 +124,7 @@ async def entity_timeline(
     entity_type: str,
     entity_value: str,
     time_from: str = "now-7d",
-    _: str = Depends(get_current_user),
+    _: dict = Depends(require_permission("events:search")),
 ):
     """Return all events involving a specific entity (IP, host, user, hash)."""
     field_map = {

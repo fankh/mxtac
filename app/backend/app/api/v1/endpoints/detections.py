@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
-from ....core.security import get_current_user
 from ....schemas.detection import Detection, DetectionUpdate, SeverityLevel, DetectionStatus
 from ....schemas.common import PaginatedResponse, Pagination
 from ....repositories.detection_repo import DetectionRepo
@@ -57,7 +56,7 @@ async def list_detections(
     sort: SortField = Query("time"),
     order: Literal["asc", "desc"] = Query("desc"),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("detections:read")),
 ):
     items, total = await DetectionRepo.list(
         db,
@@ -86,7 +85,7 @@ async def list_detections(
 async def get_detection(
     detection_id: str = Path(..., description="Detection ID"),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("detections:read")),
 ):
     d = await DetectionRepo.get(db, detection_id)
     if not d:

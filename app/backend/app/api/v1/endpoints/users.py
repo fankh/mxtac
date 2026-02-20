@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
-from ....core.security import get_current_user, hash_password
+from ....core.rbac import require_permission
+from ....core.security import hash_password
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -48,7 +49,7 @@ def _user_to_response(u) -> dict:
 @router.get("", response_model=list[UserResponse])
 async def list_users(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("users:read")),
 ):
     from ....repositories.user_repo import UserRepo
     users = await UserRepo.list(db)
@@ -59,7 +60,7 @@ async def list_users(
 async def get_user(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("users:read")),
 ):
     from ....repositories.user_repo import UserRepo
     user = await UserRepo.get_by_id(db, user_id)
@@ -72,7 +73,7 @@ async def get_user(
 async def create_user(
     body: UserCreate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("users:write")),
 ):
     from ....repositories.user_repo import UserRepo
     if body.role not in ROLES:
@@ -95,7 +96,7 @@ async def update_user(
     user_id: str,
     body: UserUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("users:write")),
 ):
     from ....repositories.user_repo import UserRepo
     if body.role is not None and body.role not in ROLES:
@@ -110,7 +111,7 @@ async def update_user(
 async def delete_user(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("users:write")),
 ):
     from ....repositories.user_repo import UserRepo
     deleted = await UserRepo.delete(db, user_id)

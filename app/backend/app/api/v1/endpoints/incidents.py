@@ -122,7 +122,7 @@ async def create_incident(
     body: IncidentCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("detections:write")),
+    current_user: dict = Depends(require_permission("incidents:write")),
 ) -> dict:
     """
     Create a new incident, optionally linking existing detections.

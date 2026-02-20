@@ -23,6 +23,20 @@ Feature 6.4 — Token refresh on 401:
   - re-auth failure propagates out of _fetch_events()
   - 401 on any page (including page 2+) triggers refresh and retry
 
+Feature 6.7 — Publish raw events to mxtac.raw.wazuh:
+  - _poll_loop(): publishes each event from _fetch_events() to the mxtac.raw.wazuh topic
+  - topic string is exactly "mxtac.raw.wazuh"
+  - event payload is published unchanged (no wrapping or transformation)
+  - all events from a single fetch cycle are individually published
+  - health.events_total increments by 1 for each published event
+  - health.last_event_at is updated after each publish
+  - no publish call when _fetch_events yields nothing
+  - health.events_total unchanged when fetch yields nothing
+  - fetch error is caught without crashing the loop
+  - fetch error increments health.errors_total
+  - fetch error stores exception message in health.error_message
+  - multiple events all go to the same mxtac.raw.wazuh topic
+
 Common:
   - Initialisation: client/token None, last_fetched_at ~5 min ago, topic, health status
   - stop(): closes httpx client, clears _client and _token refs, safe when no client
@@ -733,3 +747,250 @@ class TestWazuhConnectorTokenRefresh:
 
         assert len(received) == 101
         assert conn._token == "refreshed"
+
+
+# ── Feature 6.7 — Publish raw events to mxtac.raw.wazuh ───────────────────────
+
+
+class TestWazuhConnectorPublish:
+    """
+    Feature 6.7 — Events from _fetch_events() are published to mxtac.raw.wazuh.
+
+    Tests exercise _poll_loop() via mocked _fetch_events() to verify the publish
+    chain: topic correctness, payload fidelity, counter updates, and error handling.
+    Each test sets conn._stop_event inside the mock generator so the loop exits
+    cleanly after a single iteration without sleeping.
+    """
+
+    async def test_events_published_to_raw_wazuh_topic(self) -> None:
+        """queue.publish() is called with Topic.RAW_WAZUH for each event."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        published_topics: list[str] = []
+        original_publish = conn.queue.publish
+
+        async def capture(topic: str, msg: dict) -> None:
+            published_topics.append(topic)
+            await original_publish(topic, msg)
+
+        conn.queue.publish = capture  # type: ignore[method-assign]
+
+        async def mock_fetch():
+            yield {"id": "1"}
+            conn._stop_event.set()
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert published_topics == [Topic.RAW_WAZUH]
+
+    async def test_topic_is_literal_mxtac_raw_wazuh_string(self) -> None:
+        """The published topic is the exact string 'mxtac.raw.wazuh'."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        published_topics: list[str] = []
+        original_publish = conn.queue.publish
+
+        async def capture(topic: str, msg: dict) -> None:
+            published_topics.append(topic)
+            await original_publish(topic, msg)
+
+        conn.queue.publish = capture  # type: ignore[method-assign]
+
+        async def mock_fetch():
+            yield {"id": "1"}
+            conn._stop_event.set()
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert published_topics[0] == "mxtac.raw.wazuh"
+
+    async def test_event_payload_published_unchanged(self) -> None:
+        """The raw alert dict is published as-is without wrapping or modification."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        alert = {
+            "id": "abc",
+            "rule": {"level": 12, "description": "Brute force"},
+            "agent": {"name": "server-01", "ip": "10.0.0.5"},
+        }
+        published_msgs: list[dict] = []
+        original_publish = conn.queue.publish
+
+        async def capture(topic: str, msg: dict) -> None:
+            published_msgs.append(msg)
+            await original_publish(topic, msg)
+
+        conn.queue.publish = capture  # type: ignore[method-assign]
+
+        async def mock_fetch():
+            yield alert
+            conn._stop_event.set()
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert published_msgs == [alert]
+
+    async def test_all_events_from_single_cycle_are_published(self) -> None:
+        """Every event yielded in one fetch cycle is individually published."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        alerts = [{"id": str(i)} for i in range(5)]
+        published_msgs: list[dict] = []
+        original_publish = conn.queue.publish
+
+        async def capture(topic: str, msg: dict) -> None:
+            published_msgs.append(msg)
+            await original_publish(topic, msg)
+
+        conn.queue.publish = capture  # type: ignore[method-assign]
+
+        async def mock_fetch():
+            for a in alerts:
+                yield a
+            conn._stop_event.set()
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert len(published_msgs) == 5
+        assert published_msgs == alerts
+
+    async def test_events_total_increments_per_published_event(self) -> None:
+        """health.events_total increments by 1 for each event published."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        alerts = [{"id": str(i)} for i in range(3)]
+
+        async def mock_fetch():
+            for a in alerts:
+                yield a
+            conn._stop_event.set()
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert conn.health.events_total == 3
+
+    async def test_last_event_at_set_after_first_publish(self) -> None:
+        """health.last_event_at transitions from None to a timestamp after a publish."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        assert conn.health.last_event_at is None
+
+        async def mock_fetch():
+            yield {"id": "1"}
+            conn._stop_event.set()
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert conn.health.last_event_at is not None
+
+    async def test_no_publish_when_fetch_yields_nothing(self) -> None:
+        """queue.publish() is never called when _fetch_events yields no events."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        published: list[dict] = []
+        original_publish = conn.queue.publish
+
+        async def capture(topic: str, msg: dict) -> None:
+            published.append(msg)
+            await original_publish(topic, msg)
+
+        conn.queue.publish = capture  # type: ignore[method-assign]
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            return
+            yield  # noqa: unreachable — makes this an async generator
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert published == []
+
+    async def test_events_total_unchanged_when_fetch_yields_nothing(self) -> None:
+        """health.events_total stays 0 when the fetch cycle produces no events."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            return
+            yield  # noqa: unreachable — makes this an async generator
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert conn.health.events_total == 0
+
+    async def test_fetch_error_does_not_crash_poll_loop(self) -> None:
+        """An exception raised by _fetch_events is caught; _poll_loop exits cleanly."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            raise RuntimeError("network error")
+            yield  # noqa: unreachable — makes this an async generator
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()  # must not raise
+
+    async def test_fetch_error_increments_errors_total(self) -> None:
+        """A fetch exception increments health.errors_total by 1."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            raise RuntimeError("network error")
+            yield  # noqa: unreachable — makes this an async generator
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert conn.health.errors_total == 1
+
+    async def test_fetch_error_stores_error_message(self) -> None:
+        """health.error_message is set to str(exc) when _fetch_events raises."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            raise ValueError("unexpected response format")
+            yield  # noqa: unreachable — makes this an async generator
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert conn.health.error_message == "unexpected response format"
+
+    async def test_multiple_events_all_published_to_raw_wazuh_topic(self) -> None:
+        """Ten events from one cycle all go to the same mxtac.raw.wazuh topic."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        alerts = [{"id": str(i)} for i in range(10)]
+        published_topics: list[str] = []
+        original_publish = conn.queue.publish
+
+        async def capture(topic: str, msg: dict) -> None:
+            published_topics.append(topic)
+            await original_publish(topic, msg)
+
+        conn.queue.publish = capture  # type: ignore[method-assign]
+
+        async def mock_fetch():
+            for a in alerts:
+                yield a
+            conn._stop_event.set()
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert len(published_topics) == 10
+        assert all(t == Topic.RAW_WAZUH for t in published_topics)

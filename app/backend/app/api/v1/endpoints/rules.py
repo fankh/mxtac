@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from ....core.rbac import require_permission
-from ....core.security import get_current_user
 from ....engine.sigma_engine import SigmaEngine, SigmaRule
 from ....services.mock_data import DETECTIONS   # reuse for now
 
@@ -135,7 +134,7 @@ async def update_rule(rule_id: str, body: RuleUpdate, _: dict = Depends(require_
 
 
 @router.delete("/{rule_id}", status_code=204)
-async def delete_rule(rule_id: str, _: str = Depends(get_current_user)):
+async def delete_rule(rule_id: str, _: dict = Depends(require_permission("rules:write"))):
     if rule_id not in _rule_store:
         raise HTTPException(status_code=404, detail="Rule not found")
     del _rule_store[rule_id]
@@ -143,7 +142,7 @@ async def delete_rule(rule_id: str, _: str = Depends(get_current_user)):
 
 
 @router.post("/{rule_id}/test", response_model=RuleTestResponse)
-async def test_rule(rule_id: str, body: RuleTestRequest, _: str = Depends(get_current_user)):
+async def test_rule(rule_id: str, body: RuleTestRequest, _: dict = Depends(require_permission("rules:read"))):
     """Test an existing rule against a sample event."""
     rule_obj = _engine._rules.get(rule_id)
     if not rule_obj:
@@ -156,7 +155,7 @@ async def test_rule(rule_id: str, body: RuleTestRequest, _: str = Depends(get_cu
 
 
 @router.post("/test", response_model=RuleTestResponse)
-async def test_rule_yaml(body: RuleTestRequest, _: str = Depends(get_current_user)):
+async def test_rule_yaml(body: RuleTestRequest, _: dict = Depends(require_permission("rules:read"))):
     """Test arbitrary Sigma YAML against a sample event (no save)."""
     errors = []
     try:
@@ -171,7 +170,7 @@ async def test_rule_yaml(body: RuleTestRequest, _: str = Depends(get_current_use
 
 
 @router.post("/import", response_model=dict)
-async def import_rules(body: RuleImportRequest, _: str = Depends(get_current_user)):
+async def import_rules(body: RuleImportRequest, _: dict = Depends(require_permission("rules:write"))):
     """Bulk import Sigma rules from YAML (single or multi-document)."""
     try:
         loaded = _load_into_engine(body.yaml_content)
@@ -181,7 +180,7 @@ async def import_rules(body: RuleImportRequest, _: str = Depends(get_current_use
 
 
 @router.get("/stats/summary", response_model=dict)
-async def rules_summary(_: str = Depends(get_current_user)):
+async def rules_summary(_: dict = Depends(require_permission("rules:read"))):
     rules = list(_rule_store.values())
     by_level: dict[str, int] = {}
     for r in rules:
