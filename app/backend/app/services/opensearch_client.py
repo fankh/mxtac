@@ -11,7 +11,6 @@ Uses opensearch-py (async client).
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -25,6 +24,54 @@ EVENTS_INDEX_TEMPLATE = "mxtac-events"
 ALERTS_INDEX_TEMPLATE = "mxtac-alerts"
 RULES_INDEX = "mxtac-rules"
 
+# Maps EventFilter.field names to their OpenSearch document field paths.
+# Flat column aliases (e.g. "src_ip") are mapped to the nested OCSF paths
+# used in the indexed document; nested paths pass through unchanged.
+_OS_FIELD_MAP: dict[str, str] = {
+    "severity_id":           "severity_id",
+    "class_name":            "class_name",
+    "class_uid":             "class_uid",
+    "src_ip":                "src_endpoint.ip",
+    "dst_ip":                "dst_endpoint.ip",
+    "hostname":              "src_endpoint.hostname",
+    "username":              "actor_user.name",
+    "process_hash":          "process.hash_sha256",
+    "source":                "metadata_product",
+    # OpenSearch nested-path aliases pass through unchanged
+    "src_endpoint.ip":       "src_endpoint.ip",
+    "dst_endpoint.ip":       "dst_endpoint.ip",
+    "dst_endpoint.hostname": "dst_endpoint.hostname",
+    "actor_user.name":       "actor_user.name",
+    "process.hash_sha256":   "process.hash_sha256",
+}
+
+
+def filter_to_dsl(field: str, operator: str, value: Any) -> dict | None:
+    """Convert an EventFilter (field, operator, value) to an OpenSearch DSL clause.
+
+    Returns ``None`` if the field is unknown or operator is unsupported, so the
+    caller can skip the clause instead of sending a malformed query.
+    """
+    os_field = _OS_FIELD_MAP.get(field)
+    if os_field is None:
+        return None
+
+    if operator == "eq":
+        return {"term": {os_field: value}}
+    if operator == "ne":
+        return {"bool": {"must_not": [{"term": {os_field: value}}]}}
+    if operator == "contains":
+        return {"wildcard": {os_field: f"*{value}*"}}
+    if operator == "gt":
+        return {"range": {os_field: {"gt": value}}}
+    if operator == "lt":
+        return {"range": {os_field: {"lt": value}}}
+    if operator == "gte":
+        return {"range": {os_field: {"gte": value}}}
+    if operator == "lte":
+        return {"range": {os_field: {"lte": value}}}
+    return None
+
 
 def _daily_index(base: str) -> str:
     return f"{base}-{datetime.now(timezone.utc).strftime('%Y.%m.%d')}"
@@ -35,6 +82,11 @@ class OpenSearchService:
 
     def __init__(self) -> None:
         self._client = None
+
+    @property
+    def is_available(self) -> bool:
+        """True when a live OpenSearch connection is established."""
+        return self._client is not None
 
     async def connect(self) -> None:
         try:
@@ -56,13 +108,19 @@ class OpenSearchService:
             logger.warning("OpenSearch connection failed: %s", exc)
             self._client = None
 
-    async def index_event(self, event: dict[str, Any]) -> str | None:
-        """Index a normalized OCSF event. Returns document ID or None."""
+    async def index_event(self, event: dict[str, Any], doc_id: str | None = None) -> str | None:
+        """Index a normalized OCSF event. Returns document ID or None.
+
+        Pass ``doc_id`` to use the PostgreSQL UUID as the OpenSearch document ID
+        so that both stores share the same identifier.
+        """
         if self._client is None:
             return None
         idx = _daily_index(EVENTS_INDEX_TEMPLATE)
         try:
-            resp = await self._client.index(index=idx, body=event, refresh="false")
+            resp = await self._client.index(
+                index=idx, body=event, id=doc_id, refresh="false"
+            )
             return resp.get("_id")
         except Exception as exc:
             logger.error("OpenSearch index_event failed: %s", exc)
@@ -159,3 +217,12 @@ def get_opensearch() -> OpenSearchService:
     if _opensearch is None:
         _opensearch = OpenSearchService()
     return _opensearch
+
+
+def get_opensearch_dep() -> OpenSearchService:
+    """FastAPI dependency — returns the singleton OpenSearch client.
+
+    The client's ``is_available`` property indicates whether a live connection
+    exists.  Endpoints should fall back to PostgreSQL when it is ``False``.
+    """
+    return get_opensearch()

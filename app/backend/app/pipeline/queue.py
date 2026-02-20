@@ -1,5 +1,5 @@
 """
-Message queue abstraction — supports Kafka (production) and Redis Streams (development).
+Message queue abstraction — supports Kafka (production) and Valkey Streams (development).
 Topic naming convention: mxtac.{stage}.{source}
   - mxtac.raw.wazuh       — raw Wazuh JSON alerts
   - mxtac.raw.zeek        — raw Zeek log lines
@@ -103,11 +103,11 @@ class InMemoryQueue(MessageQueue):
 # ── Redis Streams queue ───────────────────────────────────────────────────────
 
 class RedisStreamQueue(MessageQueue):
-    """Redis Streams-based queue. Requires redis-py[hiredis] >= 5.0."""
+    """Valkey Streams-based queue (Redis Streams-compatible). Requires valkey >= 6.0."""
 
-    def __init__(self, redis_url: str) -> None:
+    def __init__(self, valkey_url: str) -> None:
         import valkey.asyncio as aioredis  # type: ignore[import-untyped]
-        self._redis = aioredis.from_url(redis_url, decode_responses=True)
+        self._redis = aioredis.from_url(valkey_url, decode_responses=True)
         self._tasks: list[asyncio.Task] = []
 
     async def publish(self, topic: str, message: dict[str, Any]) -> None:

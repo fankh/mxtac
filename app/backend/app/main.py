@@ -92,6 +92,14 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("Normalizer pipeline start failed")
 
+    # 5.1. Wire event persister — dual-write to PostgreSQL + OpenSearch
+    try:
+        from .services.event_persister import event_persister
+        await event_persister(queue, app.state.os_client)
+        logger.info("Event persister started")
+    except Exception:
+        logger.exception("Event persister start failed")
+
     # 6. Wire Sigma evaluation consumer — subscribes to mxtac.normalized, publishes alerts
     try:
         from .services.sigma_consumer import sigma_consumer

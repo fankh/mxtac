@@ -1,7 +1,13 @@
-"""Event search and retrieval endpoints — backed by PostgreSQL (EventRepo).
+"""Event search and retrieval endpoints.
 
-PostgreSQL is the primary store so the platform works without a running
-OpenSearch cluster.  Full OpenSearch integration is tracked in feature 11.5.
+Search path (POST /search):
+  1. Use OpenSearch when a live connection is available — enables full-text
+     query_string DSL and nested-field filtering.
+  2. Fall back to PostgreSQL (EventRepo) when OpenSearch is unavailable so
+     the platform works without a running OpenSearch cluster.
+
+All other endpoints (GET /{id}, POST /aggregate, GET /entity/…) always use
+PostgreSQL as the authoritative store.
 """
 
 from __future__ import annotations
@@ -17,6 +23,11 @@ from ....core.database import get_db
 from ....core.rbac import require_permission
 from ....models.event import Event
 from ....repositories.event_repo import EventRepo
+from ....services.opensearch_client import (
+    OpenSearchService,
+    filter_to_dsl,
+    get_opensearch_dep,
+)
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -73,6 +84,19 @@ def _event_to_dict(e: Event) -> dict:
     return base
 
 
+def _os_hit_to_dict(hit: dict) -> dict:
+    """Normalize an OpenSearch search hit into the event response format.
+
+    The hit ``_source`` is the full OCSF event dict indexed by the event
+    persister.  We surface the OpenSearch document ``_id`` as ``id`` when
+    the source does not already carry one (e.g. legacy documents).
+    """
+    src: dict[str, Any] = dict(hit.get("_source") or {})
+    if "id" not in src:
+        src["id"] = hit.get("_id", "")
+    return src
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
@@ -80,10 +104,44 @@ def _event_to_dict(e: Event) -> dict:
 async def search_events(
     body: SearchRequest,
     db: AsyncSession = Depends(get_db),
+    os_client: OpenSearchService = Depends(get_opensearch_dep),
     _: dict = Depends(require_permission("events:search")),
 ):
-    """Full-text + filtered event search with time range — backed by PostgreSQL."""
-    items, total = await EventRepo.search(
+    """Full-text + filtered event search with time range.
+
+    Delegates to OpenSearch when a live connection is available, enabling
+    query_string DSL and nested OCSF field filtering.  Falls back to
+    PostgreSQL (EventRepo) when OpenSearch is unavailable.
+    """
+    if os_client.is_available:
+        # Build OpenSearch DSL filter clauses from structured filters
+        dsl_filters = [
+            clause
+            for f in body.filters
+            if (clause := filter_to_dsl(f.field, f.operator, f.value)) is not None
+        ]
+        resp = await os_client.search_events(
+            query=body.query,
+            filters=dsl_filters or None,
+            time_from=body.time_from,
+            time_to=body.time_to,
+            size=body.size,
+            from_=body.from_,
+        )
+        hits = resp.get("hits", {})
+        total_val = hits.get("total", {})
+        total = total_val.get("value", 0) if isinstance(total_val, dict) else int(total_val)
+        items = [_os_hit_to_dict(h) for h in hits.get("hits", [])]
+        return {
+            "total": total,
+            "items": items,
+            "from_": body.from_,
+            "size":  body.size,
+            "backend": "opensearch",
+        }
+
+    # Fallback: PostgreSQL
+    items_pg, total = await EventRepo.search(
         db,
         query=body.query,
         filters=body.filters,
@@ -94,9 +152,10 @@ async def search_events(
     )
     return {
         "total": total,
-        "items": [_event_to_dict(e) for e in items],
+        "items": [_event_to_dict(e) for e in items_pg],
         "from_": body.from_,
         "size":  body.size,
+        "backend": "postgres",
     }
 
 
