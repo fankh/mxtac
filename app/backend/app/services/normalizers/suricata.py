@@ -79,6 +79,7 @@ class SuricataNormalizer:
             analytic=Analytic(uid=sig_id, name=sig_name, type_id=1),
         )
 
+        flow_id = raw.get("flow_id")
         return OCSFEvent(
             class_uid=OCSFClass.SECURITY_FINDING,
             class_name="Security Finding",
@@ -86,7 +87,7 @@ class SuricataNormalizer:
             time=self._parse_time(raw.get("timestamp")),
             severity_id=severity_id,
             metadata_product="Suricata",
-            metadata_uid=raw.get("flow_id"),
+            metadata_uid=str(flow_id) if flow_id is not None else None,
             src_endpoint=Endpoint(
                 ip=raw.get("src_ip"),
                 port=raw.get("src_port"),
@@ -105,6 +106,7 @@ class SuricataNormalizer:
 
     def _normalize_dns(self, raw: dict[str, Any]) -> OCSFEvent:
         dns = raw.get("dns", {})
+        flow_id = raw.get("flow_id")
         return OCSFEvent(
             class_uid=OCSFClass.DNS_ACTIVITY,
             class_name="DNS Activity",
@@ -112,7 +114,7 @@ class SuricataNormalizer:
             time=self._parse_time(raw.get("timestamp")),
             severity_id=1,
             metadata_product="Suricata",
-            metadata_uid=raw.get("flow_id"),
+            metadata_uid=str(flow_id) if flow_id is not None else None,
             src_endpoint=Endpoint(ip=raw.get("src_ip")),
             dst_endpoint=Endpoint(ip=raw.get("dest_ip")),
             network_traffic={
@@ -125,6 +127,7 @@ class SuricataNormalizer:
         )
 
     def _normalize_network(self, raw: dict[str, Any], event_type: str) -> OCSFEvent:
+        flow_id = raw.get("flow_id")
         return OCSFEvent(
             class_uid=OCSFClass.NETWORK_ACTIVITY,
             class_name="Network Activity",
@@ -132,7 +135,7 @@ class SuricataNormalizer:
             time=self._parse_time(raw.get("timestamp")),
             severity_id=1,
             metadata_product="Suricata",
-            metadata_uid=raw.get("flow_id"),
+            metadata_uid=str(flow_id) if flow_id is not None else None,
             src_endpoint=Endpoint(ip=raw.get("src_ip"), port=raw.get("src_port")),
             dst_endpoint=Endpoint(ip=raw.get("dest_ip"), port=raw.get("dest_port")),
             network_traffic={"event_type": event_type, **raw.get(event_type, {})},
