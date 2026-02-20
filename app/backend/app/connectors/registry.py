@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -25,6 +27,38 @@ CONNECTOR_TYPES: dict[str, type[BaseConnector]] = {
     "zeek": ZeekConnector,
     "suricata": SuricataConnector,
 }
+
+# ── Feature 6.10: Zeek offset state file helpers ──────────────────────────────
+
+_STATE_DIR = Path(os.environ.get("MXTAC_STATE_DIR", "/var/lib/mxtac"))
+
+
+def _zeek_state_file(connector_name: str) -> Path:
+    """Return the path of the JSON state file for a Zeek connector."""
+    return _STATE_DIR / f"zeek_offsets_{connector_name}.json"
+
+
+def _load_zeek_positions(state_file: Path) -> dict[str, int] | None:
+    """Load persisted byte offsets from *state_file*. Returns None on any error."""
+    try:
+        if state_file.exists():
+            data = json.loads(state_file.read_text())
+            if isinstance(data, dict):
+                return {k: int(v) for k, v in data.items()}
+    except Exception as exc:
+        logger.warning("Failed to load Zeek state file=%s err=%s", state_file, exc)
+    return None
+
+
+def _save_zeek_positions(state_file: Path, positions: dict[str, int]) -> None:
+    """Atomically write *positions* to *state_file* (write-then-rename)."""
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = state_file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(positions))
+        tmp.rename(state_file)
+    except Exception as exc:
+        logger.warning("Failed to save Zeek state file=%s err=%s", state_file, exc)
 
 
 def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | None:
@@ -69,6 +103,24 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
             queue,
             initial_last_fetched_at=initial_last_fetched_at,
             checkpoint_callback=_checkpoint,
+        )
+
+    if cls is ZeekConnector:
+        # Feature 6.10: persist byte offsets so restarts resume where they left off
+        state_file = _zeek_state_file(db_conn.name)
+        initial_positions = _load_zeek_positions(state_file)
+
+        async def _zeek_checkpoint(
+            positions: dict[str, int],
+            _sf: Path = state_file,
+        ) -> None:
+            _save_zeek_positions(_sf, positions)
+
+        return ZeekConnector(
+            config,
+            queue,
+            initial_positions=initial_positions,
+            checkpoint_callback=_zeek_checkpoint,
         )
 
     return cls(config, queue)

@@ -19,6 +19,19 @@ Feature 6.9 — Tail Zeek log directory — conn.log, dns.log, http.log, ssl.log
     updated after publish
   - ZeekConnectorFactory: creates ZeekConnector, name/log_dir/log_types/poll_interval
     defaults and overrides, connector_type is "zeek"
+
+Feature 6.10 — Track file byte offset per log file — Survive restarts:
+  - initial_positions seeds _file_positions dict
+  - _connect() validates saved offsets against current file size (rotation detection)
+  - _connect() clears stale offsets for non-existent files
+  - _connect() uses EOF-seek only when no saved offset exists (first-startup behaviour)
+  - _fetch_events() does not re-read lines before the saved offset
+  - _fetch_events() reads new lines appended after a restart
+  - _fetch_events() calls checkpoint_callback after every cycle (even if no events)
+  - checkpoint_callback receives copy of current _file_positions
+  - Log rotation: saved offset > file size → reset to 0, reads from beginning
+  - No checkpoint_callback is a no-op (no error)
+  - initial_positions=None is equivalent to empty dict
 """
 
 from __future__ import annotations
@@ -706,3 +719,233 @@ class TestZeekConnectorFactory:
         assert "dns" in log_types
         assert "http" in log_types
         assert "ssl" in log_types
+
+
+# ── Feature 6.10: Offset persistence — Survive restarts ────────────────────────
+
+
+class TestZeekConnectorOffsetPersistence:
+    """Feature 6.10 — Track file byte offset per log file so restarts resume
+    from the correct position rather than re-ingesting already-seen events."""
+
+    # ── __init__ seeds _file_positions ────────────────────────────────────────
+
+    def test_initial_positions_none_defaults_to_empty(self) -> None:
+        conn = ZeekConnector(_make_config(), InMemoryQueue(), initial_positions=None)
+        assert conn._file_positions == {}
+
+    def test_initial_positions_seeds_file_positions(self) -> None:
+        positions = {"/opt/zeek/logs/current/conn.log": 1234}
+        conn = ZeekConnector(_make_config(), InMemoryQueue(), initial_positions=positions)
+        assert conn._file_positions == positions
+
+    def test_initial_positions_is_copied(self) -> None:
+        """Mutating the original dict must not affect _file_positions."""
+        original = {"/opt/zeek/logs/current/conn.log": 100}
+        conn = ZeekConnector(_make_config(), InMemoryQueue(), initial_positions=original)
+        original["/opt/zeek/logs/current/conn.log"] = 999
+        assert conn._file_positions["/opt/zeek/logs/current/conn.log"] == 100
+
+    # ── _connect() with saved positions ───────────────────────────────────────
+
+    async def test_connect_keeps_valid_saved_offset(self) -> None:
+        """Saved offset ≤ file size → keep as-is."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            conn_log.write_text('{"ts": "1.0"}\n{"ts": "2.0"}\n')
+            saved_pos = conn_log.stat().st_size  # exactly at EOF
+
+            conn = ZeekConnector(
+                _make_config(tmpdir),
+                InMemoryQueue(),
+                initial_positions={str(conn_log): saved_pos},
+            )
+            await conn._connect()
+
+            assert conn._file_positions[str(conn_log)] == saved_pos
+
+    async def test_connect_rotation_resets_offset_to_zero(self) -> None:
+        """Saved offset > current file size (rotation) → reset to 0."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            conn_log.write_text('{"ts": "1.0"}\n')  # small file after rotation
+
+            conn = ZeekConnector(
+                _make_config(tmpdir),
+                InMemoryQueue(),
+                initial_positions={str(conn_log): 99_999},
+            )
+            await conn._connect()
+
+            assert conn._file_positions[str(conn_log)] == 0
+
+    async def test_connect_clears_stale_offset_for_nonexistent_file(self) -> None:
+        """Saved offset for a file that no longer exists must be cleared."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ghost_path = str(Path(tmpdir) / "conn.log")  # file does NOT exist
+
+            conn = ZeekConnector(
+                _make_config(tmpdir),
+                InMemoryQueue(),
+                initial_positions={ghost_path: 500},
+            )
+            await conn._connect()
+
+            assert ghost_path not in conn._file_positions
+
+    async def test_connect_seeks_eof_when_no_saved_offset_and_file_exists(self) -> None:
+        """Without a saved offset, existing files are sought to EOF (first-startup)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            conn_log.write_text('{"ts": "1.0"}\n')
+            expected_size = conn_log.stat().st_size
+
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            await conn._connect()
+
+            assert conn._file_positions[str(conn_log)] == expected_size
+
+    # ── _fetch_events() respects saved offsets ────────────────────────────────
+
+    async def test_does_not_re_read_lines_before_saved_offset(self) -> None:
+        """Providing the file's full size as initial position skips all existing lines."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            conn_log.write_text('{"ts": "1.0", "uid": "old"}\n')
+            saved_pos = conn_log.stat().st_size
+
+            conn = ZeekConnector(
+                _make_config(tmpdir),
+                InMemoryQueue(),
+                initial_positions={str(conn_log): saved_pos},
+            )
+            events = [e async for e in conn._fetch_events()]
+            assert events == []
+
+    async def test_reads_only_lines_appended_after_saved_offset(self) -> None:
+        """Lines added after the saved offset are ingested on the next cycle."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            conn_log.write_text('{"ts": "1.0", "uid": "old"}\n')
+            saved_pos = conn_log.stat().st_size
+
+            with conn_log.open("a") as f:
+                f.write('{"ts": "2.0", "uid": "new"}\n')
+
+            conn = ZeekConnector(
+                _make_config(tmpdir),
+                InMemoryQueue(),
+                initial_positions={str(conn_log): saved_pos},
+            )
+            events = [e async for e in conn._fetch_events()]
+
+            assert len(events) == 1
+            assert events[0]["uid"] == "new"
+
+    async def test_rotation_reads_from_beginning_of_new_file(self) -> None:
+        """After rotation resets offset to 0, all lines in the new file are read."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            conn_log.write_text('{"ts": "1.0", "uid": "rotated_event"}\n')
+
+            conn = ZeekConnector(
+                _make_config(tmpdir),
+                InMemoryQueue(),
+                initial_positions={str(conn_log): 99_999},
+            )
+            await conn._connect()  # should reset position to 0
+
+            events = [e async for e in conn._fetch_events()]
+            assert len(events) == 1
+            assert events[0]["uid"] == "rotated_event"
+
+    # ── checkpoint_callback ───────────────────────────────────────────────────
+
+    async def test_checkpoint_callback_called_after_fetch(self) -> None:
+        """checkpoint_callback is invoked once per _fetch_events() cycle."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            conn_log.write_text('{"ts": "1.0"}\n')
+
+            checkpoints: list[dict] = []
+
+            async def capture(positions: dict[str, int]) -> None:
+                checkpoints.append(dict(positions))
+
+            conn = ZeekConnector(
+                _make_config(tmpdir),
+                InMemoryQueue(),
+                checkpoint_callback=capture,
+            )
+            [e async for e in conn._fetch_events()]
+
+            assert len(checkpoints) == 1
+
+    async def test_checkpoint_callback_receives_updated_positions(self) -> None:
+        """Callback receives the positions map after reading."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            conn_log.write_text('{"ts": "1.0"}\n')
+            expected_size = conn_log.stat().st_size
+
+            captured: list[dict] = []
+
+            async def capture(positions: dict[str, int]) -> None:
+                captured.append(dict(positions))
+
+            conn = ZeekConnector(
+                _make_config(tmpdir),
+                InMemoryQueue(),
+                checkpoint_callback=capture,
+            )
+            [e async for e in conn._fetch_events()]
+
+            assert captured[0][str(conn_log)] == expected_size
+
+    async def test_checkpoint_callback_called_even_when_no_new_events(self) -> None:
+        """Callback fires even if no log files exist (empty cycle)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            checkpoints: list[dict] = []
+
+            async def capture(positions: dict[str, int]) -> None:
+                checkpoints.append(dict(positions))
+
+            conn = ZeekConnector(
+                _make_config(tmpdir),
+                InMemoryQueue(),
+                checkpoint_callback=capture,
+            )
+            [e async for e in conn._fetch_events()]
+
+            assert len(checkpoints) == 1
+
+    async def test_checkpoint_callback_called_once_per_cycle(self) -> None:
+        """Multiple files in one cycle still produce exactly one callback."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "conn.log").write_text('{"ts": "1.0"}\n')
+            (Path(tmpdir) / "dns.log").write_text('{"ts": "2.0"}\n')
+
+            call_count = 0
+
+            async def capture(positions: dict[str, int]) -> None:
+                nonlocal call_count
+                call_count += 1
+
+            conn = ZeekConnector(
+                _make_config(tmpdir),
+                InMemoryQueue(),
+                checkpoint_callback=capture,
+            )
+            [e async for e in conn._fetch_events()]
+
+            assert call_count == 1
+
+    async def test_no_checkpoint_callback_raises_no_error(self) -> None:
+        """Omitting checkpoint_callback must not raise any exception."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            conn_log.write_text('{"ts": "1.0"}\n')
+
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+            assert len(events) == 1  # normal operation

@@ -4,12 +4,18 @@ Zeek connector — watches Zeek log directory for new log lines.
 Required config.extra keys:
   log_dir: str     — e.g. "/opt/zeek/logs/current"
   log_types: list  — e.g. ["conn", "dns", "http", "ssl"]
+
+Feature 6.10: Byte offsets are persisted across restarts via an optional
+checkpoint_callback.  The registry supplies initial_positions (loaded from a
+state file) and a callback that writes the updated dict back to disk after
+every _fetch_events() cycle.
 """
 
 from __future__ import annotations
 
 import json
 import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
@@ -31,9 +37,18 @@ LOG_SUFFIXES = {
 class ZeekConnector(BaseConnector):
     """Tails Zeek log files and publishes parsed JSON to mxtac.raw.zeek."""
 
-    def __init__(self, config: ConnectorConfig, queue) -> None:
+    def __init__(
+        self,
+        config: ConnectorConfig,
+        queue,
+        *,
+        initial_positions: dict[str, int] | None = None,
+        checkpoint_callback: Callable[[dict[str, int]], Awaitable[None]] | None = None,
+    ) -> None:
         super().__init__(config, queue)
-        self._file_positions: dict[str, int] = {}   # path → byte offset
+        # Seed from persisted state; defaults to empty (fresh start)
+        self._file_positions: dict[str, int] = dict(initial_positions or {})
+        self._checkpoint_callback = checkpoint_callback
 
     @property
     def topic(self) -> str:
@@ -44,15 +59,37 @@ class ZeekConnector(BaseConnector):
         if not os.path.isdir(log_dir):
             raise ConnectionError(f"Zeek log directory not found: {log_dir}")
 
-        # Seek to end of each existing log file so we only tail new events
         log_types = self.config.extra.get("log_types", list(LOG_SUFFIXES.keys()))
         for log_type in log_types:
             filename = LOG_SUFFIXES.get(log_type)
             if not filename:
                 continue
             path = Path(log_dir) / filename
-            if path.exists():
-                self._file_positions[str(path)] = os.path.getsize(str(path))
+            path_str = str(path)
+
+            if path_str in self._file_positions:
+                # We have a persisted offset — validate it against the current
+                # file size to detect log rotation.
+                if path.exists():
+                    current_size = path.stat().st_size
+                    if self._file_positions[path_str] > current_size:
+                        logger.warning(
+                            "ZeekConnector log rotation detected path=%s "
+                            "saved_offset=%d file_size=%d, resetting to 0",
+                            path,
+                            self._file_positions[path_str],
+                            current_size,
+                        )
+                        self._file_positions[path_str] = 0
+                else:
+                    # Stale entry for a file that no longer exists; clear it so
+                    # we start from offset 0 when the file is (re-)created.
+                    del self._file_positions[path_str]
+            else:
+                # No persisted offset — first startup behaviour: seek to EOF so
+                # we tail only *new* events (avoid re-ingesting history).
+                if path.exists():
+                    self._file_positions[path_str] = path.stat().st_size
 
         logger.info("ZeekConnector connected log_dir=%s", log_dir)
 
@@ -88,6 +125,11 @@ class ZeekConnector(BaseConnector):
                             yield event
 
                 self._file_positions[str(path)] = f.tell()
+
+        # Feature 6.10: persist updated offsets after every poll cycle so that
+        # a restart resumes exactly where we left off.
+        if self._checkpoint_callback is not None:
+            await self._checkpoint_callback(dict(self._file_positions))
 
     def _parse_tsv_line(self, line: str, log_type: str) -> dict[str, Any] | None:
         """Basic TSV parser for non-JSON Zeek format. Returns None on failure."""
