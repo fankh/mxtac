@@ -31,6 +31,7 @@ PERMISSIONS: dict[str, set[str]] = {
     "detections:write": {"analyst", "hunter", "engineer", "admin"},
     "incidents:read":   {"viewer", "analyst", "hunter", "engineer", "admin"},
     "incidents:write":  {"analyst", "hunter", "engineer", "admin"},
+    "incidents:delete": {"admin"},
     "rules:read":       {"hunter", "engineer", "admin"},
     "rules:write":      {"engineer", "admin"},
     "connectors:read":  {"engineer", "admin"},

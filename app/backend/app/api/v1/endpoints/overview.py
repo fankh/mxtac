@@ -1,5 +1,11 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....repositories.incident_repo import IncidentRepo
 from ....schemas.overview import KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus
 from ....services.mock_data import KPI, TIMELINE, TACTICS, HEATMAP, INTEGRATIONS, TACTIC_LABELS
 from ....schemas.detection import Detection
@@ -11,10 +17,22 @@ router = APIRouter(prefix="/overview", tags=["overview"])
 @router.get("/kpis", response_model=KpiMetrics)
 async def get_kpis(
     range: str = Query("7d", description="Time range: 24h | 7d | 30d"),
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("detections:read")),
 ):
     """KPI metrics for the Security Overview dashboard header cards."""
-    return KPI
+    now = datetime.now(timezone.utc)
+    raw = await IncidentRepo.get_metrics(
+        db, from_date=now - timedelta(days=30), to_date=now
+    )
+    kpi_dict = KPI.model_dump()
+    kpi_dict["open_incidents_count"] = raw["open_count"]
+    kpi_dict["mttr_minutes"] = (
+        round(raw["avg_ttr"] / 60, 2) if raw["avg_ttr"] is not None else None
+    )
+    if raw["avg_ttd"] is not None:
+        kpi_dict["mttd_minutes"] = round(raw["avg_ttd"] / 60, 2)
+    return KpiMetrics(**kpi_dict)
 
 
 @router.get("/timeline", response_model=list[TimelinePoint])

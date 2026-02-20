@@ -18,6 +18,9 @@ class KpiMetrics(BaseModel):
     sigma_rules_critical: int
     sigma_rules_high: int
     sigma_rules_deployed_this_week: int
+    # Incident SLA metrics (from real DB data)
+    open_incidents_count: int = 0
+    mttr_minutes: float | None = None
 
 
 class TimelinePoint(BaseModel):

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from math import ceil
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
@@ -178,6 +178,54 @@ async def create_incident(
     )
 
     return _incident_to_schema(incident)
+
+
+@router.get("/metrics", response_model=IncidentMetrics)
+async def get_incident_metrics(
+    from_date: datetime | None = Query(None, description="Start date (ISO 8601). Defaults to 30 days ago."),
+    to_date: datetime | None = Query(None, description="End date (ISO 8601). Defaults to now."),
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("incidents:read")),
+) -> dict:
+    """
+    Incident SLA metrics — MTTD, MTTR, open count, and severity breakdown.
+
+    - from_date / to_date default to the last 30 days.
+    - mttr_seconds is null when no closed incidents exist in the range.
+    - mttd_seconds is null when no incidents with TTD data exist in the range.
+    - incidents_this_week / incidents_this_month are calendar-based (not bounded by from_date/to_date).
+    - Requires viewer+ role (incidents:read).
+    """
+    now = datetime.now(timezone.utc)
+    resolved_to = to_date if to_date is not None else now
+    resolved_from = from_date if from_date is not None else now - timedelta(days=30)
+
+    raw = await IncidentRepo.get_metrics(db, from_date=resolved_from, to_date=resolved_to)
+
+    sc = raw["status_counts"]
+    sev = raw["severity_counts"]
+    return {
+        "total_incidents": {
+            "new": sc.get("new", 0),
+            "investigating": sc.get("investigating", 0),
+            "contained": sc.get("contained", 0),
+            "resolved": sc.get("resolved", 0),
+            "closed": sc.get("closed", 0),
+        },
+        "mttr_seconds": raw["avg_ttr"],
+        "mttd_seconds": raw["avg_ttd"],
+        "open_incidents_count": raw["open_count"],
+        "incidents_by_severity": {
+            "critical": sev.get("critical", 0),
+            "high": sev.get("high", 0),
+            "medium": sev.get("medium", 0),
+            "low": sev.get("low", 0),
+        },
+        "incidents_this_week": raw["week_count"],
+        "incidents_this_month": raw["month_count"],
+        "from_date": resolved_from,
+        "to_date": resolved_to,
+    }
 
 
 @router.get("/{incident_id}", response_model=IncidentDetail)
@@ -387,6 +435,62 @@ async def add_note(
     await db.flush()
 
     return note
+
+
+@router.delete("/{incident_id}", status_code=204)
+async def delete_incident(
+    incident_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("incidents:delete")),
+) -> Response:
+    """
+    Soft-delete an incident by setting its status to 'closed'.
+
+    - Requires admin role (incidents:delete).
+    - Sets status → 'closed', records closed_at, and calculates ttr_seconds if not already set.
+    - Adds a timeline note recording the deletion.
+    - Audit-logs the action as 'delete'.
+    - Returns 204 No Content.
+    - Returns 404 if the incident does not exist.
+    """
+    incident = await IncidentRepo.get_by_id(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+    now = datetime.now(timezone.utc)
+    old_status = incident.status
+
+    incident.status = "closed"
+
+    if incident.closed_at is None:
+        incident.closed_at = now
+        created = incident.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        incident.ttr_seconds = max(0, int((now - created).total_seconds()))
+
+    deletion_note = {
+        "id": str(uuid.uuid4()),
+        "author": current_user["email"],
+        "content": f"Incident closed by {current_user['email']}",
+        "note_type": "status_change",
+        "created_at": now.isoformat(),
+    }
+    incident.notes = list(incident.notes or []) + [deletion_note]
+
+    await db.flush()
+
+    await get_audit_logger().log(
+        actor=current_user["email"],
+        action="delete",
+        resource_type="incident",
+        resource_id=str(incident_id),
+        details={"title": incident.title, "status_before": old_status},
+        request=request,
+    )
+
+    return Response(status_code=204)
 
 
 @router.get("/{incident_id}/notes", response_model=list[IncidentNote])

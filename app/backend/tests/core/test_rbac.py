@@ -8,7 +8,7 @@ Coverage:
     - Tuple contains exactly 5 roles in ascending privilege order
     - All expected role names are present
   PERMISSIONS matrix:
-    - All 11 permissions are defined
+    - All 12 permissions are defined
     - Each permission maps to the correct set of allowed roles
     - Viewer-only permissions return empty denied sets for viewer
     - Admin-only permissions deny all other roles
@@ -107,6 +107,7 @@ class TestPermissionsMatrix:
         "detections:write",
         "incidents:read",
         "incidents:write",
+        "incidents:delete",
         "rules:read",
         "rules:write",
         "connectors:read",
@@ -120,7 +121,7 @@ class TestPermissionsMatrix:
         assert isinstance(PERMISSIONS, dict)
 
     def test_permissions_has_eleven_entries(self) -> None:
-        assert len(PERMISSIONS) == 11
+        assert len(PERMISSIONS) == 12
 
     @pytest.mark.parametrize("perm", list(_EXPECTED_PERMISSIONS))
     def test_expected_permission_exists(self, perm: str) -> None:
@@ -285,7 +286,7 @@ _VIEWER_PERMS = frozenset({"detections:read", "incidents:read"})
 _ANALYST_PERMS = _VIEWER_PERMS | {"detections:write", "incidents:write"}
 _HUNTER_PERMS = _ANALYST_PERMS | {"rules:read", "events:search"}
 _ENGINEER_PERMS = _HUNTER_PERMS | {"rules:write", "connectors:read", "connectors:write"}
-_ADMIN_PERMS = _ENGINEER_PERMS | {"users:read", "users:write"}
+_ADMIN_PERMS = _ENGINEER_PERMS | {"users:read", "users:write", "incidents:delete"}
 
 
 class TestRolePermissionsCorrectness:
@@ -307,7 +308,7 @@ class TestRolePermissionsCorrectness:
         assert ROLE_PERMISSIONS["admin"] == _ADMIN_PERMS
 
     def test_admin_has_all_eleven_permissions(self) -> None:
-        assert len(ROLE_PERMISSIONS["admin"]) == 11
+        assert len(ROLE_PERMISSIONS["admin"]) == 12
 
     def test_viewer_has_two_permissions(self) -> None:
         assert len(ROLE_PERMISSIONS["viewer"]) == 2
@@ -481,7 +482,7 @@ class TestRequirePermissionValidation:
 
     @pytest.mark.parametrize("perm", [
         "detections:read", "detections:write",
-        "incidents:read", "incidents:write",
+        "incidents:read", "incidents:write", "incidents:delete",
         "rules:read", "rules:write",
         "connectors:read", "connectors:write",
         "users:read", "users:write",
