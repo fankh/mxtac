@@ -203,6 +203,185 @@ class OpenSearchService:
         except Exception as exc:
             logger.error("OpenSearch upsert_rule failed: %s", exc)
 
+    async def ensure_indices(self) -> None:
+        """Create index templates for events/alerts and ensure the rules index exists.
+
+        Uses ``indices.put_index_template`` for the daily-rollover indices so that
+        every new ``mxtac-events-YYYY.MM.DD`` / ``mxtac-alerts-YYYY.MM.DD`` index
+        inherits the correct field mappings automatically.  The static
+        ``mxtac-rules`` index is created directly if it does not yet exist.
+
+        Safe to call multiple times — templates are idempotent (PUT) and the
+        rules-index creation is guarded by an existence check.  If no client is
+        available this method is a no-op.
+        """
+        if self._client is None:
+            return
+
+        # ── mxtac-events-* index template ─────────────────────────────────────
+        try:
+            await self._client.indices.put_index_template(
+                name="mxtac-events-template",
+                body={
+                    "index_patterns": [f"{EVENTS_INDEX_TEMPLATE}-*"],
+                    "template": {
+                        "settings": {
+                            "number_of_shards": 3,
+                            "number_of_replicas": 1,
+                        },
+                        "mappings": {
+                            "properties": {
+                                "metadata_uid":     {"type": "keyword"},
+                                "time":             {"type": "date"},
+                                "class_name":       {"type": "keyword"},
+                                "class_uid":        {"type": "integer"},
+                                "severity_id":      {"type": "integer"},
+                                "metadata_product": {"type": "keyword"},
+                                "metadata_version": {"type": "keyword"},
+                                "src_endpoint": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ip":       {"type": "ip"},
+                                        "hostname": {"type": "keyword"},
+                                        "port":     {"type": "integer"},
+                                        "domain":   {"type": "keyword"},
+                                        "os_name":  {"type": "keyword"},
+                                    },
+                                },
+                                "dst_endpoint": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ip":       {"type": "ip"},
+                                        "hostname": {"type": "keyword"},
+                                        "port":     {"type": "integer"},
+                                        "domain":   {"type": "keyword"},
+                                        "os_name":  {"type": "keyword"},
+                                    },
+                                },
+                                "actor_user": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name":          {"type": "keyword"},
+                                        "uid":           {"type": "keyword"},
+                                        "domain":        {"type": "keyword"},
+                                        "is_privileged": {"type": "boolean"},
+                                    },
+                                },
+                                "process": {
+                                    "type": "object",
+                                    "properties": {
+                                        "pid":         {"type": "integer"},
+                                        "name":        {"type": "keyword"},
+                                        "cmd_line":    {"type": "text"},
+                                        "path":        {"type": "keyword"},
+                                        "parent_pid":  {"type": "integer"},
+                                        "hash_sha256": {"type": "keyword"},
+                                    },
+                                },
+                                "network_traffic": {"type": "object", "enabled": True},
+                                "file":            {"type": "object", "enabled": True},
+                                "finding_info":    {"type": "object", "enabled": True},
+                                "unmapped":        {"type": "object", "enabled": True},
+                                "raw":             {"type": "object", "enabled": True},
+                            }
+                        },
+                    },
+                },
+            )
+            logger.info("Applied index template: mxtac-events-template")
+        except Exception as exc:
+            logger.warning("ensure_indices: events template failed: %s", exc)
+
+        # ── mxtac-alerts-* index template ─────────────────────────────────────
+        try:
+            await self._client.indices.put_index_template(
+                name="mxtac-alerts-template",
+                body={
+                    "index_patterns": [f"{ALERTS_INDEX_TEMPLATE}-*"],
+                    "template": {
+                        "settings": {
+                            "number_of_shards": 3,
+                            "number_of_replicas": 1,
+                        },
+                        "mappings": {
+                            "properties": {
+                                "rule_id":         {"type": "keyword"},
+                                "rule_name":       {
+                                    "type": "text",
+                                    "fields": {"keyword": {"type": "keyword"}},
+                                },
+                                "severity_name":   {"type": "keyword"},
+                                "risk_score":      {"type": "float"},
+                                "detection_count": {"type": "integer"},
+                                "first_seen":      {"type": "date"},
+                                "last_seen":       {"type": "date"},
+                                "status":          {"type": "keyword"},
+                                "assigned_to":     {"type": "keyword"},
+                                "tags":            {"type": "keyword"},
+                                "time":            {"type": "date"},
+                                "class_name":      {"type": "keyword"},
+                                "severity_id":     {"type": "integer"},
+                                "src_endpoint": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ip":       {"type": "ip"},
+                                        "hostname": {"type": "keyword"},
+                                    },
+                                },
+                                "dst_endpoint": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ip":       {"type": "ip"},
+                                        "hostname": {"type": "keyword"},
+                                    },
+                                },
+                            }
+                        },
+                    },
+                },
+            )
+            logger.info("Applied index template: mxtac-alerts-template")
+        except Exception as exc:
+            logger.warning("ensure_indices: alerts template failed: %s", exc)
+
+        # ── mxtac-rules (single static index) ─────────────────────────────────
+        try:
+            exists = await self._client.indices.exists(index=RULES_INDEX)
+            if not exists:
+                await self._client.indices.create(
+                    index=RULES_INDEX,
+                    body={
+                        "settings": {
+                            "number_of_shards": 1,
+                            "number_of_replicas": 1,
+                        },
+                        "mappings": {
+                            "properties": {
+                                "id":          {"type": "keyword"},
+                                "title":       {
+                                    "type": "text",
+                                    "fields": {"keyword": {"type": "keyword"}},
+                                },
+                                "description": {"type": "text"},
+                                "logsource":   {"type": "object", "enabled": True},
+                                "detection":   {"type": "object", "enabled": True},
+                                "tags":        {"type": "keyword"},
+                                "level":       {"type": "keyword"},
+                                "status":      {"type": "keyword"},
+                                "author":      {"type": "text"},
+                                "date":        {"type": "date"},
+                                "modified":    {"type": "date"},
+                                "references":  {"type": "text"},
+                            }
+                        },
+                    },
+                )
+                logger.info("Created rules index: %s", RULES_INDEX)
+            else:
+                logger.debug("Rules index already exists: %s", RULES_INDEX)
+        except Exception as exc:
+            logger.warning("ensure_indices: rules index failed: %s", exc)
+
     async def close(self) -> None:
         if self._client:
             await self._client.close()

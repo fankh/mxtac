@@ -480,3 +480,209 @@ async def test_connect_logs_warning_on_connection_failure(caplog: pytest.LogCapt
         await svc.connect()
 
     assert "cluster not ready" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# OpenSearchService.ensure_indices — feature 12.2
+# ---------------------------------------------------------------------------
+
+
+def _make_indices_client(*, rules_exist: bool = False) -> MagicMock:
+    """Return a mock IndicesClient with all relevant methods mocked async."""
+    idx = MagicMock()
+    idx.put_index_template = AsyncMock(return_value={"acknowledged": True})
+    idx.exists = AsyncMock(return_value=rules_exist)
+    idx.create = AsyncMock(return_value={"acknowledged": True})
+    return idx
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_noop_when_unavailable() -> None:
+    """ensure_indices() is a no-op when no client is connected."""
+    svc = OpenSearchService()
+    # _client is None — should not raise and not call anything
+    await svc.ensure_indices()
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_creates_events_template() -> None:
+    """ensure_indices() calls put_index_template for the events template."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    names_called = [
+        c.kwargs.get("name") or (c.args[0] if c.args else None)
+        for c in mock_client.indices.put_index_template.call_args_list
+    ]
+    assert "mxtac-events-template" in names_called
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_events_template_uses_correct_index_pattern() -> None:
+    """The events template must target the mxtac-events-* index pattern."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    calls = {
+        c.kwargs.get("name"): c.kwargs.get("body")
+        for c in mock_client.indices.put_index_template.call_args_list
+    }
+    body = calls.get("mxtac-events-template", {})
+    assert body.get("index_patterns") == ["mxtac-events-*"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_creates_alerts_template() -> None:
+    """ensure_indices() calls put_index_template for the alerts template."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    names_called = [
+        c.kwargs.get("name") or (c.args[0] if c.args else None)
+        for c in mock_client.indices.put_index_template.call_args_list
+    ]
+    assert "mxtac-alerts-template" in names_called
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_alerts_template_uses_correct_index_pattern() -> None:
+    """The alerts template must target the mxtac-alerts-* index pattern."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    calls = {
+        c.kwargs.get("name"): c.kwargs.get("body")
+        for c in mock_client.indices.put_index_template.call_args_list
+    }
+    body = calls.get("mxtac-alerts-template", {})
+    assert body.get("index_patterns") == ["mxtac-alerts-*"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_creates_rules_index_when_absent() -> None:
+    """ensure_indices() creates mxtac-rules when the index does not exist."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=False)
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    mock_client.indices.exists.assert_awaited_once_with(index="mxtac-rules")
+    mock_client.indices.create.assert_awaited_once()
+    create_kwargs = mock_client.indices.create.call_args.kwargs
+    assert create_kwargs.get("index") == "mxtac-rules"
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_skips_rules_create_when_already_exists() -> None:
+    """ensure_indices() skips creating mxtac-rules if it already exists."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    mock_client.indices.exists.assert_awaited_once_with(index="mxtac-rules")
+    mock_client.indices.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_events_template_has_time_date_field() -> None:
+    """Events template must map 'time' as a date field."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    calls = {
+        c.kwargs.get("name"): c.kwargs.get("body")
+        for c in mock_client.indices.put_index_template.call_args_list
+    }
+    props = calls["mxtac-events-template"]["template"]["mappings"]["properties"]
+    assert props["time"] == {"type": "date"}
+    assert props["severity_id"] == {"type": "integer"}
+    assert props["src_endpoint"]["properties"]["ip"] == {"type": "ip"}
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_alerts_template_has_alert_fields() -> None:
+    """Alerts template must include alert-specific fields like risk_score."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    calls = {
+        c.kwargs.get("name"): c.kwargs.get("body")
+        for c in mock_client.indices.put_index_template.call_args_list
+    }
+    props = calls["mxtac-alerts-template"]["template"]["mappings"]["properties"]
+    assert props["rule_id"] == {"type": "keyword"}
+    assert props["risk_score"] == {"type": "float"}
+    assert props["status"] == {"type": "keyword"}
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_events_template_exception_does_not_crash() -> None:
+    """An exception from put_index_template for events is caught; method continues."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    mock_client.indices.put_index_template = AsyncMock(side_effect=Exception("OS error"))
+    svc._client = mock_client
+
+    # Must not raise
+    await svc.ensure_indices()
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_rules_exception_does_not_crash() -> None:
+    """An exception from indices.exists is caught; method completes without raising."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client()
+    mock_client.indices.exists = AsyncMock(side_effect=Exception("cluster unavailable"))
+    svc._client = mock_client
+
+    # Must not raise
+    await svc.ensure_indices()
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_logs_success(caplog: pytest.LogCaptureFixture) -> None:
+    """ensure_indices() logs INFO messages on success."""
+    import logging
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=False)
+    svc._client = mock_client
+
+    with caplog.at_level(logging.INFO):
+        await svc.ensure_indices()
+
+    assert "mxtac-events-template" in caplog.text
+    assert "mxtac-alerts-template" in caplog.text
+    assert "mxtac-rules" in caplog.text

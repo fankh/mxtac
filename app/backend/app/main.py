@@ -63,9 +63,10 @@ async def on_startup() -> None:
     await queue.start()
     app.state.queue = queue
 
-    # 3. Connect OpenSearch
+    # 3. Connect OpenSearch and create index templates
     os_client = get_opensearch()
     await os_client.connect()
+    await os_client.ensure_indices()
     app.state.os_client = os_client
 
     # 4. Load Sigma rules
