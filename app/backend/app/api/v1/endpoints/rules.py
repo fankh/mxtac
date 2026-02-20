@@ -52,6 +52,10 @@ class RuleTestRequest(BaseModel):
     content: str          # YAML to test
     sample_event: dict    # event to test against
 
+class RuleEventTestRequest(BaseModel):
+    """Request body for POST /rules/{rule_id}/test — only sample event, content comes from DB."""
+    sample_event: dict
+
 class RuleTestResponse(BaseModel):
     matched: bool
     errors: list[str]
@@ -191,15 +195,49 @@ async def test_rule_yaml(
     body: RuleTestRequest,
     _: dict = Depends(require_permission("rules:read")),
 ):
-    """Test arbitrary Sigma YAML against a sample event (no save)."""
+    """Validate Sigma YAML structure and test it against a sample event (no save).
+
+    Validation phases:
+      1. YAML syntax — must parse without errors
+      2. Structure    — must be a mapping with 'title' and 'detection' fields
+      3. Detection    — 'detection' block must contain a 'condition' key
+      4. Compilation  — must load successfully via SigmaEngine
+      5. Evaluation   — detection condition evaluated against the sample event
+    """
+    # Phase 1: YAML syntax
     try:
         doc = yaml.safe_load(body.content)
-        detection = doc.get("detection", {})
-        cond = _Condition(detection)
-        matched = cond.matches(body.sample_event)
+    except yaml.YAMLError as exc:
+        return {"matched": False, "errors": [f"YAML parse error: {exc}"]}
+
+    if not isinstance(doc, dict):
+        return {"matched": False, "errors": ["YAML must be a mapping (dict)"]}
+
+    # Phase 2: Required Sigma fields
+    validation_errors: list[str] = []
+    if "title" not in doc:
+        validation_errors.append("Missing required field: 'title'")
+    if "detection" not in doc:
+        validation_errors.append("Missing required field: 'detection'")
+    if validation_errors:
+        return {"matched": False, "errors": validation_errors}
+
+    # Phase 3: Detection block structure
+    detection = doc.get("detection", {})
+    if not isinstance(detection, dict):
+        return {"matched": False, "errors": ["'detection' must be a mapping"]}
+    if "condition" not in detection:
+        return {"matched": False, "errors": ["'detection' block is missing 'condition'"]}
+
+    # Phase 4 + 5: Compile via engine and evaluate
+    try:
+        sigma_rule = _engine.load_rule_yaml(body.content)
+        if sigma_rule is None:
+            return {"matched": False, "errors": ["Failed to compile Sigma rule — check rule structure"]}
+        matched = sigma_rule._matcher.matches(body.sample_event)
         return {"matched": matched, "errors": []}
     except Exception as exc:
-        return {"matched": False, "errors": [str(exc)]}
+        return {"matched": False, "errors": [f"Evaluation error: {exc}"]}
 
 
 @router.post("/import", response_model=dict)
@@ -320,19 +358,22 @@ async def delete_rule(
 @router.post("/{rule_id}/test", response_model=RuleTestResponse)
 async def test_rule(
     rule_id: str,
-    body: RuleTestRequest,
+    body: RuleEventTestRequest,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("rules:read")),
 ):
-    """Test an existing rule against a sample event."""
+    """Test an existing stored rule against a sample event.
+
+    The rule content is loaded from the database; only a sample event is required.
+    """
     rule = await RuleRepo.get_by_id(db, rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
     try:
-        doc = yaml.safe_load(rule.content)
-        detection = doc.get("detection", {})
-        cond = _Condition(detection)
-        matched = cond.matches(body.sample_event)
+        sigma_rule = _engine.load_rule_yaml(rule.content)
+        if sigma_rule is None:
+            return {"matched": False, "errors": ["Stored rule failed to compile"]}
+        matched = sigma_rule._matcher.matches(body.sample_event)
         return {"matched": matched, "errors": []}
     except Exception as exc:
-        return {"matched": False, "errors": [str(exc)]}
+        return {"matched": False, "errors": [f"Evaluation error: {exc}"]}

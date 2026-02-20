@@ -465,6 +465,38 @@ async def test_rules_summary_after_import(client: AsyncClient, engineer_headers:
 
 
 @pytest.mark.asyncio
+async def test_rule_yaml_unauthenticated(client: AsyncClient) -> None:
+    """POST /rules/test without auth → 401 or 403."""
+    resp = await client.post(
+        f"{BASE_URL}/test",
+        json={"content": _SIGMA_YAML, "sample_event": {}},
+    )
+    assert resp.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_rule_yaml_viewer_forbidden(client: AsyncClient, viewer_headers: dict) -> None:
+    """POST /rules/test with viewer role → 403 (rules:read requires hunter+)."""
+    resp = await client.post(
+        f"{BASE_URL}/test",
+        headers=viewer_headers,
+        json={"content": _SIGMA_YAML, "sample_event": {}},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_rule_yaml_analyst_forbidden(client: AsyncClient, analyst_headers: dict) -> None:
+    """POST /rules/test with analyst role → 403 (rules:read requires hunter+)."""
+    resp = await client.post(
+        f"{BASE_URL}/test",
+        headers=analyst_headers,
+        json={"content": _SIGMA_YAML, "sample_event": {}},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_rule_yaml_matches_event(client: AsyncClient, hunter_headers: dict) -> None:
     """POST /rules/test with matching event → matched=true."""
     resp = await client.post(
@@ -476,12 +508,14 @@ async def test_rule_yaml_matches_event(client: AsyncClient, hunter_headers: dict
         },
     )
     assert resp.status_code == 200
-    assert resp.json()["matched"] is True
+    data = resp.json()
+    assert data["matched"] is True
+    assert data["errors"] == []
 
 
 @pytest.mark.asyncio
 async def test_rule_yaml_no_match(client: AsyncClient, hunter_headers: dict) -> None:
-    """POST /rules/test with non-matching event → matched=false."""
+    """POST /rules/test with non-matching event → matched=false, no errors."""
     resp = await client.post(
         f"{BASE_URL}/test",
         headers=hunter_headers,
@@ -491,7 +525,237 @@ async def test_rule_yaml_no_match(client: AsyncClient, hunter_headers: dict) -> 
         },
     )
     assert resp.status_code == 200
-    assert resp.json()["matched"] is False
+    data = resp.json()
+    assert data["matched"] is False
+    assert data["errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_rule_yaml_invalid_yaml_syntax(client: AsyncClient, hunter_headers: dict) -> None:
+    """POST /rules/test with invalid YAML syntax → matched=false, errors populated."""
+    resp = await client.post(
+        f"{BASE_URL}/test",
+        headers=hunter_headers,
+        json={
+            "content": "key: [unclosed bracket",
+            "sample_event": {"CommandLine": "test"},
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["matched"] is False
+    assert len(data["errors"]) > 0
+    assert any("YAML" in e or "parse" in e.lower() for e in data["errors"])
+
+
+@pytest.mark.asyncio
+async def test_rule_yaml_not_a_mapping(client: AsyncClient, hunter_headers: dict) -> None:
+    """POST /rules/test with YAML scalar (not a dict) → matched=false, errors populated."""
+    resp = await client.post(
+        f"{BASE_URL}/test",
+        headers=hunter_headers,
+        json={
+            "content": "just a plain string",
+            "sample_event": {"CommandLine": "test"},
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["matched"] is False
+    assert len(data["errors"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_rule_yaml_missing_title(client: AsyncClient, hunter_headers: dict) -> None:
+    """POST /rules/test with YAML missing 'title' field → matched=false, errors include field name."""
+    yaml_no_title = _SIGMA_YAML.replace("title: Test Mimikatz Detection\n", "")
+    resp = await client.post(
+        f"{BASE_URL}/test",
+        headers=hunter_headers,
+        json={
+            "content": yaml_no_title,
+            "sample_event": {"CommandLine": "mimikatz"},
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["matched"] is False
+    assert any("title" in e for e in data["errors"])
+
+
+@pytest.mark.asyncio
+async def test_rule_yaml_missing_detection(client: AsyncClient, hunter_headers: dict) -> None:
+    """POST /rules/test with YAML missing 'detection' block → matched=false, errors include field name."""
+    yaml_no_detection = "\n".join(
+        line for line in _SIGMA_YAML.splitlines()
+        if not line.startswith("detection") and "  selection" not in line
+        and "    CommandLine" not in line and "  condition:" not in line
+    )
+    resp = await client.post(
+        f"{BASE_URL}/test",
+        headers=hunter_headers,
+        json={
+            "content": yaml_no_detection,
+            "sample_event": {"CommandLine": "mimikatz"},
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["matched"] is False
+    assert any("detection" in e for e in data["errors"])
+
+
+@pytest.mark.asyncio
+async def test_rule_yaml_missing_condition(client: AsyncClient, hunter_headers: dict) -> None:
+    """POST /rules/test with detection block missing 'condition' → matched=false, errors populated."""
+    yaml_no_condition = _SIGMA_YAML.replace("  condition: selection\n", "")
+    resp = await client.post(
+        f"{BASE_URL}/test",
+        headers=hunter_headers,
+        json={
+            "content": yaml_no_condition,
+            "sample_event": {"CommandLine": "mimikatz"},
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["matched"] is False
+    assert any("condition" in e for e in data["errors"])
+
+
+@pytest.mark.asyncio
+async def test_rule_yaml_response_schema(client: AsyncClient, hunter_headers: dict) -> None:
+    """POST /rules/test response always includes 'matched' and 'errors' fields."""
+    resp = await client.post(
+        f"{BASE_URL}/test",
+        headers=hunter_headers,
+        json={"content": _SIGMA_YAML, "sample_event": {}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "matched" in data
+    assert "errors" in data
+    assert isinstance(data["matched"], bool)
+    assert isinstance(data["errors"], list)
+
+
+# ---------------------------------------------------------------------------
+# POST /rules/{rule_id}/test — test an existing stored rule against event (hunter+)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_existing_rule_test_unauthenticated(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """POST /rules/{id}/test without auth → 401 or 403."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.post(
+        f"{BASE_URL}/test-rule-0001/test",
+        json={"sample_event": {"CommandLine": "mimikatz"}},
+    )
+    assert resp.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_existing_rule_test_viewer_forbidden(
+    client: AsyncClient, viewer_headers: dict, engineer_headers: dict
+) -> None:
+    """POST /rules/{id}/test with viewer role → 403 (rules:read requires hunter+)."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.post(
+        f"{BASE_URL}/test-rule-0001/test",
+        headers=viewer_headers,
+        json={"sample_event": {"CommandLine": "mimikatz"}},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_existing_rule_test_matches_event(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """POST /rules/{id}/test with matching event → matched=true."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.post(
+        f"{BASE_URL}/test-rule-0001/test",
+        headers=hunter_headers,
+        json={"sample_event": {"CommandLine": "mimikatz sekurlsa::logonpasswords"}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["matched"] is True
+    assert data["errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_existing_rule_test_no_match(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """POST /rules/{id}/test with non-matching event → matched=false."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.post(
+        f"{BASE_URL}/test-rule-0001/test",
+        headers=hunter_headers,
+        json={"sample_event": {"CommandLine": "notepad.exe"}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["matched"] is False
+    assert data["errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_existing_rule_test_not_found(
+    client: AsyncClient, hunter_headers: dict
+) -> None:
+    """POST /rules/{id}/test for nonexistent rule → 404."""
+    resp = await client.post(
+        f"{BASE_URL}/nonexistent-rule-id/test",
+        headers=hunter_headers,
+        json={"sample_event": {"CommandLine": "mimikatz"}},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Rule not found"
+
+
+@pytest.mark.asyncio
+async def test_existing_rule_test_response_schema(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """POST /rules/{id}/test response includes 'matched' and 'errors' fields."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.post(
+        f"{BASE_URL}/test-rule-0001/test",
+        headers=hunter_headers,
+        json={"sample_event": {}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "matched" in data
+    assert "errors" in data
+    assert isinstance(data["matched"], bool)
+    assert isinstance(data["errors"], list)
 
 
 # ---------------------------------------------------------------------------
