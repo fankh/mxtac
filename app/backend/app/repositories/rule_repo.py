@@ -158,6 +158,33 @@ class RuleRepo:
         }
 
     @staticmethod
+    async def get_navigator_techniques(session: AsyncSession) -> dict[str, int]:
+        """Return enabled-rule coverage counts per technique for Navigator export.
+
+        Returns a mapping of technique_id → count of enabled rules covering it.
+        Only enabled rules are included; disabled rules are excluded entirely.
+        """
+        result = await session.execute(
+            select(Rule.technique_ids)
+            .where(Rule.enabled == True)  # noqa: E712
+            .where(Rule.technique_ids.is_not(None))
+        )
+        rows = result.scalars().all()
+
+        technique_counts: dict[str, int] = {}
+        for technique_ids_json in rows:
+            try:
+                ids = json.loads(technique_ids_json)
+                for tid in ids:
+                    if isinstance(tid, str) and tid.strip():
+                        key = tid.strip()
+                        technique_counts[key] = technique_counts.get(key, 0) + 1
+            except (ValueError, TypeError):
+                continue
+
+        return technique_counts
+
+    @staticmethod
     async def get_coverage_gaps(session: AsyncSession) -> dict:
         """Return ATT&CK coverage gap data based on enabled vs. all rules.
 
