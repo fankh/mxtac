@@ -1,6 +1,6 @@
-"""Tests for ZeekNormalizer — Feature 7.6
+"""Tests for ZeekNormalizer — Feature 7.6 + Feature 28.12
 
-Coverage:
+Coverage (Feature 7.6):
   - CONN_STATE_SEVERITY mapping: all documented states and default fallback
   - _normalize_conn(): full conn.log fields → NetworkActivity (class_uid=4001)
   - _normalize_conn(): missing optional fields produce sensible defaults
@@ -13,6 +13,16 @@ Coverage:
   - _parse_ts(): Unix float timestamp, None, invalid string
   - _safe_int(): int, str-int, None, invalid string
   - Full round-trip: realistic conn.log event → OCSFEvent with all fields
+
+Coverage (Feature 28.12 — Zeek conn → NetworkActivity):
+  - Extended conn fields: missed_bytes, history, orig_pkts, resp_pkts,
+    orig_ip_bytes, resp_ip_bytes, local_orig, local_resp, tunnel_parents, vlan
+  - All Zeek conn_state values and severity mapping
+  - IPv6 address support in src/dst endpoints
+  - Protocol variations: tcp, udp, icmp, icmp6
+  - Large byte counts (100GB+)
+  - Tunnel parent tracking
+  - Full round-trip: realistic conn event with all extended fields
 """
 
 from __future__ import annotations
@@ -686,3 +696,362 @@ def test_full_conn_round_trip(normalizer: ZeekNormalizer, conn_event: dict) -> N
     assert data["class_uid"] == 4001
     assert data["src_endpoint"]["ip"] == "10.0.0.5"
     assert data["network_traffic"]["protocol"] == "tcp"
+
+
+# ===========================================================================
+# Feature 28.12 — Zeek conn → NetworkActivity: Extended Test Coverage
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# Extended conn fields: missed_bytes, history, packet counts,
+# local_orig/local_resp, tunnel_parents, vlan
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def full_conn_event() -> dict:
+    """Realistic Zeek conn.log event with ALL fields populated."""
+    return {
+        "_log_type":      "conn",
+        "ts":             1708331400.123456,
+        "uid":            "CfullEvent123",
+        "id.orig_h":      "10.0.0.5",
+        "id.orig_p":      "54321",
+        "id.resp_h":      "192.168.1.10",
+        "id.resp_p":      "443",
+        "proto":          "tcp",
+        "service":        "ssl",
+        "duration":       12.345,
+        "orig_bytes":     1024,
+        "resp_bytes":     4096,
+        "conn_state":     "SF",
+        "local_orig":     True,
+        "local_resp":     False,
+        "missed_bytes":   0,
+        "history":        "ShADadFf",
+        "orig_pkts":      10,
+        "orig_ip_bytes":  1064,
+        "resp_pkts":      8,
+        "resp_ip_bytes":  4136,
+        "tunnel_parents": [],
+        "vlan":           100,
+    }
+
+
+def test_normalize_conn_missed_bytes(
+    normalizer: ZeekNormalizer, full_conn_event: dict
+) -> None:
+    """missed_bytes field is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_conn_event)
+    assert ocsf.network_traffic["missed_bytes"] == 0
+
+
+def test_normalize_conn_missed_bytes_nonzero(normalizer: ZeekNormalizer) -> None:
+    """Non-zero missed_bytes (packet loss) is preserved."""
+    event = {"_log_type": "conn", "missed_bytes": 512}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["missed_bytes"] == 512
+
+
+def test_normalize_conn_missed_bytes_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent missed_bytes defaults to None (not 0)."""
+    ocsf = normalizer.normalize({"_log_type": "conn"})
+    assert ocsf.network_traffic["missed_bytes"] is None
+
+
+def test_normalize_conn_history(
+    normalizer: ZeekNormalizer, full_conn_event: dict
+) -> None:
+    """Zeek connection history flags are captured in network_traffic."""
+    ocsf = normalizer.normalize(full_conn_event)
+    assert ocsf.network_traffic["history"] == "ShADadFf"
+
+
+def test_normalize_conn_history_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent history field defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "conn"})
+    assert ocsf.network_traffic["history"] is None
+
+
+def test_normalize_conn_orig_pkts(
+    normalizer: ZeekNormalizer, full_conn_event: dict
+) -> None:
+    """orig_pkts (originator packet count) is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_conn_event)
+    assert ocsf.network_traffic["orig_pkts"] == 10
+
+
+def test_normalize_conn_resp_pkts(
+    normalizer: ZeekNormalizer, full_conn_event: dict
+) -> None:
+    """resp_pkts (responder packet count) is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_conn_event)
+    assert ocsf.network_traffic["resp_pkts"] == 8
+
+
+def test_normalize_conn_orig_ip_bytes(
+    normalizer: ZeekNormalizer, full_conn_event: dict
+) -> None:
+    """orig_ip_bytes is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_conn_event)
+    assert ocsf.network_traffic["orig_ip_bytes"] == 1064
+
+
+def test_normalize_conn_resp_ip_bytes(
+    normalizer: ZeekNormalizer, full_conn_event: dict
+) -> None:
+    """resp_ip_bytes is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_conn_event)
+    assert ocsf.network_traffic["resp_ip_bytes"] == 4136
+
+
+def test_normalize_conn_local_orig_true(
+    normalizer: ZeekNormalizer, full_conn_event: dict
+) -> None:
+    """local_orig=True (originator is local) is preserved."""
+    ocsf = normalizer.normalize(full_conn_event)
+    assert ocsf.network_traffic["local_orig"] is True
+
+
+def test_normalize_conn_local_resp_false(
+    normalizer: ZeekNormalizer, full_conn_event: dict
+) -> None:
+    """local_resp=False (responder is external) is preserved."""
+    ocsf = normalizer.normalize(full_conn_event)
+    assert ocsf.network_traffic["local_resp"] is False
+
+
+def test_normalize_conn_local_orig_false(normalizer: ZeekNormalizer) -> None:
+    """Outbound connection: local_orig=False is preserved."""
+    event = {"_log_type": "conn", "local_orig": False, "local_resp": True}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["local_orig"] is False
+    assert ocsf.network_traffic["local_resp"] is True
+
+
+def test_normalize_conn_local_orig_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent local_orig/local_resp default to None (not False)."""
+    ocsf = normalizer.normalize({"_log_type": "conn"})
+    assert ocsf.network_traffic["local_orig"] is None
+    assert ocsf.network_traffic["local_resp"] is None
+
+
+def test_normalize_conn_tunnel_parents_empty(
+    normalizer: ZeekNormalizer, full_conn_event: dict
+) -> None:
+    """Empty tunnel_parents list is preserved as []."""
+    ocsf = normalizer.normalize(full_conn_event)
+    assert ocsf.network_traffic["tunnel_parents"] == []
+
+
+def test_normalize_conn_tunnel_parents_populated(normalizer: ZeekNormalizer) -> None:
+    """Non-empty tunnel_parents (tunneled connection) is preserved."""
+    event = {"_log_type": "conn", "tunnel_parents": ["CpFwgz1jEBPHIqvXy5"]}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["tunnel_parents"] == ["CpFwgz1jEBPHIqvXy5"]
+
+
+def test_normalize_conn_tunnel_parents_defaults_to_empty_when_absent(
+    normalizer: ZeekNormalizer,
+) -> None:
+    """Absent tunnel_parents defaults to [] (not None)."""
+    ocsf = normalizer.normalize({"_log_type": "conn"})
+    assert ocsf.network_traffic["tunnel_parents"] == []
+
+
+def test_normalize_conn_vlan(
+    normalizer: ZeekNormalizer, full_conn_event: dict
+) -> None:
+    """VLAN tag is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_conn_event)
+    assert ocsf.network_traffic["vlan"] == 100
+
+
+def test_normalize_conn_vlan_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent vlan defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "conn"})
+    assert ocsf.network_traffic["vlan"] is None
+
+
+# ---------------------------------------------------------------------------
+# All Zeek conn_state values and their severity mapping
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("conn_state,expected_severity", [
+    # States explicitly in CONN_STATE_SEVERITY
+    ("S0",   2),    # SYN sent, no reply — potential scan → Low
+    ("REJ",  3),    # Rejected → Medium
+    ("RSTO", 2),    # Orig RST → Low
+    ("RSTR", 2),    # Resp RST → Low
+    ("OTH",  1),    # Other → Informational
+    # States that fall through to default → Informational
+    ("SF",    1),   # Successful full connection
+    ("S1",    1),   # Established, not terminated
+    ("S2",    1),   # Established, orig closed
+    ("S3",    1),   # Established, resp closed
+    ("SH",    1),   # Orig SYN+FIN (abnormal but not in explicit map)
+    ("SHR",   1),   # Resp SYN+FIN
+    ("RSTOS0", 1),  # Orig RST before handshake (not in explicit map)
+    ("RSTRH", 1),   # Resp RST before handshake
+])
+def test_all_conn_states_severity(
+    normalizer: ZeekNormalizer, conn_state: str, expected_severity: int
+) -> None:
+    """Every known Zeek conn_state maps to the expected OCSF severity_id."""
+    event = {"_log_type": "conn", "conn_state": conn_state}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.severity_id == expected_severity, (
+        f"conn_state={conn_state!r} should map to severity_id={expected_severity}, "
+        f"got {ocsf.severity_id}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# IPv6 address support
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_conn_ipv6_src_endpoint(normalizer: ZeekNormalizer) -> None:
+    """IPv6 addresses in id.orig_h map correctly to src_endpoint.ip."""
+    event = {
+        "_log_type": "conn",
+        "id.orig_h": "2001:db8::1",
+        "id.orig_p": "12345",
+        "id.resp_h": "2001:db8::2",
+        "id.resp_p": "443",
+    }
+    ocsf = normalizer.normalize(event)
+    assert ocsf.src_endpoint.ip == "2001:db8::1"
+    assert ocsf.dst_endpoint.ip == "2001:db8::2"
+
+
+def test_normalize_conn_ipv6_ports(normalizer: ZeekNormalizer) -> None:
+    """IPv6 conn events also have numeric ports cast from string."""
+    event = {
+        "_log_type": "conn",
+        "id.orig_h": "::1",
+        "id.orig_p": "54321",
+        "id.resp_h": "::1",
+        "id.resp_p": "8080",
+    }
+    ocsf = normalizer.normalize(event)
+    assert ocsf.src_endpoint.port == 54321
+    assert ocsf.dst_endpoint.port == 8080
+
+
+# ---------------------------------------------------------------------------
+# Protocol variations
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("proto", ["tcp", "udp", "icmp", "icmp6"])
+def test_normalize_conn_protocol_variants(
+    normalizer: ZeekNormalizer, proto: str
+) -> None:
+    """Each transport protocol is preserved verbatim in network_traffic."""
+    event = {"_log_type": "conn", "proto": proto}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["protocol"] == proto
+
+
+# ---------------------------------------------------------------------------
+# Large byte counts
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_conn_large_byte_counts(normalizer: ZeekNormalizer) -> None:
+    """Byte counts in the 100GB range are stored without truncation."""
+    large = 100 * 1024 * 1024 * 1024  # 100 GiB
+    event = {
+        "_log_type":     "conn",
+        "orig_bytes":    large,
+        "resp_bytes":    large,
+        "orig_ip_bytes": large + 40,
+        "resp_ip_bytes": large + 40,
+    }
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["orig_bytes"] == large
+    assert ocsf.network_traffic["resp_bytes"] == large
+    assert ocsf.network_traffic["orig_ip_bytes"] == large + 40
+    assert ocsf.network_traffic["resp_ip_bytes"] == large + 40
+
+
+# ---------------------------------------------------------------------------
+# History flag edge cases
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("history", [
+    "Sh",           # SYN+half-open
+    "ShADadFfRr",   # Full bidirectional with RST
+    "D",            # Data without SYN (mid-stream capture)
+    "",             # Empty history
+])
+def test_normalize_conn_history_various_flags(
+    normalizer: ZeekNormalizer, history: str
+) -> None:
+    """Zeek history strings of any format are stored verbatim."""
+    event = {"_log_type": "conn", "history": history}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["history"] == history
+
+
+# ---------------------------------------------------------------------------
+# Full round-trip: all extended fields serialise cleanly
+# ---------------------------------------------------------------------------
+
+
+def test_full_conn_extended_round_trip(
+    normalizer: ZeekNormalizer, full_conn_event: dict
+) -> None:
+    """End-to-end: conn event with all extended fields → JSON-serializable OCSFEvent."""
+    ocsf = normalizer.normalize(full_conn_event)
+
+    # Core classification
+    assert ocsf.class_uid == 4001
+    assert ocsf.class_name == "Network Activity"
+    assert ocsf.category_uid == 4
+    assert ocsf.metadata_product == "Zeek"
+    assert ocsf.metadata_uid == "CfullEvent123"
+
+    nt = ocsf.network_traffic
+
+    # Original fields
+    assert nt["protocol"] == "tcp"
+    assert nt["service"] == "ssl"
+    assert nt["duration"] == 12.345
+    assert nt["orig_bytes"] == 1024
+    assert nt["resp_bytes"] == 4096
+    assert nt["conn_state"] == "SF"
+
+    # Extended fields
+    assert nt["missed_bytes"] == 0
+    assert nt["history"] == "ShADadFf"
+    assert nt["orig_pkts"] == 10
+    assert nt["resp_pkts"] == 8
+    assert nt["orig_ip_bytes"] == 1064
+    assert nt["resp_ip_bytes"] == 4136
+    assert nt["local_orig"] is True
+    assert nt["local_resp"] is False
+    assert nt["tunnel_parents"] == []
+    assert nt["vlan"] == 100
+
+    # Raw preserved
+    assert ocsf.raw["uid"] == "CfullEvent123"
+
+    # JSON serialisation must not raise and preserve all extended keys
+    data = ocsf.model_dump(mode="json")
+    assert data["class_uid"] == 4001
+    traffic = data["network_traffic"]
+    assert traffic["missed_bytes"] == 0
+    assert traffic["history"] == "ShADadFf"
+    assert traffic["orig_pkts"] == 10
+    assert traffic["resp_pkts"] == 8
+    assert traffic["orig_ip_bytes"] == 1064
+    assert traffic["resp_ip_bytes"] == 4136
+    assert traffic["local_orig"] is True
+    assert traffic["local_resp"] is False
+    assert traffic["tunnel_parents"] == []
+    assert traffic["vlan"] == 100
