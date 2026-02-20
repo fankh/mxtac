@@ -215,15 +215,23 @@ class _Condition:
         if condition.startswith("(") and condition.endswith(")"):
             return self._eval_condition(condition[1:-1], results)
 
-        # Count-based (1 of them / all of them)
+        # Count-based (1 of them / all of them / 1 of pattern*)
+        # "them" is a Sigma keyword meaning all named selections (equivalent to *)
         if condition.startswith("1 of "):
-            pattern = condition[5:]
-            regex   = re.compile(pattern.replace("*", ".*"), re.IGNORECASE)
+            pattern = condition[5:].strip()
+            if pattern == "them":
+                pattern = "*"
+            regex = re.compile(pattern.replace("*", ".*"), re.IGNORECASE)
             return any(v for k, v in results.items() if regex.match(k))
         if condition.startswith("all of "):
-            pattern = condition[7:]
-            regex   = re.compile(pattern.replace("*", ".*"), re.IGNORECASE)
-            return all(results.get(k, False) for k in results if regex.match(k))
+            pattern = condition[7:].strip()
+            if pattern == "them":
+                pattern = "*"
+            regex = re.compile(pattern.replace("*", ".*"), re.IGNORECASE)
+            matched_keys = [k for k in results if regex.match(k)]
+            if not matched_keys:
+                return False
+            return all(results.get(k, False) for k in matched_keys)
 
         return False
 
