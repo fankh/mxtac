@@ -12,11 +12,11 @@ interface User {
 }
 
 const ROLE_COLORS: Record<string, string> = {
-  admin:    'text-crit-text bg-[#FDECEA]',
-  engineer: 'text-[#C45C00] bg-[#FEF3E2]',
-  hunter:   'text-blue bg-[#EBF3FF]',
-  analyst:  'text-text-primary bg-[#F4F6F8]',
-  viewer:   'text-text-muted bg-[#F4F6F8]',
+  admin:    'text-crit-text bg-crit-bg',
+  engineer: 'text-high-text bg-high-bg',
+  hunter:   'text-blue bg-blue-light',
+  analyst:  'text-text-primary bg-page',
+  viewer:   'text-text-muted bg-page',
 }
 
 const ROLES = ['viewer', 'analyst', 'hunter', 'engineer', 'admin']
@@ -105,7 +105,7 @@ export function AdminPage() {
                     ))}
                   </select>
                   <div className="flex items-center gap-1">
-                    <span className={`w-[6px] h-[6px] rounded-full ${user.is_active ? 'bg-[#28A745]' : 'bg-border'}`} />
+                    <span className={`w-[6px] h-[6px] rounded-full ${user.is_active ? 'bg-status-ok' : 'bg-border'}`} />
                     <span className="text-[10px] text-text-muted">{user.is_active ? 'Active' : 'Inactive'}</span>
                   </div>
                   <button

@@ -1,4 +1,6 @@
 import type { KpiMetrics } from '../../../types/api'
+import { chartColors } from '../../../lib/themeVars'
+import { useUIStore } from '../../../stores/uiStore'
 
 function Card({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -12,6 +14,9 @@ function Card({ label, children }: { label: string; children: React.ReactNode })
 interface Props { data: KpiMetrics }
 
 export function KpiCards({ data }: Props) {
+  const theme = useUIStore((s) => s.theme)
+  const c = chartColors()
+
   const covPct = (data.attack_covered / data.attack_total) * 100
   const intPct = (data.integrations_active / data.integrations_total) * 100
 
@@ -23,7 +28,7 @@ export function KpiCards({ data }: Props) {
           {data.total_detections.toLocaleString()}
         </span>
         <span className="text-[11px] text-text-muted">
-          ↑ {data.total_detections_delta_pct}% vs prev week
+          {'\u2191'} {data.total_detections_delta_pct}% vs prev week
         </span>
       </Card>
 
@@ -40,15 +45,15 @@ export function KpiCards({ data }: Props) {
         <div className="flex items-center gap-3">
           {/* Ring gauge */}
           <svg width="52" height="52" viewBox="0 0 52 52" className="shrink-0">
-            <circle cx="26" cy="26" r="21" fill="none" stroke="#E8ECF0" strokeWidth="5" />
+            <circle cx="26" cy="26" r="21" fill="none" stroke={c.border} strokeWidth="5" />
             <circle
               cx="26" cy="26" r="21" fill="none"
-              stroke="#0066CC" strokeWidth="5" strokeLinecap="round"
+              stroke={c.primary} strokeWidth="5" strokeLinecap="round"
               strokeDasharray={`${(covPct / 100) * 132} 132`}
               strokeDashoffset="33"
               transform="rotate(-90 26 26)"
             />
-            <text x="26" y="30" textAnchor="middle" fontSize="12" fontWeight="700" fill="#1C2D40">
+            <text x="26" y="30" textAnchor="middle" fontSize="12" fontWeight="700" fill={c.textPrimary}>
               {Math.round(covPct)}%
             </text>
           </svg>
@@ -66,7 +71,7 @@ export function KpiCards({ data }: Props) {
           <span className="text-[14px] text-text-muted">min</span>
         </div>
         <span className="text-[11px] text-text-muted">
-          ↓ {Math.abs(data.mttd_delta_minutes)}m improved
+          {'\u2193'} {Math.abs(data.mttd_delta_minutes)}m improved
         </span>
       </Card>
 

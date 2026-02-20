@@ -1,4 +1,6 @@
 import type { HeatRow } from '../../../types/api'
+import { chartColors } from '../../../lib/themeVars'
+import { useUIStore } from '../../../stores/uiStore'
 
 interface Props {
   rows: HeatRow[]
@@ -6,6 +8,9 @@ interface Props {
 }
 
 export function AttackHeatmap({ rows, tacticLabels }: Props) {
+  const theme = useUIStore((s) => s.theme)
+  const c = chartColors()
+
   return (
     <div className="bg-surface rounded-md shadow-card p-4">
       <div className="mb-3">
@@ -34,8 +39,8 @@ export function AttackHeatmap({ rows, tacticLabels }: Props) {
                 className="h-[18px] rounded-[2px]"
                 style={{
                   backgroundColor: cell.opacity === 0
-                    ? '#F0F2F5'
-                    : `rgba(0, 102, 204, ${Math.max(0.12, cell.opacity)})`,
+                    ? c.chartGrid
+                    : `rgba(${c.primaryRgb}, ${Math.max(0.12, cell.opacity)})`,
                 }}
                 title={cell.opacity === 0 ? 'No coverage' : `Coverage: ${Math.round(cell.opacity * 100)}%`}
               />
@@ -52,11 +57,11 @@ export function AttackHeatmap({ rows, tacticLabels }: Props) {
             <div
               key={op}
               className="w-4 h-[10px] rounded-[2px]"
-              style={{ backgroundColor: op === 0 ? '#F0F2F5' : `rgba(0, 102, 204, ${op})` }}
+              style={{ backgroundColor: op === 0 ? c.chartGrid : `rgba(${c.primaryRgb}, ${op})` }}
             />
           ))}
         </div>
-        <span className="text-[10px] text-text-muted">None → Full</span>
+        <span className="text-[10px] text-text-muted">None {'\u2192'} Full</span>
       </div>
     </div>
   )

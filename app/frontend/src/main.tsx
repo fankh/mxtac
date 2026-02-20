@@ -5,6 +5,15 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './index.css'
 
+// Apply persisted theme before first paint to avoid flash
+try {
+  const stored = JSON.parse(localStorage.getItem('mxtac-ui') || '{}')
+  const theme = stored?.state?.theme || 'light'
+  document.documentElement.setAttribute('data-theme', theme)
+} catch {
+  document.documentElement.setAttribute('data-theme', 'light')
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, staleTime: 30_000 },

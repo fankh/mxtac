@@ -1,10 +1,10 @@
 import { useUIStore } from '../../stores/uiStore'
 
 const TYPE_STYLES = {
-  info:    'border-blue bg-[#EBF3FF] text-blue',
-  success: 'border-[#28A745] bg-[#EAF7ED] text-[#1A7A30]',
-  warning: 'border-[#F0A020] bg-[#FEF8EC] text-[#9A6600]',
-  error:   'border-crit-text bg-[#FDECEA] text-crit-text',
+  info:    'border-blue bg-blue-light text-blue',
+  success: 'border-status-ok bg-status-ok-bg text-status-ok-text',
+  warning: 'border-status-warn bg-status-warn-bg text-status-warn-text',
+  error:   'border-crit-text bg-crit-bg text-crit-text',
 }
 
 export function NotificationToast() {
@@ -27,7 +27,7 @@ export function NotificationToast() {
             className="text-[14px] opacity-60 hover:opacity-100 leading-none"
             onClick={() => removeNotification(n.id)}
           >
-            ×
+            {'\u00D7'}
           </button>
         </div>
       ))}

@@ -3,8 +3,8 @@ import type { IntegrationStatus } from '../../../types/api'
 interface Props { data: IntegrationStatus[] }
 
 const STATUS_DOT: Record<string, string> = {
-  ok:       'bg-[#28A745]',
-  warning:  'bg-[#F0A020]',
+  ok:       'bg-status-ok',
+  warning:  'bg-status-warn',
   error:    'bg-crit-text',
   inactive: 'bg-border',
 }

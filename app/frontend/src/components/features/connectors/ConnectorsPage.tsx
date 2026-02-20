@@ -16,10 +16,10 @@ interface Connector {
 }
 
 const STATUS_DOT: Record<string, string> = {
-  active:     'bg-[#28A745]',
+  active:     'bg-status-ok',
   inactive:   'bg-border',
   error:      'bg-crit-text',
-  connecting: 'bg-[#F0A020]',
+  connecting: 'bg-status-warn',
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -89,7 +89,7 @@ export function ConnectorsPage() {
                   }}
                   className={`text-[10px] px-2 py-[2px] rounded border transition-colors ${
                     conn.enabled
-                      ? 'border-[#28A745] text-[#28A745]'
+                      ? 'border-status-ok text-status-ok'
                       : 'border-border text-text-muted'
                   }`}
                 >
@@ -113,7 +113,7 @@ export function ConnectorsPage() {
 
               {conn.error_message && (
                 <div className="mt-2 text-[10px] text-crit-text truncate" title={conn.error_message}>
-                  ⚠ {conn.error_message}
+                  {'\u26A0'} {conn.error_message}
                 </div>
               )}
             </div>
@@ -134,7 +134,7 @@ export function ConnectorsPage() {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[12px] font-semibold text-text-primary">{selected.name} — Configuration</h3>
               <button
-                className="h-[28px] px-4 text-[11px] border border-blue text-blue rounded-md hover:bg-[#EBF3FF]"
+                className="h-[28px] px-4 text-[11px] border border-blue text-blue rounded-md hover:bg-blue-light"
                 onClick={() => {/* TODO: test connection */}}
               >
                 Test Connection

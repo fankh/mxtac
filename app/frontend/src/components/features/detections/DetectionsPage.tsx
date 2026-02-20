@@ -173,7 +173,7 @@ export function DetectionsPage() {
                 onClick={() => setSelected(isSelected ? null : d)}
                 className={`grid grid-cols-[44px_1fr_160px_110px_90px_100px_80px] gap-2 px-3 py-[7px] border-b border-section items-center cursor-pointer transition-colors ${
                   isSelected
-                    ? 'bg-[#F0F6FF] border-l-[3px] border-l-blue'
+                    ? 'bg-blue-faint border-l-[3px] border-l-blue'
                     : 'hover:bg-page'
                 }`}
               >

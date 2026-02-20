@@ -1,381 +1,616 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="matrix">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MxTac Documentation</title>
+<title>MxTac Docs — Security Platform</title>
 <link rel="icon" href="../brand/favicon.ico">
 <style>
-/* ── Reset & Variables ───────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════
+   MxTac Docs — Matrix Theme
+   ═══════════════════════════════════════════════════════════════════ */
+
 :root {
-  --green: #00FF41;
-  --green-dim: #00CC33;
-  --green-muted: #337733;
-  --green-faint: #1A3A1A;
-  --green-bg: #0A1A0E;
-  --red: #FF3333;
-  --orange: #FF8800;
-  --bg: #0A0A0A;
-  --surface: #111111;
-  --surface-2: #1A1A1A;
-  --border: #1A2A1A;
-  --border-strong: #224422;
-  --font: 'Courier New', Consolas, 'Fira Code', monospace;
+  --m-green:       #00FF41;
+  --m-green-dim:   #00CC33;
+  --m-green-muted: #338833;
+  --m-green-faint: #1A3A1A;
+  --m-green-bg:    rgba(0,255,65,0.04);
+  --m-green-glow:  rgba(0,255,65,0.12);
+  --m-red:         #FF3333;
+  --m-orange:      #FF8800;
+  --m-cyan:        #00CCAA;
+  --m-blue:        #3388FF;
+  --m-bg:          #030303;
+  --m-surface:     #0A0A0A;
+  --m-surface-2:   #0F0F0F;
+  --m-surface-3:   #141414;
+  --m-border:      #1A2A1A;
+  --m-border-hi:   #2A4A2A;
+  --m-text:        #BBBBBB;
+  --m-text-dim:    #777777;
+  --m-font:        'JetBrains Mono', 'Fira Code', 'Courier New', Consolas, monospace;
+  --m-sidebar-w:   260px;
+  --m-navbar-h:    52px;
 }
 
+/* ── Reset ──────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
 html { scroll-behavior: smooth; scroll-padding-top: 80px; }
 
 body {
-  font-family: var(--font);
-  background: var(--bg);
-  color: #CCCCCC;
-  line-height: 1.7;
+  font-family: var(--m-font);
+  background: var(--m-bg);
+  color: var(--m-text);
+  line-height: 1.75;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
-/* ── Top Navbar ──────────────────────────────────────────────────── */
+::selection {
+  background: rgba(0,255,65,0.25);
+  color: var(--m-green);
+}
+
+/* ── Digital Rain Canvas ────────────────────────────────────── */
+#rain-canvas {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  z-index: 0; pointer-events: none; opacity: 0.06;
+}
+
+/* ── CRT Scanlines ──────────────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.08) 2px,
+    rgba(0,0,0,0.08) 4px
+  );
+  pointer-events: none; z-index: 9999;
+}
+
+/* ── Navbar ─────────────────────────────────────────────────── */
 .navbar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-  background: rgba(10,10,10,0.92);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
+  background: rgba(3,3,3,0.88);
+  backdrop-filter: blur(16px) saturate(120%);
+  border-bottom: 1px solid var(--m-border);
+  height: var(--m-navbar-h);
+  display: flex; align-items: center;
   padding: 0 24px;
-  height: 56px;
-  display: flex; align-items: center; gap: 24px;
 }
-.navbar-brand {
+.navbar::before {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--m-green-faint) 20%, var(--m-green-dim) 50%, var(--m-green-faint) 80%, transparent);
+  opacity: 0.5;
+}
+.nav-brand {
   display: flex; align-items: center; gap: 10px;
-  text-decoration: none; color: var(--green);
-  font-weight: 700; font-size: 16px; white-space: nowrap;
+  text-decoration: none; color: var(--m-green);
+  font-weight: 700; font-size: 15px; white-space: nowrap;
 }
-.navbar-brand img { height: 28px; border-radius: 4px; }
-.navbar-brand span { opacity: 0.4; font-weight: 400; margin: 0 4px; }
-.navbar-links {
-  display: flex; gap: 4px; margin-left: auto;
+.nav-brand .logo-icon {
+  width: 28px; height: 28px; border-radius: 5px;
+  background: var(--m-surface);
+  border: 1px solid var(--m-border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800;
+  color: var(--m-green);
+  text-shadow: 0 0 8px rgba(0,255,65,0.4);
 }
-.navbar-links a {
-  color: var(--green-muted); text-decoration: none;
+.nav-brand .sep { opacity: 0.2; font-weight: 300; margin: 0 2px; }
+.nav-brand .docs-label { color: var(--m-green-muted); font-weight: 400; font-size: 13px; }
+
+.nav-links {
+  display: flex; gap: 2px; margin-left: auto;
+}
+.nav-links a {
+  color: var(--m-text-dim); text-decoration: none;
   font-size: 11px; padding: 6px 12px; border-radius: 4px;
-  transition: all 0.15s;
+  transition: all 0.15s; letter-spacing: 0.3px;
 }
-.navbar-links a:hover, .navbar-links a.active {
-  color: var(--green); background: var(--green-bg);
+.nav-links a:hover { color: var(--m-green); background: var(--m-green-bg); }
+.nav-links a.active { color: var(--m-green); background: var(--m-green-bg); }
+.nav-links .gh-link {
+  display: flex; align-items: center; gap: 5px;
+  border: 1px solid var(--m-border);
+  margin-left: 8px;
+}
+.nav-links .gh-link:hover { border-color: var(--m-green-faint); }
+
+.nav-version {
+  font-size: 9px; color: var(--m-green-muted);
+  background: var(--m-surface);
+  border: 1px solid var(--m-border);
+  padding: 2px 6px; border-radius: 3px;
+  margin-left: 12px; letter-spacing: 0.5px;
 }
 
-/* ── Layout ──────────────────────────────────────────────────────── */
+/* ── Layout ─────────────────────────────────────────────────── */
 .layout {
-  display: flex; margin-top: 56px; min-height: calc(100vh - 56px);
+  display: flex;
+  margin-top: var(--m-navbar-h);
+  min-height: calc(100vh - var(--m-navbar-h));
+  position: relative; z-index: 1;
 }
 
-/* ── Sidebar ─────────────────────────────────────────────────────── */
+/* ── Sidebar ────────────────────────────────────────────────── */
 .sidebar {
-  width: 260px; flex-shrink: 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  padding: 20px 0;
-  position: fixed; top: 56px; bottom: 0;
-  overflow-y: auto;
+  width: var(--m-sidebar-w); flex-shrink: 0;
+  background: var(--m-surface);
+  border-right: 1px solid var(--m-border);
+  position: fixed; top: var(--m-navbar-h); bottom: 0;
+  overflow-y: auto; padding: 16px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--m-border) transparent;
 }
-.sidebar-section {
-  padding: 0 16px; margin-bottom: 20px;
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--m-border); border-radius: 2px; }
+
+.sb-group { margin-bottom: 20px; padding: 0 12px; }
+.sb-label {
+  font-size: 9px; font-weight: 700;
+  color: var(--m-green-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.8px;
+  padding: 0 10px; margin-bottom: 4px;
 }
-.sidebar-label {
-  font-size: 9px; font-weight: 600;
-  color: var(--green-muted); text-transform: uppercase;
-  letter-spacing: 1.5px; padding: 0 8px; margin-bottom: 6px;
-}
-.sidebar a {
-  display: block; padding: 5px 8px;
-  color: #888; text-decoration: none;
+.sb-link {
+  display: block; padding: 5px 10px;
+  color: var(--m-text-dim); text-decoration: none;
   font-size: 12px; border-radius: 4px;
-  transition: all 0.12s; border-left: 2px solid transparent;
+  border-left: 2px solid transparent;
+  transition: all 0.12s;
 }
-.sidebar a:hover {
-  color: var(--green); background: rgba(0,255,65,0.04);
-  border-left-color: var(--green-muted);
+.sb-link:hover {
+  color: var(--m-green-dim);
+  background: var(--m-green-bg);
+  border-left-color: var(--m-green-muted);
 }
-.sidebar a.active {
-  color: var(--green); background: var(--green-bg);
-  border-left-color: var(--green);
+.sb-link.active {
+  color: var(--m-green);
+  background: rgba(0,255,65,0.06);
+  border-left-color: var(--m-green);
+  text-shadow: 0 0 6px rgba(0,255,65,0.15);
 }
 
-/* ── Main Content ────────────────────────────────────────────────── */
+/* ── Main ───────────────────────────────────────────────────── */
 .main {
-  margin-left: 260px; flex: 1;
-  padding: 40px 48px 80px;
-  max-width: 900px;
+  margin-left: var(--m-sidebar-w);
+  flex: 1; padding: 40px 52px 100px;
+  max-width: 920px;
 }
 
-/* ── Typography ──────────────────────────────────────────────────── */
+/* ── Typography ─────────────────────────────────────────────── */
 h1 {
-  font-size: 28px; color: var(--green); font-weight: 700;
-  margin-bottom: 8px;
-  text-shadow: 0 0 20px rgba(0,255,65,0.15);
+  font-size: 30px; color: var(--m-green); font-weight: 800;
+  letter-spacing: -0.3px; margin-bottom: 6px;
+  text-shadow: 0 0 30px rgba(0,255,65,0.15), 0 0 60px rgba(0,255,65,0.06);
 }
-h1 + .subtitle {
-  font-size: 13px; color: var(--green-muted); margin-bottom: 32px;
+.subtitle {
+  font-size: 13px; color: var(--m-green-muted);
+  margin-bottom: 36px; letter-spacing: 0.5px;
 }
 h2 {
-  font-size: 20px; color: var(--green); font-weight: 700;
-  margin: 48px 0 16px; padding-top: 24px;
-  border-top: 1px solid var(--border);
+  font-size: 20px; color: var(--m-green); font-weight: 700;
+  margin: 52px 0 16px; padding-top: 28px;
+  border-top: 1px solid var(--m-border);
+  text-shadow: 0 0 16px rgba(0,255,65,0.1);
+  letter-spacing: 0.2px;
 }
 h2:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
 h3 {
-  font-size: 15px; color: var(--green-dim); font-weight: 600;
-  margin: 28px 0 10px;
+  font-size: 15px; color: var(--m-green-dim); font-weight: 600;
+  margin: 32px 0 10px; letter-spacing: 0.3px;
 }
 h4 {
-  font-size: 13px; color: #AAAAAA; font-weight: 600;
-  margin: 20px 0 8px;
+  font-size: 13px; color: #999; font-weight: 600;
+  margin: 22px 0 8px;
 }
 p { margin-bottom: 14px; font-size: 13px; }
-a { color: var(--green-dim); }
-a:hover { color: var(--green); }
-strong { color: #EEEEEE; }
-em { color: var(--green-muted); font-style: normal; }
+a { color: var(--m-green-dim); transition: color 0.15s; }
+a:hover { color: var(--m-green); text-shadow: 0 0 6px rgba(0,255,65,0.15); }
+strong { color: #DDD; }
+em { color: var(--m-green-muted); font-style: normal; }
 
-ul, ol {
-  margin: 0 0 16px 20px; font-size: 13px;
-}
+ul, ol { margin: 0 0 16px 20px; font-size: 13px; }
 li { margin-bottom: 4px; }
-li code { font-size: 12px; }
+li::marker { color: var(--m-green-muted); }
 
-/* ── Code Blocks ─────────────────────────────────────────────────── */
+hr {
+  border: none; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--m-border-hi) 30%, var(--m-border-hi) 70%, transparent);
+  margin: 32px 0;
+}
+
+/* ── Code ───────────────────────────────────────────────────── */
 code {
-  font-family: var(--font);
-  background: var(--surface-2);
-  color: var(--green);
-  padding: 1px 5px; border-radius: 3px;
-  font-size: 12px;
+  font-family: var(--m-font);
+  background: var(--m-surface-2);
+  color: var(--m-green);
+  padding: 2px 6px; border-radius: 3px;
+  font-size: 12px; border: 1px solid var(--m-border);
 }
 pre {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--m-surface);
+  border: 1px solid var(--m-border);
   border-radius: 6px;
   padding: 16px 20px;
   margin: 0 0 20px;
   overflow-x: auto;
   position: relative;
 }
-pre code {
-  background: none; padding: 0;
-  color: #CCCCCC; font-size: 12px;
-  line-height: 1.6;
+pre::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--m-green-faint), transparent);
 }
-pre .comment { color: var(--green-muted); }
-pre .keyword { color: var(--green); }
-pre .string { color: #33FF66; }
-pre .flag { color: var(--orange); }
-pre .value { color: #66CCFF; }
+pre code {
+  background: none; padding: 0; border: none;
+  color: var(--m-text); font-size: 12px; line-height: 1.65;
+}
+/* Syntax colors */
+.cm { color: var(--m-green-muted); }  /* comment */
+.kw { color: var(--m-green); }         /* keyword */
+.st { color: #33FF66; }                /* string */
+.fl { color: var(--m-orange); }        /* flag */
+.vl { color: var(--m-cyan); }          /* value */
+.fn { color: var(--m-blue); }          /* function */
 
-/* ── Callout Boxes ───────────────────────────────────────────────── */
-.callout {
+/* Copy button */
+pre .copy-btn {
+  position: absolute; top: 8px; right: 8px;
+  background: var(--m-surface-3);
+  border: 1px solid var(--m-border);
+  color: var(--m-text-dim);
+  font-family: var(--m-font);
+  font-size: 10px; padding: 3px 8px;
+  border-radius: 3px; cursor: pointer;
+  opacity: 0; transition: all 0.15s;
+}
+pre:hover .copy-btn { opacity: 1; }
+pre .copy-btn:hover { color: var(--m-green); border-color: var(--m-green-faint); }
+pre .copy-btn.copied { color: var(--m-green); }
+
+/* ── Callouts ───────────────────────────────────────────────── */
+.note, .warn, .danger {
   border-radius: 6px; padding: 14px 18px;
   margin: 0 0 20px; font-size: 12px;
   border-left: 3px solid;
+  position: relative;
 }
-.callout-title {
-  font-weight: 700; font-size: 11px;
-  text-transform: uppercase; letter-spacing: 0.5px;
+.note-title {
+  font-weight: 700; font-size: 10px;
+  text-transform: uppercase; letter-spacing: 1px;
   margin-bottom: 4px;
 }
-.callout.info {
-  background: rgba(0,255,65,0.04);
-  border-color: var(--green-dim);
+.note {
+  background: rgba(0,255,65,0.03);
+  border-color: var(--m-green-dim);
 }
-.callout.info .callout-title { color: var(--green); }
-.callout.warn {
-  background: rgba(255,136,0,0.06);
-  border-color: var(--orange);
+.note .note-title { color: var(--m-green); }
+.warn {
+  background: rgba(255,136,0,0.04);
+  border-color: var(--m-orange);
 }
-.callout.warn .callout-title { color: var(--orange); }
-.callout.danger {
-  background: rgba(255,51,51,0.06);
-  border-color: var(--red);
+.warn .note-title { color: var(--m-orange); }
+.danger {
+  background: rgba(255,51,51,0.04);
+  border-color: var(--m-red);
 }
-.callout.danger .callout-title { color: var(--red); }
+.danger .note-title { color: var(--m-red); }
 
-/* ── Tables ──────────────────────────────────────────────────────── */
+/* ── Tables ─────────────────────────────────────────────────── */
 table {
   width: 100%; border-collapse: collapse;
   margin: 0 0 20px; font-size: 12px;
 }
 th {
   text-align: left; padding: 8px 12px;
-  background: var(--surface);
-  color: var(--green-muted);
+  background: var(--m-surface);
+  color: var(--m-green-muted);
   font-size: 10px; text-transform: uppercase;
-  letter-spacing: 0.5px; font-weight: 600;
-  border-bottom: 1px solid var(--border-strong);
+  letter-spacing: 0.8px; font-weight: 700;
+  border-bottom: 1px solid var(--m-border-hi);
 }
 td {
   padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--m-border);
 }
 td code { font-size: 11px; }
 tr:hover td { background: rgba(0,255,65,0.02); }
 
-/* ── Step blocks ─────────────────────────────────────────────────── */
+/* ── Steps ──────────────────────────────────────────────────── */
 .step {
   display: flex; gap: 14px;
   margin-bottom: 24px;
 }
-.step-num {
+.step-n {
   width: 28px; height: 28px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  background: var(--green-bg);
-  border: 1px solid var(--border-strong);
+  background: var(--m-surface);
+  border: 1px solid var(--m-border-hi);
   border-radius: 50%;
-  color: var(--green); font-size: 12px; font-weight: 700;
+  color: var(--m-green); font-size: 12px; font-weight: 700;
+  text-shadow: 0 0 8px rgba(0,255,65,0.2);
 }
-.step-body { flex: 1; padding-top: 3px; }
+.step-body { flex: 1; padding-top: 2px; }
 
-/* ── Architecture diagram ────────────────────────────────────────── */
-.arch-diagram {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 8px; padding: 24px; margin: 0 0 24px;
-  text-align: center;
+/* ── Architecture diagram ───────────────────────────────────── */
+.arch-box {
+  background: var(--m-surface);
+  border: 1px solid var(--m-border);
+  border-radius: 8px; padding: 28px;
+  margin: 0 0 28px; text-align: center;
+  position: relative; overflow: hidden;
 }
-.arch-diagram pre {
+.arch-box::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--m-green-faint) 30%, var(--m-green-dim) 50%, var(--m-green-faint) 70%, transparent);
+  opacity: 0.6;
+}
+.arch-box pre {
   background: none; border: none; padding: 0; margin: 0;
   display: inline-block; text-align: left;
 }
-.arch-diagram pre code { color: var(--green); font-size: 11px; }
+.arch-box pre code { color: var(--m-green); font-size: 11px; line-height: 1.5; }
 
-/* ── Footer ──────────────────────────────────────────────────────── */
-.footer {
-  margin-top: 60px; padding-top: 20px;
-  border-top: 1px solid var(--border);
-  font-size: 10px; color: var(--green-muted);
-  text-align: center;
+/* ── Cards ──────────────────────────────────────────────────── */
+.card-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px; margin-bottom: 24px;
+}
+.card {
+  background: var(--m-surface);
+  border: 1px solid var(--m-border);
+  border-radius: 6px; padding: 16px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.card:hover {
+  border-color: var(--m-green-faint);
+  box-shadow: 0 0 20px rgba(0,255,65,0.04);
+}
+.card-label {
+  font-size: 10px; color: var(--m-green-muted);
+  text-transform: uppercase; letter-spacing: 1px;
+  margin-bottom: 6px; font-weight: 600;
+}
+.card-value {
+  font-size: 22px; color: var(--m-green);
+  font-weight: 700;
+  text-shadow: 0 0 10px rgba(0,255,65,0.1);
+}
+.card-sub { font-size: 11px; color: var(--m-text-dim); margin-top: 4px; }
+
+/* ── Badge ──────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  font-size: 10px; font-weight: 600;
+  padding: 2px 8px; border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+.badge-green { color: var(--m-green); background: rgba(0,255,65,0.08); border: 1px solid var(--m-green-faint); }
+.badge-orange { color: var(--m-orange); background: rgba(255,136,0,0.08); border: 1px solid rgba(255,136,0,0.15); }
+.badge-red { color: var(--m-red); background: rgba(255,51,51,0.08); border: 1px solid rgba(255,51,51,0.15); }
+.badge-cyan { color: var(--m-cyan); background: rgba(0,204,170,0.08); border: 1px solid rgba(0,204,170,0.15); }
+
+/* ── Search ─────────────────────────────────────────────────── */
+.search-box {
+  position: relative; margin-left: 16px;
+}
+.search-box input {
+  background: var(--m-surface);
+  border: 1px solid var(--m-border);
+  color: var(--m-text);
+  font-family: var(--m-font);
+  font-size: 11px; padding: 5px 10px 5px 26px;
+  border-radius: 4px; width: 180px;
+  outline: none; transition: all 0.15s;
+}
+.search-box input::placeholder { color: var(--m-text-dim); }
+.search-box input:focus {
+  border-color: var(--m-green-faint);
+  box-shadow: 0 0 12px rgba(0,255,65,0.06);
+  width: 240px;
+}
+.search-box::before {
+  content: '\u2315';
+  position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+  color: var(--m-text-dim); font-size: 12px;
 }
 
-/* ── Responsive ──────────────────────────────────────────────────── */
+/* ── Footer ─────────────────────────────────────────────────── */
+.footer {
+  margin-top: 64px; padding-top: 20px;
+  border-top: 1px solid var(--m-border);
+  font-size: 10px; color: var(--m-text-dim);
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+.footer a { color: var(--m-green-muted); }
+
+/* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .sidebar { display: none; }
   .main { margin-left: 0; padding: 24px 20px 60px; }
+  .nav-links { display: none; }
+  .search-box { display: none; }
+}
+
+/* ── Glow pulse animation ───────────────────────────────────── */
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.glow-dot {
+  display: inline-block;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--m-green);
+  box-shadow: 0 0 6px var(--m-green);
+  animation: glow-pulse 2s ease-in-out infinite;
+  margin-right: 6px;
+}
+
+/* ── Terminal prompt ────────────────────────────────────────── */
+.terminal-prompt::before {
+  content: '$ ';
+  color: var(--m-green);
+  font-weight: 700;
 }
 </style>
 </head>
 <body>
 
-<!-- ════════════════ NAVBAR ════════════════ -->
+<!-- ═══ Digital Rain Canvas ═══ -->
+<canvas id="rain-canvas"></canvas>
+
+<!-- ═══ NAVBAR ═══ -->
 <nav class="navbar">
-  <a href="#" class="navbar-brand">
-    <img src="../brand/favicon-32.png" alt="MxTac">
-    MxTac <span>|</span> Docs
+  <a href="#" class="nav-brand">
+    <span class="logo-icon">M</span>
+    MxTac
+    <span class="sep">|</span>
+    <span class="docs-label">Documentation</span>
   </a>
-  <div class="navbar-links">
-    <a href="#installation" class="active">Installation</a>
-    <a href="#configuration">Configuration</a>
+  <span class="nav-version">v2.0</span>
+  <div class="search-box">
+    <input type="text" id="search-input" placeholder="Search docs..." autocomplete="off">
+  </div>
+  <div class="nav-links">
+    <a href="#quickstart" class="active">Quick Start</a>
+    <a href="#installation">Install</a>
+    <a href="#configuration">Config</a>
     <a href="#agents">Agents</a>
     <a href="#integrations">Integrations</a>
-    <a href="#kubernetes">Kubernetes</a>
-    <a href="https://github.com/fankh/new-research" target="_blank">GitHub</a>
+    <a href="#kubernetes">K8s</a>
+    <a href="https://github.com/fankh/new-research" target="_blank" class="gh-link">&lt;/&gt; GitHub</a>
   </div>
 </nav>
 
-<!-- ════════════════ LAYOUT ════════════════ -->
+<!-- ═══ LAYOUT ═══ -->
 <div class="layout">
 
-<!-- ════════════════ SIDEBAR ════════════════ -->
+<!-- ═══ SIDEBAR ═══ -->
 <aside class="sidebar">
-  <div class="sidebar-section">
-    <div class="sidebar-label">Getting Started</div>
-    <a href="#overview">Overview</a>
-    <a href="#prerequisites">Prerequisites</a>
-    <a href="#quickstart">Quick Start</a>
+  <div class="sb-group">
+    <div class="sb-label">Getting Started</div>
+    <a href="#overview" class="sb-link">Overview</a>
+    <a href="#prerequisites" class="sb-link">Prerequisites</a>
+    <a href="#quickstart" class="sb-link">Quick Start</a>
   </div>
-  <div class="sidebar-section">
-    <div class="sidebar-label">Installation</div>
-    <a href="#install-docker">Docker Compose (Dev)</a>
-    <a href="#install-prod">Docker Compose (Prod)</a>
-    <a href="#install-manual">Manual Setup</a>
-    <a href="#install-verify">Verify Installation</a>
+  <div class="sb-group">
+    <div class="sb-label">Installation</div>
+    <a href="#install-docker" class="sb-link">Docker Compose (Dev)</a>
+    <a href="#install-prod" class="sb-link">Docker Compose (Prod)</a>
+    <a href="#install-manual" class="sb-link">Manual Setup</a>
+    <a href="#install-verify" class="sb-link">Verify Installation</a>
   </div>
-  <div class="sidebar-section">
-    <div class="sidebar-label">Configuration</div>
-    <a href="#config-backend">Backend Environment</a>
-    <a href="#config-frontend">Frontend Environment</a>
-    <a href="#config-auth">Authentication</a>
-    <a href="#config-database">Database</a>
-    <a href="#config-opensearch">OpenSearch</a>
-    <a href="#config-queue">Message Queue</a>
-    <a href="#config-cors">CORS & Security</a>
-    <a href="#config-tls">TLS / HTTPS</a>
+  <div class="sb-group">
+    <div class="sb-label">Configuration</div>
+    <a href="#config-backend" class="sb-link">Backend Environment</a>
+    <a href="#config-frontend" class="sb-link">Frontend Environment</a>
+    <a href="#config-auth" class="sb-link">Authentication</a>
+    <a href="#config-database" class="sb-link">Database</a>
+    <a href="#config-opensearch" class="sb-link">OpenSearch</a>
+    <a href="#config-queue" class="sb-link">Message Queue</a>
+    <a href="#config-cors" class="sb-link">CORS &amp; Security</a>
+    <a href="#config-tls" class="sb-link">TLS / HTTPS</a>
   </div>
-  <div class="sidebar-section">
-    <div class="sidebar-label">Agents</div>
-    <a href="#agent-overview">Agent Overview</a>
-    <a href="#agent-mxguard">MxGuard (EDR)</a>
-    <a href="#agent-mxwatch">MxWatch (NDR)</a>
-    <a href="#agent-scheduler">Agent Scheduler</a>
+  <div class="sb-group">
+    <div class="sb-label">Agents</div>
+    <a href="#agent-overview" class="sb-link">Agent Overview</a>
+    <a href="#agent-mxguard" class="sb-link">MxGuard (EDR)</a>
+    <a href="#agent-mxwatch" class="sb-link">MxWatch (NDR)</a>
+    <a href="#agent-scheduler" class="sb-link">Agent Scheduler</a>
   </div>
-  <div class="sidebar-section">
-    <div class="sidebar-label">Integrations</div>
-    <a href="#int-wazuh">Wazuh</a>
-    <a href="#int-zeek">Zeek</a>
-    <a href="#int-suricata">Suricata</a>
-    <a href="#int-sigma">Sigma Rules</a>
+  <div class="sb-group">
+    <div class="sb-label">Integrations</div>
+    <a href="#int-wazuh" class="sb-link">Wazuh</a>
+    <a href="#int-zeek" class="sb-link">Zeek</a>
+    <a href="#int-suricata" class="sb-link">Suricata</a>
+    <a href="#int-sigma" class="sb-link">Sigma Rules</a>
   </div>
-  <div class="sidebar-section">
-    <div class="sidebar-label">Deployment</div>
-    <a href="#kubernetes">Kubernetes (K3s)</a>
-    <a href="#monitoring">Monitoring</a>
-    <a href="#backup">Backup & Restore</a>
+  <div class="sb-group">
+    <div class="sb-label">Deployment</div>
+    <a href="#kubernetes" class="sb-link">Kubernetes (K3s)</a>
+    <a href="#monitoring" class="sb-link">Monitoring</a>
+    <a href="#backup" class="sb-link">Backup &amp; Restore</a>
   </div>
-  <div class="sidebar-section">
-    <div class="sidebar-label">Reference</div>
-    <a href="#api-ref">API Reference</a>
-    <a href="#env-ref">Environment Variables</a>
-    <a href="#ports">Port Reference</a>
-    <a href="#troubleshooting">Troubleshooting</a>
+  <div class="sb-group">
+    <div class="sb-label">Reference</div>
+    <a href="#api-ref" class="sb-link">API Reference</a>
+    <a href="#env-ref" class="sb-link">Environment Variables</a>
+    <a href="#ports" class="sb-link">Port Reference</a>
+    <a href="#troubleshooting" class="sb-link">Troubleshooting</a>
   </div>
 </aside>
 
-<!-- ════════════════ MAIN CONTENT ════════════════ -->
+<!-- ═══ MAIN CONTENT ═══ -->
 <main class="main">
 
-<!-- ──────────────────── OVERVIEW ──────────────────── -->
+<!-- ──── OVERVIEW ──── -->
 <h1 id="overview">MxTac Documentation</h1>
-<p class="subtitle">Installation, Configuration & Operations Manual &mdash; v2.0</p>
+<p class="subtitle"><span class="glow-dot"></span>Installation, Configuration &amp; Operations Manual</p>
 
-<p>MxTac is an open-source security integration platform that unifies best-of-breed OSS security tools under a single <strong>MITRE ATT&CK-native interface</strong>. It normalizes events via <strong>OCSF</strong>, executes <strong>Sigma rules</strong> natively, and provides cross-tool attack chain detection.</p>
+<p>MxTac is an open-source security integration platform that unifies best-of-breed OSS security tools under a single <strong>MITRE ATT&amp;CK-native interface</strong>. It normalizes events via <strong>OCSF</strong>, executes <strong>Sigma rules</strong> natively, and provides cross-tool attack chain detection.</p>
 
-<div class="arch-diagram">
+<div class="card-grid">
+  <div class="card">
+    <div class="card-label">Framework</div>
+    <div class="card-value">ATT&amp;CK</div>
+    <div class="card-sub">MITRE native mapping</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Detection</div>
+    <div class="card-value">Sigma</div>
+    <div class="card-sub">Native rule execution</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Schema</div>
+    <div class="card-value">OCSF</div>
+    <div class="card-sub">Normalized events</div>
+  </div>
+  <div class="card">
+    <div class="card-label">License</div>
+    <div class="card-value">OSS</div>
+    <div class="card-sub">Open source</div>
+  </div>
+</div>
+
+<div class="arch-box">
 <pre><code>  +------------------+     +------------------+     +------------------+
-  |    <span class="keyword">Wazuh</span> 4.7+    |     |    <span class="keyword">Zeek</span> 6.x      |     |  <span class="keyword">Suricata</span> 7.x   |
+  |    <span class="kw">Wazuh</span> 4.7+    |     |    <span class="kw">Zeek</span> 6.x      |     |  <span class="kw">Suricata</span> 7.x   |
   +--------+---------+     +--------+---------+     +--------+---------+
            |                         |                         |
            +------------+------------+------------+------------+
-                        |       <span class="string">Connectors</span>        |
+                        |       <span class="st">Connectors</span>        |
                         v                         v
                +--------+---------+      +--------+---------+
-               |  <span class="keyword">OCSF Normalizer</span> |      |  <span class="keyword">Kafka / Redpanda</span> |
+               |  <span class="kw">OCSF Normalizer</span> |      |  <span class="kw">Kafka / Redpanda</span> |
                +--------+---------+      +--------+---------+
                         |                         |
                         v                         v
                +--------+-------------------------+---------+
-               |               <span class="keyword">MxTac Core</span>                   |
+               |               <span class="kw">MxTac Core</span>                   |
                |  FastAPI  |  Sigma Engine  |  PostgreSQL   |
                +--------+-------------------------+---------+
                         |                         |
                +--------+---------+      +--------+---------+
-               | <span class="keyword">OpenSearch</span> 2.17  |      |  <span class="keyword">React Dashboard</span> |
+               | <span class="kw">OpenSearch</span> 2.17  |      |  <span class="kw">React Dashboard</span> |
                +------------------+      +------------------+</code></pre>
 </div>
 
-<!-- ──────────────────── PREREQUISITES ──────────────────── -->
+<!-- ──── PREREQUISITES ──── -->
 <h2 id="prerequisites">Prerequisites</h2>
 
 <h3>System Requirements</h3>
 <table>
-  <thead>
-    <tr><th>Component</th><th>Minimum</th><th>Recommended</th></tr>
-  </thead>
+  <thead><tr><th>Component</th><th>Minimum</th><th>Recommended</th></tr></thead>
   <tbody>
     <tr><td>CPU</td><td>4 cores</td><td>8+ cores</td></tr>
     <tr><td>RAM</td><td>8 GB</td><td>16+ GB</td></tr>
@@ -386,9 +621,7 @@ tr:hover td { background: rgba(0,255,65,0.02); }
 
 <h3>Software Requirements</h3>
 <table>
-  <thead>
-    <tr><th>Software</th><th>Version</th><th>Required For</th></tr>
-  </thead>
+  <thead><tr><th>Software</th><th>Version</th><th>Required For</th></tr></thead>
   <tbody>
     <tr><td><code>Docker</code></td><td>24+</td><td>Container runtime</td></tr>
     <tr><td><code>Docker Compose</code></td><td>2.x</td><td>Service orchestration</td></tr>
@@ -400,151 +633,146 @@ tr:hover td { background: rgba(0,255,65,0.02); }
   </tbody>
 </table>
 
-<!-- ──────────────────── QUICK START ──────────────────── -->
+<!-- ──── QUICK START ──── -->
 <h2 id="quickstart">Quick Start</h2>
 <p>Get MxTac running in under 5 minutes with Docker Compose.</p>
 
 <div class="step">
-  <div class="step-num">1</div>
+  <div class="step-n">1</div>
   <div class="step-body">
     <h4>Clone the repository</h4>
-    <pre><code>git clone https://github.com/fankh/new-research.git
+    <pre><code><span class="cm"># Clone MxTac source</span>
+git clone https://github.com/fankh/new-research.git
 cd new-research/mitre-attack/mxtac/app</code></pre>
   </div>
 </div>
 
 <div class="step">
-  <div class="step-num">2</div>
+  <div class="step-n">2</div>
   <div class="step-body">
     <h4>Configure environment</h4>
     <pre><code>cp backend/.env.example backend/.env
-<span class="comment"># Generate a secret key</span>
+<span class="cm"># Generate a secret key</span>
 sed -i "s/CHANGE_ME_GENERATE_WITH_OPENSSL_RAND_HEX_32/$(openssl rand -hex 32)/" backend/.env</code></pre>
   </div>
 </div>
 
 <div class="step">
-  <div class="step-num">3</div>
+  <div class="step-n">3</div>
   <div class="step-body">
     <h4>Start all services</h4>
     <pre><code>docker compose up -d</code></pre>
-    <p>This starts: <strong>Backend API</strong> (port 8080), <strong>Frontend</strong> (port 5173), <strong>PostgreSQL</strong> (5432), <strong>Valkey</strong> (6379), and <strong>OpenSearch</strong> (9200).</p>
+    <p>This starts: <strong>Backend API</strong> (:8080), <strong>Frontend</strong> (:5173), <strong>PostgreSQL</strong> (:5432), <strong>Valkey</strong> (:6379), <strong>OpenSearch</strong> (:9200).</p>
   </div>
 </div>
 
 <div class="step">
-  <div class="step-num">4</div>
+  <div class="step-n">4</div>
   <div class="step-body">
     <h4>Access MxTac</h4>
     <table>
-      <tr><td><strong>Dashboard</strong></td><td><a href="http://localhost:5173">http://localhost:5173</a></td></tr>
-      <tr><td><strong>API</strong></td><td><a href="http://localhost:8080">http://localhost:8080</a></td></tr>
-      <tr><td><strong>API Docs</strong></td><td><a href="http://localhost:8080/docs">http://localhost:8080/docs</a></td></tr>
+      <tr><td><strong>Dashboard</strong></td><td><code>http://localhost:5173</code></td></tr>
+      <tr><td><strong>API</strong></td><td><code>http://localhost:8080</code></td></tr>
+      <tr><td><strong>API Docs</strong></td><td><code>http://localhost:8080/docs</code></td></tr>
     </table>
   </div>
 </div>
 
 <div class="step">
-  <div class="step-num">5</div>
+  <div class="step-n">5</div>
   <div class="step-body">
     <h4>Login</h4>
-    <pre><code><span class="comment"># Default development credentials</span>
-Email:    analyst@mxtac.local
-Password: mxtac2026</code></pre>
+    <pre><code><span class="cm"># Default development credentials</span>
+Email:    <span class="st">analyst@mxtac.local</span>
+Password: <span class="st">mxtac2026</span></code></pre>
   </div>
 </div>
 
-<div class="callout warn">
-  <div class="callout-title">Warning</div>
+<div class="warn">
+  <div class="note-title">Warning</div>
   Change the default credentials and <code>SECRET_KEY</code> before deploying to production.
 </div>
 
-<!-- ──────────────────── INSTALLATION ──────────────────── -->
+<!-- ──── INSTALLATION ──── -->
 <h2 id="installation">Installation</h2>
 
-<!-- Docker Dev -->
 <h3 id="install-docker">Docker Compose (Development)</h3>
 <p>The development setup includes hot-reload for both backend and frontend, with source code mounted as volumes.</p>
 
-<pre><code><span class="comment"># Start core services (backend, frontend, postgres, valkey, opensearch)</span>
+<pre><code><span class="cm"># Start core services</span>
 docker compose up -d
 
-<span class="comment"># Optional: Start with OpenSearch Dashboards</span>
-docker compose <span class="flag">--profile dashboards</span> up -d
+<span class="cm"># With OpenSearch Dashboards</span>
+docker compose <span class="fl">--profile dashboards</span> up -d
 
-<span class="comment"># Optional: Start with Kafka (Redpanda)</span>
-docker compose <span class="flag">--profile kafka</span> up -d
+<span class="cm"># With Kafka (Redpanda)</span>
+docker compose <span class="fl">--profile kafka</span> up -d
 
-<span class="comment"># Optional: Start everything</span>
-docker compose <span class="flag">--profile dashboards --profile kafka</span> up -d</code></pre>
+<span class="cm"># Start everything</span>
+docker compose <span class="fl">--profile dashboards --profile kafka</span> up -d</code></pre>
 
 <h4>Service Overview</h4>
 <table>
-  <thead>
-    <tr><th>Service</th><th>Image</th><th>Port</th><th>Notes</th></tr>
-  </thead>
+  <thead><tr><th>Service</th><th>Image</th><th>Port</th><th>Notes</th></tr></thead>
   <tbody>
     <tr><td><code>backend</code></td><td>Python 3.12-slim</td><td>8080</td><td>FastAPI + Uvicorn (--reload)</td></tr>
     <tr><td><code>frontend</code></td><td>Node 20-slim</td><td>5173</td><td>Vite dev server (HMR)</td></tr>
     <tr><td><code>postgres</code></td><td>postgres:16-alpine</td><td>5432</td><td>User: mxtac / Pass: mxtac</td></tr>
     <tr><td><code>redis</code></td><td>valkey/valkey:8-alpine</td><td>6379</td><td>BSD-licensed Redis alternative</td></tr>
     <tr><td><code>opensearch</code></td><td>opensearch:2.17.0</td><td>9200</td><td>Security plugin disabled</td></tr>
-    <tr><td><code>redpanda</code></td><td>redpanda:v24.3.1</td><td>19092</td><td>Optional, <code>--profile kafka</code></td></tr>
-    <tr><td><code>opensearch-dashboards</code></td><td>opensearch-dashboards:2.17.0</td><td>5601</td><td>Optional, <code>--profile dashboards</code></td></tr>
+    <tr><td><code>redpanda</code></td><td>redpanda:v24.3.1</td><td>19092</td><td>Optional <span class="badge badge-orange">--profile kafka</span></td></tr>
+    <tr><td><code>dashboards</code></td><td>opensearch-dashboards:2.17.0</td><td>5601</td><td>Optional <span class="badge badge-orange">--profile dashboards</span></td></tr>
   </tbody>
 </table>
 
 <h4>Manage Services</h4>
-<pre><code><span class="comment"># View logs</span>
-docker compose logs <span class="flag">-f</span> backend
+<pre><code><span class="cm"># View logs</span>
+docker compose logs <span class="fl">-f</span> backend
 
-<span class="comment"># Restart a single service</span>
+<span class="cm"># Restart a single service</span>
 docker compose restart backend
 
-<span class="comment"># Stop everything</span>
+<span class="cm"># Stop everything</span>
 docker compose down
 
-<span class="comment"># Stop and remove volumes (clean reset)</span>
-docker compose down <span class="flag">-v</span></code></pre>
+<span class="cm"># Stop and remove volumes (clean reset)</span>
+docker compose down <span class="fl">-v</span></code></pre>
 
-<!-- Docker Prod -->
 <h3 id="install-prod">Docker Compose (Production)</h3>
-<p>The production setup uses pre-built images, Nginx reverse proxy, and secure defaults.</p>
+<p>Production uses pre-built images, Nginx reverse proxy, and secure defaults.</p>
 
 <div class="step">
-  <div class="step-num">1</div>
+  <div class="step-n">1</div>
   <div class="step-body">
-    <h4>Create production environment file</h4>
-    <pre><code><span class="comment"># Create .env for production</span>
-cat &gt; .env &lt;&lt;'EOF'
-DOMAIN=mxtac.example.com
-SECRET_KEY=<span class="value">$(openssl rand -hex 32)</span>
-POSTGRES_PASSWORD=<span class="value">$(openssl rand -base64 24)</span>
+    <h4>Create production environment</h4>
+    <pre><code>cat &gt; .env &lt;&lt;'EOF'
+DOMAIN=<span class="st">mxtac.example.com</span>
+SECRET_KEY=<span class="vl">$(openssl rand -hex 32)</span>
+POSTGRES_PASSWORD=<span class="vl">$(openssl rand -base64 24)</span>
 EOF</code></pre>
   </div>
 </div>
 
 <div class="step">
-  <div class="step-num">2</div>
+  <div class="step-n">2</div>
   <div class="step-body">
     <h4>Prepare TLS certificates</h4>
     <pre><code>mkdir -p nginx/ssl
-<span class="comment"># Copy your certificates</span>
 cp /path/to/fullchain.pem nginx/ssl/
 cp /path/to/privkey.pem nginx/ssl/</code></pre>
   </div>
 </div>
 
 <div class="step">
-  <div class="step-num">3</div>
+  <div class="step-n">3</div>
   <div class="step-body">
     <h4>Deploy</h4>
-    <pre><code>docker compose <span class="flag">-f docker-compose.prod.yml</span> up -d</code></pre>
+    <pre><code>docker compose <span class="fl">-f docker-compose.prod.yml</span> up -d</code></pre>
   </div>
 </div>
 
-<div class="callout danger">
-  <div class="callout-title">Security Checklist (Production)</div>
+<div class="danger">
+  <div class="note-title">Security Checklist</div>
   <ul style="margin-top:6px;margin-bottom:0">
     <li>Replace <code>SECRET_KEY</code> with a strong random value</li>
     <li>Set a strong <code>POSTGRES_PASSWORD</code></li>
@@ -556,332 +784,265 @@ cp /path/to/privkey.pem nginx/ssl/</code></pre>
   </ul>
 </div>
 
-<!-- Manual -->
 <h3 id="install-manual">Manual Setup</h3>
-<p>For environments where Docker is not available. Requires Python 3.12+, Node.js 20+, PostgreSQL 16, and OpenSearch 2.17.</p>
+<p>For environments where Docker is not available. Requires Python 3.12+, Node.js 20+, PostgreSQL 16, OpenSearch 2.17.</p>
 
 <h4>Backend</h4>
 <pre><code>cd app/backend
 
-<span class="comment"># Create virtual environment</span>
+<span class="cm"># Create virtual environment</span>
 python3 -m venv .venv
 source .venv/bin/activate
 
-<span class="comment"># Install dependencies</span>
+<span class="cm"># Install dependencies</span>
 pip install -r requirements.txt
 
-<span class="comment"># Configure environment</span>
+<span class="cm"># Configure environment</span>
 cp .env.example .env
-<span class="comment"># Edit .env with your database credentials, OpenSearch host, etc.</span>
+<span class="cm"># Edit .env with your credentials</span>
 
-<span class="comment"># Run database migrations</span>
+<span class="cm"># Run database migrations</span>
 alembic upgrade head
 
-<span class="comment"># Start the API server</span>
-uvicorn app.main:app <span class="flag">--host</span> 0.0.0.0 <span class="flag">--port</span> 8080</code></pre>
+<span class="cm"># Start the API server</span>
+uvicorn app.main:app <span class="fl">--host</span> 0.0.0.0 <span class="fl">--port</span> 8080</code></pre>
 
 <h4>Frontend</h4>
 <pre><code>cd app/frontend
 
-<span class="comment"># Install dependencies</span>
+<span class="cm"># Install dependencies</span>
 npm install
 
-<span class="comment"># Development mode</span>
+<span class="cm"># Development mode</span>
 npm run dev
 
-<span class="comment"># Production build</span>
+<span class="cm"># Production build</span>
 npm run build
-<span class="comment"># Serve dist/ with Nginx or any static file server</span></code></pre>
+<span class="cm"># Serve dist/ with Nginx or any static file server</span></code></pre>
 
-<!-- Verify -->
 <h3 id="install-verify">Verify Installation</h3>
-<pre><code><span class="comment"># Health check</span>
+<pre><code><span class="cm"># Health check</span>
 curl http://localhost:8080/ready
-<span class="comment"># Expected: {"status": "ok"}</span>
+<span class="cm"># Expected: {"status": "ok"}</span>
 
-<span class="comment"># API docs (Swagger UI)</span>
-curl -s http://localhost:8080/docs | head -1
-
-<span class="comment"># OpenSearch connectivity</span>
+<span class="cm"># OpenSearch connectivity</span>
 curl http://localhost:9200/_cluster/health?pretty
 
-<span class="comment"># PostgreSQL connectivity</span>
+<span class="cm"># PostgreSQL connectivity</span>
 docker compose exec postgres pg_isready -U mxtac
-<span class="comment"># Expected: accepting connections</span>
 
-<span class="comment"># Check all containers are healthy</span>
+<span class="cm"># All containers healthy</span>
 docker compose ps</code></pre>
 
-<!-- ──────────────────── CONFIGURATION ──────────────────── -->
+<!-- ──── CONFIGURATION ──── -->
 <h2 id="configuration">Configuration</h2>
 
 <h3 id="config-backend">Backend Environment Variables</h3>
 <p>All backend configuration is via environment variables, loaded from <code>.env</code> in the backend directory.</p>
 
 <table>
-  <thead>
-    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
-  </thead>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
     <tr><td><code>APP_NAME</code></td><td><em>MxTac API</em></td><td>Application display name</td></tr>
     <tr><td><code>VERSION</code></td><td><em>2.0.0</em></td><td>API version string</td></tr>
-    <tr><td><code>DEBUG</code></td><td><em>false</em></td><td>Enable debug mode (never in production)</td></tr>
-    <tr><td><code>SECRET_KEY</code></td><td>&mdash;</td><td><strong>Required.</strong> JWT signing key. Generate with <code>openssl rand -hex 32</code></td></tr>
+    <tr><td><code>DEBUG</code></td><td><em>false</em></td><td>Enable debug mode <span class="badge badge-red">never in prod</span></td></tr>
+    <tr><td><code>SECRET_KEY</code></td><td>&mdash;</td><td><strong>Required.</strong> JWT signing key</td></tr>
     <tr><td><code>ACCESS_TOKEN_EXPIRE_MINUTES</code></td><td><em>60</em></td><td>JWT access token TTL</td></tr>
     <tr><td><code>REFRESH_TOKEN_EXPIRE_DAYS</code></td><td><em>7</em></td><td>JWT refresh token TTL</td></tr>
-    <tr><td><code>DATABASE_URL</code></td><td>&mdash;</td><td>PostgreSQL async URL. Format: <code>postgresql+asyncpg://user:pass@host:5432/db</code></td></tr>
-    <tr><td><code>VALKEY_URL</code></td><td><em>redis://localhost:6379/0</em></td><td>Valkey/Redis connection URL</td></tr>
+    <tr><td><code>DATABASE_URL</code></td><td>&mdash;</td><td>PostgreSQL async URL</td></tr>
+    <tr><td><code>VALKEY_URL</code></td><td><em>redis://localhost:6379/0</em></td><td>Valkey/Redis URL</td></tr>
     <tr><td><code>OPENSEARCH_HOST</code></td><td><em>localhost</em></td><td>OpenSearch hostname</td></tr>
     <tr><td><code>OPENSEARCH_PORT</code></td><td><em>9200</em></td><td>OpenSearch port</td></tr>
-    <tr><td><code>OPENSEARCH_USERNAME</code></td><td>&mdash;</td><td>OpenSearch user (if security enabled)</td></tr>
-    <tr><td><code>OPENSEARCH_PASSWORD</code></td><td>&mdash;</td><td>OpenSearch password (if security enabled)</td></tr>
     <tr><td><code>OPENSEARCH_USE_SSL</code></td><td><em>false</em></td><td>Enable TLS to OpenSearch</td></tr>
-    <tr><td><code>QUEUE_BACKEND</code></td><td><em>memory</em></td><td>Queue type: <code>memory</code> or <code>kafka</code></td></tr>
-    <tr><td><code>KAFKA_BOOTSTRAP_SERVERS</code></td><td><em>localhost:9092</em></td><td>Kafka/Redpanda broker addresses</td></tr>
-    <tr><td><code>KAFKA_CONSUMER_GROUP</code></td><td><em>mxtac</em></td><td>Kafka consumer group ID</td></tr>
-    <tr><td><code>RATE_LIMIT_PER_MINUTE</code></td><td><em>300</em></td><td>API rate limit per client per minute</td></tr>
-    <tr><td><code>CORS_ORIGINS</code></td><td><em>["http://localhost:5173"]</em></td><td>Allowed CORS origins (JSON array)</td></tr>
+    <tr><td><code>QUEUE_BACKEND</code></td><td><em>memory</em></td><td><code>memory</code> or <code>kafka</code></td></tr>
+    <tr><td><code>KAFKA_BOOTSTRAP_SERVERS</code></td><td><em>localhost:9092</em></td><td>Kafka/Redpanda brokers</td></tr>
+    <tr><td><code>RATE_LIMIT_PER_MINUTE</code></td><td><em>300</em></td><td>API rate limit per client</td></tr>
+    <tr><td><code>CORS_ORIGINS</code></td><td><em>["http://localhost:5173"]</em></td><td>Allowed CORS origins (JSON)</td></tr>
   </tbody>
 </table>
 
 <h3 id="config-frontend">Frontend Environment Variables</h3>
 <table>
-  <thead>
-    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
-  </thead>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>VITE_API_BASE_URL</code></td><td><em>http://localhost:8080</em></td><td>Backend API URL. Set to production URL when deploying.</td></tr>
+    <tr><td><code>VITE_API_BASE_URL</code></td><td><em>http://localhost:8080</em></td><td>Backend API URL</td></tr>
   </tbody>
 </table>
 
-<div class="callout info">
-  <div class="callout-title">Note</div>
-  Frontend variables prefixed with <code>VITE_</code> are embedded at build time. After changing them, you must rebuild the frontend.
+<div class="note">
+  <div class="note-title">Note</div>
+  Frontend variables prefixed with <code>VITE_</code> are embedded at build time. Rebuild the frontend after changing them.
 </div>
 
-<!-- Auth -->
 <h3 id="config-auth">Authentication</h3>
-<p>MxTac supports two authentication methods:</p>
 
 <h4>JWT Bearer Tokens (Web UI)</h4>
-<pre><code><span class="comment"># Login to get tokens</span>
+<pre><code><span class="cm"># Login</span>
 curl -X POST http://localhost:8080/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "analyst@mxtac.local", "password": "mxtac2026"}'
+  -H <span class="st">"Content-Type: application/json"</span> \
+  -d <span class="st">'{"email": "analyst@mxtac.local", "password": "mxtac2026"}'</span>
 
-<span class="comment"># Response: {"access_token": "eyJ...", "refresh_token": "eyJ...", "token_type": "bearer"}</span>
-
-<span class="comment"># Use access token for API calls</span>
+<span class="cm"># Use access token</span>
 curl http://localhost:8080/api/v1/overview/kpis \
-  -H "Authorization: Bearer eyJ..."</code></pre>
+  -H <span class="st">"Authorization: Bearer eyJ..."</span></code></pre>
 
 <h4>API Keys (Automation)</h4>
-<pre><code><span class="comment"># Generate an API key via the Admin panel or API</span>
-curl http://localhost:8080/api/v1/detections \
-  -H "X-API-Key: mx_key_..."</code></pre>
+<pre><code>curl http://localhost:8080/api/v1/detections \
+  -H <span class="st">"X-API-Key: mx_key_..."</span></code></pre>
 
-<h4>Token Lifetime Configuration</h4>
-<table>
-  <tr><td><code>ACCESS_TOKEN_EXPIRE_MINUTES</code></td><td>Short-lived (default: 60 min). Used for API requests.</td></tr>
-  <tr><td><code>REFRESH_TOKEN_EXPIRE_DAYS</code></td><td>Long-lived (default: 7 days). Used to rotate access tokens.</td></tr>
-</table>
-
-<!-- Database -->
 <h3 id="config-database">Database (PostgreSQL)</h3>
-<p>PostgreSQL 16 stores user accounts, rule metadata, connector configurations, and alert state.</p>
+<pre><code><span class="cm"># Connection string format</span>
+DATABASE_URL=postgresql+asyncpg://<span class="vl">user</span>:<span class="vl">password</span>@<span class="vl">host</span>:<span class="vl">5432</span>/<span class="vl">database</span>
 
-<pre><code><span class="comment"># Connection string format</span>
-DATABASE_URL=postgresql+asyncpg://<span class="value">user</span>:<span class="value">password</span>@<span class="value">host</span>:<span class="value">5432</span>/<span class="value">database</span>
-
-<span class="comment"># Run migrations</span>
-cd app/backend
+<span class="cm"># Run migrations</span>
 alembic upgrade head
 
-<span class="comment"># Check migration status</span>
-alembic current
+<span class="cm"># Check migration status</span>
+alembic current</code></pre>
 
-<span class="comment"># Create a new migration</span>
-alembic revision --autogenerate -m "description"</code></pre>
-
-<div class="callout info">
-  <div class="callout-title">Tip</div>
-  In Docker Compose, migrations run automatically on container start. For manual installs, run <code>alembic upgrade head</code> after every update.
-</div>
-
-<!-- OpenSearch -->
 <h3 id="config-opensearch">OpenSearch</h3>
-<p>OpenSearch 2.17 serves as the event store for normalized security events (OCSF schema).</p>
+<pre><code><span class="cm"># Basic (no auth)</span>
+OPENSEARCH_HOST=<span class="st">opensearch</span>
+OPENSEARCH_PORT=<span class="vl">9200</span>
+OPENSEARCH_USE_SSL=<span class="vl">false</span>
 
-<pre><code><span class="comment"># Basic (no auth)</span>
-OPENSEARCH_HOST=opensearch
-OPENSEARCH_PORT=9200
-OPENSEARCH_USE_SSL=false
-
-<span class="comment"># With security enabled</span>
-OPENSEARCH_HOST=opensearch.internal
-OPENSEARCH_PORT=9200
-OPENSEARCH_USERNAME=admin
-OPENSEARCH_PASSWORD=<span class="value">StrongP@ss</span>
-OPENSEARCH_USE_SSL=true</code></pre>
+<span class="cm"># With security enabled</span>
+OPENSEARCH_HOST=<span class="st">opensearch.internal</span>
+OPENSEARCH_USERNAME=<span class="vl">admin</span>
+OPENSEARCH_PASSWORD=<span class="vl">StrongP@ss</span>
+OPENSEARCH_USE_SSL=<span class="vl">true</span></code></pre>
 
 <h4>Performance Tuning</h4>
-<pre><code><span class="comment"># docker-compose.yml — increase JVM heap for production</span>
+<pre><code><span class="cm"># Increase JVM heap for production (50% of RAM, max 32g)</span>
 environment:
-  - "OPENSEARCH_JAVA_OPTS=<span class="flag">-Xms2g -Xmx2g</span>"  <span class="comment"># 50% of available RAM, max 32g</span></code></pre>
+  - <span class="st">"OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g"</span></code></pre>
 
-<h4>Index Lifecycle</h4>
-<p>MxTac creates daily indices with the pattern <code>mxtac-events-YYYY.MM.DD</code>. Configure retention with ISM (Index State Management) policies:</p>
-<pre><code><span class="comment"># Example: Delete indices older than 90 days</span>
-curl -X PUT "http://localhost:9200/_plugins/_ism/policies/mxtac-retention" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "policy": {
-      "description": "MxTac event retention",
-      "states": [
-        { "name": "hot", "actions": [], "transitions": [
-          { "state_name": "delete", "conditions": { "min_index_age": "90d" } }
-        ]},
-        { "name": "delete", "actions": [{ "delete": {} }] }
-      ]
-    }
-  }'</code></pre>
-
-<!-- Queue -->
 <h3 id="config-queue">Message Queue</h3>
-<p>MxTac supports two queue backends:</p>
-
 <table>
-  <thead>
-    <tr><th>Backend</th><th>Config Value</th><th>Use Case</th></tr>
-  </thead>
+  <thead><tr><th>Backend</th><th>Config</th><th>Use Case</th></tr></thead>
   <tbody>
-    <tr><td><strong>In-Memory</strong></td><td><code>QUEUE_BACKEND=memory</code></td><td>Development, single-instance deployments</td></tr>
-    <tr><td><strong>Kafka / Redpanda</strong></td><td><code>QUEUE_BACKEND=kafka</code></td><td>Production, multi-instance, high throughput</td></tr>
+    <tr><td><strong>In-Memory</strong></td><td><code>QUEUE_BACKEND=memory</code></td><td>Dev, single-instance</td></tr>
+    <tr><td><strong>Kafka</strong></td><td><code>QUEUE_BACKEND=kafka</code></td><td>Production, high throughput</td></tr>
   </tbody>
 </table>
 
-<pre><code><span class="comment"># Enable Kafka (Redpanda)</span>
-QUEUE_BACKEND=kafka
-KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
-KAFKA_CONSUMER_GROUP=mxtac
+<pre><code>QUEUE_BACKEND=<span class="vl">kafka</span>
+KAFKA_BOOTSTRAP_SERVERS=<span class="st">redpanda:9092</span>
+KAFKA_CONSUMER_GROUP=<span class="st">mxtac</span>
 
-<span class="comment"># Start Redpanda with docker compose</span>
-docker compose <span class="flag">--profile kafka</span> up -d</code></pre>
+docker compose <span class="fl">--profile kafka</span> up -d</code></pre>
 
-<!-- CORS -->
-<h3 id="config-cors">CORS & Security</h3>
-<pre><code><span class="comment"># Development (allow localhost)</span>
-CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
+<h3 id="config-cors">CORS &amp; Security</h3>
+<pre><code><span class="cm"># Development</span>
+CORS_ORIGINS=<span class="st">["http://localhost:5173","http://localhost:3000"]</span>
 
-<span class="comment"># Production (restrict to your domain)</span>
-CORS_ORIGINS=["https://mxtac.example.com"]
+<span class="cm"># Production (restrict to your domain)</span>
+CORS_ORIGINS=<span class="st">["https://mxtac.example.com"]</span>
 
-<span class="comment"># Rate limiting</span>
-RATE_LIMIT_PER_MINUTE=300  <span class="comment"># Reduce in production if needed</span></code></pre>
+<span class="cm"># Rate limiting</span>
+RATE_LIMIT_PER_MINUTE=<span class="vl">300</span></code></pre>
 
-<!-- TLS -->
 <h3 id="config-tls">TLS / HTTPS</h3>
-<p>In production, terminate TLS at the Nginx reverse proxy.</p>
-
-<pre><code><span class="comment"># nginx/nginx.conf (minimal example)</span>
+<pre><code><span class="cm"># nginx/nginx.conf</span>
 server {
-    listen 443 ssl http2;
-    server_name mxtac.example.com;
+    listen <span class="vl">443</span> ssl http2;
+    server_name <span class="st">mxtac.example.com</span>;
 
     ssl_certificate     /etc/nginx/ssl/fullchain.pem;
     ssl_certificate_key /etc/nginx/ssl/privkey.pem;
     ssl_protocols       TLSv1.2 TLSv1.3;
 
-    <span class="comment"># Frontend (static files)</span>
+    <span class="cm"># Frontend</span>
     location / {
         root /usr/share/nginx/html;
         try_files $uri $uri/ /index.html;
     }
 
-    <span class="comment"># Backend API proxy</span>
+    <span class="cm"># Backend API proxy</span>
     location /api/ {
         proxy_pass http://backend:8080;
         proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    <span class="comment"># WebSocket proxy</span>
+    <span class="cm"># WebSocket</span>
     location /ws {
         proxy_pass http://backend:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+        proxy_set_header Connection <span class="st">"upgrade"</span>;
     }
 }
 
-<span class="comment"># HTTP redirect</span>
 server {
-    listen 80;
-    server_name mxtac.example.com;
-    return 301 https://$host$request_uri;
+    listen <span class="vl">80</span>;
+    server_name <span class="st">mxtac.example.com</span>;
+    return <span class="vl">301</span> https://$host$request_uri;
 }</code></pre>
 
-<!-- ──────────────────── AGENTS ──────────────────── -->
+<!-- ──── AGENTS ──── -->
 <h2 id="agents">Agents</h2>
 
 <h3 id="agent-overview">Agent Overview</h3>
-<p>MxTac ships two lightweight detection agents, both written in <strong>Rust</strong> for minimal resource footprint. They output native <strong>OCSF events</strong> directly &mdash; no conversion layer required.</p>
+<p>MxTac ships two lightweight detection agents written in <strong>Rust</strong> for minimal resource footprint. They output native <strong>OCSF events</strong> directly.</p>
 
-<table>
-  <thead>
-    <tr><th>Agent</th><th>Type</th><th>RAM</th><th>CPU</th><th>Binary Size</th></tr>
-  </thead>
-  <tbody>
-    <tr><td><strong>MxGuard</strong></td><td>EDR (Endpoint)</td><td>10-30 MB</td><td>0.5-1%</td><td>Single static binary</td></tr>
-    <tr><td><strong>MxWatch</strong></td><td>NDR (Network)</td><td>40-120 MB</td><td>1-3% per core</td><td>Single static binary</td></tr>
-  </tbody>
-</table>
+<div class="card-grid">
+  <div class="card">
+    <div class="card-label">MxGuard</div>
+    <div class="card-value" style="font-size:16px">EDR Agent</div>
+    <div class="card-sub">Endpoint detection &amp; response</div>
+    <div class="card-sub">10-30 MB RAM &middot; &lt;1% CPU</div>
+  </div>
+  <div class="card">
+    <div class="card-label">MxWatch</div>
+    <div class="card-value" style="font-size:16px">NDR Agent</div>
+    <div class="card-sub">Network detection &amp; response</div>
+    <div class="card-sub">40-120 MB RAM &middot; 1-3% CPU</div>
+  </div>
+</div>
 
-<!-- MxGuard -->
-<h3 id="agent-mxguard">MxGuard (Endpoint Detection & Response)</h3>
-<p>MxGuard monitors file integrity, processes, network connections, authentication, registry, and scheduled tasks.</p>
+<h3 id="agent-mxguard">MxGuard (EDR)</h3>
+<p>Monitors file integrity, processes, network connections, authentication, registry, and scheduled tasks.</p>
 
 <h4>Installation</h4>
-<pre><code><span class="comment"># Download the latest release (Linux x86_64)</span>
+<pre><code><span class="cm"># Download latest release (Linux x86_64)</span>
 curl -LO https://github.com/fankh/new-research/releases/latest/download/mxguard-linux-amd64
 chmod +x mxguard-linux-amd64
 sudo mv mxguard-linux-amd64 /usr/local/bin/mxguard
 
-<span class="comment"># Or build from source</span>
+<span class="cm"># Or build from source</span>
 cd agents/mxguard
-cargo build <span class="flag">--release</span>
+cargo build <span class="fl">--release</span>
 sudo cp target/release/mxguard /usr/local/bin/</code></pre>
 
 <h4>Configuration</h4>
-<pre><code><span class="comment"># /etc/mxguard/config.toml</span>
+<pre><code><span class="cm"># /etc/mxguard/config.toml</span>
 [server]
-mxtac_url = <span class="string">"https://mxtac.example.com"</span>
-api_key   = <span class="string">"mx_key_..."</span>
-interval  = <span class="value">30</span>   <span class="comment"># seconds between collection cycles</span>
+mxtac_url = <span class="st">"https://mxtac.example.com"</span>
+api_key   = <span class="st">"mx_key_..."</span>
+interval  = <span class="vl">30</span>   <span class="cm"># seconds between cycles</span>
 
 [modules]
-file_integrity  = <span class="keyword">true</span>     <span class="comment"># T1105, T1547, T1574, T1036</span>
-process_monitor = <span class="keyword">true</span>     <span class="comment"># T1059, T1106, T1055, T1003</span>
-network_monitor = <span class="keyword">true</span>     <span class="comment"># T1071, T1095, T1021</span>
-auth_monitor    = <span class="keyword">true</span>     <span class="comment"># T1078, T1110, T1136</span>
-registry_watch  = <span class="keyword">true</span>     <span class="comment"># T1547, T1112, T1574 (Windows only)</span>
-schtask_watch   = <span class="keyword">true</span>     <span class="comment"># T1053</span>
+file_integrity  = <span class="kw">true</span>     <span class="cm"># T1105, T1547, T1574, T1036</span>
+process_monitor = <span class="kw">true</span>     <span class="cm"># T1059, T1106, T1055, T1003</span>
+network_monitor = <span class="kw">true</span>     <span class="cm"># T1071, T1095, T1021</span>
+auth_monitor    = <span class="kw">true</span>     <span class="cm"># T1078, T1110, T1136</span>
+registry_watch  = <span class="kw">true</span>     <span class="cm"># T1547, T1112 (Windows only)</span>
+schtask_watch   = <span class="kw">true</span>     <span class="cm"># T1053</span>
 
 [file_integrity]
-watch_paths = [<span class="string">"/etc"</span>, <span class="string">"/usr/bin"</span>, <span class="string">"/usr/sbin"</span>]
-exclude     = [<span class="string">"*.log"</span>, <span class="string">"*.tmp"</span>]</code></pre>
+watch_paths = [<span class="st">"/etc"</span>, <span class="st">"/usr/bin"</span>, <span class="st">"/usr/sbin"</span>]
+exclude     = [<span class="st">"*.log"</span>, <span class="st">"*.tmp"</span>]</code></pre>
 
-<h4>Run as a systemd service</h4>
-<pre><code><span class="comment"># /etc/systemd/system/mxguard.service</span>
+<h4>Systemd Service</h4>
+<pre><code><span class="cm"># /etc/systemd/system/mxguard.service</span>
 [Unit]
 Description=MxGuard EDR Agent
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/mxguard <span class="flag">--config</span> /etc/mxguard/config.toml
+ExecStart=/usr/local/bin/mxguard <span class="fl">--config</span> /etc/mxguard/config.toml
 Restart=always
 RestartSec=10
 User=root
@@ -890,440 +1051,332 @@ User=root
 WantedBy=multi-user.target</code></pre>
 
 <pre><code>sudo systemctl daemon-reload
-sudo systemctl enable <span class="flag">--now</span> mxguard
+sudo systemctl enable <span class="fl">--now</span> mxguard
 sudo systemctl status mxguard</code></pre>
 
-<!-- MxWatch -->
-<h3 id="agent-mxwatch">MxWatch (Network Detection & Response)</h3>
-<p>MxWatch captures and analyzes network traffic for C2 beacons, port scans, data exfiltration, and DNS tunneling.</p>
-
-<h4>Performance</h4>
-<table>
-  <thead>
-    <tr><th>Platform</th><th>Capture Engine</th><th>Throughput</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>Linux</td><td>AF_PACKET + MMAP</td><td>1-5M pps</td></tr>
-    <tr><td>Windows / macOS</td><td>libpcap</td><td>~100K pps</td></tr>
-  </tbody>
-</table>
+<h3 id="agent-mxwatch">MxWatch (NDR)</h3>
+<p>Captures and analyzes network traffic for C2 beacons, port scans, data exfiltration, and DNS tunneling.</p>
 
 <h4>Supported Protocols</h4>
-<p><code>HTTP/HTTPS</code> <code>DNS</code> <code>TLS/SSL</code> <code>SMB</code> <code>SSH</code> <code>FTP</code> <code>SMTP</code> <code>LDAP</code> <code>RDP</code> <code>DHCP</code> <code>NTP</code> <code>ICMP</code></p>
+<p><code>HTTP/S</code> <code>DNS</code> <code>TLS/SSL</code> <code>SMB</code> <code>SSH</code> <code>FTP</code> <code>SMTP</code> <code>LDAP</code> <code>RDP</code> <code>DHCP</code> <code>NTP</code> <code>ICMP</code></p>
 
 <h4>Configuration</h4>
-<pre><code><span class="comment"># /etc/mxwatch/config.toml</span>
+<pre><code><span class="cm"># /etc/mxwatch/config.toml</span>
 [server]
-mxtac_url = <span class="string">"https://mxtac.example.com"</span>
-api_key   = <span class="string">"mx_key_..."</span>
+mxtac_url = <span class="st">"https://mxtac.example.com"</span>
+api_key   = <span class="st">"mx_key_..."</span>
 
 [capture]
-interface = <span class="string">"eth0"</span>
-bpf_filter = <span class="string">"not port 22"</span>    <span class="comment"># Exclude SSH management traffic</span>
+interface  = <span class="st">"eth0"</span>
+bpf_filter = <span class="st">"not port 22"</span>    <span class="cm"># Exclude SSH mgmt</span>
 
 [detection]
-c2_beacon     = <span class="keyword">true</span>    <span class="comment"># Timing analysis for periodic callbacks</span>
-port_scan     = <span class="keyword">true</span>    <span class="comment"># SYN scan / connect scan detection</span>
-exfiltration  = <span class="keyword">true</span>    <span class="comment"># Large outbound data transfer alerts</span>
-dns_tunnel    = <span class="keyword">true</span>    <span class="comment"># High-entropy DNS query detection</span></code></pre>
+c2_beacon     = <span class="kw">true</span>    <span class="cm"># Periodic callback timing analysis</span>
+port_scan     = <span class="kw">true</span>    <span class="cm"># SYN scan / connect scan</span>
+exfiltration  = <span class="kw">true</span>    <span class="cm"># Large outbound data transfers</span>
+dns_tunnel    = <span class="kw">true</span>    <span class="cm"># High-entropy DNS queries</span></code></pre>
 
-<!-- Agent Scheduler -->
 <h3 id="agent-scheduler">Agent Scheduler</h3>
-<p>The Agent Scheduler manages distributed task execution across MxGuard and MxWatch instances. It provides centralized task scheduling, status monitoring, and result collection.</p>
-<pre><code><span class="comment"># Start the scheduler service</span>
+<p>Manages distributed task execution across MxGuard and MxWatch instances.</p>
+<pre><code><span class="cm"># Start scheduler backend</span>
 cd agent-scheduler/backend
 source .venv/bin/activate
 python -m agent_scheduler
 
-<span class="comment"># Start the scheduler UI</span>
+<span class="cm"># Start scheduler UI</span>
 cd agent-scheduler/frontend
 npm run dev</code></pre>
 
-<!-- ──────────────────── INTEGRATIONS ──────────────────── -->
+<!-- ──── INTEGRATIONS ──── -->
 <h2 id="integrations">Integrations</h2>
-<p>MxTac integrates with existing OSS security tools via <strong>connectors</strong>. Each connector normalizes events to the <strong>OCSF</strong> (Open Cybersecurity Schema Framework) standard.</p>
+<p>MxTac integrates with existing OSS security tools via <strong>connectors</strong>. Each connector normalizes events to the <strong>OCSF</strong> standard.</p>
 
-<!-- Wazuh -->
 <h3 id="int-wazuh">Wazuh (HIDS / EDR)</h3>
-<p>Wazuh 4.7+ provides host-based intrusion detection, file integrity monitoring, and vulnerability assessment.</p>
-
-<h4>Connect to Wazuh</h4>
-<ol>
-  <li>Navigate to <strong>Settings &gt; Integrations</strong> in the MxTac dashboard</li>
-  <li>Click <strong>Add Integration</strong> &gt; <strong>Wazuh</strong></li>
-  <li>Enter your Wazuh API credentials:</li>
-</ol>
-
 <table>
   <tr><td><strong>API URL</strong></td><td><code>https://wazuh-manager:55000</code></td></tr>
   <tr><td><strong>Username</strong></td><td>Wazuh API user</td></tr>
   <tr><td><strong>Password</strong></td><td>Wazuh API password</td></tr>
-  <tr><td><strong>Verify SSL</strong></td><td>true (recommended)</td></tr>
+  <tr><td><strong>Verify SSL</strong></td><td><span class="badge badge-green">true</span> (recommended)</td></tr>
 </table>
 
-<h4>API Configuration (Alternative)</h4>
 <pre><code>curl -X POST http://localhost:8080/api/v1/integrations \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
+  -H <span class="st">"Authorization: Bearer $TOKEN"</span> \
+  -H <span class="st">"Content-Type: application/json"</span> \
+  -d <span class="st">'{
     "type": "wazuh",
     "name": "Production Wazuh",
     "config": {
-      "api_url": "<span class="string">https://wazuh-manager:55000</span>",
-      "username": "<span class="value">wazuh-user</span>",
-      "password": "<span class="value">wazuh-pass</span>",
+      "api_url": "https://wazuh-manager:55000",
+      "username": "wazuh-user",
+      "password": "wazuh-pass",
       "verify_ssl": true
     }
-  }'</code></pre>
+  }'</span></code></pre>
 
-<!-- Zeek -->
 <h3 id="int-zeek">Zeek (Network Analysis)</h3>
-<p>Zeek 6.x provides deep network traffic analysis, protocol parsing, and connection logging.</p>
-
-<h4>Connect to Zeek</h4>
-<ol>
-  <li>Configure Zeek to output JSON logs to a shared directory or Kafka topic</li>
-  <li>In MxTac: <strong>Settings &gt; Integrations &gt; Add &gt; Zeek</strong></li>
-</ol>
-
 <table>
   <tr><td><strong>Log Path</strong></td><td><code>/opt/zeek/logs/current/</code></td></tr>
-  <tr><td><strong>Format</strong></td><td>JSON (set <code>@load policy/tuning/json-logs.zeek</code>)</td></tr>
-  <tr><td><strong>Kafka Topic</strong></td><td><code>zeek-events</code> (if using Kafka output)</td></tr>
+  <tr><td><strong>Format</strong></td><td>JSON (<code>@load policy/tuning/json-logs.zeek</code>)</td></tr>
+  <tr><td><strong>Kafka Topic</strong></td><td><code>zeek-events</code> (if using Kafka)</td></tr>
 </table>
 
-<div class="callout info">
-  <div class="callout-title">Zeek JSON Output</div>
-  Ensure Zeek is configured for JSON output. Add <code>@load policy/tuning/json-logs.zeek</code> to your <code>local.zeek</code> configuration.
-</div>
-
-<!-- Suricata -->
 <h3 id="int-suricata">Suricata (IDS/IPS)</h3>
-<p>Suricata 7.x provides signature-based and anomaly-based intrusion detection.</p>
-
-<h4>Connect to Suricata</h4>
 <table>
-  <tr><td><strong>EVE Log Path</strong></td><td><code>/var/log/suricata/eve.json</code></td></tr>
+  <tr><td><strong>EVE Log</strong></td><td><code>/var/log/suricata/eve.json</code></td></tr>
   <tr><td><strong>Format</strong></td><td>EVE JSON (default)</td></tr>
-  <tr><td><strong>Kafka Topic</strong></td><td><code>suricata-events</code> (if using Kafka output)</td></tr>
+  <tr><td><strong>Kafka</strong></td><td><code>suricata-events</code> (optional)</td></tr>
 </table>
 
-<pre><code><span class="comment"># suricata.yaml — ensure EVE JSON output</span>
-outputs:
-  - eve-log:
-      enabled: yes
-      filetype: regular
-      filename: eve.json
-      types:
-        - alert
-        - dns
-        - http
-        - tls
-        - flow</code></pre>
-
-<!-- Sigma -->
 <h3 id="int-sigma">Sigma Rules</h3>
 <p>MxTac executes Sigma rules natively via <strong>pySigma</strong>. No conversion to backend-specific query language needed.</p>
 
-<h4>Upload Rules</h4>
-<pre><code><span class="comment"># Upload a single rule</span>
+<pre><code><span class="cm"># Upload a single rule</span>
 curl -X POST http://localhost:8080/api/v1/rules \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@proc_creation_win_powershell_download.yml"
+  -H <span class="st">"Authorization: Bearer $TOKEN"</span> \
+  -F <span class="st">"file=@proc_creation_win_powershell_download.yml"</span>
 
-<span class="comment"># Upload a directory of rules</span>
+<span class="cm"># Bulk upload</span>
 for f in sigma_rules/*.yml; do
   curl -X POST http://localhost:8080/api/v1/rules \
-    -H "Authorization: Bearer $TOKEN" \
-    -F "file=@$f"
+    -H <span class="st">"Authorization: Bearer $TOKEN"</span> \
+    -F <span class="st">"file=@$f"</span>
 done</code></pre>
 
-<h4>Rule Directory</h4>
 <p>Place Sigma rules in <code>app/backend/sigma_rules/</code> for automatic loading at startup.</p>
 
-<pre><code>sigma_rules/
-  windows/
-    process_creation/
-    file_event/
-  linux/
-    auditd/
-  network/
-    dns/
-    proxy/</code></pre>
-
-<!-- ──────────────────── KUBERNETES ──────────────────── -->
+<!-- ──── KUBERNETES ──── -->
 <h2 id="kubernetes">Kubernetes Deployment (K3s)</h2>
-<p>MxTac ships with K3s manifests for production-grade Kubernetes deployment.</p>
 
 <div class="step">
-  <div class="step-num">1</div>
+  <div class="step-n">1</div>
   <div class="step-body">
     <h4>Install K3s</h4>
     <pre><code>curl -sfL https://get.k3s.io | sh -</code></pre>
   </div>
 </div>
-
 <div class="step">
-  <div class="step-num">2</div>
+  <div class="step-n">2</div>
   <div class="step-body">
-    <h4>Create namespace</h4>
-    <pre><code>kubectl apply -f app/deploy/k3s/namespace.yaml</code></pre>
-  </div>
-</div>
-
-<div class="step">
-  <div class="step-num">3</div>
-  <div class="step-body">
-    <h4>Deploy data stores</h4>
-    <pre><code>kubectl apply -f app/deploy/k3s/postgres-statefulset.yaml
+    <h4>Create namespace &amp; deploy</h4>
+    <pre><code>kubectl apply -f app/deploy/k3s/namespace.yaml
+kubectl apply -f app/deploy/k3s/postgres-statefulset.yaml
 kubectl apply -f app/deploy/k3s/opensearch-statefulset.yaml
-kubectl apply -f app/deploy/k3s/valkey-statefulset.yaml</code></pre>
-  </div>
-</div>
-
-<div class="step">
-  <div class="step-num">4</div>
-  <div class="step-body">
-    <h4>Deploy application</h4>
-    <pre><code>kubectl apply -f app/deploy/k3s/backend-deployment.yaml
+kubectl apply -f app/deploy/k3s/valkey-statefulset.yaml
+kubectl apply -f app/deploy/k3s/backend-deployment.yaml
 kubectl apply -f app/deploy/k3s/backend-service.yaml
 kubectl apply -f app/deploy/k3s/frontend-deployment.yaml
 kubectl apply -f app/deploy/k3s/ingress.yaml</code></pre>
   </div>
 </div>
-
 <div class="step">
-  <div class="step-num">5</div>
+  <div class="step-n">3</div>
   <div class="step-body">
     <h4>Enable autoscaling</h4>
     <pre><code>kubectl apply -f app/deploy/k3s/hpa.yaml
-
-<span class="comment"># Verify HPA</span>
 kubectl get hpa -n mxtac</code></pre>
   </div>
 </div>
 
-<h4>Available K3s Manifests</h4>
-<table>
-  <thead>
-    <tr><th>File</th><th>Description</th></tr>
-  </thead>
-  <tbody>
-    <tr><td><code>namespace.yaml</code></td><td>MxTac namespace</td></tr>
-    <tr><td><code>postgres-statefulset.yaml</code></td><td>PostgreSQL 16 with PV</td></tr>
-    <tr><td><code>opensearch-statefulset.yaml</code></td><td>OpenSearch 2.17 cluster</td></tr>
-    <tr><td><code>valkey-statefulset.yaml</code></td><td>Valkey cache with persistence</td></tr>
-    <tr><td><code>backend-deployment.yaml</code></td><td>FastAPI backend pods</td></tr>
-    <tr><td><code>backend-service.yaml</code></td><td>Backend ClusterIP service</td></tr>
-    <tr><td><code>frontend-deployment.yaml</code></td><td>Nginx + static frontend</td></tr>
-    <tr><td><code>ingress.yaml</code></td><td>Traefik ingress (K3s default)</td></tr>
-    <tr><td><code>hpa.yaml</code></td><td>Horizontal Pod Autoscaler</td></tr>
-  </tbody>
-</table>
-
-<!-- ──────────────────── MONITORING ──────────────────── -->
+<!-- ──── MONITORING ──── -->
 <h2 id="monitoring">Monitoring</h2>
-<p>MxTac exposes <strong>Prometheus metrics</strong> at <code>/metrics</code> on the backend.</p>
+<p>MxTac exposes <strong>Prometheus metrics</strong> at <code>/metrics</code>.</p>
 
-<h4>Key Metrics</h4>
 <table>
-  <thead>
-    <tr><th>Metric</th><th>Type</th><th>Description</th></tr>
-  </thead>
+  <thead><tr><th>Metric</th><th>Type</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>http_requests_total</code></td><td>Counter</td><td>Total HTTP requests by method, path, status</td></tr>
-    <tr><td><code>http_request_duration_seconds</code></td><td>Histogram</td><td>Request latency distribution</td></tr>
-    <tr><td><code>mxtac_events_ingested_total</code></td><td>Counter</td><td>Events ingested per source</td></tr>
-    <tr><td><code>mxtac_sigma_rules_loaded</code></td><td>Gauge</td><td>Number of active Sigma rules</td></tr>
-    <tr><td><code>mxtac_alerts_generated_total</code></td><td>Counter</td><td>Alerts generated per severity</td></tr>
+    <tr><td><code>http_requests_total</code></td><td><span class="badge badge-cyan">Counter</span></td><td>Total HTTP requests</td></tr>
+    <tr><td><code>http_request_duration_seconds</code></td><td><span class="badge badge-cyan">Histogram</span></td><td>Request latency</td></tr>
+    <tr><td><code>mxtac_events_ingested_total</code></td><td><span class="badge badge-cyan">Counter</span></td><td>Events ingested per source</td></tr>
+    <tr><td><code>mxtac_sigma_rules_loaded</code></td><td><span class="badge badge-green">Gauge</span></td><td>Active Sigma rules</td></tr>
+    <tr><td><code>mxtac_alerts_generated_total</code></td><td><span class="badge badge-cyan">Counter</span></td><td>Alerts per severity</td></tr>
   </tbody>
 </table>
 
-<h4>Grafana Dashboard</h4>
-<p>Import the included Grafana dashboard from <code>app/deploy/monitoring/</code>:</p>
-<pre><code><span class="comment"># Prometheus scrape config</span>
+<pre><code><span class="cm"># Prometheus scrape config</span>
 scrape_configs:
-  - job_name: mxtac
+  - job_name: <span class="st">mxtac</span>
     static_configs:
-      - targets: ['backend:8080']</code></pre>
+      - targets: [<span class="st">'backend:8080'</span>]</code></pre>
 
-<!-- ──────────────────── BACKUP ──────────────────── -->
-<h2 id="backup">Backup & Restore</h2>
+<!-- ──── BACKUP ──── -->
+<h2 id="backup">Backup &amp; Restore</h2>
 
 <h4>PostgreSQL</h4>
-<pre><code><span class="comment"># Backup</span>
+<pre><code><span class="cm"># Backup</span>
 docker compose exec postgres pg_dump -U mxtac mxtac | gzip > mxtac_db_$(date +%F).sql.gz
 
-<span class="comment"># Restore</span>
+<span class="cm"># Restore</span>
 gunzip -c mxtac_db_2026-02-20.sql.gz | docker compose exec -T postgres psql -U mxtac mxtac</code></pre>
 
 <h4>OpenSearch</h4>
-<pre><code><span class="comment"># Register snapshot repository</span>
-curl -X PUT "http://localhost:9200/_snapshot/backup" \
-  -H "Content-Type: application/json" \
-  -d '{"type": "fs", "settings": {"location": "/snapshots"}}'
+<pre><code><span class="cm"># Register snapshot repo</span>
+curl -X PUT <span class="st">"http://localhost:9200/_snapshot/backup"</span> \
+  -H <span class="st">"Content-Type: application/json"</span> \
+  -d <span class="st">'{"type": "fs", "settings": {"location": "/snapshots"}}'</span>
 
-<span class="comment"># Create snapshot</span>
-curl -X PUT "http://localhost:9200/_snapshot/backup/snap_$(date +%F)?wait_for_completion=true"
+<span class="cm"># Create snapshot</span>
+curl -X PUT <span class="st">"http://localhost:9200/_snapshot/backup/snap_$(date +%F)?wait_for_completion=true"</span>
 
-<span class="comment"># Restore</span>
-curl -X POST "http://localhost:9200/_snapshot/backup/snap_2026-02-20/_restore"</code></pre>
+<span class="cm"># Restore</span>
+curl -X POST <span class="st">"http://localhost:9200/_snapshot/backup/snap_2026-02-20/_restore"</span></code></pre>
 
-<!-- ──────────────────── API REFERENCE ──────────────────── -->
+<!-- ──── API REFERENCE ──── -->
 <h2 id="api-ref">API Reference</h2>
-<p>Full interactive API documentation is available at <code>/docs</code> (Swagger UI) and <code>/redoc</code> (ReDoc) when the backend is running.</p>
+<p>Interactive docs at <code>/docs</code> (Swagger UI) and <code>/redoc</code> (ReDoc).</p>
 
-<h4>Key Endpoints</h4>
 <table>
-  <thead>
-    <tr><th>Method</th><th>Endpoint</th><th>Description</th></tr>
-  </thead>
+  <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>POST</code></td><td><code>/api/v1/auth/login</code></td><td>Authenticate and get JWT tokens</td></tr>
-    <tr><td><code>POST</code></td><td><code>/api/v1/auth/refresh</code></td><td>Refresh access token</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/v1/overview/kpis</code></td><td>Dashboard KPI metrics</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/v1/overview/tactics</code></td><td>ATT&CK tactics breakdown</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/v1/detections</code></td><td>Paginated alert list with filters</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/v1/detections/{id}</code></td><td>Single alert detail with raw event</td></tr>
-    <tr><td><code>PATCH</code></td><td><code>/api/v1/detections/{id}</code></td><td>Update alert status / assignment</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/v1/coverage/heatmap</code></td><td>ATT&CK coverage heatmap data</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/v1/integrations</code></td><td>List configured integrations</td></tr>
-    <tr><td><code>POST</code></td><td><code>/api/v1/integrations</code></td><td>Add new integration connector</td></tr>
-    <tr><td><code>GET</code></td><td><code>/api/v1/rules</code></td><td>List Sigma rules</td></tr>
-    <tr><td><code>POST</code></td><td><code>/api/v1/rules</code></td><td>Upload Sigma rule</td></tr>
-    <tr><td><code>GET</code></td><td><code>/ready</code></td><td>Health check endpoint</td></tr>
-    <tr><td><code>GET</code></td><td><code>/metrics</code></td><td>Prometheus metrics</td></tr>
+    <tr><td><span class="badge badge-green">POST</span></td><td><code>/api/v1/auth/login</code></td><td>Authenticate, get JWT</td></tr>
+    <tr><td><span class="badge badge-green">POST</span></td><td><code>/api/v1/auth/refresh</code></td><td>Refresh access token</td></tr>
+    <tr><td><span class="badge badge-cyan">GET</span></td><td><code>/api/v1/overview/kpis</code></td><td>Dashboard KPIs</td></tr>
+    <tr><td><span class="badge badge-cyan">GET</span></td><td><code>/api/v1/detections</code></td><td>Paginated alerts</td></tr>
+    <tr><td><span class="badge badge-cyan">GET</span></td><td><code>/api/v1/detections/{id}</code></td><td>Alert detail</td></tr>
+    <tr><td><span class="badge badge-orange">PATCH</span></td><td><code>/api/v1/detections/{id}</code></td><td>Update alert status</td></tr>
+    <tr><td><span class="badge badge-cyan">GET</span></td><td><code>/api/v1/coverage/heatmap</code></td><td>ATT&amp;CK heatmap</td></tr>
+    <tr><td><span class="badge badge-cyan">GET</span></td><td><code>/api/v1/integrations</code></td><td>List integrations</td></tr>
+    <tr><td><span class="badge badge-green">POST</span></td><td><code>/api/v1/integrations</code></td><td>Add integration</td></tr>
+    <tr><td><span class="badge badge-cyan">GET</span></td><td><code>/api/v1/rules</code></td><td>List Sigma rules</td></tr>
+    <tr><td><span class="badge badge-green">POST</span></td><td><code>/api/v1/rules</code></td><td>Upload Sigma rule</td></tr>
+    <tr><td><span class="badge badge-cyan">GET</span></td><td><code>/ready</code></td><td>Health check</td></tr>
+    <tr><td><span class="badge badge-cyan">GET</span></td><td><code>/metrics</code></td><td>Prometheus metrics</td></tr>
   </tbody>
 </table>
 
-<!-- ──────────────────── ENV REFERENCE ──────────────────── -->
+<!-- ──── ENV REFERENCE ──── -->
 <h2 id="env-ref">Environment Variable Reference</h2>
-<p>Complete list of all environment variables. See <a href="#config-backend">Configuration</a> section for detailed descriptions.</p>
 
-<pre><code><span class="comment"># ── App ─────────────────────────────────────────────</span>
-APP_NAME=<span class="string">MxTac API</span>
-VERSION=<span class="string">2.0.0</span>
-DEBUG=<span class="value">false</span>
+<pre><code><span class="cm"># ── App ─────────────────────────────────────────────</span>
+APP_NAME=<span class="st">MxTac API</span>
+VERSION=<span class="st">2.0.0</span>
+DEBUG=<span class="vl">false</span>
 
-<span class="comment"># ── Auth ────────────────────────────────────────────</span>
-SECRET_KEY=<span class="value">&lt;openssl rand -hex 32&gt;</span>
-ACCESS_TOKEN_EXPIRE_MINUTES=<span class="value">60</span>
-REFRESH_TOKEN_EXPIRE_DAYS=<span class="value">7</span>
+<span class="cm"># ── Auth ────────────────────────────────────────────</span>
+SECRET_KEY=<span class="vl">&lt;openssl rand -hex 32&gt;</span>
+ACCESS_TOKEN_EXPIRE_MINUTES=<span class="vl">60</span>
+REFRESH_TOKEN_EXPIRE_DAYS=<span class="vl">7</span>
 
-<span class="comment"># ── Database ────────────────────────────────────────</span>
-DATABASE_URL=<span class="string">postgresql+asyncpg://mxtac:password@postgres:5432/mxtac</span>
+<span class="cm"># ── Database ────────────────────────────────────────</span>
+DATABASE_URL=<span class="st">postgresql+asyncpg://mxtac:password@postgres:5432/mxtac</span>
 
-<span class="comment"># ── Valkey ──────────────────────────────────────────</span>
-VALKEY_URL=<span class="string">redis://redis:6379/0</span>
+<span class="cm"># ── Valkey ──────────────────────────────────────────</span>
+VALKEY_URL=<span class="st">redis://redis:6379/0</span>
 
-<span class="comment"># ── Queue ───────────────────────────────────────────</span>
-QUEUE_BACKEND=<span class="value">memory</span>
-KAFKA_BOOTSTRAP_SERVERS=<span class="string">redpanda:9092</span>
-KAFKA_CONSUMER_GROUP=<span class="string">mxtac</span>
+<span class="cm"># ── Queue ───────────────────────────────────────────</span>
+QUEUE_BACKEND=<span class="vl">memory</span>
+KAFKA_BOOTSTRAP_SERVERS=<span class="st">redpanda:9092</span>
+KAFKA_CONSUMER_GROUP=<span class="st">mxtac</span>
 
-<span class="comment"># ── OpenSearch ──────────────────────────────────────</span>
-OPENSEARCH_HOST=<span class="string">opensearch</span>
-OPENSEARCH_PORT=<span class="value">9200</span>
-OPENSEARCH_USERNAME=
-OPENSEARCH_PASSWORD=
-OPENSEARCH_USE_SSL=<span class="value">false</span>
+<span class="cm"># ── OpenSearch ──────────────────────────────────────</span>
+OPENSEARCH_HOST=<span class="st">opensearch</span>
+OPENSEARCH_PORT=<span class="vl">9200</span>
+OPENSEARCH_USE_SSL=<span class="vl">false</span>
 
-<span class="comment"># ── Rate Limiting ───────────────────────────────────</span>
-RATE_LIMIT_PER_MINUTE=<span class="value">300</span>
+<span class="cm"># ── CORS ────────────────────────────────────────────</span>
+CORS_ORIGINS=<span class="st">["http://localhost:5173"]</span>
+RATE_LIMIT_PER_MINUTE=<span class="vl">300</span>
 
-<span class="comment"># ── CORS ────────────────────────────────────────────</span>
-CORS_ORIGINS=<span class="string">["http://localhost:5173"]</span>
+<span class="cm"># ── Frontend ────────────────────────────────────────</span>
+VITE_API_BASE_URL=<span class="st">http://localhost:8080</span></code></pre>
 
-<span class="comment"># ── Frontend ────────────────────────────────────────</span>
-VITE_API_BASE_URL=<span class="string">http://localhost:8080</span></code></pre>
-
-<!-- ──────────────────── PORT REFERENCE ──────────────────── -->
+<!-- ──── PORTS ──── -->
 <h2 id="ports">Port Reference</h2>
 <table>
-  <thead>
-    <tr><th>Port</th><th>Service</th><th>Protocol</th><th>Notes</th></tr>
-  </thead>
+  <thead><tr><th>Port</th><th>Service</th><th>Protocol</th><th>Notes</th></tr></thead>
   <tbody>
-    <tr><td><code>80</code></td><td>Nginx (HTTP)</td><td>TCP</td><td>Production only, redirects to 443</td></tr>
+    <tr><td><code>80</code></td><td>Nginx (HTTP)</td><td>TCP</td><td>Prod only, redirects to 443</td></tr>
     <tr><td><code>443</code></td><td>Nginx (HTTPS)</td><td>TCP</td><td>Production reverse proxy</td></tr>
     <tr><td><code>5173</code></td><td>Frontend (Vite)</td><td>TCP</td><td>Development only</td></tr>
     <tr><td><code>8080</code></td><td>Backend API</td><td>TCP</td><td>FastAPI + Uvicorn</td></tr>
     <tr><td><code>5432</code></td><td>PostgreSQL</td><td>TCP</td><td>Metadata database</td></tr>
     <tr><td><code>6379</code></td><td>Valkey / Redis</td><td>TCP</td><td>Cache and sessions</td></tr>
     <tr><td><code>9200</code></td><td>OpenSearch</td><td>TCP</td><td>REST API + event store</td></tr>
-    <tr><td><code>9600</code></td><td>OpenSearch Performance</td><td>TCP</td><td>Performance Analyzer</td></tr>
-    <tr><td><code>5601</code></td><td>OpenSearch Dashboards</td><td>TCP</td><td>Optional (--profile dashboards)</td></tr>
-    <tr><td><code>19092</code></td><td>Redpanda (Kafka)</td><td>TCP</td><td>Optional (--profile kafka)</td></tr>
-    <tr><td><code>9644</code></td><td>Redpanda Admin</td><td>TCP</td><td>Redpanda HTTP admin API</td></tr>
+    <tr><td><code>5601</code></td><td>OS Dashboards</td><td>TCP</td><td><span class="badge badge-orange">--profile dashboards</span></td></tr>
+    <tr><td><code>19092</code></td><td>Redpanda</td><td>TCP</td><td><span class="badge badge-orange">--profile kafka</span></td></tr>
   </tbody>
 </table>
 
-<!-- ──────────────────── TROUBLESHOOTING ──────────────────── -->
+<!-- ──── TROUBLESHOOTING ──── -->
 <h2 id="troubleshooting">Troubleshooting</h2>
 
-<h3>Common Issues</h3>
-
 <h4>Backend won't start: "Connection refused" to PostgreSQL</h4>
-<pre><code><span class="comment"># Ensure PostgreSQL is healthy</span>
-docker compose ps postgres
+<pre><code>docker compose ps postgres
 docker compose logs postgres
+docker compose exec postgres psql -U mxtac -c <span class="st">'\l'</span></code></pre>
 
-<span class="comment"># Check database exists</span>
-docker compose exec postgres psql -U mxtac -c '\l'</code></pre>
-
-<h4>OpenSearch: "max virtual memory areas vm.max_map_count [65530] is too low"</h4>
-<pre><code><span class="comment"># Fix (temporary)</span>
+<h4>OpenSearch: "vm.max_map_count too low"</h4>
+<pre><code><span class="cm"># Temporary</span>
 sudo sysctl -w vm.max_map_count=262144
 
-<span class="comment"># Fix (persistent)</span>
-echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+<span class="cm"># Persistent</span>
+echo <span class="st">"vm.max_map_count=262144"</span> | sudo tee -a /etc/sysctl.conf
 sudo sysctl -p</code></pre>
 
 <h4>Frontend can't reach backend API</h4>
-<pre><code><span class="comment"># Check CORS_ORIGINS includes your frontend URL</span>
-<span class="comment"># Check VITE_API_BASE_URL points to backend</span>
-<span class="comment"># Check backend is healthy</span>
+<pre><code><span class="cm"># Check CORS_ORIGINS includes your frontend URL</span>
+<span class="cm"># Check VITE_API_BASE_URL points to backend</span>
 curl http://localhost:8080/ready</code></pre>
 
 <h4>High memory usage from OpenSearch</h4>
-<pre><code><span class="comment"># Reduce JVM heap (default is 512m)</span>
-<span class="comment"># In docker-compose.yml:</span>
+<pre><code><span class="cm"># Reduce JVM heap (default is 512m)</span>
 environment:
-  - "OPENSEARCH_JAVA_OPTS=<span class="flag">-Xms256m -Xmx256m</span>"</code></pre>
+  - <span class="st">"OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m"</span></code></pre>
 
 <h4>Containers keep restarting</h4>
-<pre><code><span class="comment"># Check logs for the failing container</span>
-docker compose logs <span class="flag">--tail 50</span> backend
-
-<span class="comment"># Check health status</span>
+<pre><code>docker compose logs <span class="fl">--tail 50</span> backend
 docker compose ps
+docker compose build <span class="fl">--no-cache</span> backend</code></pre>
 
-<span class="comment"># Rebuild images after code changes</span>
-docker compose build <span class="flag">--no-cache</span> backend</code></pre>
-
-<h4>Database migration errors</h4>
-<pre><code><span class="comment"># Check current migration state</span>
-docker compose exec backend alembic current
-
-<span class="comment"># Force migration to latest</span>
-docker compose exec backend alembic upgrade head
-
-<span class="comment"># Reset (destructive!)</span>
-docker compose exec backend alembic downgrade base
-docker compose exec backend alembic upgrade head</code></pre>
-
-<!-- ──────────────────── FOOTER ──────────────────── -->
+<!-- ──── FOOTER ──── -->
 <div class="footer">
-  MxTac Documentation v2.0 &mdash; 2026-02-20 &mdash; <a href="https://github.com/fankh/new-research">GitHub</a>
+  MxTac Documentation v2.0 &mdash; 2026 &mdash; <a href="https://github.com/fankh/new-research">GitHub</a>
+  <br><span style="font-size:9px;opacity:0.5">// there is no spoon</span>
 </div>
 
 </main>
 </div>
 
-<!-- ════════════════ Sidebar active state ════════════════ -->
+<!-- ═══ SCRIPTS ═══ -->
 <script>
+// ── Digital Rain ──────────────────────────────────────────────
 (function() {
-  const links = document.querySelectorAll('.sidebar a');
+  const canvas = document.getElementById('rain-canvas');
+  const ctx = canvas.getContext('2d');
+  let w, h, cols, drops;
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%&*<>{}[]|/\\~';
+  const fontSize = 14;
+
+  function resize() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+    cols = Math.floor(w / fontSize);
+    drops = new Array(cols).fill(1);
+  }
+
+  function draw() {
+    ctx.fillStyle = 'rgba(3,3,3,0.05)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#00FF41';
+    ctx.font = fontSize + 'px monospace';
+
+    for (let i = 0; i < cols; i++) {
+      const char = chars[Math.floor(Math.random() * chars.length)];
+      ctx.fillText(char, i * fontSize, drops[i] * fontSize);
+      if (drops[i] * fontSize > h && Math.random() > 0.975) {
+        drops[i] = 0;
+      }
+      drops[i]++;
+    }
+  }
+
+  resize();
+  window.addEventListener('resize', resize);
+  setInterval(draw, 50);
+})();
+
+// ── Sidebar scroll tracking ──────────────────────────────────
+(function() {
+  const links = document.querySelectorAll('.sb-link');
   const sections = [];
   links.forEach(a => {
     const id = a.getAttribute('href');
@@ -1332,6 +1385,7 @@ docker compose exec backend alembic upgrade head</code></pre>
       if (el) sections.push({ el, link: a });
     }
   });
+
   function update() {
     let current = sections[0];
     const scrollY = window.scrollY + 100;
@@ -1341,16 +1395,72 @@ docker compose exec backend alembic upgrade head</code></pre>
     links.forEach(a => a.classList.remove('active'));
     if (current) current.link.classList.add('active');
   }
+
   window.addEventListener('scroll', update, { passive: true });
   update();
 
-  // Navbar active state
-  const navLinks = document.querySelectorAll('.navbar-links a[href^="#"]');
+  // Navbar active
+  const navLinks = document.querySelectorAll('.nav-links a[href^="#"]');
   navLinks.forEach(a => {
     a.addEventListener('click', () => {
       navLinks.forEach(l => l.classList.remove('active'));
       a.classList.add('active');
     });
+  });
+})();
+
+// ── Copy buttons for code blocks ─────────────────────────────
+(function() {
+  document.querySelectorAll('pre').forEach(pre => {
+    // Skip arch diagram pre elements
+    if (pre.closest('.arch-box')) return;
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', () => {
+      const code = pre.querySelector('code');
+      const text = code ? code.textContent : pre.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+      });
+    });
+    pre.style.position = 'relative';
+    pre.appendChild(btn);
+  });
+})();
+
+// ── Simple search ────────────────────────────────────────────
+(function() {
+  const input = document.getElementById('search-input');
+  const allSections = document.querySelectorAll('h2[id], h3[id], h4[id]');
+
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && input.value.trim()) {
+      const q = input.value.trim().toLowerCase();
+      for (const section of allSections) {
+        const text = section.textContent.toLowerCase();
+        if (text.includes(q)) {
+          section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          // Flash highlight
+          section.style.background = 'rgba(0,255,65,0.08)';
+          section.style.borderRadius = '4px';
+          section.style.padding = '2px 8px';
+          section.style.transition = 'background 0.5s';
+          setTimeout(() => { section.style.background = ''; section.style.padding = ''; }, 2000);
+          break;
+        }
+      }
+    }
+  });
+
+  // Ctrl+K shortcut
+  document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      input.focus();
+    }
   });
 })();
 </script>

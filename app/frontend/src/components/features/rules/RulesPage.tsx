@@ -16,11 +16,11 @@ interface Rule {
 }
 
 const LEVEL_COLOR: Record<string, string> = {
-  critical: 'text-crit-text bg-[#FDECEA]',
-  high:     'text-[#C45C00] bg-[#FEF3E2]',
-  medium:   'text-[#5B5B00] bg-[#FEFBE8]',
-  low:      'text-text-muted bg-[#F4F6F8]',
-  informational: 'text-text-muted bg-[#F4F6F8]',
+  critical: 'text-crit-text bg-crit-bg',
+  high:     'text-high-text bg-high-bg',
+  medium:   'text-warn-text bg-warn-bg',
+  low:      'text-text-muted bg-page',
+  informational: 'text-text-muted bg-page',
 }
 
 const REQUIRED_SIGMA_FIELDS = ['title', 'detection', 'logsource'] as const
@@ -265,7 +265,7 @@ export function RulesPage() {
               <span className="text-[11px] text-text-primary">{rule.hit_count.toLocaleString()}</span>
               <span className="text-[11px] text-text-muted">{rule.fp_count}</span>
               <div className="flex items-center">
-                <div className={`w-[6px] h-[6px] rounded-full ${rule.enabled ? 'bg-[#28A745]' : 'bg-border'}`} />
+                <div className={`w-[6px] h-[6px] rounded-full ${rule.enabled ? 'bg-status-ok' : 'bg-border'}`} />
               </div>
             </div>
           ))}
@@ -273,7 +273,7 @@ export function RulesPage() {
 
         {/* Editor modal */}
         {showEditor && (
-          <div className="fixed inset-0 bg-black/20 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-overlay z-50 flex items-center justify-center">
             <div className="bg-surface rounded-lg shadow-panel w-[680px] max-h-[80vh] flex flex-col">
               <div className="flex items-center justify-between px-5 py-3 border-b border-border">
                 <h2 className="text-[13px] font-semibold text-text-primary">New Sigma Rule</h2>
@@ -290,7 +290,7 @@ export function RulesPage() {
               <div className="flex-1 overflow-auto p-4">
                 <textarea
                   className={`w-full h-[400px] text-[11px] font-mono bg-page border rounded-md p-3 text-text-primary focus:outline-none resize-none ${
-                    validationErrors.length > 0 ? 'border-[#E53935] focus:border-[#E53935]' : 'border-border focus:border-blue'
+                    validationErrors.length > 0 ? 'border-crit-text focus:border-crit-text' : 'border-border focus:border-blue'
                   }`}
                   value={editorYaml}
                   onChange={(e) => {
@@ -306,8 +306,8 @@ export function RulesPage() {
                 {validationErrors.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {validationErrors.map((err, i) => (
-                      <div key={i} className="text-[11px] text-[#E53935] flex items-center gap-1">
-                        <span className="inline-block w-[14px] h-[14px] rounded-full bg-[#FDECEA] text-[#E53935] text-center text-[9px] leading-[14px] font-bold flex-shrink-0">!</span>
+                      <div key={i} className="text-[11px] text-crit-text flex items-center gap-1">
+                        <span className="inline-block w-[14px] h-[14px] rounded-full bg-crit-bg text-crit-text text-center text-[9px] leading-[14px] font-bold flex-shrink-0">!</span>
                         {err}
                       </div>
                     ))}
@@ -316,7 +316,7 @@ export function RulesPage() {
 
                 {/* API error */}
                 {saveError && (
-                  <div className="mt-2 text-[11px] text-[#E53935] bg-[#FDECEA] rounded px-3 py-2">
+                  <div className="mt-2 text-[11px] text-crit-text bg-crit-bg rounded px-3 py-2">
                     {saveError}
                   </div>
                 )}

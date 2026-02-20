@@ -2,15 +2,161 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Theme tokens ─────────────────────────────────────────────────────────── */
+
+[data-theme="light"], :root {
+  --color-primary: #0066CC;
+  --color-primary-dark: #0055AA;
+  --color-primary-light: #EBF3FF;
+  --color-primary-faint: #F0F6FF;
+  --color-primary-rgb: 0, 102, 204;
+
+  --color-crit-bg: #FDECEA;
+  --color-crit-text: #CC3333;
+  --color-high-bg: #FEF3E2;
+  --color-high-text: #CC6600;
+  --color-med-bg: #EBF2FF;
+  --color-med-text: #0055AA;
+  --color-low-bg: #F4F6F8;
+  --color-low-text: #A0AABB;
+  --color-warn-bg: #FEFBE8;
+  --color-warn-text: #5B5B00;
+
+  --color-resolved-bg: #EBF5EB;
+  --color-resolved-text: #2E7D32;
+
+  --color-status-ok: #28A745;
+  --color-status-ok-bg: #EAF7ED;
+  --color-status-ok-text: #1A7A30;
+  --color-status-warn: #F0A020;
+  --color-status-warn-bg: #FEF8EC;
+  --color-status-warn-text: #9A6600;
+
+  --color-surface: #FFFFFF;
+  --color-page: #F4F6F8;
+  --color-section: #F9FAFB;
+  --color-border: #E8ECF0;
+  --color-border-strong: #DDE3EB;
+
+  --color-text-primary: #1C2D40;
+  --color-text-secondary: #5A6B82;
+  --color-text-muted: #A0AABB;
+  --color-text-faint: #C8D0DC;
+
+  --color-chart-grid: #F0F2F5;
+
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-panel: -2px 0 10px rgba(0,0,0,0.08);
+
+  --color-overlay: rgba(0,0,0,0.20);
+}
+
+[data-theme="dark"] {
+  --color-primary: #3B8EEA;
+  --color-primary-dark: #2B7ADA;
+  --color-primary-light: #1A2840;
+  --color-primary-faint: #141E30;
+  --color-primary-rgb: 59, 142, 234;
+
+  --color-crit-bg: #3D1515;
+  --color-crit-text: #FF6B6B;
+  --color-high-bg: #3D2A0A;
+  --color-high-text: #FFB347;
+  --color-med-bg: #152040;
+  --color-med-text: #6BA3E8;
+  --color-low-bg: #1A1D22;
+  --color-low-text: #555D6A;
+  --color-warn-bg: #2A2200;
+  --color-warn-text: #D4B030;
+
+  --color-resolved-bg: #153015;
+  --color-resolved-text: #5FBF60;
+
+  --color-status-ok: #3DDC84;
+  --color-status-ok-bg: #0F2A18;
+  --color-status-ok-text: #3DDC84;
+  --color-status-warn: #FFB347;
+  --color-status-warn-bg: #2A1A08;
+  --color-status-warn-text: #FFB347;
+
+  --color-surface: #1A1D22;
+  --color-page: #111318;
+  --color-section: #1E2128;
+  --color-border: #2A2E36;
+  --color-border-strong: #3A3F4A;
+
+  --color-text-primary: #E8ECF2;
+  --color-text-secondary: #A0AABC;
+  --color-text-muted: #626A78;
+  --color-text-faint: #3A3F4A;
+
+  --color-chart-grid: #2A2E36;
+
+  --shadow-card: 0 1px 4px rgba(0,0,0,0.3);
+  --shadow-panel: -2px 0 10px rgba(0,0,0,0.4);
+
+  --color-overlay: rgba(0,0,0,0.50);
+}
+
+[data-theme="matrix"] {
+  --color-primary: #00FF41;
+  --color-primary-dark: #00CC33;
+  --color-primary-light: #0A200F;
+  --color-primary-faint: #061008;
+  --color-primary-rgb: 0, 255, 65;
+
+  --color-crit-bg: #2A0A0A;
+  --color-crit-text: #FF4444;
+  --color-high-bg: #2A1A0A;
+  --color-high-text: #FF8800;
+  --color-med-bg: #0A1A0A;
+  --color-med-text: #33FF66;
+  --color-low-bg: #0A0F0A;
+  --color-low-text: #2A5A2A;
+  --color-warn-bg: #1A1A0A;
+  --color-warn-text: #AAAA00;
+
+  --color-resolved-bg: #0A1A0A;
+  --color-resolved-text: #00CC33;
+
+  --color-status-ok: #00FF41;
+  --color-status-ok-bg: #0A1A0A;
+  --color-status-ok-text: #00FF41;
+  --color-status-warn: #FFAA00;
+  --color-status-warn-bg: #1A1A0A;
+  --color-status-warn-text: #FFAA00;
+
+  --color-surface: #0A0A0A;
+  --color-page: #050505;
+  --color-section: #0F0F0F;
+  --color-border: #1A2A1A;
+  --color-border-strong: #2A3A2A;
+
+  --color-text-primary: #00FF41;
+  --color-text-secondary: #00CC33;
+  --color-text-muted: #1A5A1A;
+  --color-text-faint: #0F2F0F;
+
+  --color-chart-grid: #0F1A0F;
+
+  --shadow-card: 0 1px 4px rgba(0,255,65,0.06);
+  --shadow-panel: -2px 0 10px rgba(0,255,65,0.10);
+
+  --color-overlay: rgba(0,0,0,0.70);
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────────── */
+
 @layer base {
   html { font-size: 14px; }
   body { @apply bg-page text-text-primary font-sans antialiased; }
+  [data-theme="matrix"] body { @apply font-mono; }
   * { box-sizing: border-box; }
 }
 
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: #DDE3EB transparent;
+    scrollbar-color: var(--color-border-strong) transparent;
   }
 }
