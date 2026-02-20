@@ -76,9 +76,13 @@ async def on_startup() -> None:
         rules_dir = Path(__file__).parent.parent / "sigma_rules"
         if rules_dir.exists():
             n = await engine.load_rules_from_dir(rules_dir)
-            logger.info("Loaded %d Sigma rules", n)
+            logger.info("Loaded %d Sigma rules from disk", n)
         else:
-            logger.info("No sigma_rules/ directory found, skipping rule loading")
+            logger.info("No sigma_rules/ directory found, skipping disk rule loading")
+        # Load persisted rules from DB (overrides disk rules with same ID)
+        async with AsyncSessionLocal() as session:
+            n_db = await engine.load_rules_from_db(session)
+            logger.info("Loaded %d Sigma rules from DB", n_db)
         app.state.sigma_engine = engine
     except Exception:
         logger.exception("Sigma engine init failed")

@@ -304,6 +304,42 @@ class SigmaEngine:
         for key in self._logsource_keys(rule.logsource):
             self._index.setdefault(key, []).append(rule)
 
+    def remove_rule(self, rule_id: str) -> None:
+        """Remove a rule from the engine and all index entries."""
+        rule = self._rules.pop(rule_id, None)
+        if rule is None:
+            return
+        for key in self._logsource_keys(rule.logsource):
+            lst = self._index.get(key)
+            if lst is not None:
+                self._index[key] = [r for r in lst if r.id != rule_id]
+
+    def upsert_rule(self, rule: SigmaRule) -> None:
+        """Add or replace a rule (removes existing index entries first)."""
+        if rule.id in self._rules:
+            self.remove_rule(rule.id)
+        self.add_rule(rule)
+
+    async def load_rules_from_db(self, session: Any) -> int:
+        """Load all rules from the database into the engine.
+
+        Uses upsert_rule so DB state overrides any disk-loaded rules with the
+        same ID. The rule's enabled flag is taken from the DB record.
+        """
+        from ..repositories.rule_repo import RuleRepo
+        db_rules = await RuleRepo.list(session)
+        loaded = 0
+        for db_rule in db_rules:
+            if not db_rule.content:
+                continue
+            sigma_rule = self.load_rule_yaml(db_rule.content)
+            if sigma_rule:
+                sigma_rule.enabled = db_rule.enabled
+                self.upsert_rule(sigma_rule)
+                loaded += 1
+        logger.info("SigmaEngine loaded rules from DB count=%d", loaded)
+        return loaded
+
     # ── Evaluation ────────────────────────────────────────────────────────────
 
     async def evaluate(self, event: OCSFEvent) -> AsyncGenerator[SigmaAlert, None]:

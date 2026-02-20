@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -113,9 +113,11 @@ async def _parse_and_persist(
     db: AsyncSession,
     *,
     enabled: bool = True,
+    engine: Any = None,
 ) -> list:
     """Parse Sigma YAML (single or multi-doc), validate, and persist each to DB.
 
+    Syncs each persisted rule into `engine` (app.state.sigma_engine) when provided.
     Returns the list of created ORM Rule objects.
     """
     created = []
@@ -143,6 +145,9 @@ async def _parse_and_persist(
             tactic_ids=json.dumps(sigma_rule.tactic_ids),
             source="custom",
         )
+        if engine is not None:
+            sigma_rule.enabled = enabled
+            engine.upsert_rule(sigma_rule)
         created.append(db_rule)
     return created
 
@@ -195,13 +200,15 @@ async def test_rule_yaml(
 
 @router.post("/import", response_model=dict)
 async def import_rules(
+    request: Request,
     body: RuleImportRequest,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("rules:write")),
 ):
     """Bulk import Sigma rules from YAML (single or multi-document)."""
     try:
-        created = await _parse_and_persist(body.yaml_content, db)
+        engine = getattr(request.app.state, "sigma_engine", None)
+        created = await _parse_and_persist(body.yaml_content, db, engine=engine)
         total = await RuleRepo.count(db)
         return {"imported": len(created), "total_rules": total}
     except Exception as exc:
@@ -223,12 +230,14 @@ async def get_rule(
 
 @router.post("", response_model=RuleResponse, status_code=201)
 async def create_rule(
+    request: Request,
     body: RuleCreate,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("rules:write")),
 ):
     """Create a custom Sigma rule from raw YAML."""
-    created = await _parse_and_persist(body.content, db, enabled=body.enabled)
+    engine = getattr(request.app.state, "sigma_engine", None)
+    created = await _parse_and_persist(body.content, db, enabled=body.enabled, engine=engine)
     if not created:
         raise HTTPException(status_code=422, detail="Invalid Sigma YAML")
     return _rule_to_response(created[0])
@@ -236,6 +245,7 @@ async def create_rule(
 
 @router.patch("/{rule_id}", response_model=RuleResponse)
 async def update_rule(
+    request: Request,
     rule_id: str,
     body: RuleUpdate,
     db: AsyncSession = Depends(get_db),
@@ -246,6 +256,7 @@ async def update_rule(
         raise HTTPException(status_code=404, detail="Rule not found")
 
     update_kwargs: dict = {}
+    sigma_rule = None
     if body.enabled is not None:
         update_kwargs["enabled"] = body.enabled
     if body.content is not None:
@@ -269,11 +280,27 @@ async def update_rule(
         return _rule_to_response(rule)
 
     updated = await RuleRepo.update(db, rule_id, **update_kwargs)
+
+    # Sync the in-process Sigma engine so evaluation reflects DB state
+    engine = getattr(request.app.state, "sigma_engine", None)
+    if engine is not None:
+        if sigma_rule is not None:
+            # Content changed: rebuild index entry with correct enabled state
+            sigma_rule.enabled = update_kwargs.get("enabled", rule.enabled)
+            engine.remove_rule(rule_id)
+            engine.add_rule(sigma_rule)
+        elif body.enabled is not None:
+            # Only enabled flag changed: update in-place
+            existing = engine._rules.get(rule_id)
+            if existing is not None:
+                existing.enabled = body.enabled
+
     return _rule_to_response(updated)
 
 
 @router.delete("/{rule_id}", status_code=204)
 async def delete_rule(
+    request: Request,
     rule_id: str,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("rules:write")),
@@ -281,6 +308,9 @@ async def delete_rule(
     deleted = await RuleRepo.delete(db, rule_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Rule not found")
+    engine = getattr(request.app.state, "sigma_engine", None)
+    if engine is not None:
+        engine.remove_rule(rule_id)
 
 
 @router.post("/{rule_id}/test", response_model=RuleTestResponse)
