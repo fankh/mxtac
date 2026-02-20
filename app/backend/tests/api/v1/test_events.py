@@ -876,6 +876,403 @@ async def test_entity_timeline_no_results(
     assert data["events"] == []
 
 
+@pytest.mark.asyncio
+async def test_entity_timeline_hash(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """GET /events/entity/hash/{hash} returns hash-matching events only."""
+    target_hash = "d41d8cd98f00b204e9800998ecf8427e"
+    await _seed(
+        db_session,
+        {"process_hash": target_hash},
+        {"process_hash": "aabbccddee112233"},
+    )
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/hash/{target_hash}",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["entity_type"] == "hash"
+    assert data["entity_value"] == target_hash
+    assert data["total"] == 1
+    assert data["events"][0]["process_hash"] == target_hash
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_unauthenticated(client: AsyncClient) -> None:
+    """GET /events/entity/... without auth → 401 or 403."""
+    resp = await client.get(f"{BASE_URL}/entity/host/somehost")
+    assert resp.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_viewer_denied(
+    client: AsyncClient,
+    viewer_headers: dict,
+) -> None:
+    """GET /events/entity/... with viewer role → 403 (events:search requires hunter+)."""
+    resp = await client.get(
+        f"{BASE_URL}/entity/host/somehost",
+        headers=viewer_headers,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_analyst_denied(
+    client: AsyncClient,
+    analyst_headers: dict,
+) -> None:
+    """GET /events/entity/... with analyst role → 403."""
+    resp = await client.get(
+        f"{BASE_URL}/entity/host/somehost",
+        headers=analyst_headers,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_engineer_allowed(
+    client: AsyncClient,
+    engineer_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """GET /events/entity/... with engineer role → 200."""
+    await _seed(db_session, {"hostname": "eng-srv-01"})
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/host/eng-srv-01",
+        headers=engineer_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_admin_allowed(
+    client: AsyncClient,
+    admin_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """GET /events/entity/... with admin role → 200."""
+    await _seed(db_session, {"hostname": "admin-srv-01"})
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/host/admin-srv-01",
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_response_shape(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Response always contains entity_type, entity_value, total, events keys."""
+    await _seed(db_session, {"hostname": "shape-host"})
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/host/shape-host",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert set(data.keys()) >= {"entity_type", "entity_value", "total", "events"}
+    assert data["entity_type"] == "host"
+    assert data["entity_value"] == "shape-host"
+    assert isinstance(data["total"], int)
+    assert isinstance(data["events"], list)
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_event_fields(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Each event object contains the expected serialized fields."""
+    await _seed(
+        db_session,
+        {
+            "hostname": "field-test-host",
+            "src_ip": "1.2.3.4",
+            "dst_ip": "5.6.7.8",
+            "username": "CORP\\testuser",
+            "severity_id": 5,
+            "class_name": "Network Activity",
+            "source": "zeek",
+            "summary": "Suspicious outbound connection",
+        },
+    )
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/host/field-test-host",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    evt = resp.json()["events"][0]
+    assert "id" in evt
+    assert "time" in evt
+    assert evt["hostname"] == "field-test-host"
+    assert evt["src_ip"] == "1.2.3.4"
+    assert evt["dst_ip"] == "5.6.7.8"
+    assert evt["username"] == "CORP\\testuser"
+    assert evt["severity_id"] == 5
+    assert evt["class_name"] == "Network Activity"
+    assert evt["source"] == "zeek"
+    assert evt["summary"] == "Suspicious outbound connection"
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_ordered_newest_first(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Events are returned ordered by time descending (newest first)."""
+    t_old = _NOW - timedelta(hours=5)
+    t_mid = _NOW - timedelta(hours=3)
+    t_new = _NOW - timedelta(minutes=15)
+
+    await _seed(
+        db_session,
+        {"hostname": "ordered-host", "time": t_old},
+        {"hostname": "ordered-host", "time": t_new},
+        {"hostname": "ordered-host", "time": t_mid},
+    )
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/host/ordered-host",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    events = resp.json()["events"]
+    assert len(events) == 3
+    times = [e["time"] for e in events]
+    assert times == sorted(times, reverse=True), "Events must be newest-first"
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_time_range_excludes_old_events(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Events older than the default time_from (now-7d) are excluded."""
+    old_time = _NOW - timedelta(days=30)
+
+    await _seed(
+        db_session,
+        {"hostname": "time-host", "time": old_time},
+    )
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/host/time-host",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_custom_time_from(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Custom time_from query param extends (or narrows) the search window."""
+    old_time = _NOW - timedelta(days=20)
+
+    await _seed(
+        db_session,
+        {"hostname": "custom-time-host", "time": old_time},
+    )
+
+    # Default now-7d: should exclude a 20-day-old event
+    resp = await client.get(
+        f"{BASE_URL}/entity/host/custom-time-host",
+        headers=hunter_headers,
+    )
+    assert resp.json()["total"] == 0
+
+    # Explicit now-30d: should include the 20-day-old event
+    resp = await client.get(
+        f"{BASE_URL}/entity/host/custom-time-host?time_from=now-30d",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_unknown_entity_type_defaults_to_hostname(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Unknown entity_type falls back to hostname search without error."""
+    await _seed(
+        db_session,
+        {"hostname": "fallback-host"},
+    )
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/unknowntype/fallback-host",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["events"][0]["hostname"] == "fallback-host"
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_ip_exact_match_only(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """IP search matches exact addresses, not partial strings like 10.0.0.1 vs 10.0.0.10."""
+    await _seed(
+        db_session,
+        {"src_ip": "10.0.0.1", "dst_ip": "10.0.0.99"},
+        {"src_ip": "10.0.0.10", "dst_ip": "10.0.0.99"},  # Different IP — must not match
+    )
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/ip/10.0.0.1",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_ip_matches_as_src_and_dst(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """IP entity search counts separate events where the IP appears as src or dst."""
+    target = "192.168.50.1"
+    await _seed(
+        db_session,
+        {"src_ip": target, "dst_ip": "10.0.0.1"},    # match via src_ip
+        {"src_ip": "10.0.0.2", "dst_ip": target},    # match via dst_ip
+        {"src_ip": "172.16.0.1", "dst_ip": "172.16.0.2"},  # no match
+    )
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/ip/{target}",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 2
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_ip_both_src_and_dst_single_event(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Event where target IP appears as both src and dst is counted once."""
+    target = "10.10.10.10"
+    await _seed(
+        db_session,
+        {"src_ip": target, "dst_ip": target},  # same IP as both src and dst
+    )
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/ip/{target}",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_user_url_encoding(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Backslash in domain\\username is properly URL-encoded and matched."""
+    await _seed(
+        db_session,
+        {"username": "CORP\\jsmith"},
+        {"username": "CORP\\jdoe"},
+    )
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/user/CORP%5Cjsmith",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["events"][0]["username"] == "CORP\\jsmith"
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_raw_payload_merged(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Events with a raw OCSF payload have raw fields merged into the response."""
+    await _seed(
+        db_session,
+        {
+            "hostname": "raw-host",
+            "raw": {"technique_id": "T1055", "confidence": 95},
+        },
+    )
+
+    resp = await client.get(
+        f"{BASE_URL}/entity/host/raw-host",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 200
+    evt = resp.json()["events"][0]
+    assert evt.get("technique_id") == "T1055"
+    assert evt.get("confidence") == 95
+
+
+@pytest.mark.asyncio
+async def test_entity_timeline_isolates_per_entity_value(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Timeline for one entity value does not include events for a different value."""
+    await _seed(
+        db_session,
+        {"hostname": "host-alpha"},
+        {"hostname": "host-beta"},
+        {"hostname": "host-alpha"},
+    )
+
+    resp_alpha = await client.get(
+        f"{BASE_URL}/entity/host/host-alpha",
+        headers=hunter_headers,
+    )
+    resp_beta = await client.get(
+        f"{BASE_URL}/entity/host/host-beta",
+        headers=hunter_headers,
+    )
+    assert resp_alpha.json()["total"] == 2
+    assert resp_beta.json()["total"] == 1
+
+
 # ---------------------------------------------------------------------------
 # POST /search — OpenSearch-backed path
 # ---------------------------------------------------------------------------
