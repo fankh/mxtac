@@ -34,6 +34,7 @@ class UserResponse(BaseModel):
     full_name: str | None
     role: str
     is_active: bool
+    mfa_enabled: bool
 
 
 def _user_to_response(u) -> dict:
@@ -43,6 +44,7 @@ def _user_to_response(u) -> dict:
         "full_name": u.full_name,
         "role": u.role,
         "is_active": u.is_active,
+        "mfa_enabled": u.mfa_enabled,
     }
 
 

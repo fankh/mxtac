@@ -46,6 +46,14 @@ export const authApi = {
   mfaVerify: (mfa_token: string, code: string) =>
     http.post('/auth/mfa/verify', { mfa_token, code }).then(r => r.data),
   logout: () => http.post('/auth/logout'),
+  me: (): Promise<{ email: string; role: string; full_name: string | null; mfa_enabled: boolean }> =>
+    http.get('/auth/me').then(r => r.data),
+  mfaSetup: (): Promise<{ secret: string; qr_code_uri: string; backup_codes: string[] }> =>
+    http.post('/auth/mfa/setup').then(r => r.data),
+  mfaVerifySetup: (code: string): Promise<{ message: string }> =>
+    http.post('/auth/mfa/verify-setup', { code }).then(r => r.data),
+  mfaDisable: (user_id: string): Promise<{ message: string }> =>
+    http.post('/auth/mfa/disable', { user_id }).then(r => r.data),
 }
 
 // ── Overview ──────────────────────────────────────────────────────────────────

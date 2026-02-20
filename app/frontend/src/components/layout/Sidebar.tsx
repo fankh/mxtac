@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useUIStore, type Theme } from '../../stores/uiStore'
+import { useAuthStore } from '../../stores/authStore'
+import { MfaSetupModal } from '../features/auth/MfaSetupModal'
 
 const NAV = [
   { to: '/',              icon: '\u229E',       label: 'Overview' },
@@ -23,8 +25,15 @@ const THEMES: { value: Theme; icon: string; label: string }[] = [
 
 export function Sidebar() {
   const { theme, setTheme } = useUIStore()
+  const user = useAuthStore(s => s.user)
   const [showThemeMenu, setShowThemeMenu] = useState(false)
+  const [showMfaModal, setShowMfaModal] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // Derive initials from email (e.g. "khchoi@..." → "KH")
+  const initials = user?.email
+    ? user.email.split('@')[0].slice(0, 2).toUpperCase()
+    : 'KH'
 
   // Close menu on outside click
   useEffect(() => {
@@ -101,11 +110,23 @@ export function Sidebar() {
         </div>
 
         <button className="text-text-muted hover:text-text-secondary text-base" title="Help">?</button>
-        <button className="text-text-muted hover:text-text-secondary text-base" title="Settings">{'\u2699'}</button>
-        <div className="w-5 h-5 rounded-full bg-border flex items-center justify-center text-[9px] text-text-secondary font-semibold">
-          KH
-        </div>
+        <button
+          className="text-text-muted hover:text-text-secondary text-base"
+          title="Settings"
+          onClick={() => setShowMfaModal(true)}
+        >
+          {'\u2699'}
+        </button>
+        <button
+          onClick={() => setShowMfaModal(true)}
+          title={user?.email ?? 'Account security'}
+          className="w-5 h-5 rounded-full bg-border flex items-center justify-center text-[9px] text-text-secondary font-semibold hover:bg-blue hover:text-white transition-colors"
+        >
+          {initials}
+        </button>
       </div>
+
+      {showMfaModal && <MfaSetupModal onClose={() => setShowMfaModal(false)} />}
     </aside>
   )
 }

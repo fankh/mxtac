@@ -252,3 +252,48 @@ async def mfa_verify_setup(
     await db.flush()
 
     return MfaVerifyResponse(message="MFA enabled")
+
+
+# ---------------------------------------------------------------------------
+# Feature 32.3 — MFA management
+# ---------------------------------------------------------------------------
+
+
+@router.get("/me", response_model=MeResponse)
+async def get_me(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the authenticated user's profile including MFA status."""
+    user = await UserRepo.get_by_email(db, current_user["email"])
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return MeResponse(
+        email=user.email,
+        role=user.role,
+        full_name=user.full_name,
+        mfa_enabled=user.mfa_enabled,
+    )
+
+
+@router.post("/mfa/disable", response_model=MfaVerifyResponse)
+async def mfa_disable(
+    body: MfaDisableRequest,
+    current_user: dict = Depends(require_permission("users:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Disable MFA for a given user (admin only).
+
+    Clears the TOTP secret and all backup codes for the target user.
+    Requires the caller to have the 'users:write' permission (admin role).
+    """
+    user = await UserRepo.get_by_id(db, body.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user.mfa_enabled = False
+    user.mfa_secret = None
+    user.mfa_backup_codes = None
+    await db.flush()
+
+    return MfaVerifyResponse(message="MFA disabled")

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopBar } from '../../layout/TopBar'
-import { apiClient, auditLogsApi } from '../../../lib/api'
+import { apiClient, auditLogsApi, authApi } from '../../../lib/api'
 import type { AuditLogEntry } from '../../../types/api'
 
 interface User {
@@ -10,6 +10,7 @@ interface User {
   full_name: string | null
   role: string
   is_active: boolean
+  mfa_enabled: boolean
 }
 
 /** Convert an OpenSearch-style range string (e.g. "now-7d") to an ISO 8601 datetime. */
@@ -87,6 +88,11 @@ export function AdminPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
   })
 
+  const disableMfa = useMutation({
+    mutationFn: (userId: string) => authApi.mfaDisable(userId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+  })
+
   return (
     <>
       <TopBar crumb="Admin" />
@@ -120,8 +126,8 @@ export function AdminPage() {
 
             <div className="bg-surface rounded-md shadow-card overflow-hidden">
               {/* Header */}
-              <div className="grid grid-cols-[1fr_160px_120px_80px_60px] gap-2 px-4 py-2 border-b border-border">
-                {['User', 'Email', 'Role', 'Status', 'Actions'].map((h) => (
+              <div className="grid grid-cols-[1fr_150px_110px_70px_70px_80px] gap-2 px-4 py-2 border-b border-border">
+                {['User', 'Email', 'Role', 'Status', 'MFA', 'Actions'].map((h) => (
                   <span key={h} className="text-[10px] font-medium text-text-muted uppercase">{h}</span>
                 ))}
               </div>
@@ -131,7 +137,7 @@ export function AdminPage() {
               )}
 
               {users.map((user) => (
-                <div key={user.id} className="grid grid-cols-[1fr_160px_120px_80px_60px] gap-2 px-4 py-[7px] border-b border-section items-center">
+                <div key={user.id} className="grid grid-cols-[1fr_150px_110px_70px_70px_80px] gap-2 px-4 py-[7px] border-b border-section items-center">
                   <div>
                     <div className="text-[11px] text-text-primary font-medium">
                       {user.full_name || user.email.split('@')[0]}
@@ -152,12 +158,37 @@ export function AdminPage() {
                     <span className={`w-[6px] h-[6px] rounded-full ${user.is_active ? 'bg-status-ok' : 'bg-border'}`} />
                     <span className="text-[10px] text-text-muted">{user.is_active ? 'Active' : 'Inactive'}</span>
                   </div>
-                  <button
-                    onClick={() => toggleActive.mutate({ id: user.id, is_active: !user.is_active })}
-                    className="text-[10px] text-text-muted hover:text-text-secondary"
-                  >
-                    {user.is_active ? 'Disable' : 'Enable'}
-                  </button>
+                  <div className="flex items-center">
+                    {user.mfa_enabled ? (
+                      <span className="text-[10px] font-medium px-1.5 py-[2px] rounded bg-status-ok/10 text-status-ok">
+                        On
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-text-muted">—</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => toggleActive.mutate({ id: user.id, is_active: !user.is_active })}
+                      className="text-[10px] text-text-muted hover:text-text-secondary"
+                    >
+                      {user.is_active ? 'Disable' : 'Enable'}
+                    </button>
+                    {user.mfa_enabled && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Disable MFA for ${user.email}?`)) {
+                            disableMfa.mutate(user.id)
+                          }
+                        }}
+                        disabled={disableMfa.isPending}
+                        className="text-[10px] text-crit-text hover:opacity-70 disabled:opacity-40"
+                        title="Disable MFA"
+                      >
+                        MFA↓
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

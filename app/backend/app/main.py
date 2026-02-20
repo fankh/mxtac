@@ -13,6 +13,7 @@ from .core import metrics as _metrics  # noqa: F401 — registers all mxtac_ met
 from .core.access_log import AccessLogMiddleware
 from .core.config import settings
 from .core.rate_limit import RateLimitMiddleware
+from .core.security_headers import SecurityHeadersMiddleware
 from .core.database import AsyncSessionLocal
 from .core.exceptions import register_exception_handlers
 from .core.logging import configure_logging, get_logger
@@ -92,6 +93,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Security headers — applied after CORS so headers are present on all responses
+# including CORS preflight responses (feature 33.2).
+app.add_middleware(SecurityHeadersMiddleware)
 
 register_exception_handlers(app)
 app.include_router(api_router, prefix=settings.api_prefix)
