@@ -44,7 +44,7 @@ async def test_heatmap(client: AsyncClient, auth_headers: dict) -> None:
     assert resp.status_code == 200
     rows = resp.json()
     assert isinstance(rows, list)
-    assert "technique_id" in rows[0]
+    assert "row" in rows[0]
     assert "cells" in rows[0]
 
 

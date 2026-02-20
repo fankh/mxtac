@@ -8,7 +8,6 @@ Required config.extra keys:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 from pathlib import Path
@@ -44,6 +43,17 @@ class ZeekConnector(BaseConnector):
         log_dir = self.config.extra.get("log_dir", "/opt/zeek/logs/current")
         if not os.path.isdir(log_dir):
             raise ConnectionError(f"Zeek log directory not found: {log_dir}")
+
+        # Seek to end of each existing log file so we only tail new events
+        log_types = self.config.extra.get("log_types", list(LOG_SUFFIXES.keys()))
+        for log_type in log_types:
+            filename = LOG_SUFFIXES.get(log_type)
+            if not filename:
+                continue
+            path = Path(log_dir) / filename
+            if path.exists():
+                self._file_positions[str(path)] = os.path.getsize(str(path))
+
         logger.info("ZeekConnector connected log_dir=%s", log_dir)
 
     async def _fetch_events(self) -> AsyncGenerator[dict[str, Any], None]:
@@ -83,19 +93,87 @@ class ZeekConnector(BaseConnector):
         """Basic TSV parser for non-JSON Zeek format. Returns None on failure."""
         try:
             parts = line.split("\t")
+
             if log_type == "conn" and len(parts) >= 6:
                 return {
                     "_log_type": "conn",
-                    "ts":        parts[0],
-                    "uid":       parts[1],
-                    "id.orig_h": parts[2],
-                    "id.orig_p": parts[3],
-                    "id.resp_h": parts[4],
-                    "id.resp_p": parts[5],
-                    "proto":     parts[6] if len(parts) > 6 else None,
-                    "service":   parts[7] if len(parts) > 7 else None,
-                    "conn_state":parts[11] if len(parts) > 11 else None,
+                    "ts":         parts[0],
+                    "uid":        parts[1],
+                    "id.orig_h":  parts[2],
+                    "id.orig_p":  parts[3],
+                    "id.resp_h":  parts[4],
+                    "id.resp_p":  parts[5],
+                    "proto":      parts[6]  if len(parts) > 6  else None,
+                    "service":    parts[7]  if len(parts) > 7  else None,
+                    "conn_state": parts[11] if len(parts) > 11 else None,
                 }
+
+            if log_type == "dns" and len(parts) >= 6:
+                return {
+                    "_log_type":  "dns",
+                    "ts":         parts[0],
+                    "uid":        parts[1],
+                    "id.orig_h":  parts[2],
+                    "id.orig_p":  parts[3],
+                    "id.resp_h":  parts[4],
+                    "id.resp_p":  parts[5],
+                    "proto":      parts[6]  if len(parts) > 6  else None,
+                    "query":      parts[9]  if len(parts) > 9  else None,
+                    "qtype_name": parts[11] if len(parts) > 11 else None,
+                    "rcode_name": parts[13] if len(parts) > 13 else None,
+                    "answers":    parts[21].split(",") if len(parts) > 21 and parts[21] not in ("-", "") else [],
+                }
+
+            if log_type == "http" and len(parts) >= 6:
+                return {
+                    "_log_type":   "http",
+                    "ts":          parts[0],
+                    "uid":         parts[1],
+                    "id.orig_h":   parts[2],
+                    "id.orig_p":   parts[3],
+                    "id.resp_h":   parts[4],
+                    "id.resp_p":   parts[5],
+                    "method":      parts[7]  if len(parts) > 7  else None,
+                    "host":        parts[8]  if len(parts) > 8  else None,
+                    "uri":         parts[9]  if len(parts) > 9  else None,
+                    "user_agent":  parts[12] if len(parts) > 12 else None,
+                    "status_code": parts[15] if len(parts) > 15 else None,
+                }
+
+            if log_type == "ssl" and len(parts) >= 6:
+                return {
+                    "_log_type":   "ssl",
+                    "ts":          parts[0],
+                    "uid":         parts[1],
+                    "id.orig_h":   parts[2],
+                    "id.orig_p":   parts[3],
+                    "id.resp_h":   parts[4],
+                    "id.resp_p":   parts[5],
+                    "version":     parts[6]  if len(parts) > 6  else None,
+                    "cipher":      parts[7]  if len(parts) > 7  else None,
+                    "server_name": parts[9]  if len(parts) > 9  else None,
+                    "established": parts[13] if len(parts) > 13 else None,
+                }
+
             return None
         except Exception:
             return None
+
+
+class ZeekConnectorFactory:
+    """Factory for creating ZeekConnector instances from a flat configuration dict."""
+
+    @staticmethod
+    def from_dict(cfg: dict[str, Any], queue) -> "ZeekConnector":
+        """Create a ZeekConnector from a flat configuration dict."""
+        config = ConnectorConfig(
+            name=cfg.get("name", "zeek"),
+            connector_type="zeek",
+            enabled=True,
+            poll_interval_seconds=cfg.get("poll_interval_seconds", 60),
+            extra={
+                "log_dir":   cfg.get("log_dir", "/opt/zeek/logs/current"),
+                "log_types": cfg.get("log_types", list(LOG_SUFFIXES.keys())),
+            },
+        )
+        return ZeekConnector(config, queue)
