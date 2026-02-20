@@ -1,4 +1,4 @@
-"""Tests for WS /api/v1/ws/alerts — Features 17.1, 17.3, 17.5, and 28.27
+"""Tests for WS /api/v1/ws/alerts — Features 17.1, 17.3, 17.4, 17.5, and 28.27
 
 Coverage:
   - Happy path: WebSocket connection, "connected" handshake schema
@@ -36,6 +36,18 @@ Feature 17.5 — Broadcast enriched alerts to all clients (single instance):
   - ws_broadcaster subscribes to mxtac.enriched topic
   - ws_broadcaster forwards each enriched alert to broadcast_alert()
   - broadcast_alert() delivers enriched alert to every connected WebSocket client
+
+Feature 17.4 — Accept `filter` message from client (ACK response):
+  - ACK response contains exactly 'type' and 'filter' keys (no extra fields)
+  - Filter with data=null (JSON null) echoed as filter=null (key present, value None)
+  - Filter with data={} echoed as filter={} (empty dict, not null)
+  - Filter data with list values preserved exactly
+  - Filter data with nested objects preserved with identical structure
+  - Filter data with numeric values preserved with exact precision
+  - Filter data with boolean values preserved as true/false (not 1/0)
+  - Type field matching is case-sensitive: 'Filter' does not trigger ack
+  - manager.send_to called with exact ACK dict for each filter message
+  - Connection pruned when send_to fails during ACK delivery
 
 Feature 28.27 — WebSocket client receives broadcast alert:
   - Client receives JSON message with type='alert' from broadcast_alert()
@@ -1396,3 +1408,160 @@ async def test_28_27_received_json_is_valid_and_decodable():
     assert decoded["type"] == "alert"
     assert decoded["data"]["id"] == "28-27-json"
     assert decoded["data"]["score"] == 7.8
+
+
+# ---------------------------------------------------------------------------
+# Section 15 — Feature 17.4: Accept `filter` message from client (ACK response)
+#
+# Implementation (websocket.py lines 228-229):
+#   if msg.get("type") == "filter":
+#       await manager.send_to(ws, {"type": "ack", "filter": msg.get("data")})
+# ---------------------------------------------------------------------------
+
+
+# --- Integration: ACK structure ---
+
+
+def test_17_4_ack_has_exactly_type_and_filter_keys(ws_mocks):
+    """ACK response must have exactly the 'type' and 'filter' keys — no extra fields."""
+    with TestClient(app) as client:
+        with client.websocket_connect(WS_URL) as ws:
+            ws.receive_json()
+            ws.send_json({"type": "filter", "data": {"severity": "high"}})
+            ack = ws.receive_json()
+    assert set(ack.keys()) == {"type", "filter"}
+
+
+# --- Integration: filter data echoing edge cases ---
+
+
+def test_17_4_filter_data_explicit_null_acks_filter_none(ws_mocks):
+    """Client sending data=null (JSON null) must receive ack with filter=null (key present, value None)."""
+    with TestClient(app) as client:
+        with client.websocket_connect(WS_URL) as ws:
+            ws.receive_json()
+            ws.send_json({"type": "filter", "data": None})
+            ack = ws.receive_json()
+    assert ack["type"] == "ack"
+    assert "filter" in ack
+    assert ack["filter"] is None
+
+
+def test_17_4_filter_data_empty_dict_not_none(ws_mocks):
+    """Client sending data={} must receive ack with filter={} (empty dict, not null)."""
+    with TestClient(app) as client:
+        with client.websocket_connect(WS_URL) as ws:
+            ws.receive_json()
+            ws.send_json({"type": "filter", "data": {}})
+            ack = ws.receive_json()
+    assert ack["type"] == "ack"
+    assert ack["filter"] == {}
+    assert ack["filter"] is not None
+
+
+def test_17_4_filter_data_list_values_preserved(ws_mocks):
+    """Filter data containing list fields must be echoed back with exact list contents."""
+    filter_data = {"technique_ids": ["T1059.001", "T1059.003"], "tactic_ids": ["TA0002"]}
+    with TestClient(app) as client:
+        with client.websocket_connect(WS_URL) as ws:
+            ws.receive_json()
+            ws.send_json({"type": "filter", "data": filter_data})
+            ack = ws.receive_json()
+    assert ack["filter"] == filter_data
+
+
+def test_17_4_filter_data_nested_objects_preserved(ws_mocks):
+    """Filter data containing nested dicts must be echoed back with identical nested structure."""
+    filter_data = {
+        "severity": "critical",
+        "time_range": {"from": "2026-01-01T00:00:00Z", "to": "2026-01-31T23:59:59Z"},
+        "host": {"name": "dc-01", "os": "windows"},
+    }
+    with TestClient(app) as client:
+        with client.websocket_connect(WS_URL) as ws:
+            ws.receive_json()
+            ws.send_json({"type": "filter", "data": filter_data})
+            ack = ws.receive_json()
+    assert ack["filter"] == filter_data
+
+
+def test_17_4_filter_data_numeric_values_preserved(ws_mocks):
+    """Filter data containing numeric fields must be echoed with exact numeric values."""
+    filter_data = {"min_score": 7.5, "max_score": 10.0, "limit": 50}
+    with TestClient(app) as client:
+        with client.websocket_connect(WS_URL) as ws:
+            ws.receive_json()
+            ws.send_json({"type": "filter", "data": filter_data})
+            ack = ws.receive_json()
+    assert ack["filter"]["min_score"] == 7.5
+    assert ack["filter"]["max_score"] == 10.0
+    assert ack["filter"]["limit"] == 50
+
+
+def test_17_4_filter_data_boolean_values_preserved(ws_mocks):
+    """Filter data containing booleans must be echoed as true/false (not 1/0)."""
+    filter_data = {"show_resolved": False, "include_low_severity": True}
+    with TestClient(app) as client:
+        with client.websocket_connect(WS_URL) as ws:
+            ws.receive_json()
+            ws.send_json({"type": "filter", "data": filter_data})
+            ack = ws.receive_json()
+    assert ack["filter"]["show_resolved"] is False
+    assert ack["filter"]["include_low_severity"] is True
+
+
+# --- Integration: type field case sensitivity ---
+
+
+def test_17_4_type_field_matching_is_case_sensitive(ws_mocks):
+    """Type check is case-sensitive: 'Filter' (capital F) must be ignored, not acked."""
+    with TestClient(app) as client:
+        with client.websocket_connect(WS_URL) as ws:
+            ws.receive_json()  # consume connected
+            ws.send_json({"type": "Filter", "data": {"severity": "high"}})  # wrong case — ignored
+            # Follow up with correct lowercase to prove the first produced no ack
+            ws.send_json({"type": "filter", "data": {"host": "probe-01"}})
+            ack = ws.receive_json()
+    assert ack["type"] == "ack"
+    assert ack["filter"] == {"host": "probe-01"}
+
+
+# --- Unit tests: send_to call verification ---
+
+
+def test_17_4_send_to_called_with_exact_ack_payload(ws_mocks):
+    """alerts_ws must call manager.send_to with the exact ACK dict for each filter message."""
+    filter_data = {"tactic": "Persistence", "technique_ids": ["T1053.005"]}
+    sent_messages: list[dict] = []
+    original_send_to = manager.send_to
+
+    async def recording_send_to(ws, msg):
+        sent_messages.append(msg)
+        await original_send_to(ws, msg)
+
+    with patch.object(manager, "send_to", new=recording_send_to):
+        with TestClient(app) as client:
+            with client.websocket_connect(WS_URL) as ws:
+                ws.receive_json()  # consume connected
+                ws.send_json({"type": "filter", "data": filter_data})
+                ws.receive_json()  # consume ack
+
+    ack_msgs = [m for m in sent_messages if m.get("type") == "ack"]
+    assert len(ack_msgs) == 1
+    assert ack_msgs[0] == {"type": "ack", "filter": filter_data}
+
+
+@pytest.mark.asyncio
+async def test_17_4_send_to_failure_during_ack_prunes_connection():
+    """When ws.send_text raises while sending the filter ACK, the dead connection is pruned."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    ws = _make_ws()
+    ws.send_text.side_effect = RuntimeError("broken pipe")
+    m._connections.add(ws)
+
+    # Replicate the filter-ack path from alerts_ws
+    msg = {"type": "filter", "data": {"severity": "high"}}
+    await m.send_to(ws, {"type": "ack", "filter": msg.get("data")})
+
+    # send_to must have called disconnect() internally, pruning the dead WebSocket
+    assert ws not in m._connections
