@@ -5,7 +5,9 @@ import { detectionsApi } from '../../../lib/api'
 import { TopBar } from '../../layout/TopBar'
 import { ScoreCircle, SeverityPill } from '../../shared/SeverityBadge'
 import { StatusPill } from '../../shared/StatusPill'
+import { LiveBadge } from '../../shared/LiveBadge'
 import { DetectionPanel } from './DetectionPanel'
+import { useNewAlertIds } from '../../../hooks/useNewAlertIds'
 
 const SEVERITY_OPTIONS: SeverityLevel[] = ['critical', 'high', 'medium', 'low']
 const STATUS_OPTIONS: DetectionStatus[]  = ['active', 'investigating', 'resolved', 'false_positive']
@@ -43,6 +45,7 @@ export function DetectionsPage() {
   const [sortOrder, setSortOrder]   = useState<'asc' | 'desc'>('desc')
   const [selected, setSelected]     = useState<Detection | null>(null)
   const [page, setPage]             = useState(1)
+  const newIds                      = useNewAlertIds()
 
   function toggleSeverity(s: SeverityLevel) {
     setSeverities((prev) =>
@@ -186,7 +189,10 @@ export function DetectionsPage() {
               >
                 <ScoreCircle score={d.score} severity={d.severity} />
                 <div className="min-w-0">
-                  <div className="text-[11px] text-text-primary truncate font-medium">{d.name}</div>
+                  <div className="text-[11px] text-text-primary font-medium flex items-center gap-1.5 min-w-0">
+                    <span className="truncate">{d.name}</span>
+                    {newIds.has(d.id) && <LiveBadge />}
+                  </div>
                   <div className="text-[10px] text-text-muted truncate">{d.rule_name}</div>
                 </div>
                 <div className="min-w-0">
