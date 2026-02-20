@@ -15,6 +15,148 @@ async def test_kpis(client: AsyncClient, auth_headers: dict) -> None:
     assert "sigma_rules_active" in data
 
 
+# ---------------------------------------------------------------------------
+# Feature 28.38 — KPIs return expected shape
+# ---------------------------------------------------------------------------
+
+_KPI_INT_FIELDS = [
+    "total_detections",
+    "critical_alerts",
+    "critical_alerts_new_today",
+    "attack_covered",
+    "attack_total",
+    "attack_coverage_delta",
+    "integrations_active",
+    "integrations_total",
+    "sigma_rules_active",
+    "sigma_rules_critical",
+    "sigma_rules_high",
+    "sigma_rules_deployed_this_week",
+    "open_incidents_count",
+]
+
+_KPI_FLOAT_FIELDS = [
+    "total_detections_delta_pct",
+    "attack_coverage_pct",
+    "mttd_minutes",
+    "mttd_delta_minutes",
+]
+
+
+@pytest.mark.asyncio
+async def test_kpis_shape_all_fields_present(client: AsyncClient, auth_headers: dict) -> None:
+    """All 18 KPI fields must be present in the response."""
+    resp = await client.get("/api/v1/overview/kpis", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    expected_fields = set(_KPI_INT_FIELDS) | set(_KPI_FLOAT_FIELDS) | {"mttr_minutes"}
+    missing = expected_fields - set(data.keys())
+    assert not missing, f"KPI response missing fields: {missing}"
+
+
+@pytest.mark.asyncio
+async def test_kpis_shape_int_fields_are_int(client: AsyncClient, auth_headers: dict) -> None:
+    """Integer KPI fields must be JSON integers (not floats)."""
+    resp = await client.get("/api/v1/overview/kpis", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    for field in _KPI_INT_FIELDS:
+        value = data[field]
+        assert isinstance(value, int), (
+            f"Field '{field}' should be int, got {type(value).__name__} = {value!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_kpis_shape_float_fields_are_numeric(client: AsyncClient, auth_headers: dict) -> None:
+    """Float KPI fields must be JSON numbers (int or float — both are valid JSON numbers)."""
+    resp = await client.get("/api/v1/overview/kpis", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    for field in _KPI_FLOAT_FIELDS:
+        value = data[field]
+        assert isinstance(value, (int, float)), (
+            f"Field '{field}' should be numeric, got {type(value).__name__} = {value!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_kpis_shape_value_constraints(client: AsyncClient, auth_headers: dict) -> None:
+    """KPI values must satisfy logical constraints."""
+    resp = await client.get("/api/v1/overview/kpis", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Non-negative counts
+    for field in _KPI_INT_FIELDS:
+        assert data[field] >= 0, f"Field '{field}' must be >= 0, got {data[field]}"
+
+    # Coverage percentage in [0, 100]
+    assert 0.0 <= data["attack_coverage_pct"] <= 100.0, (
+        f"attack_coverage_pct={data['attack_coverage_pct']} out of [0, 100]"
+    )
+
+    # Covered techniques cannot exceed total
+    assert data["attack_covered"] <= data["attack_total"], (
+        f"attack_covered={data['attack_covered']} > attack_total={data['attack_total']}"
+    )
+
+    # Active integrations cannot exceed total
+    assert data["integrations_active"] <= data["integrations_total"], (
+        f"integrations_active={data['integrations_active']} > integrations_total={data['integrations_total']}"
+    )
+
+    # MTTD must be non-negative
+    assert data["mttd_minutes"] >= 0, (
+        f"mttd_minutes={data['mttd_minutes']} must be >= 0"
+    )
+
+    # Critical alerts cannot exceed total detections
+    assert data["critical_alerts"] <= data["total_detections"], (
+        f"critical_alerts={data['critical_alerts']} > total_detections={data['total_detections']}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_kpis_shape_mttr_is_null_when_no_incidents(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """mttr_minutes must be null when no incident resolution data exists (empty DB)."""
+    resp = await client.get("/api/v1/overview/kpis", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    # With an empty DB there are no resolved incidents, so MTTR cannot be computed.
+    assert data["mttr_minutes"] is None, (
+        f"Expected mttr_minutes=null with empty DB, got {data['mttr_minutes']!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_kpis_shape_attack_total_positive(client: AsyncClient, auth_headers: dict) -> None:
+    """attack_total must always be a positive constant (ATT&CK scope ≥ 1)."""
+    resp = await client.get("/api/v1/overview/kpis", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["attack_total"] > 0, "attack_total must be a positive constant"
+
+
+@pytest.mark.asyncio
+async def test_kpis_range_param_accepted(client: AsyncClient, auth_headers: dict) -> None:
+    """The range query parameter is accepted for all valid values; shape is consistent."""
+    for range_val in ("24h", "7d", "30d", "90d"):
+        resp = await client.get(
+            f"/api/v1/overview/kpis?range={range_val}", headers=auth_headers
+        )
+        assert resp.status_code == 200, f"Failed for range={range_val}"
+        data = resp.json()
+        # Core fields must always be present regardless of range
+        for field in ("total_detections", "critical_alerts", "attack_coverage_pct", "sigma_rules_active"):
+            assert field in data, f"Field '{field}' missing for range={range_val}"
+
+
 @pytest.mark.asyncio
 async def test_timeline(client: AsyncClient, auth_headers: dict) -> None:
     resp = await client.get("/api/v1/overview/timeline", headers=auth_headers)
