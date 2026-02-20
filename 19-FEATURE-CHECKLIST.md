@@ -231,11 +231,11 @@
 
 | # | Feature | Impl | Test | Priority | Notes |
 |---|---------|:----:|:----:|----------|-------|
-| 11.1 | `POST /events/search` — full-text + filters + time range | `[~]` | `[ ]` | P0 | Stub, no OpenSearch |
-| 11.2 | `GET /events/{id}` — single event by ID | `[~]` | `[ ]` | P0 | |
-| 11.3 | `POST /events/aggregate` — terms / date_histogram | `[~]` | `[ ]` | P1 | |
-| 11.4 | `GET /events/entity/{type}/{value}` — entity timeline | `[~]` | `[ ]` | P1 | ip / host / user / hash |
-| 11.5 | OpenSearch integration wired to endpoints | `[ ]` | `[ ]` | P0 | Task 4.2 |
+| 11.1 | `POST /events/search` — full-text + filters + time range | `[x]` | `[T]` | P0 | PostgreSQL via EventRepo; 19 tests pass |
+| 11.2 | `GET /events/{id}` — single event by ID | `[x]` | `[T]` | P0 | EventRepo.get(); 404 on missing |
+| 11.3 | `POST /events/aggregate` — terms / date_histogram | `[x]` | `[T]` | P1 | count_by_field() — terms aggregation |
+| 11.4 | `GET /events/entity/{type}/{value}` — entity timeline | `[x]` | `[T]` | P1 | ip / host / user / hash; EventRepo.entity_events() |
+| 11.5 | OpenSearch integration wired to endpoints | `[ ]` | `[ ]` | P0 | Task 4.2 — future enhancement |
 | 11.6 | Query builder — Lucene DSL from filter params | `[ ]` | `[ ]` | P0 | |
 | 11.7 | Save and name hunt queries | `[ ]` | `[ ]` | P2 | |
 | 11.8 | ATT&CK-guided hunting suggestions | `[ ]` | `[ ]` | P3 | |
