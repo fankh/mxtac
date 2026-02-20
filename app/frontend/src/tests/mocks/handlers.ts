@@ -93,4 +93,40 @@ export const handlers = [
       time: '2026-02-19T08:30:00Z',
     })
   }),
+
+  // Rules list
+  http.get(`${BASE}/rules`, () =>
+    HttpResponse.json([
+      {
+        id: 'rule-001',
+        title: 'Suspicious LSASS Memory Access',
+        level: 'high',
+        status: 'experimental',
+        enabled: true,
+        technique_ids: ['T1003.001'],
+        tactic_ids: ['credential_access'],
+        hit_count: 0,
+        fp_count: 0,
+      },
+    ]),
+  ),
+
+  // Rule create
+  http.post(`${BASE}/rules`, async ({ request }) => {
+    const body = await request.json() as Record<string, unknown>
+    return HttpResponse.json(
+      {
+        id: 'rule-new',
+        title: body.title ?? 'New Rule',
+        level: 'high',
+        status: 'experimental',
+        enabled: true,
+        technique_ids: [],
+        tactic_ids: [],
+        hit_count: 0,
+        fp_count: 0,
+      },
+      { status: 201 },
+    )
+  }),
 ]
