@@ -41,6 +41,7 @@ class DetectionRepo:
             pattern = f"%{search}%"
             q = q.where(
                 Detection.name.ilike(pattern)
+                | Detection.description.ilike(pattern)
                 | Detection.technique_id.ilike(pattern)
                 | Detection.host.ilike(pattern)
             )

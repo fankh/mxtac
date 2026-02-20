@@ -256,6 +256,50 @@ async def test_list_detections_search(client: AsyncClient, auth_headers: dict) -
     assert isinstance(resp.json()["items"], list)
 
 
+@pytest.mark.asyncio
+async def test_list_detections_search_passes_term_to_repo(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """?search=<term> forwards the exact term as search= kwarg to DetectionRepo.list."""
+    mock_list = AsyncMock(return_value=([], 0))
+    with patch(f"{MOCK_REPO}.list", new=mock_list):
+        await client.get("/api/v1/detections?search=mimikatz", headers=auth_headers)
+    call_kwargs = mock_list.call_args.kwargs
+    assert call_kwargs.get("search") == "mimikatz"
+
+
+@pytest.mark.asyncio
+async def test_list_detections_search_by_description(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """?search=<term> returns detections whose description contains the term."""
+    desc_det = _make_detection(
+        id="DET-DESC",
+        name="Suspicious process",
+        description="lateral movement via psexec detected on endpoint",
+    )
+    with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([desc_det], 1))):
+        resp = await client.get("/api/v1/detections?search=psexec", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pagination"]["total"] == 1
+    assert data["items"][0]["id"] == "DET-DESC"
+    assert "psexec" in data["items"][0]["description"]
+
+
+@pytest.mark.asyncio
+async def test_list_detections_search_no_match(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """?search=<term> with no matching detections returns empty results."""
+    with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([], 0))):
+        resp = await client.get("/api/v1/detections?search=zzznomatch", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["items"] == []
+    assert data["pagination"]["total"] == 0
+
+
 # ---------------------------------------------------------------------------
 # Single detection
 # ---------------------------------------------------------------------------
