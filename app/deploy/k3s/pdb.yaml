@@ -1,0 +1,34 @@
+---
+# PodDisruptionBudget — Backend
+# Ensures at least 2 backend pods remain available during voluntary disruptions
+# (node drain, rolling upgrades). With minReplicas=3 and minAvailable=2,
+# one pod may be evicted at a time.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mxtac-backend-pdb
+  namespace: mxtac
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: mxtac
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+---
+# PodDisruptionBudget — Frontend
+# Ensures at least 1 frontend pod remains available during voluntary disruptions.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mxtac-frontend-pdb
+  namespace: mxtac
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: mxtac
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend

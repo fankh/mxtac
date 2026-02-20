@@ -25,7 +25,24 @@ spec:
         app.kubernetes.io/part-of: mxtac
         app.kubernetes.io/component: api
     spec:
+      serviceAccountName: mxtac
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      # Spread replicas across nodes for HA
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: backend
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: backend
           image: mxtac/backend:latest
@@ -34,9 +51,13 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           env:
-            - name: DEBUG
-              value: "false"
+            # Sensitive: from Secret
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -47,16 +68,61 @@ spec:
                 secretKeyRef:
                   name: mxtac-secrets
                   key: secret-key
-            - name: VALKEY_URL
-              value: "redis://mxtac-valkey-0.mxtac-valkey.mxtac.svc.cluster.local:6379/0"
-            - name: OPENSEARCH_HOST
-              value: "mxtac-opensearch-0.mxtac-opensearch.mxtac.svc.cluster.local"
-            - name: OPENSEARCH_PORT
-              value: "9200"
+            # Non-sensitive: from ConfigMap
+            - name: DEBUG
+              valueFrom:
+                configMapKeyRef:
+                  name: mxtac-config
+                  key: DEBUG
             - name: QUEUE_BACKEND
-              value: "redis"
+              valueFrom:
+                configMapKeyRef:
+                  name: mxtac-config
+                  key: QUEUE_BACKEND
+            - name: VALKEY_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: mxtac-config
+                  key: VALKEY_URL
+            - name: OPENSEARCH_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: mxtac-config
+                  key: OPENSEARCH_HOST
+            - name: OPENSEARCH_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: mxtac-config
+                  key: OPENSEARCH_PORT
+            - name: OPENSEARCH_USE_SSL
+              valueFrom:
+                configMapKeyRef:
+                  name: mxtac-config
+                  key: OPENSEARCH_USE_SSL
             - name: CORS_ORIGINS
-              value: '["https://mxtac.local"]'
+              valueFrom:
+                configMapKeyRef:
+                  name: mxtac-config
+                  key: CORS_ORIGINS
+            - name: RATE_LIMIT_PER_MINUTE
+              valueFrom:
+                configMapKeyRef:
+                  name: mxtac-config
+                  key: RATE_LIMIT_PER_MINUTE
+            - name: ACCESS_TOKEN_EXPIRE_MINUTES
+              valueFrom:
+                configMapKeyRef:
+                  name: mxtac-config
+                  key: ACCESS_TOKEN_EXPIRE_MINUTES
+            - name: REFRESH_TOKEN_EXPIRE_DAYS
+              valueFrom:
+                configMapKeyRef:
+                  name: mxtac-config
+                  key: REFRESH_TOKEN_EXPIRE_DAYS
+          # Writable tmp dir for uvicorn / potential temp files
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /ready
@@ -87,3 +153,6 @@ spec:
             limits:
               cpu: "1"
               memory: 512Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}

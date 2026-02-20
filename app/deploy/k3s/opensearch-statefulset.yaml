@@ -21,23 +21,39 @@ spec:
         app.kubernetes.io/component: search
     spec:
       terminationGracePeriodSeconds: 120
+      # OpenSearch runs as UID 1000 (opensearch user)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
-        # OpenSearch requires vm.max_map_count=262144 on the host
+        # OpenSearch requires vm.max_map_count=262144 on the host.
+        # This privileged init container sets it per-node. Alternatively,
+        # set it cluster-wide via a DaemonSet or node configuration.
         - name: sysctl
           image: busybox:1.36
           command: ["sysctl", "-w", "vm.max_map_count=262144"]
           securityContext:
             privileged: true
-        # Fix data directory permissions
+        # Fix data directory ownership to match the opensearch UID
         - name: fix-permissions
           image: busybox:1.36
           command: ["sh", "-c", "chown -R 1000:1000 /usr/share/opensearch/data"]
+          securityContext:
+            runAsUser: 0
           volumeMounts:
             - name: opensearch-data
               mountPath: /usr/share/opensearch/data
       containers:
         - name: opensearch
           image: opensearchproject/opensearch:2.17.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: 9200
@@ -57,8 +73,9 @@ spec:
                   fieldPath: metadata.name
             - name: discovery.type
               value: single-node
-            - name: bootstrap.memory_lock
-              value: "true"
+            # bootstrap.memory_lock is intentionally omitted: it requires
+            # IPC_LOCK capability or privileged mode. The vm.max_map_count
+            # init container (above) is sufficient for performance.
             - name: OPENSEARCH_JAVA_OPTS
               value: "-Xms512m -Xmx512m"
             - name: DISABLE_SECURITY_PLUGIN

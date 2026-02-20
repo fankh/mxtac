@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mxtac-config
+  namespace: mxtac
+  labels:
+    app.kubernetes.io/part-of: mxtac
+data:
+  # Application
+  DEBUG: "false"
+  APP_NAME: "MxTac API"
+
+  # Queue backend — redis for distributed multi-replica deployment
+  QUEUE_BACKEND: "redis"
+
+  # Valkey (Redis-compatible) — headless StatefulSet DNS
+  VALKEY_URL: "redis://mxtac-valkey-0.mxtac-valkey.mxtac.svc.cluster.local:6379/0"
+
+  # PostgreSQL — headless StatefulSet DNS (DATABASE_URL contains credentials, lives in Secret)
+  POSTGRES_HOST: "mxtac-postgres-0.mxtac-postgres.mxtac.svc.cluster.local"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "mxtac"
+  POSTGRES_USER: "mxtac"
+
+  # OpenSearch — headless StatefulSet DNS
+  OPENSEARCH_HOST: "mxtac-opensearch-0.mxtac-opensearch.mxtac.svc.cluster.local"
+  OPENSEARCH_PORT: "9200"
+  OPENSEARCH_USE_SSL: "false"
+
+  # CORS — must include the ingress hostname (update for your domain)
+  CORS_ORIGINS: '["https://mxtac.local"]'
+
+  # Rate limiting
+  RATE_LIMIT_PER_MINUTE: "300"
+
+  # Token expiry
+  ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+  REFRESH_TOKEN_EXPIRE_DAYS: "7"

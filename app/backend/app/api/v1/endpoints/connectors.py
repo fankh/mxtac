@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -128,6 +130,59 @@ async def delete_connector(
         raise HTTPException(status_code=404, detail="Connector not found")
 
 
+# ── Connection test helpers ───────────────────────────────────────────────────
+
+
+async def _test_wazuh_connection(config: dict) -> tuple[bool, str]:
+    """Verify Wazuh API connectivity by attempting JWT authentication."""
+    url = config.get("url", "").rstrip("/")
+    username = config.get("username", "")
+    password = config.get("password", "")
+    verify_ssl = config.get("verify_ssl", True)
+
+    if not url:
+        return False, "Missing required config key: url"
+
+    try:
+        async with httpx.AsyncClient(verify=verify_ssl, timeout=10, follow_redirects=True) as client:
+            resp = await client.get(
+                f"{url}/security/user/authenticate",
+                auth=(username, password),
+            )
+        if resp.status_code == 200:
+            return True, "Wazuh API reachable and credentials valid"
+        if resp.status_code == 401:
+            return False, "Wazuh API reachable but credentials are invalid"
+        return False, f"Wazuh API returned unexpected status {resp.status_code}"
+    except httpx.ConnectError as exc:
+        return False, f"Cannot connect to Wazuh API: {exc}"
+    except Exception as exc:
+        return False, f"Connection test failed: {exc}"
+
+
+async def _test_zeek_connection(config: dict) -> tuple[bool, str]:
+    """Verify Zeek connector by checking whether the configured log directory exists."""
+    log_dir = config.get("log_dir", "/opt/zeek/logs/current")
+    if os.path.isdir(log_dir):
+        return True, f"Zeek log directory accessible: {log_dir}"
+    return False, f"Zeek log directory not found: {log_dir}"
+
+
+async def _test_suricata_connection(config: dict) -> tuple[bool, str]:
+    """Verify Suricata connector by checking whether the EVE JSON file exists."""
+    eve_file = config.get("eve_file", "/var/log/suricata/eve.json")
+    if os.path.isfile(eve_file):
+        return True, f"Suricata EVE file accessible: {eve_file}"
+    return False, f"Suricata EVE file not found: {eve_file}"
+
+
+_CONNECTION_TESTERS: dict[str, Any] = {
+    "wazuh":    _test_wazuh_connection,
+    "zeek":     _test_zeek_connection,
+    "suricata": _test_suricata_connection,
+}
+
+
 @router.post("/{connector_id}/test", response_model=dict)
 async def test_connector(
     connector_id: str,
@@ -137,10 +192,25 @@ async def test_connector(
     conn = await ConnectorRepo.get_by_id(db, connector_id)
     if not conn:
         raise HTTPException(status_code=404, detail="Connector not found")
+
+    config = json.loads(conn.config_json) if conn.config_json else {}
+    tester = _CONNECTION_TESTERS.get(conn.connector_type)
+
+    if tester is None:
+        reachable = False
+        message = f"Connection test not supported for connector type: {conn.connector_type}"
+    else:
+        reachable, message = await tester(config)
+
+    new_status = "active" if reachable else "error"
+    await ConnectorRepo.update_status(
+        db, connector_id, new_status, error_message=None if reachable else message
+    )
+
     return {
         "connector_id": connector_id,
-        "reachable": False,
-        "message": "Connection test not yet implemented for this connector type",
+        "reachable": reachable,
+        "message": message,
     }
 
 
