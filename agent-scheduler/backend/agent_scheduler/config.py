@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     scheduler_max_concurrent: int = 2
     scheduler_spawn_delay: int = 30  # seconds between spawns
     scheduler_task_timeout: int = 1800  # 30 minutes
-    scheduler_retry_max: int = 3
+    scheduler_retry_max: int = 5
     scheduler_retry_backoff: int = 60  # base backoff in seconds
     scheduler_auto_start: bool = False
 

@@ -204,6 +204,8 @@ class Scheduler:
             task_prompt = task.prompt
             task_working_dir = task.working_directory
             task_model = task.model
+            task_attempt = task.retry_count + 1
+            task_max_retries = task.max_retries
 
         # Execute outside the session
         result: ExecutionResult = await executor.execute(
@@ -211,6 +213,9 @@ class Scheduler:
             working_directory=task_working_dir or None,
             model=task_model,
             task_db_id=task_db_id,
+            task_id=task_str_id,
+            attempt=task_attempt,
+            max_retries=task_max_retries,
         )
 
         # Auto-commit on success
