@@ -80,12 +80,66 @@ async def test_tactic_labels(client: AsyncClient, auth_headers: dict) -> None:
 
 @pytest.mark.asyncio
 async def test_integrations(client: AsyncClient, auth_headers: dict) -> None:
+    """Empty DB falls back to mock data (>0 items with required fields)."""
     resp = await client.get("/api/v1/overview/integrations", headers=auth_headers)
     assert resp.status_code == 200
     items = resp.json()
     assert isinstance(items, list)
+    assert len(items) > 0
+    assert "id" in items[0]
     assert "name" in items[0]
     assert "status" in items[0]
+    assert "metric" in items[0]
+    assert items[0]["status"] in ("connected", "warning", "disabled")
+
+
+@pytest.mark.asyncio
+async def test_integrations_from_db(
+    client: AsyncClient, db_session, auth_headers: dict
+) -> None:
+    """When connectors exist in DB, endpoint returns real data (not mock)."""
+    from app.models.connector import Connector
+
+    active = Connector(
+        name="Wazuh SIEM",
+        connector_type="wazuh",
+        status="active",
+        enabled=True,
+        events_total=5000,
+    )
+    warning = Connector(
+        name="Splunk",
+        connector_type="generic",
+        status="error",
+        enabled=True,
+        events_total=0,
+        error_message="Token expired",
+    )
+    disabled = Connector(
+        name="OpenCTI",
+        connector_type="opencti",
+        status="inactive",
+        enabled=False,
+        events_total=0,
+    )
+    db_session.add_all([active, warning, disabled])
+    await db_session.flush()
+
+    resp = await client.get("/api/v1/overview/integrations", headers=auth_headers)
+    assert resp.status_code == 200
+    items = resp.json()
+    assert isinstance(items, list)
+    assert len(items) == 3
+
+    by_name = {i["name"]: i for i in items}
+
+    assert by_name["Wazuh SIEM"]["status"] == "connected"
+    assert "5,000" in by_name["Wazuh SIEM"]["metric"]
+
+    assert by_name["Splunk"]["status"] == "warning"
+    assert by_name["Splunk"]["detail"] == "Token expired"
+
+    assert by_name["OpenCTI"]["status"] == "disabled"
 
 
 @pytest.mark.asyncio

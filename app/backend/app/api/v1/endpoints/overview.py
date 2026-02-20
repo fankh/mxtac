@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....models.connector import Connector
+from ....repositories.connector_repo import ConnectorRepo
 from ....repositories.detection_repo import DetectionRepo
 from ....repositories.incident_repo import IncidentRepo
 from ....schemas.overview import KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus
@@ -112,12 +114,49 @@ async def get_tactic_labels(
     return TACTIC_LABELS
 
 
+def _connector_to_integration_status(conn: Connector) -> IntegrationStatus:
+    """Map a Connector ORM object to the IntegrationStatus response schema."""
+    if not conn.enabled:
+        return IntegrationStatus(
+            id=conn.id,
+            name=conn.name,
+            status="disabled",
+            metric="Not configured",
+        )
+    if conn.status in ("active", "connected"):
+        return IntegrationStatus(
+            id=conn.id,
+            name=conn.name,
+            status="connected",
+            metric=f"{conn.events_total:,} events total",
+        )
+    if conn.status in ("error", "warning"):
+        return IntegrationStatus(
+            id=conn.id,
+            name=conn.name,
+            status="warning",
+            metric=conn.error_message or "Connection error",
+            detail=conn.error_message,
+        )
+    # inactive or unknown
+    return IntegrationStatus(
+        id=conn.id,
+        name=conn.name,
+        status="disabled",
+        metric="Inactive",
+    )
+
+
 @router.get("/integrations", response_model=list[IntegrationStatus])
 async def get_integrations(
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("detections:read")),
 ):
     """Integration status for all configured connectors."""
-    return INTEGRATIONS
+    connectors = await ConnectorRepo.list(db)
+    if not connectors:
+        return INTEGRATIONS  # fallback to mock data when no connectors are registered
+    return [_connector_to_integration_status(c) for c in connectors]
 
 
 @router.get("/recent-detections", response_model=list[Detection])
