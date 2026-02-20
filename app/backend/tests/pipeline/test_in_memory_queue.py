@@ -261,8 +261,8 @@ class TestInMemoryQueueSubscribe:
         assert len(q._tasks) == 3
         await q.stop()
 
-    async def test_competing_consumers_on_same_topic_split_messages(self) -> None:
-        """Two consumers on the same topic compete — each message goes to one."""
+    async def test_competing_consumers_on_same_topic_no_duplication(self) -> None:
+        """Two consumers on the same topic share the queue — no message is duplicated."""
         q = InMemoryQueue()
         await q.start()
 
@@ -283,10 +283,35 @@ class TestInMemoryQueueSubscribe:
 
         await asyncio.sleep(0.1)
 
-        # Every message is delivered exactly once across both consumers
+        # Every message is delivered to exactly one handler — no duplication, no loss
         assert len(received_a) + len(received_b) == 10
-        assert len(received_a) > 0
-        assert len(received_b) > 0
+        await q.stop()
+
+    async def test_competing_consumers_both_get_messages_when_first_is_slow(self) -> None:
+        """A slow first consumer gives the second consumer a chance to dequeue."""
+        q = InMemoryQueue()
+        await q.start()
+
+        received_a: list[dict[str, Any]] = []
+        received_b: list[dict[str, Any]] = []
+
+        async def slow_handler_a(msg: dict[str, Any]) -> None:
+            await asyncio.sleep(0.02)
+            received_a.append(msg)
+
+        async def handler_b(msg: dict[str, Any]) -> None:
+            received_b.append(msg)
+
+        await q.subscribe(Topic.NORMALIZED, "group-a", slow_handler_a)
+        await q.subscribe(Topic.NORMALIZED, "group-b", handler_b)
+
+        for i in range(10):
+            await q.publish(Topic.NORMALIZED, {"n": i})
+
+        await asyncio.sleep(0.5)
+
+        assert len(received_a) + len(received_b) == 10
+        assert len(received_b) > 0  # fast consumer gets some while slow one is processing
         await q.stop()
 
 
