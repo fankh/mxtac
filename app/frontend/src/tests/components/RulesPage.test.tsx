@@ -820,24 +820,21 @@ describe('RulesPage', () => {
     })
 
     it('shows "Saving..." label while the mutation is in-flight', async () => {
-      let resolve: (v: unknown) => void
-      mockPost.mockReturnValue(new Promise((r) => { resolve = r }))
+      // Never-resolving promise keeps the mutation in-flight for the duration of the test
+      mockPost.mockReturnValue(new Promise<never>(() => {}))
       renderPage()
       await openEditor()
       fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
       expect(await screen.findByRole('button', { name: 'Saving...' })).toBeInTheDocument()
-      resolve!({ data: {} })
     })
 
     it('disables the Save button while saving', async () => {
-      let resolve: (v: unknown) => void
-      mockPost.mockReturnValue(new Promise((r) => { resolve = r }))
+      mockPost.mockReturnValue(new Promise<never>(() => {}))
       renderPage()
       await openEditor()
       fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
       const savingBtn = await screen.findByRole('button', { name: 'Saving...' })
       expect(savingBtn).toBeDisabled()
-      resolve!({ data: {} })
     })
 
     it('extracts the title from the YAML for the API payload', async () => {

@@ -90,7 +90,7 @@ export function RulesPage() {
   const saveMutation = useMutation({
     mutationFn: async (yamlContent: string) => {
       // Extract the title from YAML for the API payload
-      const titleMatch = yamlContent.match(/^title:\s*(.+)$/m)
+      const titleMatch = yamlContent.match(/^title:[ \t]*(.+)$/m)
       const title = titleMatch ? titleMatch[1].trim() : 'Untitled Rule'
       const resp = await apiClient.post('/rules', {
         title,
