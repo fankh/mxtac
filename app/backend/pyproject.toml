@@ -16,6 +16,7 @@ dependencies = [
     "passlib[bcrypt]==1.7.4",
     "sqlalchemy[asyncio]==2.0.36",
     "asyncpg==0.30.0",
+    "aiosqlite>=0.20.0",
     "alembic==1.14.0",
     "httpx==0.28.1",
     "valkey>=6.1.1",
@@ -28,7 +29,6 @@ dev = [
     "pytest-asyncio==0.24.0",
     "pytest-cov==6.0.0",
     "httpx==0.28.1",
-    "aiosqlite>=0.20.0",
     "mypy==1.13.0",
     "ruff==0.8.3",
 ]

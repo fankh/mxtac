@@ -13,6 +13,15 @@ Coverage:
   - POST /rules/import: bulk import returns imported count (engineer+)
   - GET /rules/stats/summary: total/enabled/by_level (hunter+)
   - POST /rules/test: test arbitrary YAML against a sample event (hunter+)
+  - Feature 13.5 — DELETE /rules/{id} — remove rule
+      unauthenticated → 401 or 403
+      viewer / analyst / hunter → 403 (rules:write requires engineer+)
+      engineer → 204 on success
+      admin → 204 on success
+      404 when rule not found
+      rule absent from GET after deletion
+      double delete → 404
+      stats summary decrements after delete
 """
 
 from __future__ import annotations
@@ -652,3 +661,173 @@ async def test_patch_rule_response_schema(
                   "technique_ids", "tactic_ids", "logsource",
                   "hit_count", "fp_count"):
         assert field in data, f"Missing field: {field}"
+
+
+# ---------------------------------------------------------------------------
+# Feature 13.5 — DELETE /rules/{id} — remove rule
+# rules:write is required (engineer and admin only)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_unauthenticated(client: AsyncClient) -> None:
+    """DELETE /rules/{id} without auth → 401 or 403."""
+    resp = await client.delete(f"{BASE_URL}/any-rule-id")
+    assert resp.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_viewer_forbidden(client: AsyncClient, viewer_headers: dict) -> None:
+    """DELETE /rules/{id} with viewer role → 403 (rules:write requires engineer+)."""
+    resp = await client.delete(f"{BASE_URL}/any-rule-id", headers=viewer_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_analyst_forbidden(client: AsyncClient, analyst_headers: dict) -> None:
+    """DELETE /rules/{id} with analyst role → 403 (rules:write requires engineer+)."""
+    resp = await client.delete(f"{BASE_URL}/any-rule-id", headers=analyst_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_hunter_forbidden(client: AsyncClient, hunter_headers: dict) -> None:
+    """DELETE /rules/{id} with hunter role → 403.
+
+    Hunter has rules:read but NOT rules:write; delete is blocked.
+    """
+    resp = await client.delete(f"{BASE_URL}/any-rule-id", headers=hunter_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_not_found(client: AsyncClient, engineer_headers: dict) -> None:
+    """DELETE /rules/{id} for nonexistent rule → 404."""
+    resp = await client.delete(f"{BASE_URL}/nonexistent-rule-id", headers=engineer_headers)
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Rule not found"
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_engineer_success(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """DELETE /rules/{id} with engineer role → 204 No Content."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.delete(f"{BASE_URL}/test-rule-0001", headers=engineer_headers)
+    assert resp.status_code == 204
+    assert resp.content == b""
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_admin_success(
+    client: AsyncClient, engineer_headers: dict, admin_headers: dict
+) -> None:
+    """DELETE /rules/{id} with admin role → 204 No Content."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.delete(f"{BASE_URL}/test-rule-0001", headers=admin_headers)
+    assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_gone_from_get(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """After DELETE /rules/{id}, GET /rules/{id} returns 404."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    await client.delete(f"{BASE_URL}/test-rule-0001", headers=engineer_headers)
+
+    resp = await client.get(f"{BASE_URL}/test-rule-0001", headers=hunter_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_absent_from_list(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """After DELETE /rules/{id}, rule no longer appears in GET /rules listing."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    await client.delete(f"{BASE_URL}/test-rule-0001", headers=engineer_headers)
+
+    resp = await client.get(BASE_URL, headers=hunter_headers)
+    assert resp.status_code == 200
+    ids = [r["id"] for r in resp.json()]
+    assert "test-rule-0001" not in ids
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_double_delete_returns_404(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """Second DELETE on the same rule ID → 404."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    await client.delete(f"{BASE_URL}/test-rule-0001", headers=engineer_headers)
+    resp = await client.delete(f"{BASE_URL}/test-rule-0001", headers=engineer_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_only_removes_target(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """DELETE /rules/{id} removes only the targeted rule; others are unaffected."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "High Rule", "content": _SIGMA_YAML},
+    )
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Low Rule", "content": _SIGMA_YAML_LOW},
+    )
+    await client.delete(f"{BASE_URL}/test-rule-0001", headers=engineer_headers)
+
+    resp = await client.get(BASE_URL, headers=hunter_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["id"] == "test-rule-0002"
+
+
+@pytest.mark.asyncio
+async def test_delete_rule_stats_summary_decrements(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """GET /rules/stats/summary total decrements after DELETE."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    summary_before = await client.get(
+        f"{BASE_URL}/stats/summary", headers=engineer_headers
+    )
+    assert summary_before.json()["total"] == 1
+
+    await client.delete(f"{BASE_URL}/test-rule-0001", headers=engineer_headers)
+
+    summary_after = await client.get(
+        f"{BASE_URL}/stats/summary", headers=engineer_headers
+    )
+    assert summary_after.json()["total"] == 0

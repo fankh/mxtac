@@ -1,4 +1,5 @@
 """Tests for app/core/database.py — Feature 18.1 PostgreSQL async engine (asyncpg)
+                                   Feature 18.2 SQLite option (aiosqlite) for single-node
 
 Coverage:
   - Engine configuration: pool_pre_ping, pool_size, max_overflow, echo, database URL
@@ -7,6 +8,9 @@ Coverage:
   - get_db() error flow: rolls back on exception, no commit, re-raises original exception
   - get_db() lifecycle: session context manager is exited, independent sessions per call
   - get_db() generator semantics: isasyncgenfunction, exhaustion after iteration
+  - _is_sqlite(): correctly identifies SQLite vs non-SQLite URLs
+  - _build_engine(): SQLite path — no pool_size/max_overflow, check_same_thread connect arg
+  - _build_engine(): PostgreSQL path — pool_pre_ping, pool_size, max_overflow present
 
 All tests mock AsyncSessionLocal to avoid a live database connection.
 """
@@ -20,7 +24,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 import app.core.database as db_module
-from app.core.database import AsyncSessionLocal, engine, get_db
+from app.core.database import AsyncSessionLocal, _build_engine, _is_sqlite, engine, get_db
 
 
 # ---------------------------------------------------------------------------
@@ -331,3 +335,130 @@ class TestGetDbGeneratorSemantics:
             await gen.aclose()
 
         mock_session.commit.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Feature 18.2 — SQLite config switch
+# ---------------------------------------------------------------------------
+
+
+class TestIsSqlite:
+    """`_is_sqlite()` identifies SQLite URLs and passes through everything else."""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "sqlite+aiosqlite:///:memory:",
+            "sqlite+aiosqlite:///./mxtac.db",
+            "sqlite:///mxtac.db",
+            "sqlite://",
+        ],
+    )
+    def test_sqlite_urls_return_true(self, url: str) -> None:
+        assert _is_sqlite(url) is True
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac",
+            "postgresql://user:pass@host/db",
+            "mysql+aiomysql://user:pass@host/db",
+            "mssql+aioodbc://user:pass@host/db",
+        ],
+    )
+    def test_non_sqlite_urls_return_false(self, url: str) -> None:
+        assert _is_sqlite(url) is False
+
+
+class TestBuildEngineSQLite:
+    """`_build_engine()` creates a SQLite-compatible engine when the URL starts with 'sqlite'."""
+
+    def test_sqlite_engine_is_async_engine(self) -> None:
+        from sqlalchemy.ext.asyncio import AsyncEngine
+
+        with patch.object(db_module.settings, "database_url", "sqlite+aiosqlite:///:memory:"):
+            eng = _build_engine()
+        try:
+            assert isinstance(eng, AsyncEngine)
+        finally:
+            # Clean up the engine to avoid resource warnings
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(eng.dispose())
+
+    def test_sqlite_engine_url_matches(self) -> None:
+        url = "sqlite+aiosqlite:///:memory:"
+        with patch.object(db_module.settings, "database_url", url):
+            eng = _build_engine()
+        try:
+            assert eng.url.render_as_string(hide_password=False) == url
+        finally:
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(eng.dispose())
+
+    def test_sqlite_engine_has_no_queue_pool(self) -> None:
+        """SQLite must not use QueuePool — it does not support pool_size/max_overflow."""
+        from sqlalchemy.pool import QueuePool
+
+        with patch.object(db_module.settings, "database_url", "sqlite+aiosqlite:///:memory:"):
+            eng = _build_engine()
+        try:
+            assert not isinstance(eng.pool, QueuePool)
+        finally:
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(eng.dispose())
+
+    def test_sqlite_connect_args_check_same_thread(self) -> None:
+        """check_same_thread=False is passed to create_async_engine for SQLite."""
+        url = "sqlite+aiosqlite:///:memory:"
+        with patch.object(db_module.settings, "database_url", url):
+            with patch("app.core.database.create_async_engine") as mock_create:
+                mock_create.return_value = MagicMock()
+                _build_engine()
+        _, kwargs = mock_create.call_args
+        assert kwargs.get("connect_args", {}).get("check_same_thread") is False
+
+
+class TestBuildEnginePostgres:
+    """`_build_engine()` creates a PostgreSQL engine with pool settings when URL is non-SQLite."""
+
+    def test_postgres_engine_has_queue_pool(self) -> None:
+        from sqlalchemy.pool import QueuePool
+
+        url = "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"
+        with patch.object(db_module.settings, "database_url", url):
+            eng = _build_engine()
+        try:
+            assert isinstance(eng.pool, QueuePool)
+        finally:
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(eng.dispose())
+
+    def test_postgres_pool_size_is_ten(self) -> None:
+        url = "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"
+        with patch.object(db_module.settings, "database_url", url):
+            eng = _build_engine()
+        try:
+            assert eng.pool.size() == 10
+        finally:
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(eng.dispose())
+
+    def test_postgres_max_overflow_is_twenty(self) -> None:
+        url = "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"
+        with patch.object(db_module.settings, "database_url", url):
+            eng = _build_engine()
+        try:
+            assert eng.pool._max_overflow == 20
+        finally:
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(eng.dispose())
+
+    def test_postgres_pool_pre_ping_enabled(self) -> None:
+        url = "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"
+        with patch.object(db_module.settings, "database_url", url):
+            eng = _build_engine()
+        try:
+            assert eng.pool._pre_ping is True
+        finally:
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(eng.dispose())

@@ -18,6 +18,10 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def _is_sqlite(url: str) -> bool:
+    return url.startswith("sqlite")
+
+
 def run_migrations_offline() -> None:
     url = settings.database_url
     context.configure(
@@ -25,13 +29,18 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        render_as_batch=_is_sqlite(url),
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        render_as_batch=_is_sqlite(settings.database_url),
+    )
     with context.begin_transaction():
         context.run_migrations()
 
