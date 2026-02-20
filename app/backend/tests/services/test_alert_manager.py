@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup.
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.25 risk score formula.
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -7,6 +7,12 @@ Coverage:
   - _persist_to_db(): calls DetectionRepo.create with mapped fields
   - _persist_to_db(): logs and continues when DB raises (non-fatal)
   - _score(): attaches score field to enriched dict
+  - _score(): exact formula values for known (severity_id, asset_criticality) pairs
+  - _score(): weight constants W_SEVERITY=0.60, W_ASSET=0.25, W_RECUR=0.15 sum to 1.0
+  - _score(): severity_id normalised from 1→0.0 to 5→1.0 (zero-indexed, /4 range)
+  - _score(): score capped at MAX_SCORE (10.0) when raw exceeds it
+  - _score(): missing asset_criticality defaults to 0.5
+  - _score(): recurrence bonus is currently 0.0 (placeholder)
   - _asset_criticality(): correct prefix-based lookup
   - _is_duplicate(): returns False for new alert (Valkey SET succeeds)
   - _is_duplicate(): returns True for seen alert within 5 min (Valkey SET returns None)
@@ -26,7 +32,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.pipeline.queue import InMemoryQueue, Topic
-from app.services.alert_manager import AlertManager
+from app.services.alert_manager import AlertManager, MAX_SCORE, W_ASSET, W_RECUR, W_SEVERITY
 
 
 # ---------------------------------------------------------------------------
@@ -529,3 +535,125 @@ async def test_process_second_identical_alert_blocked_via_valkey():
     assert published[0][0] == Topic.ENRICHED
 
     await queue.stop()
+
+
+# ---------------------------------------------------------------------------
+# Section 6 — _score(): exact formula validation (feature 28.25)
+# ---------------------------------------------------------------------------
+#
+# Formula (from alert_manager.py):
+#   severity_norm = (severity_id - 1) / 4          # maps 1..5 → 0.0..1.0
+#   raw  = (severity_norm * W_SEVERITY
+#           + asset_crit  * W_ASSET
+#           + recur_bonus * W_RECUR) * MAX_SCORE
+#   score = round(min(raw, MAX_SCORE), 1)
+#
+# Constants: W_SEVERITY=0.60, W_ASSET=0.25, W_RECUR=0.15, MAX_SCORE=10.0
+
+
+def _mgr_no_init() -> AlertManager:
+    """Instantiate AlertManager without __init__ to avoid Valkey connection."""
+    mgr = AlertManager.__new__(AlertManager)
+    mgr._queue = MagicMock()
+    return mgr
+
+
+def test_score_formula_weight_constants_are_correct():
+    """W_SEVERITY=0.60, W_ASSET=0.25, W_RECUR=0.15, MAX_SCORE=10.0 and weights sum to 1.0."""
+    assert W_SEVERITY == pytest.approx(0.60)
+    assert W_ASSET    == pytest.approx(0.25)
+    assert W_RECUR    == pytest.approx(0.15)
+    assert MAX_SCORE  == pytest.approx(10.0)
+    assert W_SEVERITY + W_ASSET + W_RECUR == pytest.approx(1.0)
+
+
+def test_score_formula_critical_dc_host():
+    """Critical severity (id=5) + DC host (criticality=1.0) → score = 8.5.
+
+    Derivation: ((5-1)/4 × 0.60 + 1.0 × 0.25 + 0.0 × 0.15) × 10 = 0.85 × 10 = 8.5
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 5, "asset_criticality": 1.0})
+    assert result["score"] == pytest.approx(8.5, abs=0.05)
+
+
+def test_score_formula_high_severity_srv_host():
+    """High severity (id=4) + SRV host (criticality=0.8) → score = 6.5.
+
+    Derivation: ((4-1)/4 × 0.60 + 0.8 × 0.25 + 0.0 × 0.15) × 10 = 0.65 × 10 = 6.5
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 4, "asset_criticality": 0.8})
+    assert result["score"] == pytest.approx(6.5, abs=0.05)
+
+
+def test_score_formula_low_severity_win_host():
+    """Low severity (id=2) + WIN host (criticality=0.6) → score = 3.0.
+
+    Derivation: ((2-1)/4 × 0.60 + 0.6 × 0.25 + 0.0 × 0.15) × 10 = 0.30 × 10 = 3.0
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 2, "asset_criticality": 0.6})
+    assert result["score"] == pytest.approx(3.0, abs=0.05)
+
+
+def test_score_formula_informational_zero_criticality():
+    """Informational severity (id=1) + zero criticality → score = 0.0.
+
+    Derivation: ((1-1)/4 × 0.60 + 0.0 × 0.25 + 0.0 × 0.15) × 10 = 0.0
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 1, "asset_criticality": 0.0})
+    assert result["score"] == pytest.approx(0.0, abs=0.05)
+
+
+def test_score_formula_severity_normalization_bounds():
+    """severity_id=1 maps to 0.0 severity contribution; severity_id=5 maps to 1.0 (full weight).
+
+    Isolate severity contribution by setting asset_criticality=0.0 in both cases.
+    """
+    mgr = _mgr_no_init()
+
+    # severity_id=1 → severity_norm=0.0 → only asset component (0.0 here) contributes
+    r_info = mgr._score({"severity_id": 1, "asset_criticality": 0.0})
+    assert r_info["score"] == pytest.approx(0.0, abs=0.05)
+
+    # severity_id=5 → severity_norm=1.0 → severity component alone: 1.0 × 0.60 × 10 = 6.0
+    r_crit = mgr._score({"severity_id": 5, "asset_criticality": 0.0})
+    assert r_crit["score"] == pytest.approx(6.0, abs=0.05)
+
+
+def test_score_formula_score_capped_at_ten():
+    """Score must be capped at MAX_SCORE (10.0) even when raw computation exceeds it."""
+    mgr = _mgr_no_init()
+    # asset_criticality=2.0 → raw = (1.0×0.60 + 2.0×0.25)×10 = 11.0 → capped to 10.0
+    result = mgr._score({"severity_id": 5, "asset_criticality": 2.0})
+    assert result["score"] <= 10.0
+    assert result["score"] == pytest.approx(10.0, abs=0.05)
+
+
+def test_score_formula_missing_asset_criticality_defaults_to_half():
+    """_score() must treat missing asset_criticality as 0.5 (default).
+
+    Derivation for severity_id=4, asset=0.5:
+    ((4-1)/4 × 0.60 + 0.5 × 0.25) × 10 = (0.45 + 0.125) × 10 = 5.75
+    """
+    mgr = _mgr_no_init()
+    result_default = mgr._score({"severity_id": 4})
+    result_explicit = mgr._score({"severity_id": 4, "asset_criticality": 0.5})
+    assert result_default["score"] == result_explicit["score"]
+    assert result_default["score"] == pytest.approx(5.75, abs=0.05)
+
+
+def test_score_formula_recurrence_bonus_is_currently_zero():
+    """Recurrence bonus must currently contribute 0.0 (placeholder — not yet implemented).
+
+    Verified by matching score against formula with recur_bonus=0.0.
+    """
+    mgr = _mgr_no_init()
+    # High severity + SRV: expected 6.5 (verified in test_score_formula_high_severity_srv_host)
+    result = mgr._score({"severity_id": 4, "asset_criticality": 0.8})
+    # If recur bonus were active (e.g. recur_bonus=1.0, W_RECUR=0.15):
+    #   raw would be (0.45 + 0.20 + 0.15) × 10 = 8.0 ≠ 6.5
+    # Confirming it's 6.5 validates the bonus is 0.0
+    assert result["score"] == pytest.approx(6.5, abs=0.05)
