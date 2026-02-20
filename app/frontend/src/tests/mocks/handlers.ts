@@ -75,4 +75,22 @@ export const handlers = [
       time: '2026-02-19T08:30:00Z',
     }),
   ),
+
+  // Detection update
+  http.patch(`${BASE}/detections/:id`, async ({ params, request }) => {
+    const body = await request.json() as Record<string, unknown>
+    return HttpResponse.json({
+      id: params.id,
+      score: 9.2,
+      severity: 'critical',
+      technique_id: 'T1003.001',
+      technique_name: 'LSASS Memory Dump',
+      tactic: 'Credential Access',
+      name: 'Suspicious LSASS Memory Access',
+      host: 'WIN-DC01',
+      status: body.status ?? 'active',
+      assigned_to: body.assigned_to ?? null,
+      time: '2026-02-19T08:30:00Z',
+    })
+  }),
 ]

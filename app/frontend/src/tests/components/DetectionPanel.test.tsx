@@ -1,7 +1,23 @@
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+// vi.mock is hoisted before imports — declare module mocks first.
+
+vi.mock('../../lib/api', () => ({
+  detectionsApi: {
+    update: vi.fn(),
+  },
+}))
+
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DetectionPanel } from '../../components/features/detections/DetectionPanel'
+import { detectionsApi } from '../../lib/api'
 import type { Detection } from '../../types/api'
+
+// ---------------------------------------------------------------------------
+// Typed mock reference
+// ---------------------------------------------------------------------------
+
+const mockUpdate = detectionsApi.update as ReturnType<typeof vi.fn>
 
 // ---------------------------------------------------------------------------
 // Fixture helper
@@ -23,18 +39,40 @@ const makeDetection = (overrides: Partial<Detection> = {}): Detection => ({
 })
 
 // ---------------------------------------------------------------------------
+// Render helper — wraps with QueryClientProvider (required for useMutation)
+// ---------------------------------------------------------------------------
+
+function renderPanel(
+  detection: Detection | null,
+  onClose: () => void = vi.fn(),
+) {
+  const queryClient = new QueryClient({
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+  })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <DetectionPanel detection={detection} onClose={onClose} />
+    </QueryClientProvider>,
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe('DetectionPanel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // Default: mutation resolves successfully with updated detection
+    mockUpdate.mockResolvedValue(makeDetection({ status: 'investigating' }))
+  })
+
   // =========================================================================
   // Null detection — renders nothing
   // =========================================================================
   describe('when detection is null', () => {
     it('renders nothing when detection is null', () => {
-      const { container } = render(
-        <DetectionPanel detection={null} onClose={vi.fn()} />,
-      )
+      const { container } = renderPanel(null)
       expect(container).toBeEmptyDOMElement()
     })
   })
@@ -44,18 +82,17 @@ describe('DetectionPanel', () => {
   // =========================================================================
   describe('header', () => {
     it('renders the detection name', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
+      renderPanel(makeDetection())
       expect(screen.getByText('Suspicious LSASS Memory Access')).toBeInTheDocument()
     })
 
     it('renders the subtitle line showing technique_id · tactic', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
-      // The subtitle <p> renders "{technique_id} · {tactic}" as a combined string
+      renderPanel(makeDetection())
       expect(screen.getByText(/T1003\.001 · Credential Access/)).toBeInTheDocument()
     })
 
     it('renders the close button with title "Close"', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
+      renderPanel(makeDetection())
       expect(screen.getByTitle('Close')).toBeInTheDocument()
     })
   })
@@ -65,37 +102,27 @@ describe('DetectionPanel', () => {
   // =========================================================================
   describe('badges row', () => {
     it('renders the confidence badge when provided', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ confidence: 85 })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ confidence: 85 }))
       expect(screen.getByText('Confidence: 85%')).toBeInTheDocument()
     })
 
     it('does not render the confidence badge when absent', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ confidence: undefined })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ confidence: undefined }))
       expect(screen.queryByText(/Confidence:/)).not.toBeInTheDocument()
     })
 
     it('renders the CVSS v3 score when provided', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ cvss_v3: 9.1 })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ cvss_v3: 9.1 }))
       expect(screen.getByText('CVSS: 9.1')).toBeInTheDocument()
     })
 
     it('does not render the CVSS badge when absent', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ cvss_v3: undefined })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ cvss_v3: undefined }))
       expect(screen.queryByText(/CVSS:/)).not.toBeInTheDocument()
     })
 
     it('renders confidence 0 as a valid value', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ confidence: 0 })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ confidence: 0 }))
       expect(screen.getByText('Confidence: 0%')).toBeInTheDocument()
     })
   })
@@ -105,11 +132,8 @@ describe('DetectionPanel', () => {
   // =========================================================================
   describe('description', () => {
     it('renders the description when provided', () => {
-      render(
-        <DetectionPanel
-          detection={makeDetection({ description: 'This detection identifies credential dumping via LSASS.' })}
-          onClose={vi.fn()}
-        />,
+      renderPanel(
+        makeDetection({ description: 'This detection identifies credential dumping via LSASS.' }),
       )
       expect(
         screen.getByText('This detection identifies credential dumping via LSASS.'),
@@ -117,9 +141,7 @@ describe('DetectionPanel', () => {
     })
 
     it('does not render a description paragraph when absent', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ description: undefined })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ description: undefined }))
       expect(screen.queryByText(/credential dumping/)).not.toBeInTheDocument()
     })
   })
@@ -129,23 +151,22 @@ describe('DetectionPanel', () => {
   // =========================================================================
   describe('always-present rows', () => {
     it('renders the combined Technique row', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
+      renderPanel(makeDetection())
       expect(screen.getByText('T1003.001 – LSASS Memory Dump')).toBeInTheDocument()
     })
 
     it('renders the Tactic row value', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
-      // Tactic label and tactic value are rendered via Row
+      renderPanel(makeDetection())
       expect(screen.getByText('Tactic')).toBeInTheDocument()
     })
 
     it('renders the Host row value', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
+      renderPanel(makeDetection())
       expect(screen.getByText('WIN-DC01')).toBeInTheDocument()
     })
 
     it('renders the Time row label', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
+      renderPanel(makeDetection())
       expect(screen.getByText('Time')).toBeInTheDocument()
     })
   })
@@ -155,121 +176,87 @@ describe('DetectionPanel', () => {
   // =========================================================================
   describe('optional detail rows', () => {
     it('renders the user value when provided', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ user: 'DOMAIN\\admin' })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ user: 'DOMAIN\\admin' }))
       expect(screen.getByText('DOMAIN\\admin')).toBeInTheDocument()
     })
 
     it('does not render the User row label when user is absent', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ user: undefined })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ user: undefined }))
       expect(screen.queryByText('User')).not.toBeInTheDocument()
     })
 
     it('renders the process value when provided', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ process: 'lsass.exe' })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ process: 'lsass.exe' }))
       expect(screen.getByText('lsass.exe')).toBeInTheDocument()
     })
 
     it('does not render the Process row label when process is absent', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ process: undefined })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ process: undefined }))
       expect(screen.queryByText('Process')).not.toBeInTheDocument()
     })
 
     it('renders the log_source value when provided', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ log_source: 'Windows Security' })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ log_source: 'Windows Security' }))
       expect(screen.getByText('Windows Security')).toBeInTheDocument()
     })
 
     it('does not render the Log Source row label when log_source is absent', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ log_source: undefined })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ log_source: undefined }))
       expect(screen.queryByText('Log Source')).not.toBeInTheDocument()
     })
 
     it('renders the event_id value when provided', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ event_id: '4688' })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ event_id: '4688' }))
       expect(screen.getByText('4688')).toBeInTheDocument()
     })
 
     it('does not render the Event ID row label when event_id is absent', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ event_id: undefined })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ event_id: undefined }))
       expect(screen.queryByText('Event ID')).not.toBeInTheDocument()
     })
 
     it('renders the sigma rule_name when provided', () => {
-      render(
-        <DetectionPanel
-          detection={makeDetection({ rule_name: 'proc_access_win_lsass_dump_tools_dll' })}
-          onClose={vi.fn()}
-        />,
+      renderPanel(
+        makeDetection({ rule_name: 'proc_access_win_lsass_dump_tools_dll' }),
       )
       expect(screen.getByText('proc_access_win_lsass_dump_tools_dll')).toBeInTheDocument()
     })
 
     it('does not render the Sigma Rule row label when rule_name is absent', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ rule_name: undefined })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ rule_name: undefined }))
       expect(screen.queryByText('Sigma Rule')).not.toBeInTheDocument()
     })
 
     it('renders the occurrence count when provided', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ occurrence_count: 42 })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ occurrence_count: 42 }))
       expect(screen.getByText('42')).toBeInTheDocument()
     })
 
     it('renders large occurrence counts with locale formatting', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ occurrence_count: 1500 })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ occurrence_count: 1500 }))
       // toLocaleString() may format as '1,500' depending on locale
       expect(screen.getByText('Occurrences')).toBeInTheDocument()
     })
 
     it('does not render the Occurrences row label when occurrence_count is absent', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ occurrence_count: undefined })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ occurrence_count: undefined }))
       expect(screen.queryByText('Occurrences')).not.toBeInTheDocument()
     })
 
     it('renders occurrence_count of 0 as a valid value', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ occurrence_count: 0 })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ occurrence_count: 0 }))
       expect(screen.getByText('Occurrences')).toBeInTheDocument()
     })
 
     it('renders the assigned_to value when provided', () => {
-      render(
-        <DetectionPanel
-          detection={makeDetection({ assigned_to: 'analyst@mxtac.local' })}
-          onClose={vi.fn()}
-        />,
+      renderPanel(
+        makeDetection({ assigned_to: 'analyst@mxtac.local' }),
       )
       expect(screen.getByText('analyst@mxtac.local')).toBeInTheDocument()
     })
 
     it('does not render the Assigned To row label when assigned_to is absent', () => {
-      render(
-        <DetectionPanel detection={makeDetection({ assigned_to: undefined })} onClose={vi.fn()} />,
-      )
+      renderPanel(makeDetection({ assigned_to: undefined }))
       expect(screen.queryByText('Assigned To')).not.toBeInTheDocument()
     })
   })
@@ -279,43 +266,31 @@ describe('DetectionPanel', () => {
   // =========================================================================
   describe('related technique IDs', () => {
     it('renders individual technique ID tags', () => {
-      render(
-        <DetectionPanel
-          detection={makeDetection({ related_technique_ids: ['T1055', 'T1078'] })}
-          onClose={vi.fn()}
-        />,
+      renderPanel(
+        makeDetection({ related_technique_ids: ['T1055', 'T1078'] }),
       )
       expect(screen.getByText('T1055')).toBeInTheDocument()
       expect(screen.getByText('T1078')).toBeInTheDocument()
     })
 
     it('renders the "Related Techniques" heading when list is non-empty', () => {
-      render(
-        <DetectionPanel
-          detection={makeDetection({ related_technique_ids: ['T1055'] })}
-          onClose={vi.fn()}
-        />,
+      renderPanel(
+        makeDetection({ related_technique_ids: ['T1055'] }),
       )
       expect(screen.getByText('Related Techniques')).toBeInTheDocument()
     })
 
     it('does not render the "Related Techniques" section when list is empty', () => {
-      render(
-        <DetectionPanel
-          detection={makeDetection({ related_technique_ids: [] })}
-          onClose={vi.fn()}
-        />,
+      renderPanel(
+        makeDetection({ related_technique_ids: [] }),
       )
       expect(screen.queryByText('Related Techniques')).not.toBeInTheDocument()
     })
 
     it('renders all technique ID tags from a longer list', () => {
       const ids = ['T1003', 'T1059', 'T1078', 'T1110']
-      render(
-        <DetectionPanel
-          detection={makeDetection({ related_technique_ids: ids })}
-          onClose={vi.fn()}
-        />,
+      renderPanel(
+        makeDetection({ related_technique_ids: ids }),
       )
       for (const id of ids) {
         expect(screen.getByText(id)).toBeInTheDocument()
@@ -329,16 +304,14 @@ describe('DetectionPanel', () => {
   describe('close actions', () => {
     it('calls onClose when the × close button is clicked', () => {
       const onClose = vi.fn()
-      render(<DetectionPanel detection={makeDetection()} onClose={onClose} />)
+      renderPanel(makeDetection(), onClose)
       fireEvent.click(screen.getByTitle('Close'))
       expect(onClose).toHaveBeenCalledOnce()
     })
 
     it('calls onClose when the backdrop overlay is clicked', () => {
       const onClose = vi.fn()
-      const { container } = render(
-        <DetectionPanel detection={makeDetection()} onClose={onClose} />,
-      )
+      const { container } = renderPanel(makeDetection(), onClose)
       const backdrop = container.querySelector('.fixed.inset-0')
       expect(backdrop).not.toBeNull()
       fireEvent.click(backdrop!)
@@ -347,7 +320,7 @@ describe('DetectionPanel', () => {
 
     it('does not call onClose when the panel body is clicked', () => {
       const onClose = vi.fn()
-      render(<DetectionPanel detection={makeDetection()} onClose={onClose} />)
+      renderPanel(makeDetection(), onClose)
       // Click on a known panel content element — should NOT close
       fireEvent.click(screen.getByText('Suspicious LSASS Memory Access'))
       expect(onClose).not.toHaveBeenCalled()
@@ -359,31 +332,132 @@ describe('DetectionPanel', () => {
   // =========================================================================
   describe('action footer buttons', () => {
     it('renders the Investigate button', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
+      renderPanel(makeDetection())
       expect(screen.getByRole('button', { name: 'Investigate' })).toBeInTheDocument()
     })
 
     it('renders the Assign button', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
+      renderPanel(makeDetection())
       expect(screen.getByRole('button', { name: 'Assign' })).toBeInTheDocument()
     })
 
     it('renders the Resolve button', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
+      renderPanel(makeDetection())
       expect(screen.getByRole('button', { name: 'Resolve' })).toBeInTheDocument()
     })
 
     it('renders the FP (false positive) button', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
+      renderPanel(makeDetection())
       expect(screen.getByRole('button', { name: 'FP' })).toBeInTheDocument()
     })
 
     it('renders all four action buttons together', () => {
-      render(<DetectionPanel detection={makeDetection()} onClose={vi.fn()} />)
+      renderPanel(makeDetection())
       expect(screen.getByRole('button', { name: 'Investigate' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Assign' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Resolve' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'FP' })).toBeInTheDocument()
+    })
+
+    it('calls detectionsApi.update with status=investigating when Investigate is clicked', async () => {
+      const onClose = vi.fn()
+      renderPanel(makeDetection(), onClose)
+      fireEvent.click(screen.getByRole('button', { name: 'Investigate' }))
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('det-001', { status: 'investigating' }))
+      await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    })
+
+    it('calls detectionsApi.update with status=resolved when Resolve is clicked', async () => {
+      const onClose = vi.fn()
+      renderPanel(makeDetection(), onClose)
+      fireEvent.click(screen.getByRole('button', { name: 'Resolve' }))
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('det-001', { status: 'resolved' }))
+      await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    })
+
+    it('calls detectionsApi.update with status=false_positive when FP is clicked', async () => {
+      const onClose = vi.fn()
+      renderPanel(makeDetection(), onClose)
+      fireEvent.click(screen.getByRole('button', { name: 'FP' }))
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('det-001', { status: 'false_positive' }))
+      await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    })
+
+    it('shows update error message when mutation fails', async () => {
+      mockUpdate.mockRejectedValue(new Error('Network error'))
+      renderPanel(makeDetection())
+      fireEvent.click(screen.getByRole('button', { name: 'Resolve' }))
+      await waitFor(() =>
+        expect(screen.getByText('Update failed. Please try again.')).toBeInTheDocument(),
+      )
+    })
+  })
+
+  // =========================================================================
+  // Assign flow
+  // =========================================================================
+  describe('assign flow', () => {
+    it('does not show assign input by default', () => {
+      renderPanel(makeDetection())
+      expect(screen.queryByPlaceholderText(/Assign to/)).not.toBeInTheDocument()
+    })
+
+    it('shows assign input when Assign button is clicked', () => {
+      renderPanel(makeDetection())
+      fireEvent.click(screen.getByRole('button', { name: 'Assign' }))
+      expect(screen.getByPlaceholderText(/Assign to/)).toBeInTheDocument()
+    })
+
+    it('hides assign input when Assign is clicked a second time', () => {
+      renderPanel(makeDetection())
+      fireEvent.click(screen.getByRole('button', { name: 'Assign' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Assign' }))
+      expect(screen.queryByPlaceholderText(/Assign to/)).not.toBeInTheDocument()
+    })
+
+    it('hides assign input when Cancel is clicked', () => {
+      renderPanel(makeDetection())
+      fireEvent.click(screen.getByRole('button', { name: 'Assign' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(screen.queryByPlaceholderText(/Assign to/)).not.toBeInTheDocument()
+    })
+
+    it('calls detectionsApi.update with assigned_to when Confirm is clicked', async () => {
+      const onClose = vi.fn()
+      renderPanel(makeDetection(), onClose)
+      fireEvent.click(screen.getByRole('button', { name: 'Assign' }))
+      fireEvent.change(screen.getByPlaceholderText(/Assign to/), {
+        target: { value: 'analyst@mxtac.local' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('det-001', { assigned_to: 'analyst@mxtac.local' }))
+      await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    })
+
+    it('calls detectionsApi.update when Enter is pressed in assign input', async () => {
+      const onClose = vi.fn()
+      renderPanel(makeDetection(), onClose)
+      fireEvent.click(screen.getByRole('button', { name: 'Assign' }))
+      const input = screen.getByPlaceholderText(/Assign to/)
+      fireEvent.change(input, { target: { value: 'soc@mxtac.local' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('det-001', { assigned_to: 'soc@mxtac.local' }))
+      await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    })
+
+    it('does not call update when Confirm is clicked with empty input', () => {
+      renderPanel(makeDetection())
+      fireEvent.click(screen.getByRole('button', { name: 'Assign' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+      expect(mockUpdate).not.toHaveBeenCalled()
+    })
+
+    it('hides assign input when Escape is pressed', () => {
+      renderPanel(makeDetection())
+      fireEvent.click(screen.getByRole('button', { name: 'Assign' }))
+      const input = screen.getByPlaceholderText(/Assign to/)
+      fireEvent.keyDown(input, { key: 'Escape' })
+      expect(screen.queryByPlaceholderText(/Assign to/)).not.toBeInTheDocument()
     })
   })
 
@@ -393,37 +467,37 @@ describe('DetectionPanel', () => {
   describe('different severity and status', () => {
     it('renders without errors for severity=high', () => {
       expect(() =>
-        render(<DetectionPanel detection={makeDetection({ severity: 'high', score: 7.5 })} onClose={vi.fn()} />),
+        renderPanel(makeDetection({ severity: 'high', score: 7.5 })),
       ).not.toThrow()
     })
 
     it('renders without errors for severity=medium', () => {
       expect(() =>
-        render(<DetectionPanel detection={makeDetection({ severity: 'medium', score: 5.0 })} onClose={vi.fn()} />),
+        renderPanel(makeDetection({ severity: 'medium', score: 5.0 })),
       ).not.toThrow()
     })
 
     it('renders without errors for severity=low', () => {
       expect(() =>
-        render(<DetectionPanel detection={makeDetection({ severity: 'low', score: 2.0 })} onClose={vi.fn()} />),
+        renderPanel(makeDetection({ severity: 'low', score: 2.0 })),
       ).not.toThrow()
     })
 
     it('renders without errors for status=investigating', () => {
       expect(() =>
-        render(<DetectionPanel detection={makeDetection({ status: 'investigating' })} onClose={vi.fn()} />),
+        renderPanel(makeDetection({ status: 'investigating' })),
       ).not.toThrow()
     })
 
     it('renders without errors for status=resolved', () => {
       expect(() =>
-        render(<DetectionPanel detection={makeDetection({ status: 'resolved' })} onClose={vi.fn()} />),
+        renderPanel(makeDetection({ status: 'resolved' })),
       ).not.toThrow()
     })
 
     it('renders without errors for status=false_positive', () => {
       expect(() =>
-        render(<DetectionPanel detection={makeDetection({ status: 'false_positive' })} onClose={vi.fn()} />),
+        renderPanel(makeDetection({ status: 'false_positive' })),
       ).not.toThrow()
     })
   })
