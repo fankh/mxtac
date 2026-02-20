@@ -253,6 +253,7 @@ _EXPECTED_MXTAC_METRICS = [
     "mxtac_pipeline_latency_seconds",
     "mxtac_sigma_rules_loaded",
     "mxtac_sigma_matches_total",
+    "mxtac_rule_matches_total",
     "mxtac_events_ingested_total",
     "mxtac_connectors_active",
 ]
@@ -504,3 +505,116 @@ async def test_metrics_alerts_deduplicated_has_no_labels(client: AsyncClient) ->
         assert "{" not in line, (
             f"mxtac_alerts_deduplicated_total must have no labels; got: {line}"
         )
+
+
+# ---------------------------------------------------------------------------
+# mxtac_rule_matches_total{rule_id,level} — feature 21.6
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_metrics_rule_matches_declared_as_counter(client: AsyncClient) -> None:
+    """/metrics declares mxtac_rule_matches_total as a counter."""
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    type_line = next(
+        (l for l in lines if l.startswith("# TYPE mxtac_rule_matches_total")),
+        None,
+    )
+    assert type_line is not None, "No # TYPE line for mxtac_rule_matches_total"
+    assert "counter" in type_line
+
+
+@pytest.mark.asyncio
+async def test_metrics_rule_matches_labels_appear_after_increment(
+    client: AsyncClient,
+) -> None:
+    """After incrementing with rule_id and level labels, both appear in /metrics.
+
+    The Prometheus text format only emits label series that have been observed
+    at least once.  Calling rule_matches.labels(rule_id=..., level=...).inc()
+    causes the labelled series to appear in the output.
+    """
+    rule_matches.labels(rule_id="test-rule-001", level="high").inc()
+    resp = await client.get(METRICS_URL)
+    assert 'rule_id="test-rule-001"' in resp.text, (
+        "Expected 'rule_id=\"test-rule-001\"' label in /metrics after incrementing"
+    )
+    assert 'level="high"' in resp.text, (
+        "Expected 'level=\"high\"' label in /metrics after incrementing"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_rule_matches_distinct_rule_ids_produce_separate_series(
+    client: AsyncClient,
+) -> None:
+    """Different rule_id values produce separate labelled series in /metrics."""
+    rule_matches.labels(rule_id="rule-aaa", level="medium").inc()
+    rule_matches.labels(rule_id="rule-bbb", level="medium").inc()
+    resp = await client.get(METRICS_URL)
+    assert 'rule_id="rule-aaa"' in resp.text, (
+        "Expected 'rule_id=\"rule-aaa\"' in /metrics"
+    )
+    assert 'rule_id="rule-bbb"' in resp.text, (
+        "Expected 'rule_id=\"rule-bbb\"' in /metrics"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["informational", "low", "medium", "high", "critical"])
+async def test_metrics_rule_matches_all_sigma_levels_accepted(
+    client: AsyncClient,
+    level: str,
+) -> None:
+    """All five Sigma severity levels are valid label values for mxtac_rule_matches_total."""
+    rule_matches.labels(rule_id=f"rule-{level}", level=level).inc()
+    resp = await client.get(METRICS_URL)
+    assert f'level="{level}"' in resp.text, (
+        f"Expected 'level=\"{level}\"' in /metrics output"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_rule_matches_value_is_positive_after_increment(
+    client: AsyncClient,
+) -> None:
+    """Counter value for mxtac_rule_matches_total must be >= 1.0 after inc().
+
+    Counters are monotonically increasing.  One increment is sufficient to
+    produce a positive value in the Prometheus text exposition.
+    """
+    rule_matches.labels(rule_id="rule-value-check", level="critical").inc()
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    match_lines = [
+        l for l in lines
+        if l.startswith("mxtac_rule_matches_total") and 'rule_id="rule-value-check"' in l
+    ]
+    assert len(match_lines) > 0, (
+        "Expected mxtac_rule_matches_total{rule_id='rule-value-check',...} line in /metrics"
+    )
+    value = float(match_lines[0].split()[-1])
+    assert value >= 1.0, (
+        f"Counter value must be >= 1.0 after inc(); got {value}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_rule_matches_contains_both_label_keys(
+    client: AsyncClient,
+) -> None:
+    """The mxtac_rule_matches_total series line contains both rule_id and level label keys."""
+    rule_matches.labels(rule_id="rule-labels-check", level="low").inc()
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    match_lines = [
+        l for l in lines
+        if l.startswith("mxtac_rule_matches_total{") and 'rule_id="rule-labels-check"' in l
+    ]
+    assert len(match_lines) > 0, (
+        "Expected at least one mxtac_rule_matches_total{...} data line"
+    )
+    for line in match_lines:
+        assert "rule_id=" in line, f"Missing 'rule_id' label in: {line}"
+        assert "level=" in line, f"Missing 'level' label in: {line}"
