@@ -95,6 +95,7 @@ async def on_startup() -> None:
     app.state.connectors = {}
     app.state.alert_mgr = None
     app.state.alert_file_writer = None
+    app.state.alert_webhook_sender = None
 
     # 1. Seed database (idempotent)
     try:
@@ -192,6 +193,23 @@ async def on_startup() -> None:
         except Exception:
             logger.exception("Alert file writer start failed")
 
+    # 8.6. Wire alert webhook output — POST enriched alerts to configured URLs
+    if settings.alert_webhook_output_enabled and settings.alert_webhook_urls:
+        try:
+            from .services.webhook_output import alert_webhook_output
+            aws = await alert_webhook_output(
+                queue,
+                urls=settings.alert_webhook_urls,
+                timeout=settings.alert_webhook_timeout,
+                retry_count=settings.alert_webhook_retry_count,
+            )
+            app.state.alert_webhook_sender = aws
+            logger.info(
+                "Alert webhook output started → %d URL(s)", len(settings.alert_webhook_urls)
+            )
+        except Exception:
+            logger.exception("Alert webhook output start failed")
+
     # 9. Start connectors from DB — publish raw events into the pipeline
     try:
         from .connectors.registry import start_connectors_from_db
@@ -245,6 +263,14 @@ async def on_shutdown() -> None:
             await afw.close()
     except Exception:
         logger.exception("AlertFileWriter close failed")
+
+    # Close alert webhook sender (release HTTP connection pool)
+    try:
+        aws = getattr(app.state, "alert_webhook_sender", None)
+        if aws is not None:
+            await aws.close()
+    except Exception:
+        logger.exception("AlertWebhookSender close failed")
 
     # Close OpenSearch client
     try:

@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     alert_file_max_bytes: int = 100 * 1024 * 1024  # 100 MB per file
     alert_file_backup_count: int = 5  # keep up to 5 rotated files
 
+    # Alert webhook output — POST JSON to one or more URLs
+    alert_webhook_output_enabled: bool = False
+    alert_webhook_urls: list[str] = []  # e.g. ["https://hooks.example.com/mxtac"]
+    alert_webhook_timeout: int = 5  # seconds per request
+    alert_webhook_retry_count: int = 3  # retries on timeout / 5xx
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 
