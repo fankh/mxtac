@@ -27,6 +27,7 @@ from typing import Any, AsyncGenerator
 from uuid import uuid4
 
 from ..core.logging import get_logger
+from ..core.metrics import rule_matches as _rule_matches_counter
 from ..services.normalizers.ocsf import OCSFEvent
 
 logger = get_logger(__name__)
@@ -618,6 +619,7 @@ class SigmaEngine:
                 continue
             try:
                 if rule._matcher.matches(flat_event):
+                    _rule_matches_counter.labels(rule_id=rule.id, level=rule.level).inc()
                     yield SigmaAlert(
                         rule_id=rule.id,
                         rule_title=rule.title,

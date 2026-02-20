@@ -17,6 +17,7 @@ Metrics exposed at GET /metrics (Prometheus text format):
   ─────────────
   mxtac_sigma_rules_loaded                 Gauge    — loaded rule count
   mxtac_sigma_matches_total{level}         Counter  — rule match events
+  mxtac_rule_matches_total{rule_id,level}  Counter  — per-rule match events
 
   Event ingestion
   ───────────────
@@ -63,6 +64,12 @@ sigma_matches = Counter(
     "mxtac_sigma_matches_total",
     "Total Sigma rule match events emitted by the evaluation engine",
     ["level"],
+)
+
+rule_matches = Counter(
+    "mxtac_rule_matches_total",
+    "Total Sigma rule match events partitioned by rule ID and severity level",
+    ["rule_id", "level"],
 )
 
 # ---------------------------------------------------------------------------

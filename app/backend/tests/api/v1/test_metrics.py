@@ -1,6 +1,7 @@
 """Tests for GET /metrics — Prometheus format (feature 21.3),
-mxtac_alerts_processed_total{severity} counter (feature 21.4), and
-mxtac_alerts_deduplicated_total counter (feature 21.5).
+mxtac_alerts_processed_total{severity} counter (feature 21.4),
+mxtac_alerts_deduplicated_total counter (feature 21.5), and
+mxtac_rule_matches_total{rule_id,level} counter (feature 21.6).
 
 Coverage:
   /metrics endpoint:
@@ -22,6 +23,7 @@ Coverage:
   - mxtac_pipeline_latency_seconds is present
   - mxtac_sigma_rules_loaded is present
   - mxtac_sigma_matches_total is present
+  - mxtac_rule_matches_total is present
   - mxtac_events_ingested_total is present
   - mxtac_connectors_active is present
 
@@ -35,6 +37,14 @@ Coverage:
   - Counter declared as counter type (not gauge/histogram)
   - Counter value is >= 1.0 after alerts_deduplicated.inc()
   - Counter has no labels (label-free counter — dedup is not partitioned by severity)
+
+  mxtac_rule_matches_total{rule_id,level} — feature 21.6:
+  - Counter declared as counter type (not gauge/histogram)
+  - Counter appears in /metrics after incrementing with rule_id and level labels
+  - Both rule_id and level labels are present in the emitted series
+  - Distinct rule_id values produce separate labelled series
+  - All five Sigma levels (informational/low/medium/high/critical) work as label values
+  - Counter value is >= 1.0 after rule_matches.labels(...).inc()
 """
 
 from __future__ import annotations
@@ -42,7 +52,7 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-from app.core.metrics import alerts_deduplicated, alerts_processed
+from app.core.metrics import alerts_deduplicated, alerts_processed, rule_matches
 
 
 METRICS_URL = "/metrics"
