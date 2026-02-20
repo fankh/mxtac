@@ -190,31 +190,52 @@ async def health() -> dict:
     return {"status": "ok", "version": settings.version}
 
 
+_READY_CHECK_TIMEOUT = 3.0  # seconds per service check
+
+
 @app.get("/ready", tags=["ops"])
 async def readiness() -> JSONResponse:
-    """Readiness probe — checks PostgreSQL, Valkey, and OpenSearch."""
+    """Readiness probe — checks PostgreSQL, Valkey, and OpenSearch.
+
+    Each service check is bounded by ``_READY_CHECK_TIMEOUT`` seconds so that
+    a hung dependency cannot stall the HAProxy health-check cycle.  A timeout
+    is reported as ``"error: timeout"`` and causes a 503 response, which
+    HAProxy interprets as the backend being unavailable.
+    """
     checks: dict[str, str] = {}
 
     # Check PostgreSQL
-    try:
+    async def _check_postgres() -> None:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
+
+    try:
+        await asyncio.wait_for(_check_postgres(), timeout=_READY_CHECK_TIMEOUT)
         checks["postgres"] = "ok"
+    except asyncio.TimeoutError:
+        checks["postgres"] = "error: timeout"
     except Exception as e:
         checks["postgres"] = f"error: {e}"
 
     # Check Valkey
-    try:
+    async def _check_valkey() -> None:
         import valkey.asyncio as aioredis
         client = aioredis.from_url(settings.valkey_url)
-        await client.ping()
-        await client.aclose()
+        try:
+            await client.ping()
+        finally:
+            await client.aclose()
+
+    try:
+        await asyncio.wait_for(_check_valkey(), timeout=_READY_CHECK_TIMEOUT)
         checks["valkey"] = "ok"
+    except asyncio.TimeoutError:
+        checks["valkey"] = "error: timeout"
     except Exception as e:
         checks["valkey"] = f"error: {e}"
 
     # Check OpenSearch
-    try:
+    async def _check_opensearch() -> None:
         from opensearchpy import AsyncOpenSearch
         os_client = AsyncOpenSearch(
             hosts=[settings.opensearch_url],
@@ -223,9 +244,16 @@ async def readiness() -> JSONResponse:
             verify_certs=False,
             ssl_show_warn=False,
         )
-        await os_client.ping()
-        await os_client.close()
+        try:
+            await os_client.ping()
+        finally:
+            await os_client.close()
+
+    try:
+        await asyncio.wait_for(_check_opensearch(), timeout=_READY_CHECK_TIMEOUT)
         checks["opensearch"] = "ok"
+    except asyncio.TimeoutError:
+        checks["opensearch"] = "error: timeout"
     except Exception as e:
         checks["opensearch"] = f"error: {e}"
 

@@ -12,7 +12,7 @@ Coverage:
   - Idempotent across multiple calls
   - Non-GET methods are rejected (405)
 
-  /ready:
+  /ready (feature 19.9 — HAProxy health check):
   - Returns status field ("ready" or "degraded") and checks dict
   - Status code 200 when all services healthy, 503 when any degraded
   - Each service check key is present (postgres, valkey, opensearch)
@@ -23,10 +23,15 @@ Coverage:
   - All services failing causes 503 + all error values
   - Error check values start with "error:" and include the message
   - Successful check value is exactly "ok"
+  - Timeout on any check reports "error: timeout" and causes 503
+  - Postgres timeout does not block valkey/opensearch checks
+  - Valkey timeout does not block postgres/opensearch checks
+  - OpenSearch timeout does not block postgres/valkey checks
 """
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from contextlib import contextmanager
 from typing import Generator
@@ -403,3 +408,123 @@ async def test_ready_error_format_is_error_colon_prefix(client: AsyncClient) -> 
         resp = await client.get(READY_URL)
 
     assert resp.json()["checks"]["postgres"] == "error: something went wrong"
+
+
+# ---------------------------------------------------------------------------
+# /ready — timeout paths (feature 19.9 — HAProxy health check)
+# ---------------------------------------------------------------------------
+
+
+def _make_slow_pg_factory(delay: float = 10.0) -> MagicMock:
+    """Return a mock AsyncSessionLocal whose execute hangs for ``delay`` seconds."""
+    async def _slow_execute(*_args, **_kwargs):
+        await asyncio.sleep(delay)
+
+    session = AsyncMock()
+    session.execute = _slow_execute
+    factory = MagicMock(return_value=session)
+    return factory
+
+
+def _make_slow_valkey_client(delay: float = 10.0) -> MagicMock:
+    """Return a mock Valkey client whose ping hangs for ``delay`` seconds."""
+    async def _slow_ping():
+        await asyncio.sleep(delay)
+
+    client = MagicMock()
+    client.ping = _slow_ping
+    client.aclose = AsyncMock()
+    return client
+
+
+@contextmanager
+def _patch_slow_opensearch(delay: float = 10.0) -> Generator[MagicMock, None, None]:
+    """Inject a fake opensearchpy module whose ping hangs for ``delay`` seconds."""
+    async def _slow_ping():
+        await asyncio.sleep(delay)
+
+    mock_instance = MagicMock()
+    mock_instance.ping = _slow_ping
+    mock_instance.close = AsyncMock()
+
+    mock_class = MagicMock(return_value=mock_instance)
+    mock_module = MagicMock()
+    mock_module.AsyncOpenSearch = mock_class
+
+    with patch.dict(sys.modules, {"opensearchpy": mock_module}):
+        yield mock_instance
+
+
+@pytest.mark.asyncio
+async def test_ready_postgres_timeout_returns_503(client: AsyncClient) -> None:
+    """/ready returns 503 with 'error: timeout' when the Postgres check times out."""
+    pg_factory = _make_slow_pg_factory()
+    vk_client = _mock_valkey_client()
+
+    with patch("app.main.AsyncSessionLocal", pg_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch("app.main._READY_CHECK_TIMEOUT", 0.05), \
+         _patch_opensearch():
+        resp = await client.get(READY_URL)
+
+    assert resp.status_code == 503
+    data = resp.json()
+    assert data["status"] == "degraded"
+    assert data["checks"]["postgres"] == "error: timeout"
+    assert data["checks"]["valkey"] == "ok"
+    assert data["checks"]["opensearch"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_ready_valkey_timeout_returns_503(client: AsyncClient) -> None:
+    """/ready returns 503 with 'error: timeout' when the Valkey check times out."""
+    pg_factory = _mock_pg_factory()
+    vk_client = _make_slow_valkey_client()
+
+    with patch("app.main.AsyncSessionLocal", pg_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch("app.main._READY_CHECK_TIMEOUT", 0.05), \
+         _patch_opensearch():
+        resp = await client.get(READY_URL)
+
+    assert resp.status_code == 503
+    data = resp.json()
+    assert data["status"] == "degraded"
+    assert data["checks"]["postgres"] == "ok"
+    assert data["checks"]["valkey"] == "error: timeout"
+    assert data["checks"]["opensearch"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_ready_opensearch_timeout_returns_503(client: AsyncClient) -> None:
+    """/ready returns 503 with 'error: timeout' when the OpenSearch check times out."""
+    pg_factory = _mock_pg_factory()
+    vk_client = _mock_valkey_client()
+
+    with patch("app.main.AsyncSessionLocal", pg_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch("app.main._READY_CHECK_TIMEOUT", 0.05), \
+         _patch_slow_opensearch():
+        resp = await client.get(READY_URL)
+
+    assert resp.status_code == 503
+    data = resp.json()
+    assert data["status"] == "degraded"
+    assert data["checks"]["postgres"] == "ok"
+    assert data["checks"]["valkey"] == "ok"
+    assert data["checks"]["opensearch"] == "error: timeout"
+
+
+@pytest.mark.asyncio
+async def test_ready_timeout_value_is_error_timeout_literal(client: AsyncClient) -> None:
+    """Timeout check value is the exact string 'error: timeout'."""
+    pg_factory = _make_slow_pg_factory()
+    vk_client = _mock_valkey_client()
+
+    with patch("app.main.AsyncSessionLocal", pg_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch("app.main._READY_CHECK_TIMEOUT", 0.05), \
+         _patch_opensearch():
+        resp = await client.get(READY_URL)
+
+    assert resp.json()["checks"]["postgres"] == "error: timeout"
