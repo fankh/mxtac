@@ -629,3 +629,123 @@ async def test_sort_combined_with_filter(client: AsyncClient, auth_headers: dict
     assert kwargs.get("severity") == ["critical"]
     assert kwargs.get("sort") == "score"
     assert kwargs.get("order") == "desc"
+
+
+# ---------------------------------------------------------------------------
+# Feature 10.11 — DELETE /detections/{id}
+# ---------------------------------------------------------------------------
+
+
+def _admin_headers() -> dict[str, str]:
+    """Create a valid JWT for the admin role."""
+    token = create_access_token(
+        {"sub": "admin@mxtac.local", "role": "admin"},
+        expires_delta=timedelta(hours=1),
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.asyncio
+async def test_delete_detection_returns_204(client: AsyncClient) -> None:
+    """DELETE /detections/{id} with admin role → 204 No Content."""
+    with patch(f"{MOCK_REPO}.delete", new=AsyncMock(return_value=True)):
+        resp = await client.delete(
+            "/api/v1/detections/DET-2026-00847",
+            headers=_admin_headers(),
+        )
+    assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_delete_detection_not_found_returns_404(client: AsyncClient) -> None:
+    """DELETE /detections/nonexistent-id → 404."""
+    with patch(f"{MOCK_REPO}.delete", new=AsyncMock(return_value=False)):
+        resp = await client.delete(
+            "/api/v1/detections/nonexistent-id",
+            headers=_admin_headers(),
+        )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_detection_no_body(client: AsyncClient) -> None:
+    """DELETE /detections/{id} returns no response body on success (204)."""
+    with patch(f"{MOCK_REPO}.delete", new=AsyncMock(return_value=True)):
+        resp = await client.delete(
+            "/api/v1/detections/DET-2026-00847",
+            headers=_admin_headers(),
+        )
+    assert resp.status_code == 204
+    assert resp.content == b""
+
+
+@pytest.mark.asyncio
+async def test_viewer_cannot_delete_detection(client: AsyncClient) -> None:
+    """DELETE /detections/{id} with viewer role → 403 Forbidden."""
+    resp = await client.delete(
+        "/api/v1/detections/DET-2026-00847",
+        headers=_token_headers("viewer"),
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_analyst_cannot_delete_detection(client: AsyncClient) -> None:
+    """DELETE /detections/{id} with analyst role → 403 Forbidden."""
+    resp = await client.delete(
+        "/api/v1/detections/DET-2026-00847",
+        headers=_token_headers("analyst"),
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_hunter_cannot_delete_detection(client: AsyncClient) -> None:
+    """DELETE /detections/{id} with hunter role → 403 Forbidden."""
+    resp = await client.delete(
+        "/api/v1/detections/DET-2026-00847",
+        headers=_token_headers("hunter"),
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_engineer_cannot_delete_detection(client: AsyncClient) -> None:
+    """DELETE /detections/{id} with engineer role → 403 Forbidden."""
+    resp = await client.delete(
+        "/api/v1/detections/DET-2026-00847",
+        headers=_token_headers("engineer"),
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_can_delete_detection(client: AsyncClient) -> None:
+    """DELETE /detections/{id} with admin role → 204 (admin has detections:delete)."""
+    with patch(f"{MOCK_REPO}.delete", new=AsyncMock(return_value=True)):
+        resp = await client.delete(
+            "/api/v1/detections/DET-2026-00847",
+            headers=_admin_headers(),
+        )
+    assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_delete_returns_401_or_403(client: AsyncClient) -> None:
+    """DELETE /detections/{id} without Authorization header → 401 or 403."""
+    resp = await client.delete("/api/v1/detections/DET-2026-00847")
+    assert resp.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_delete_rbac_check_precedes_db_lookup(client: AsyncClient) -> None:
+    """DELETE /detections/{id} with non-admin role → 403 even for nonexistent detection.
+
+    RBAC enforcement happens before the repository is called, so a non-admin
+    receives 403 (not 404) regardless of whether the detection exists.
+    """
+    resp = await client.delete(
+        "/api/v1/detections/nonexistent-id",
+        headers=_token_headers("analyst"),
+    )
+    assert resp.status_code == 403

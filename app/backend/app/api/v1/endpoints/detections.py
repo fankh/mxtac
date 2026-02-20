@@ -104,3 +104,14 @@ async def update_detection(
     if not d:
         raise HTTPException(status_code=404, detail=f"Detection {detection_id} not found")
     return _detection_to_schema(d)
+
+
+@router.delete("/{detection_id}", status_code=204)
+async def delete_detection(
+    detection_id: str = Path(..., description="Detection ID"),
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("detections:delete")),
+):
+    deleted = await DetectionRepo.delete(db, detection_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Detection {detection_id} not found")

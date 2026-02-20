@@ -27,9 +27,10 @@ ROLES = ("viewer", "analyst", "hunter", "engineer", "admin")
 # Maps each permission string to the set of roles that are granted access.
 
 PERMISSIONS: dict[str, set[str]] = {
-    "detections:read":  {"viewer", "analyst", "hunter", "engineer", "admin"},
-    "detections:write": {"analyst", "hunter", "engineer", "admin"},
-    "incidents:read":   {"viewer", "analyst", "hunter", "engineer", "admin"},
+    "detections:read":   {"viewer", "analyst", "hunter", "engineer", "admin"},
+    "detections:write":  {"analyst", "hunter", "engineer", "admin"},
+    "detections:delete": {"admin"},
+    "incidents:read":    {"viewer", "analyst", "hunter", "engineer", "admin"},
     "incidents:write":  {"analyst", "hunter", "engineer", "admin"},
     "incidents:delete": {"admin"},
     "rules:read":       {"hunter", "engineer", "admin"},
