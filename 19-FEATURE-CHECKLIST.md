@@ -144,7 +144,7 @@
 |---|---------|:----:|:----:|----------|-------|
 | 7.1 | `OCSFEvent` Pydantic schema | `[x]` | `[ ]` | P0 | `normalizers/ocsf.py` |
 | 7.2 | Wazuh → OCSF: `rule.level` → `severity_id` | `[x]` | `[x]` | P0 | 74 tests: all tiers, boundaries, classify, MITRE, round-trip |
-| 7.3 | Wazuh → OCSF: MITRE tags → `attacks[]` | `[ ]` | `[ ]` | P0 | |
+| 7.3 | Wazuh → OCSF: MITRE tags → `attacks[]` | `[x]` | `[x]` | P0 | 29 tests: technique names, sub-techniques, full-name tactics, serialization |
 | 7.4 | Wazuh → OCSF: `agent` → `dst_endpoint` | `[ ]` | `[ ]` | P0 | |
 | 7.5 | Wazuh → OCSF: Windows event data → `process` | `[ ]` | `[ ]` | P0 | |
 | 7.6 | Zeek → OCSF: `conn` → `NetworkActivity` (class 4001) | `[~]` | `[ ]` | P0 | |
@@ -537,7 +537,7 @@
 | 28.8 | RBAC: engineer can create rules | `[x]` | `[T]` | P0 | 8 tests: unauth→401/403, viewer/analyst/hunter→403, engineer/admin→201, invalid→422, disabled |
 | 28.9 | RBAC: admin can manage users | `[ ]` | `[ ]` | P0 | |
 | 28.10 | Normalizer: Wazuh level 14 → severity_id 5 | `[x]` | `[x]` | P0 | `test_level_14_maps_to_severity_5` |
-| 28.11 | Normalizer: Wazuh MITRE tags → attacks[] | `[ ]` | `[ ]` | P0 | |
+| 28.11 | Normalizer: Wazuh MITRE tags → attacks[] | `[x]` | `[x]` | P0 | `test_wazuh_mitre_attacks.py` — 29 tests |
 | 28.12 | Normalizer: Zeek conn → NetworkActivity | `[ ]` | `[ ]` | P0 | |
 | 28.13 | Normalizer: Suricata severity 1 → severity_id 4 | `[ ]` | `[ ]` | P0 | |
 | 28.14 | Sigma: rule loads from valid YAML | `[ ]` | `[ ]` | P0 | |
@@ -632,7 +632,7 @@
 | 4. User management API | 8 | 0 | 5 | 3 | 0 |
 | 5. Event pipeline | 9 | 6 | 0 | 3 | 0 |
 | 6. Connectors | 24 | 0 | 3 | 21 | 0 |
-| 7. OCSF normalizers | 15 | 1 | 4 | 10 | 0 |
+| 7. OCSF normalizers | 15 | 2 | 4 | 9 | 1 |
 | 8. Sigma engine | 23 | 2 | 0 | 21 | 0 |
 | 9. Alert manager | 12 | 4 | 1 | 7 | 0 |
 | 10. Detections API | 11 | 10 | 0 | 1 | 0 |
@@ -653,11 +653,11 @@
 | 25. MxWatch (NDR) | 17 | 0 | 0 | 17 | 0 |
 | 26. Performance NFR | 8 | 0 | 0 | 8 | 0 |
 | 27. Reliability NFR | 6 | 0 | 0 | 6 | 0 |
-| 28. Tests | 46 | 5 | 0 | 41 | 2 |
+| 28. Tests | 46 | 6 | 0 | 40 | 3 |
 | 29. Theme system | 6 | 6 | 0 | 0 | 0 |
 | 30. Security & hygiene | 12 | 0 | 0 | 12 | 0 |
 | 31. Agent management | 5 | 0 | 0 | 5 | 0 |
-| **TOTAL** | **372** | **62 (17%)** | **56 (15%)** | **254 (68%)** | **2 (1%)** |
+| **TOTAL** | **372** | **63 (17%)** | **56 (15%)** | **253 (68%)** | **3 (1%)** |
 
 ---
 

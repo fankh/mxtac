@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.security import create_access_token, create_refresh_token, verify_password, decode_token
+from ....core.valkey import blacklist_token
 from ....repositories.user_repo import UserRepo
-from ....schemas.auth import LoginRequest, TokenResponse, RefreshRequest
+from ....schemas.auth import LoginRequest, LogoutResponse, TokenResponse, RefreshRequest
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -51,6 +54,25 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.post("/logout")
-async def logout():
-    return {"message": "Logged out"}
+@router.post("/logout", response_model=LogoutResponse)
+async def logout(authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header required",
+        )
+
+    parts = authorization.split()
+    token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else authorization
+
+    # Raises 401 if the token is invalid or expired
+    payload = decode_token(token)
+
+    jti = payload.get("jti")
+    if jti:
+        exp = payload.get("exp", 0)
+        now = int(datetime.now(timezone.utc).timestamp())
+        ttl = exp - now
+        await blacklist_token(jti, ttl)
+
+    return LogoutResponse(message="Logged out")

@@ -66,6 +66,12 @@ MITRE_TACTIC_MAP: dict[str, tuple[str, str]] = {
     "resource-development":    ("Resource Development",    "TA0042"),
 }
 
+# Reverse lookup: full tactic name → slug.
+# Some Wazuh versions emit "Credential Access" instead of "credential-access".
+MITRE_TACTIC_FULL_NAME_MAP: dict[str, str] = {
+    name: slug for slug, (name, _) in MITRE_TACTIC_MAP.items()
+}
+
 
 class WazuhNormalizer:
     """Transforms a Wazuh alert dict into an OCSFEvent."""
@@ -163,19 +169,56 @@ class WazuhNormalizer:
         return 1
 
     def _build_attacks(self, mitre: dict) -> list[AttackInfo]:
+        """Convert Wazuh rule.mitre metadata into OCSF AttackInfo objects.
+
+        Handles:
+        - Multiple technique IDs paired with their tactics (1-to-1 or fan-out)
+        - Sub-technique IDs (e.g. "T1003.001" → sub_technique="001")
+        - Technique names from the optional ``mitre.technique`` name list
+        - Both slug format ("credential-access") and full-name format
+          ("Credential Access") for tactic values
+        """
         attacks: list[AttackInfo] = []
-        techniques = mitre.get("id", [])
-        tactics    = mitre.get("tactic", [])
+        techniques      = mitre.get("id", [])          # e.g. ["T1003.001"]
+        tactic_values   = mitre.get("tactic", [])      # slug or full name
+        technique_names = mitre.get("technique", [])   # e.g. ["OS Credential Dumping: LSASS Memory"]
 
         for i, tech_id in enumerate(techniques):
-            tactic_slug = tactics[i] if i < len(tactics) else (tactics[0] if tactics else "")
-            tactic_info = MITRE_TACTIC_MAP.get(tactic_slug, (tactic_slug, ""))
+            # ── Resolve tactic ──────────────────────────────────────────────
+            raw_tactic  = tactic_values[i] if i < len(tactic_values) else (
+                tactic_values[0] if tactic_values else ""
+            )
+            # Accept both "credential-access" (slug) and "Credential Access" (full name)
+            slug        = MITRE_TACTIC_FULL_NAME_MAP.get(raw_tactic, raw_tactic)
+            tactic_info = MITRE_TACTIC_MAP.get(slug, (raw_tactic, ""))
+
+            # ── Parse sub-technique ─────────────────────────────────────────
+            _parent_uid, sub_technique = self._parse_technique_id(tech_id)
+
+            # ── Resolve technique name ──────────────────────────────────────
+            tech_name = technique_names[i] if i < len(technique_names) else tech_id
 
             attacks.append(AttackInfo(
                 tactic=AttackTactic(name=tactic_info[0], uid=tactic_info[1]),
-                technique=AttackTechnique(uid=tech_id, name=tech_id),
+                technique=AttackTechnique(
+                    uid=tech_id,
+                    name=tech_name,
+                    sub_technique=sub_technique,
+                ),
             ))
         return attacks
+
+    def _parse_technique_id(self, tech_id: str) -> tuple[str, str | None]:
+        """Split a technique ID into its parent and sub-technique parts.
+
+        Examples::
+            "T1003.001" → ("T1003", "001")
+            "T1059"     → ("T1059", None)
+        """
+        if "." in tech_id:
+            parent, sub = tech_id.split(".", 1)
+            return parent, sub
+        return tech_id, None
 
     def _parse_time(self, ts: str | None) -> datetime:
         if not ts:

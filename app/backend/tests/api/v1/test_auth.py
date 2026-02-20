@@ -802,3 +802,108 @@ async def test_rotation_chained_refresh_each_token_differs(client: AsyncClient) 
 
     assert token3 != token2
     assert token3 != token1
+
+
+# ---------------------------------------------------------------------------
+# Feature 1.3 — POST /auth/logout — invalidate token
+# ---------------------------------------------------------------------------
+
+LOGOUT_URL = "/api/v1/auth/logout"
+
+# Patch targets for the logout feature
+MOCK_BLACKLIST = "app.api.v1.endpoints.auth.blacklist_token"
+MOCK_IS_BLACKLISTED = "app.core.security.is_token_blacklisted"
+
+
+# _make_access_token_only() (defined above) produces a valid access token; reuse it.
+
+
+@pytest.mark.asyncio
+async def test_logout_success_returns_200(client: AsyncClient) -> None:
+    """Valid access token → 200 OK."""
+    token = _make_access_token_only()
+    with patch(MOCK_BLACKLIST, new=AsyncMock()):
+        resp = await client.post(LOGOUT_URL, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_logout_response_message(client: AsyncClient) -> None:
+    """Successful logout returns {'message': 'Logged out'}."""
+    token = _make_access_token_only()
+    with patch(MOCK_BLACKLIST, new=AsyncMock()):
+        resp = await client.post(LOGOUT_URL, headers={"Authorization": f"Bearer {token}"})
+    assert resp.json()["message"] == "Logged out"
+
+
+@pytest.mark.asyncio
+async def test_logout_without_auth_header_returns_401(client: AsyncClient) -> None:
+    """Missing Authorization header → 401."""
+    resp = await client.post(LOGOUT_URL)
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_with_invalid_token_returns_401(client: AsyncClient) -> None:
+    """Malformed / non-JWT string → 401."""
+    resp = await client.post(LOGOUT_URL, headers={"Authorization": "Bearer not.a.jwt"})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_with_expired_token_returns_401(client: AsyncClient) -> None:
+    """Expired access token → 401 (nothing to revoke; token is already dead)."""
+    expired = _make_expired_token()
+    resp = await client.post(LOGOUT_URL, headers={"Authorization": f"Bearer {expired}"})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_blacklists_token_jti(client: AsyncClient) -> None:
+    """Logout calls blacklist_token with the token's JTI and a positive TTL."""
+    token = _make_access_token_only()
+    jti = _decode(token)["jti"]
+
+    with patch(MOCK_BLACKLIST, new=AsyncMock()) as mock_bl:
+        await client.post(LOGOUT_URL, headers={"Authorization": f"Bearer {token}"})
+
+    mock_bl.assert_awaited_once()
+    called_jti, called_ttl = mock_bl.call_args[0]
+    assert called_jti == jti
+    assert called_ttl > 0
+
+
+@pytest.mark.asyncio
+async def test_logout_blacklisted_token_rejected_on_protected_endpoint(
+    client: AsyncClient,
+) -> None:
+    """After logout, a blacklisted token on any protected endpoint → 401."""
+    token = _make_access_token_only()
+    with patch(MOCK_IS_BLACKLISTED, new=AsyncMock(return_value=True)):
+        resp = await client.get(PROTECTED_URL, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_blacklisted_token_detail(client: AsyncClient) -> None:
+    """A blacklisted token returns 'Token has been revoked' detail."""
+    token = _make_access_token_only()
+    with patch(MOCK_IS_BLACKLISTED, new=AsyncMock(return_value=True)):
+        resp = await client.get(PROTECTED_URL, headers={"Authorization": f"Bearer {token}"})
+    assert resp.json()["detail"] == "Token has been revoked"
+
+
+@pytest.mark.asyncio
+async def test_logout_get_method_not_allowed(client: AsyncClient) -> None:
+    """GET /auth/logout → 405 Method Not Allowed."""
+    resp = await client.get(LOGOUT_URL)
+    assert resp.status_code == 405
+
+
+@pytest.mark.asyncio
+async def test_logout_token_without_bearer_prefix_succeeds(client: AsyncClient) -> None:
+    """Raw token (no 'Bearer ' prefix) is also accepted on logout."""
+    token = _make_access_token_only()
+    with patch(MOCK_BLACKLIST, new=AsyncMock()):
+        resp = await client.post(LOGOUT_URL, headers={"Authorization": token})
+    assert resp.status_code == 200

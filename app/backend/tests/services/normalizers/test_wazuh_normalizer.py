@@ -1,4 +1,4 @@
-"""Tests for WazuhNormalizer — Feature 7.2
+"""Tests for WazuhNormalizer — Features 7.2 & 7.3
 
 Coverage:
   - LEVEL_TO_SEVERITY mapping: all boundary values and mid-range levels
@@ -10,6 +10,14 @@ Coverage:
   - normalize(): full round-trip with realistic Wazuh alert fixture
   - normalize(): missing optional fields produce sensible defaults
   - normalize(): severity_id propagated to OCSFEvent AND FindingInfo
+
+Feature 7.3 additions:
+  - _parse_technique_id(): sub-technique splitting for IDs like "T1003.001"
+  - _build_attacks(): technique name from mitre.technique list
+  - _build_attacks(): sub_technique field populated for dotted IDs
+  - _build_attacks(): full tactic name format ("Credential Access") accepted
+  - MITRE_TACTIC_FULL_NAME_MAP completeness check
+  - normalize(): end-to-end with sub-technique and technique name
 """
 
 from __future__ import annotations
@@ -18,7 +26,12 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.services.normalizers.wazuh import LEVEL_TO_SEVERITY, MITRE_TACTIC_MAP, WazuhNormalizer
+from app.services.normalizers.wazuh import (
+    LEVEL_TO_SEVERITY,
+    MITRE_TACTIC_MAP,
+    MITRE_TACTIC_FULL_NAME_MAP,
+    WazuhNormalizer,
+)
 from app.services.normalizers.ocsf import OCSFCategory, OCSFClass
 
 
@@ -434,3 +447,231 @@ def test_normalize_linux_process_no_win_data(normalizer: WazuhNormalizer) -> Non
     assert event.class_uid == OCSFClass.AUTHENTICATION
     assert event.actor_user.name == "root"
     assert event.severity_id == 3  # level 7 → Medium
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.3 — MITRE tags → attacks[]
+# ---------------------------------------------------------------------------
+
+
+class TestParseTechniqueId:
+    """Unit tests for _parse_technique_id()."""
+
+    def test_sub_technique_dotted_id(self, normalizer: WazuhNormalizer) -> None:
+        parent, sub = normalizer._parse_technique_id("T1003.001")
+        assert parent == "T1003"
+        assert sub == "001"
+
+    def test_base_technique_no_dot(self, normalizer: WazuhNormalizer) -> None:
+        parent, sub = normalizer._parse_technique_id("T1059")
+        assert parent == "T1059"
+        assert sub is None
+
+    def test_multi_dot_uses_first_split(self, normalizer: WazuhNormalizer) -> None:
+        """Only the first dot is treated as the sub-technique separator."""
+        parent, sub = normalizer._parse_technique_id("T1234.001.extra")
+        assert parent == "T1234"
+        assert sub == "001.extra"
+
+    def test_empty_string_no_dot(self, normalizer: WazuhNormalizer) -> None:
+        parent, sub = normalizer._parse_technique_id("")
+        assert parent == ""
+        assert sub is None
+
+
+class TestBuildAttacksMitreTags:
+    """Feature 7.3 — _build_attacks() enhancements."""
+
+    def test_sub_technique_populated_for_dotted_id(self, normalizer: WazuhNormalizer) -> None:
+        """T1003.001 must produce sub_technique='001' on the AttackTechnique."""
+        mitre = {"id": ["T1003.001"], "tactic": ["credential-access"]}
+        attacks = normalizer._build_attacks(mitre)
+        assert attacks[0].technique.sub_technique == "001"
+
+    def test_base_technique_sub_technique_is_none(self, normalizer: WazuhNormalizer) -> None:
+        """Base techniques (no dot) must produce sub_technique=None."""
+        mitre = {"id": ["T1059"], "tactic": ["execution"]}
+        attacks = normalizer._build_attacks(mitre)
+        assert attacks[0].technique.sub_technique is None
+
+    def test_technique_name_from_mitre_technique_list(self, normalizer: WazuhNormalizer) -> None:
+        """When mitre.technique is present, its entries are used as technique names."""
+        mitre = {
+            "id": ["T1003.001"],
+            "tactic": ["credential-access"],
+            "technique": ["OS Credential Dumping: LSASS Memory"],
+        }
+        attacks = normalizer._build_attacks(mitre)
+        assert attacks[0].technique.name == "OS Credential Dumping: LSASS Memory"
+
+    def test_technique_name_falls_back_to_id_when_list_absent(self, normalizer: WazuhNormalizer) -> None:
+        """When mitre.technique is missing, the technique ID is used as the name."""
+        mitre = {"id": ["T1003.001"], "tactic": ["credential-access"]}
+        attacks = normalizer._build_attacks(mitre)
+        assert attacks[0].technique.name == "T1003.001"
+
+    def test_technique_name_falls_back_when_list_shorter(self, normalizer: WazuhNormalizer) -> None:
+        """Name list shorter than ID list → missing entries fall back to ID."""
+        mitre = {
+            "id": ["T1059.001", "T1055"],
+            "tactic": ["execution", "privilege-escalation"],
+            "technique": ["Command and Scripting Interpreter: PowerShell"],
+        }
+        attacks = normalizer._build_attacks(mitre)
+        assert attacks[0].technique.name == "Command and Scripting Interpreter: PowerShell"
+        assert attacks[1].technique.name == "T1055"  # fallback to ID
+
+    def test_tactic_full_name_format_accepted(self, normalizer: WazuhNormalizer) -> None:
+        """Full tactic name ('Credential Access') maps to the correct UID."""
+        mitre = {"id": ["T1003.001"], "tactic": ["Credential Access"]}
+        attacks = normalizer._build_attacks(mitre)
+        assert attacks[0].tactic.uid == "TA0006"
+        assert attacks[0].tactic.name == "Credential Access"
+
+    @pytest.mark.parametrize("full_name,expected_uid", [
+        ("Initial Access",       "TA0001"),
+        ("Execution",            "TA0002"),
+        ("Persistence",          "TA0003"),
+        ("Privilege Escalation", "TA0004"),
+        ("Defense Evasion",      "TA0005"),
+        ("Credential Access",    "TA0006"),
+        ("Discovery",            "TA0007"),
+        ("Lateral Movement",     "TA0008"),
+        ("Collection",           "TA0009"),
+        ("Command and Control",  "TA0011"),
+        ("Exfiltration",         "TA0010"),
+        ("Impact",               "TA0040"),
+        ("Reconnaissance",       "TA0043"),
+        ("Resource Development", "TA0042"),
+    ])
+    def test_all_full_tactic_names_resolve_to_correct_uid(
+        self,
+        normalizer: WazuhNormalizer,
+        full_name: str,
+        expected_uid: str,
+    ) -> None:
+        """Every full tactic name must resolve to its canonical TA#### UID."""
+        mitre = {"id": ["T1000"], "tactic": [full_name]}
+        attacks = normalizer._build_attacks(mitre)
+        assert attacks[0].tactic.uid == expected_uid
+
+    def test_unknown_tactic_preserved_as_is(self, normalizer: WazuhNormalizer) -> None:
+        """Unknown tactic strings pass through unchanged (forward compatibility)."""
+        mitre = {"id": ["T9999"], "tactic": ["future-tactic"]}
+        attacks = normalizer._build_attacks(mitre)
+        assert attacks[0].tactic.name == "future-tactic"
+        assert attacks[0].tactic.uid == ""
+
+    def test_multiple_techniques_names_paired_correctly(self, normalizer: WazuhNormalizer) -> None:
+        mitre = {
+            "id": ["T1059.001", "T1055.001"],
+            "tactic": ["execution", "privilege-escalation"],
+            "technique": ["PowerShell", "Process Injection: DLL Injection"],
+        }
+        attacks = normalizer._build_attacks(mitre)
+        assert attacks[0].technique.name == "PowerShell"
+        assert attacks[0].technique.sub_technique == "001"
+        assert attacks[1].technique.name == "Process Injection: DLL Injection"
+        assert attacks[1].technique.sub_technique == "001"
+
+
+class TestMitreTacticFullNameMap:
+    """Verify MITRE_TACTIC_FULL_NAME_MAP is correctly derived from MITRE_TACTIC_MAP."""
+
+    def test_all_tactics_have_full_name_entry(self) -> None:
+        """Every slug in MITRE_TACTIC_MAP must appear as a value in the full-name map."""
+        assert set(MITRE_TACTIC_FULL_NAME_MAP.values()) == set(MITRE_TACTIC_MAP.keys())
+
+    def test_full_name_map_length_matches_tactic_map(self) -> None:
+        assert len(MITRE_TACTIC_FULL_NAME_MAP) == len(MITRE_TACTIC_MAP)
+
+    def test_round_trip_slug_via_full_name(self) -> None:
+        """slug → full_name → slug must be identity for every tactic."""
+        for slug, (full_name, _) in MITRE_TACTIC_MAP.items():
+            recovered_slug = MITRE_TACTIC_FULL_NAME_MAP[full_name]
+            assert recovered_slug == slug
+
+
+class TestNormalizeMitreTags:
+    """Feature 7.3 — end-to-end normalize() verification for attacks[]."""
+
+    def test_normalize_sub_technique_set(self, normalizer: WazuhNormalizer, full_alert: dict) -> None:
+        """T1003.001 in the fixture should produce sub_technique='001'."""
+        event = normalizer.normalize(full_alert)
+        attack = event.finding_info.attacks[0]
+        assert attack.technique.sub_technique == "001"
+
+    def test_normalize_technique_name_from_mitre_field(self, normalizer: WazuhNormalizer) -> None:
+        alert = {
+            "timestamp": "2026-02-19T08:30:00.000Z",
+            "id": "abc123",
+            "rule": {
+                "id": "100234",
+                "description": "LSASS Dump",
+                "level": 12,
+                "mitre": {
+                    "id": ["T1003.001"],
+                    "tactic": ["credential-access"],
+                    "technique": ["OS Credential Dumping: LSASS Memory"],
+                },
+            },
+            "agent": {"id": "001", "name": "DC01", "ip": "10.0.0.1"},
+        }
+        event = normalizer.normalize(alert)
+        attack = event.finding_info.attacks[0]
+        assert attack.technique.name == "OS Credential Dumping: LSASS Memory"
+        assert attack.technique.uid == "T1003.001"
+        assert attack.technique.sub_technique == "001"
+
+    def test_normalize_tactic_full_name_in_alert(self, normalizer: WazuhNormalizer) -> None:
+        """Alerts that emit full tactic names still resolve to correct UID."""
+        alert = {
+            "rule": {
+                "level": 10,
+                "description": "Lateral movement detected",
+                "mitre": {
+                    "id": ["T1021"],
+                    "tactic": ["Lateral Movement"],
+                },
+            },
+        }
+        event = normalizer.normalize(alert)
+        attack = event.finding_info.attacks[0]
+        assert attack.tactic.uid == "TA0008"
+        assert attack.tactic.name == "Lateral Movement"
+        assert attack.technique.sub_technique is None
+
+    def test_normalize_multiple_techniques_all_sub_techniques_set(
+        self, normalizer: WazuhNormalizer
+    ) -> None:
+        alert = {
+            "rule": {
+                "level": 11,
+                "description": "Multi-technique alert",
+                "mitre": {
+                    "id": ["T1059.001", "T1055.012"],
+                    "tactic": ["execution", "defense-evasion"],
+                    "technique": ["PowerShell", "Process Injection: Process Hollowing"],
+                },
+            },
+        }
+        event = normalizer.normalize(alert)
+        attacks = event.finding_info.attacks
+        assert len(attacks) == 2
+        assert attacks[0].technique.uid == "T1059.001"
+        assert attacks[0].technique.sub_technique == "001"
+        assert attacks[0].technique.name == "PowerShell"
+        assert attacks[1].technique.uid == "T1055.012"
+        assert attacks[1].technique.sub_technique == "012"
+        assert attacks[1].technique.name == "Process Injection: Process Hollowing"
+
+    def test_normalize_attacks_serializable_with_sub_technique(
+        self, normalizer: WazuhNormalizer, full_alert: dict
+    ) -> None:
+        """model_dump(mode='json') must include sub_technique cleanly."""
+        import json
+        event = normalizer.normalize(full_alert)
+        dumped = event.model_dump(mode="json")
+        json.dumps(dumped)  # must not raise
+        attack = dumped["finding_info"]["attacks"][0]
+        assert attack["technique"]["sub_technique"] == "001"
