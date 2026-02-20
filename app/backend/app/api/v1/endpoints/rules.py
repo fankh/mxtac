@@ -250,19 +250,23 @@ async def update_rule(
         update_kwargs["enabled"] = body.enabled
     if body.content is not None:
         sigma_rule = _engine.load_rule_yaml(body.content)
-        if sigma_rule:
-            logsource = sigma_rule.logsource or {}
-            update_kwargs.update({
-                "content": body.content,
-                "title": sigma_rule.title,
-                "level": sigma_rule.level,
-                "status": sigma_rule.status,
-                "logsource_product": logsource.get("product"),
-                "logsource_category": logsource.get("category"),
-                "logsource_service": logsource.get("service"),
-                "technique_ids": json.dumps(sigma_rule.technique_ids),
-                "tactic_ids": json.dumps(sigma_rule.tactic_ids),
-            })
+        if not sigma_rule:
+            raise HTTPException(status_code=422, detail="Invalid Sigma YAML")
+        logsource = sigma_rule.logsource or {}
+        update_kwargs.update({
+            "content": body.content,
+            "title": sigma_rule.title,
+            "level": sigma_rule.level,
+            "status": sigma_rule.status,
+            "logsource_product": logsource.get("product"),
+            "logsource_category": logsource.get("category"),
+            "logsource_service": logsource.get("service"),
+            "technique_ids": json.dumps(sigma_rule.technique_ids),
+            "tactic_ids": json.dumps(sigma_rule.tactic_ids),
+        })
+
+    if not update_kwargs:
+        return _rule_to_response(rule)
 
     updated = await RuleRepo.update(db, rule_id, **update_kwargs)
     return _rule_to_response(updated)

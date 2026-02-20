@@ -483,3 +483,172 @@ async def test_rule_yaml_no_match(client: AsyncClient, hunter_headers: dict) -> 
     )
     assert resp.status_code == 200
     assert resp.json()["matched"] is False
+
+
+# ---------------------------------------------------------------------------
+# Feature 13.4 — PATCH /rules/{id} — enable / disable / update
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_patch_rule_disable(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """PATCH /rules/{id} with enabled=False disables the rule."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.patch(
+        f"{BASE_URL}/test-rule-0001",
+        headers=engineer_headers,
+        json={"enabled": False},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["enabled"] is False
+
+    # Verify persistence: GET returns disabled state
+    detail = await client.get(f"{BASE_URL}/test-rule-0001", headers=hunter_headers)
+    assert detail.json()["enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_patch_rule_enable(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """PATCH /rules/{id} with enabled=True re-enables a disabled rule."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML, "enabled": False},
+    )
+    resp = await client.patch(
+        f"{BASE_URL}/test-rule-0001",
+        headers=engineer_headers,
+        json={"enabled": True},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_patch_rule_content_update(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """PATCH /rules/{id} with new content re-parses and updates derived fields."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    # Replace with a low-severity rule that has same ID
+    updated_yaml = _SIGMA_YAML.replace("level: high", "level: low")
+    resp = await client.patch(
+        f"{BASE_URL}/test-rule-0001",
+        headers=engineer_headers,
+        json={"content": updated_yaml},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["level"] == "low"
+
+    # Verify persistence via GET detail
+    detail = await client.get(f"{BASE_URL}/test-rule-0001", headers=hunter_headers)
+    assert detail.json()["level"] == "low"
+    assert "level: low" in detail.json()["content"]
+
+
+@pytest.mark.asyncio
+async def test_patch_rule_both_fields(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """PATCH /rules/{id} updating both enabled and content applies both changes."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    updated_yaml = _SIGMA_YAML.replace("level: high", "level: medium")
+    resp = await client.patch(
+        f"{BASE_URL}/test-rule-0001",
+        headers=engineer_headers,
+        json={"enabled": False, "content": updated_yaml},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["enabled"] is False
+    assert data["level"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_patch_rule_not_found(client: AsyncClient, engineer_headers: dict) -> None:
+    """PATCH /rules/{id} for unknown rule → 404."""
+    resp = await client.patch(
+        f"{BASE_URL}/nonexistent-rule-id",
+        headers=engineer_headers,
+        json={"enabled": False},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Rule not found"
+
+
+@pytest.mark.asyncio
+async def test_patch_rule_invalid_yaml(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """PATCH /rules/{id} with invalid Sigma YAML content → 422."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.patch(
+        f"{BASE_URL}/test-rule-0001",
+        headers=engineer_headers,
+        json={"content": "just a plain string, not a mapping"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_patch_rule_no_op_returns_rule(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """PATCH /rules/{id} with empty body returns current rule unchanged."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.patch(
+        f"{BASE_URL}/test-rule-0001",
+        headers=engineer_headers,
+        json={},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == "test-rule-0001"
+    assert data["enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_patch_rule_response_schema(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """PATCH /rules/{id} response includes all RuleResponse fields."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.patch(
+        f"{BASE_URL}/test-rule-0001",
+        headers=engineer_headers,
+        json={"enabled": False},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    for field in ("id", "title", "level", "status", "enabled",
+                  "technique_ids", "tactic_ids", "logsource",
+                  "hit_count", "fp_count"):
+        assert field in data, f"Missing field: {field}"
