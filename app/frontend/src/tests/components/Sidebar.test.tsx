@@ -39,6 +39,7 @@ describe('Sidebar', () => {
     const NAV_ITEMS = [
       { label: 'Overview',        href: '/' },
       { label: 'Detections',      href: '/detections' },
+      { label: 'Event Hunt',      href: '/hunt' },
       { label: 'ATT&CK Coverage', href: '/attack' },
       { label: 'Sigma Rules',     href: '/rules' },
       { label: 'Incidents',       href: '/incidents' },
@@ -47,10 +48,10 @@ describe('Sidebar', () => {
       { label: 'Admin',           href: '/admin' },
     ]
 
-    it('renders exactly 8 nav links', () => {
+    it('renders exactly 9 nav links', () => {
       renderSidebar()
       const nav = screen.getByRole('navigation')
-      expect(nav.querySelectorAll('a')).toHaveLength(8)
+      expect(nav.querySelectorAll('a')).toHaveLength(9)
     })
 
     NAV_ITEMS.forEach(({ label, href }) => {
