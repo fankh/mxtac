@@ -204,10 +204,108 @@ export function AdminPage() {
         )}
 
         {activeTab === 'audit' && (
-          <div className="bg-surface rounded-md shadow-card p-4">
-            <p className="text-[11px] text-text-muted text-center py-8">
-              Audit log coming soon — requires OpenSearch integration.
-            </p>
+          <div>
+            {/* Filter bar */}
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <input
+                value={auditActorFilter}
+                onChange={(e) => { setAuditActorFilter(e.target.value); setAuditPage(1) }}
+                placeholder="Actor"
+                className="h-[28px] px-2 text-[11px] bg-surface border border-border rounded-md text-text-primary placeholder-text-muted focus:outline-none focus:border-blue w-[140px]"
+              />
+              <input
+                value={auditActionFilter}
+                onChange={(e) => { setAuditActionFilter(e.target.value); setAuditPage(1) }}
+                placeholder="Action"
+                className="h-[28px] px-2 text-[11px] bg-surface border border-border rounded-md text-text-primary placeholder-text-muted focus:outline-none focus:border-blue w-[110px]"
+              />
+              <input
+                value={auditResourceFilter}
+                onChange={(e) => { setAuditResourceFilter(e.target.value); setAuditPage(1) }}
+                placeholder="Resource type"
+                className="h-[28px] px-2 text-[11px] bg-surface border border-border rounded-md text-text-primary placeholder-text-muted focus:outline-none focus:border-blue w-[130px]"
+              />
+              <select
+                value={timeRange}
+                onChange={(e) => { setTimeRange(e.target.value); setAuditPage(1) }}
+                className="h-[28px] px-2 text-[11px] bg-surface border border-border rounded-md text-text-primary focus:outline-none focus:border-blue"
+              >
+                <option value="now-1h">Last 1h</option>
+                <option value="now-24h">Last 24h</option>
+                <option value="now-7d">Last 7d</option>
+                <option value="now-30d">Last 30d</option>
+                <option value="now-90d">Last 90d</option>
+              </select>
+              <span className="ml-auto text-[10px] text-text-muted">
+                {auditLog ? `${auditLog.total} entries` : ''}
+              </span>
+            </div>
+
+            {/* Table */}
+            <div className="bg-surface rounded-md shadow-card overflow-hidden">
+              {/* Column headers */}
+              <div className="grid grid-cols-[150px_1fr_80px_130px_1fr] gap-2 px-4 py-2 border-b border-border">
+                {['Time', 'Actor', 'Action', 'Resource', 'Path'].map((h) => (
+                  <span key={h} className="text-[10px] font-medium text-text-muted uppercase">{h}</span>
+                ))}
+              </div>
+
+              {auditLoading && (
+                <div className="flex items-center justify-center h-24 text-text-muted text-sm">Loading…</div>
+              )}
+
+              {!auditLoading && (auditLog?.items.length ?? 0) === 0 && (
+                <div className="flex items-center justify-center h-24 text-[11px] text-text-muted">
+                  No audit log entries found.
+                </div>
+              )}
+
+              {auditLog?.items.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="grid grid-cols-[150px_1fr_80px_130px_1fr] gap-2 px-4 py-[7px] border-b border-section items-center"
+                >
+                  <span className="text-[10px] text-text-muted font-mono">
+                    {new Date(entry.timestamp).toLocaleString()}
+                  </span>
+                  <span className="text-[11px] text-text-primary truncate">{entry.actor}</span>
+                  <span className={`text-[10px] font-medium px-2 py-[2px] rounded w-fit ${ACTION_COLORS[entry.action] ?? 'text-text-muted bg-page'}`}>
+                    {entry.action}
+                  </span>
+                  <span className="text-[10px] text-text-muted truncate">
+                    {entry.resource_type}{entry.resource_id ? ` / ${entry.resource_id.slice(0, 8)}` : ''}
+                  </span>
+                  <span className="text-[10px] text-text-muted font-mono truncate">
+                    {[entry.request_method, entry.request_path].filter(Boolean).join(' ')}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {auditLog && auditLog.total > PAGE_SIZE && (
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-[10px] text-text-muted">
+                  Page {auditPage} of {Math.ceil(auditLog.total / PAGE_SIZE)}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setAuditPage(p => Math.max(1, p - 1))}
+                    disabled={auditPage === 1}
+                    className="h-[24px] px-3 text-[10px] bg-surface border border-border rounded text-text-muted hover:text-text-primary disabled:opacity-40"
+                  >
+                    Prev
+                  </button>
+                  <button
+                    onClick={() => setAuditPage(p => p + 1)}
+                    disabled={auditPage >= Math.ceil(auditLog.total / PAGE_SIZE)}
+                    className="h-[24px] px-3 text-[10px] bg-surface border border-border rounded text-text-muted hover:text-text-primary disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

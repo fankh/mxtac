@@ -110,9 +110,7 @@ describe('AdminPage', () => {
     it('clicking "Audit Log" switches to the audit tab', () => {
       renderPage()
       fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
-      expect(
-        screen.getByText('Audit log coming soon — requires OpenSearch integration.'),
-      ).toBeInTheDocument()
+      expect(screen.getByText('Time')).toBeInTheDocument()
     })
 
     it('clicking "Audit Log" hides the users table', async () => {
@@ -123,13 +121,11 @@ describe('AdminPage', () => {
       expect(screen.queryByText('System Admin')).not.toBeInTheDocument()
     })
 
-    it('clicking "Users & Roles" after switching back hides the audit placeholder', () => {
+    it('clicking "Users & Roles" after switching back hides the audit table', () => {
       renderPage()
       fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
       fireEvent.click(screen.getByRole('button', { name: 'Users & Roles' }))
-      expect(
-        screen.queryByText('Audit log coming soon — requires OpenSearch integration.'),
-      ).not.toBeInTheDocument()
+      expect(screen.queryByText('Time')).not.toBeInTheDocument()
     })
   })
 
@@ -137,12 +133,99 @@ describe('AdminPage', () => {
   // Audit Log tab content
   // =========================================================================
   describe('audit log tab', () => {
-    it('shows the coming-soon placeholder', () => {
+    const makeAuditEntry = (overrides: Record<string, unknown> = {}) => ({
+      id:              'audit-001',
+      timestamp:       '2024-01-15T10:30:00.000Z',
+      actor:           'admin@mxtac.local',
+      action:          'create',
+      resource_type:   'incident',
+      resource_id:     'inc-abc123',
+      details:         {},
+      request_ip:      '127.0.0.1',
+      request_method:  'POST',
+      request_path:    '/api/v1/incidents',
+      user_agent:      null,
+      ...overrides,
+    })
+
+    const makeAuditResponse = (items: unknown[] = [], total = 0) => ({
+      total,
+      page:      1,
+      page_size: 50,
+      items,
+    })
+
+    it('shows audit log column headers on the audit tab', () => {
       renderPage()
       fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
-      expect(
-        screen.getByText('Audit log coming soon — requires OpenSearch integration.'),
-      ).toBeInTheDocument()
+      expect(screen.getByText('Time')).toBeInTheDocument()
+      expect(screen.getByText('Actor')).toBeInTheDocument()
+      expect(screen.getByText('Action')).toBeInTheDocument()
+      expect(screen.getByText('Resource')).toBeInTheDocument()
+      expect(screen.getByText('Path')).toBeInTheDocument()
+    })
+
+    it('shows "Loading…" on the audit tab while the query is pending', () => {
+      // default mock returns a pending promise — audit query stays loading
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      expect(screen.getByText('Loading…')).toBeInTheDocument()
+    })
+
+    it('shows "No audit log entries found." when the response is empty', async () => {
+      mockGet.mockImplementation((url: string) => {
+        if (url === '/admin/audit-log') return Promise.resolve({ data: makeAuditResponse([], 0) })
+        return Promise.resolve({ data: [] })
+      })
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() =>
+        expect(screen.getByText('No audit log entries found.')).toBeInTheDocument(),
+      )
+    })
+
+    it('renders an audit log entry row', async () => {
+      const entry = makeAuditEntry()
+      mockGet.mockImplementation((url: string) => {
+        if (url === '/admin/audit-log') return Promise.resolve({ data: makeAuditResponse([entry], 1) })
+        return Promise.resolve({ data: [] })
+      })
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() => expect(screen.getByText('admin@mxtac.local')).toBeInTheDocument())
+      expect(screen.getByText('create')).toBeInTheDocument()
+      expect(screen.getByText('POST /api/v1/incidents')).toBeInTheDocument()
+    })
+
+    it('does not call /admin/audit-log on initial mount (users tab is default)', async () => {
+      mockGet.mockResolvedValue({ data: [] })
+      renderPage()
+      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1))
+      expect(mockGet).toHaveBeenCalledWith('/users')
+      expect(mockGet).not.toHaveBeenCalledWith('/admin/audit-log', expect.anything())
+    })
+
+    it('calls /admin/audit-log when switching to the audit tab', async () => {
+      mockGet.mockResolvedValue({ data: [] })
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      await waitFor(() =>
+        expect(mockGet).toHaveBeenCalledWith('/admin/audit-log', expect.objectContaining({ params: expect.any(Object) })),
+      )
+    })
+
+    it('shows filter inputs on the audit tab', () => {
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      expect(screen.getByPlaceholderText('Actor')).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('Action')).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('Resource type')).toBeInTheDocument()
+    })
+
+    it('shows the time-range dropdown on the audit tab', () => {
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Audit Log' }))
+      expect(screen.getByText('Last 7d')).toBeInTheDocument()
     })
   })
 
