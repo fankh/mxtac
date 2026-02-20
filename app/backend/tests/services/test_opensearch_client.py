@@ -498,6 +498,242 @@ async def test_index_event_with_empty_event_dict() -> None:
 
 
 # ---------------------------------------------------------------------------
+# OpenSearchService.index_alert — feature 12.4 (daily rotation)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_index_alert_returns_none_when_client_not_set() -> None:
+    """index_alert() short-circuits with None when _client is not initialised."""
+    svc = OpenSearchService()
+    # _client is None by default — no mock needed
+    result = await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_index_alert_targets_mxtac_alerts_index() -> None:
+    """index_alert() writes to a mxtac-alerts-* index, not mxtac-events or mxtac-rules."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "a1"})
+    svc._client = mock_client
+
+    await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+
+    idx = mock_client.index.call_args.kwargs["index"]
+    assert idx.startswith("mxtac-alerts-")
+
+
+@pytest.mark.asyncio
+async def test_index_alert_index_name_matches_daily_pattern() -> None:
+    """The index name follows the YYYY.MM.DD daily-rollover pattern."""
+    import re
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "a1"})
+    svc._client = mock_client
+
+    await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+
+    idx = mock_client.index.call_args.kwargs["index"]
+    assert re.fullmatch(r"mxtac-alerts-\d{4}\.\d{2}\.\d{2}", idx), (
+        f"Expected mxtac-alerts-YYYY.MM.DD, got {idx!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_index_alert_index_name_uses_utc_today() -> None:
+    """The daily index suffix reflects today's UTC date, not local time."""
+    from datetime import datetime, timezone
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "a1"})
+    svc._client = mock_client
+
+    await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+
+    idx = mock_client.index.call_args.kwargs["index"]
+    today = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    assert idx == f"mxtac-alerts-{today}"
+
+
+@pytest.mark.asyncio
+async def test_index_alert_index_name_frozen_date() -> None:
+    """index_alert() uses the UTC date at call time — verifiable with frozen datetime."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "a1"})
+    svc._client = mock_client
+
+    from datetime import datetime, timezone
+
+    fixed_dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+    with patch("app.services.opensearch_client.datetime") as mock_dt:
+        mock_dt.now.return_value = fixed_dt
+        await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+
+    idx = mock_client.index.call_args.kwargs["index"]
+    assert idx == "mxtac-alerts-2026.02.20"
+
+
+@pytest.mark.asyncio
+async def test_index_alert_passes_alert_as_body() -> None:
+    """The alert dict is passed verbatim as the document body."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "abc"})
+    svc._client = mock_client
+
+    alert = {
+        "rule_name": "Suspicious PowerShell",
+        "severity_name": "High",
+        "risk_score": 85,
+    }
+    await svc.index_alert(alert)
+
+    body = mock_client.index.call_args.kwargs["body"]
+    assert body is alert
+
+
+@pytest.mark.asyncio
+async def test_index_alert_passes_refresh_true() -> None:
+    """index_alert() uses refresh='true' so alerts are immediately visible for queries."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "abc"})
+    svc._client = mock_client
+
+    await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+
+    kw = mock_client.index.call_args.kwargs
+    assert kw.get("refresh") == "true"
+
+
+@pytest.mark.asyncio
+async def test_index_alert_returns_id_from_response() -> None:
+    """index_alert() returns the _id value from the OpenSearch index response."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(
+        return_value={"_id": "alert-uuid-999", "_index": "mxtac-alerts-2026.02.20", "result": "created"}
+    )
+    svc._client = mock_client
+
+    result = await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+
+    assert result == "alert-uuid-999"
+
+
+@pytest.mark.asyncio
+async def test_index_alert_returns_none_when_response_missing_id() -> None:
+    """If the OS response dict has no _id key, index_alert() returns None."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"result": "created"})  # _id absent
+    svc._client = mock_client
+
+    result = await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_index_alert_returns_none_on_exception() -> None:
+    """index_alert() returns None when the OpenSearch client raises."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(side_effect=ConnectionError("connection refused"))
+    svc._client = mock_client
+
+    result = await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_index_alert_logs_error_on_exception(caplog: pytest.LogCaptureFixture) -> None:
+    """index_alert() logs an ERROR-level message containing the exception text."""
+    import logging
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(side_effect=Exception("cluster unavailable"))
+    svc._client = mock_client
+
+    with caplog.at_level(logging.ERROR):
+        result = await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+
+    assert result is None
+    assert "cluster unavailable" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_index_alert_with_full_alert_structure() -> None:
+    """A fully-populated enriched alert is forwarded to OpenSearch without transformation."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "full-alert-id"})
+    svc._client = mock_client
+
+    alert = {
+        "alert_id": "full-alert-id",
+        "time": "2026-02-20T12:00:00Z",
+        "rule_name": "PowerShell Encoded Command",
+        "rule_id": "sigma-psh-enc-001",
+        "severity_name": "High",
+        "severity_id": 4,
+        "risk_score": 85,
+        "mitre_attack": {"tactic": "Execution", "technique": "T1059.001"},
+        "src_endpoint": {"ip": "192.168.1.10", "hostname": "workstation-01"},
+        "actor_user": {"name": "jsmith", "domain": "CORP"},
+        "process": {"name": "powershell.exe", "cmd_line": "powershell.exe -enc JABXAG..."},
+        "matched_event_ids": ["evt-001", "evt-002"],
+        "status": "open",
+    }
+    result = await svc.index_alert(alert)
+
+    assert result == "full-alert-id"
+    call_kw = mock_client.index.call_args.kwargs
+    assert call_kw["body"] is alert
+    assert call_kw["refresh"] == "true"
+    assert call_kw["index"].startswith("mxtac-alerts-")
+
+
+@pytest.mark.asyncio
+async def test_index_alert_does_not_accept_doc_id() -> None:
+    """index_alert() does NOT forward a caller-supplied id — OpenSearch auto-generates _id."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "OS-autogenerated"})
+    svc._client = mock_client
+
+    await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+
+    kw = mock_client.index.call_args.kwargs
+    # The call must not include an explicit 'id' kwarg
+    assert "id" not in kw
+
+
+@pytest.mark.asyncio
+async def test_index_alert_does_not_write_to_events_index() -> None:
+    """index_alert() must never write to the events index — wrong index would corrupt event data."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.index = AsyncMock(return_value={"_id": "a1"})
+    svc._client = mock_client
+
+    await svc.index_alert({"rule_name": "Suspicious PowerShell"})
+
+    idx = mock_client.index.call_args.kwargs["index"]
+    assert not idx.startswith("mxtac-events-"), (
+        f"index_alert() must not write to the events index, got {idx!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # OpenSearchService.connect — feature 12.1
 # ---------------------------------------------------------------------------
 #

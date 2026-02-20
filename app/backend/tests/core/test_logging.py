@@ -106,7 +106,8 @@ class TestLogFormatConstants:
         assert "%(asctime)s" in LOG_FORMAT_DEV
 
     def test_dev_format_contains_levelname(self) -> None:
-        assert "%(levelname)s" in LOG_FORMAT_DEV
+        # The dev format uses a width specifier: %(levelname)-8s
+        assert "%(levelname)" in LOG_FORMAT_DEV
 
     def test_dev_format_contains_name(self) -> None:
         assert "%(name)s" in LOG_FORMAT_DEV
@@ -134,24 +135,43 @@ class TestConfigureLoggingDebugMode:
     def test_root_logger_level_is_debug(self) -> None:
         assert logging.getLogger().level == logging.DEBUG
 
-    def test_root_logger_has_exactly_one_handler(self) -> None:
-        assert len(logging.getLogger().handlers) == 1
+    def test_root_logger_has_exactly_one_stdout_stream_handler(self) -> None:
+        # pytest injects its own LogCaptureHandler; count only our StreamHandler
+        stdout_handlers = [
+            h for h in logging.getLogger().handlers
+            if isinstance(h, logging.StreamHandler) and h.stream is sys.stdout
+        ]
+        assert len(stdout_handlers) == 1
 
     def test_handler_is_stream_handler(self) -> None:
-        handler = logging.getLogger().handlers[0]
-        assert isinstance(handler, logging.StreamHandler)
+        stdout_handlers = [
+            h for h in logging.getLogger().handlers
+            if isinstance(h, logging.StreamHandler) and h.stream is sys.stdout
+        ]
+        assert stdout_handlers, "Expected a StreamHandler to stdout"
 
     def test_handler_streams_to_stdout(self) -> None:
-        handler = logging.getLogger().handlers[0]
-        assert handler.stream is sys.stdout
+        stdout_handlers = [
+            h for h in logging.getLogger().handlers
+            if isinstance(h, logging.StreamHandler) and h.stream is sys.stdout
+        ]
+        assert stdout_handlers[0].stream is sys.stdout
+
+    def _stdout_handler(self) -> logging.StreamHandler:
+        handlers = [
+            h for h in logging.getLogger().handlers
+            if isinstance(h, logging.StreamHandler) and h.stream is sys.stdout
+        ]
+        assert handlers, "StreamHandler to stdout not found"
+        return handlers[0]
 
     def test_formatter_uses_dev_format(self) -> None:
-        fmt = logging.getLogger().handlers[0].formatter
+        fmt = self._stdout_handler().formatter
         assert fmt is not None
         assert fmt._fmt == LOG_FORMAT_DEV
 
     def test_formatter_uses_iso8601_datefmt(self) -> None:
-        fmt = logging.getLogger().handlers[0].formatter
+        fmt = self._stdout_handler().formatter
         assert fmt is not None
         assert fmt.datefmt == "%Y-%m-%dT%H:%M:%S"
 
@@ -178,24 +198,42 @@ class TestConfigureLoggingProductionMode:
     def test_root_logger_level_is_info(self) -> None:
         assert logging.getLogger().level == logging.INFO
 
-    def test_root_logger_has_exactly_one_handler(self) -> None:
-        assert len(logging.getLogger().handlers) == 1
+    def test_root_logger_has_exactly_one_stdout_stream_handler(self) -> None:
+        stdout_handlers = [
+            h for h in logging.getLogger().handlers
+            if isinstance(h, logging.StreamHandler) and h.stream is sys.stdout
+        ]
+        assert len(stdout_handlers) == 1
 
     def test_handler_is_stream_handler(self) -> None:
-        handler = logging.getLogger().handlers[0]
-        assert isinstance(handler, logging.StreamHandler)
+        stdout_handlers = [
+            h for h in logging.getLogger().handlers
+            if isinstance(h, logging.StreamHandler) and h.stream is sys.stdout
+        ]
+        assert stdout_handlers, "Expected a StreamHandler to stdout"
 
     def test_handler_streams_to_stdout(self) -> None:
-        handler = logging.getLogger().handlers[0]
-        assert handler.stream is sys.stdout
+        stdout_handlers = [
+            h for h in logging.getLogger().handlers
+            if isinstance(h, logging.StreamHandler) and h.stream is sys.stdout
+        ]
+        assert stdout_handlers[0].stream is sys.stdout
+
+    def _stdout_handler(self) -> logging.StreamHandler:
+        handlers = [
+            h for h in logging.getLogger().handlers
+            if isinstance(h, logging.StreamHandler) and h.stream is sys.stdout
+        ]
+        assert handlers, "StreamHandler to stdout not found"
+        return handlers[0]
 
     def test_formatter_uses_json_format(self) -> None:
-        fmt = logging.getLogger().handlers[0].formatter
+        fmt = self._stdout_handler().formatter
         assert fmt is not None
         assert fmt._fmt == LOG_FORMAT_JSON
 
     def test_formatter_uses_iso8601_datefmt(self) -> None:
-        fmt = logging.getLogger().handlers[0].formatter
+        fmt = self._stdout_handler().formatter
         assert fmt is not None
         assert fmt.datefmt == "%Y-%m-%dT%H:%M:%S"
 
@@ -225,12 +263,16 @@ class TestConfigureLoggingHandlerManagement:
         assert len(root.handlers) == 1
         assert isinstance(root.handlers[0], logging.StreamHandler)
 
-    def test_calling_twice_leaves_one_handler(self) -> None:
+    def test_calling_twice_leaves_one_stdout_stream_handler(self) -> None:
         with patch(_SETTINGS_PATH, _mock_settings(debug=True)):
             configure_logging()
             configure_logging()
 
-        assert len(logging.getLogger().handlers) == 1
+        stdout_handlers = [
+            h for h in logging.getLogger().handlers
+            if isinstance(h, logging.StreamHandler) and h.stream is sys.stdout
+        ]
+        assert len(stdout_handlers) == 1
 
     def test_calling_twice_updates_format_to_latest_settings(self) -> None:
         """Second call with different settings takes effect."""
