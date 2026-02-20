@@ -11,6 +11,26 @@ interface User {
   is_active: boolean
 }
 
+interface AuditLogEntry {
+  id: string
+  timestamp: string
+  actor: string
+  action: string
+  resource_type: string
+  resource_id: string
+  details: Record<string, unknown>
+  request_ip: string | null
+  request_method: string | null
+  request_path: string | null
+}
+
+interface AuditLogResponse {
+  total: number
+  page: number
+  page_size: number
+  items: AuditLogEntry[]
+}
+
 const ROLE_COLORS: Record<string, string> = {
   admin:    'text-crit-text bg-crit-bg',
   engineer: 'text-high-text bg-high-bg',
@@ -19,17 +39,59 @@ const ROLE_COLORS: Record<string, string> = {
   viewer:   'text-text-muted bg-page',
 }
 
+const ACTION_COLORS: Record<string, string> = {
+  create: 'text-status-ok bg-status-ok/10',
+  update: 'text-blue bg-blue-light',
+  delete: 'text-crit-text bg-crit-bg',
+  login:  'text-text-muted bg-page',
+  logout: 'text-text-muted bg-page',
+}
+
 const ROLES = ['viewer', 'analyst', 'hunter', 'engineer', 'admin']
+
+const PAGE_SIZE = 50
 
 async function fetchUsers(): Promise<User[]> {
   return apiClient.get('/users').then(r => r.data)
+}
+
+async function fetchAuditLog(params: {
+  page: number
+  page_size: number
+  actor?: string
+  action?: string
+  resource_type?: string
+  time_from: string
+}): Promise<AuditLogResponse> {
+  return apiClient.get('/admin/audit-log', { params }).then(r => r.data)
 }
 
 export function AdminPage() {
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<'users' | 'audit'>('users')
 
+  // Users tab state
   const { data: users = [], isLoading } = useQuery({ queryKey: ['users'], queryFn: fetchUsers })
+
+  // Audit tab state
+  const [auditPage, setAuditPage] = useState(1)
+  const [timeRange, setTimeRange] = useState('now-7d')
+  const [auditActorFilter, setAuditActorFilter] = useState('')
+  const [auditActionFilter, setAuditActionFilter] = useState('')
+  const [auditResourceFilter, setAuditResourceFilter] = useState('')
+
+  const { data: auditLog, isLoading: auditLoading } = useQuery({
+    queryKey: ['audit-log', auditPage, timeRange, auditActorFilter, auditActionFilter, auditResourceFilter],
+    queryFn: () => fetchAuditLog({
+      page: auditPage,
+      page_size: PAGE_SIZE,
+      time_from: timeRange,
+      ...(auditActorFilter   ? { actor: auditActorFilter }           : {}),
+      ...(auditActionFilter  ? { action: auditActionFilter }         : {}),
+      ...(auditResourceFilter ? { resource_type: auditResourceFilter } : {}),
+    }),
+    enabled: activeTab === 'audit',
+  })
 
   const updateRole = useMutation({
     mutationFn: ({ id, role }: { id: string; role: string }) =>
