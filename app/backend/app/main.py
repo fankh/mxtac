@@ -9,6 +9,7 @@ from sqlalchemy import text
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from .api.v1.router import api_router
+from .core import metrics as _metrics  # noqa: F401 — registers all mxtac_ metrics
 from .core.config import settings
 from .core.database import AsyncSessionLocal
 from .core.exceptions import register_exception_handlers

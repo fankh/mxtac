@@ -21,6 +21,8 @@ dependencies = [
     "httpx==0.28.1",
     "valkey>=6.1.1",
     "opensearch-py[async]>=2.7.0",
+    "prometheus-fastapi-instrumentator>=7.1.0",
+    "prometheus-client>=0.21.0",
 ]
 
 [project.optional-dependencies]
@@ -52,7 +54,3 @@ python_version = "3.12"
 strict = true
 ignore_missing_imports = true
 
-[dependency-groups]
-dev = [
-    "prometheus-fastapi-instrumentator>=7.1.0",
-]

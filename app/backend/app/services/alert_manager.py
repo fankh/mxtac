@@ -22,30 +22,14 @@ from datetime import datetime, timezone
 from typing import Any
 
 import valkey.asyncio as aioredis
-from prometheus_client import Counter, Histogram
 
 from ..core.config import settings
 from ..core.logging import get_logger
+from ..core.metrics import alerts_deduplicated, alerts_processed, pipeline_latency
 from ..engine.sigma_engine import SigmaAlert, LEVEL_SEVERITY
 from ..pipeline.queue import MessageQueue, Topic
 
 logger = get_logger(__name__)
-
-# -- Prometheus custom metrics ------------------------------------------------
-alerts_processed = Counter(
-    "mxtac_alerts_processed_total",
-    "Total alerts processed by the alert manager pipeline",
-    ["severity"],
-)
-alerts_deduplicated = Counter(
-    "mxtac_alerts_deduplicated_total",
-    "Total alerts dropped by deduplication",
-)
-pipeline_latency = Histogram(
-    "mxtac_pipeline_latency_seconds",
-    "End-to-end alert pipeline processing latency in seconds",
-    buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
-)
 
 # Score weights
 W_SEVERITY  = 0.60
