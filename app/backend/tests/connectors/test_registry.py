@@ -1,8 +1,7 @@
 """
 Tests for connector registry.
 
-Feature 20.1 — Pipeline runs without UI or user action:
-  Registry — DB-driven connector instantiation.
+Feature 14.8 — DB persistence — connectors from DB on startup.
 
 Coverage:
   build_connector():
@@ -19,11 +18,16 @@ Coverage:
     - Zeek: loads initial positions from state file via _load_zeek_positions
     - Zeek: _file_positions empty dict when state file missing (initial_positions=None)
 
-  start_connectors_from_db():
+  start_connectors_from_db() — mock-based:
     - returns empty list when no enabled connectors
     - returns one connector per DB row with a valid type
     - skips rows when build_connector returns None (unknown type)
     - DB query filters by enabled=True
+
+  start_connectors_from_db() — DB integration (real SQLite session):
+    - only enabled connectors are loaded; disabled ones are excluded
+    - returns empty list when only disabled connectors exist in DB
+    - all enabled connectors across types are returned
 
   Zeek state file helpers:
     - _zeek_state_file returns path named zeek_offsets_{name}.json
@@ -40,11 +44,13 @@ from __future__ import annotations
 
 import json
 import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors.registry import (
     _load_zeek_positions,
@@ -352,3 +358,102 @@ class TestZeekStateFileHelpers:
             _save_zeek_positions(state_file, positions)
             loaded = _load_zeek_positions(state_file)
             assert loaded == positions
+
+
+# ── DB integration: start_connectors_from_db with real SQLite session ─────────
+
+
+def _wazuh_config() -> str:
+    return json.dumps({"url": "https://wazuh.test:55000", "username": "admin", "password": "secret"})
+
+
+class TestStartConnectorsFromDbIntegration:
+    """
+    Feature 14.8 — DB persistence — connectors from DB on startup.
+
+    These tests exercise start_connectors_from_db() against a real in-memory
+    SQLite session so that the WHERE enabled=True filter in the SQL query is
+    actually executed, not bypassed by mocks.
+    """
+
+    async def test_only_enabled_connectors_are_loaded(self, db_session: AsyncSession) -> None:
+        """Disabled connectors must be excluded; the SQL WHERE enabled=True filter must work."""
+        from app.models.connector import Connector
+
+        enabled_row = Connector(
+            id=str(uuid.uuid4()),
+            name="wazuh-enabled",
+            connector_type="wazuh",
+            config_json=_wazuh_config(),
+            enabled=True,
+        )
+        disabled_row = Connector(
+            id=str(uuid.uuid4()),
+            name="zeek-disabled",
+            connector_type="zeek",
+            config_json=json.dumps({"log_dir": "/opt/zeek/logs/current"}),
+            enabled=False,
+        )
+        db_session.add_all([enabled_row, disabled_row])
+        await db_session.flush()
+
+        with patch("app.connectors.registry._load_zeek_positions", return_value=None):
+            connectors = await start_connectors_from_db(db_session, InMemoryQueue())
+
+        assert len(connectors) == 1
+        assert connectors[0].config.name == "wazuh-enabled"
+
+    async def test_returns_empty_when_only_disabled_connectors_in_db(
+        self, db_session: AsyncSession
+    ) -> None:
+        """When all DB rows have enabled=False, no connectors are instantiated."""
+        from app.models.connector import Connector
+
+        disabled = Connector(
+            id=str(uuid.uuid4()),
+            name="suricata-off",
+            connector_type="suricata",
+            config_json=json.dumps({"eve_file": "/var/log/suricata/eve.json"}),
+            enabled=False,
+        )
+        db_session.add(disabled)
+        await db_session.flush()
+
+        connectors = await start_connectors_from_db(db_session, InMemoryQueue())
+
+        assert connectors == []
+
+    async def test_all_enabled_types_are_loaded(self, db_session: AsyncSession) -> None:
+        """All enabled connectors across different types are returned."""
+        from app.models.connector import Connector
+
+        wazuh = Connector(
+            id=str(uuid.uuid4()),
+            name="wazuh-main",
+            connector_type="wazuh",
+            config_json=_wazuh_config(),
+            enabled=True,
+        )
+        suricata = Connector(
+            id=str(uuid.uuid4()),
+            name="suricata-main",
+            connector_type="suricata",
+            config_json=json.dumps({"eve_file": "/var/log/suricata/eve.json"}),
+            enabled=True,
+        )
+        disabled_extra = Connector(
+            id=str(uuid.uuid4()),
+            name="zeek-ignored",
+            connector_type="zeek",
+            config_json=json.dumps({"log_dir": "/opt/zeek/logs/current"}),
+            enabled=False,
+        )
+        db_session.add_all([wazuh, suricata, disabled_extra])
+        await db_session.flush()
+
+        with patch("app.connectors.registry._load_zeek_positions", return_value=None):
+            connectors = await start_connectors_from_db(db_session, InMemoryQueue())
+
+        assert len(connectors) == 2
+        names = {c.config.name for c in connectors}
+        assert names == {"wazuh-main", "suricata-main"}
