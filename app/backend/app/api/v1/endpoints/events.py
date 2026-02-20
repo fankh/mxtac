@@ -1,23 +1,34 @@
-"""Event search and retrieval endpoints (backed by OpenSearch)."""
+"""Event search and retrieval endpoints — backed by PostgreSQL (EventRepo).
+
+PostgreSQL is the primary store so the platform works without a running
+OpenSearch cluster.  Full OpenSearch integration is tracked in feature 11.5.
+"""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from ....core.database import get_db
 from ....core.rbac import require_permission
-from ....services.opensearch_client import get_opensearch
+from ....models.event import Event
+from ....repositories.event_repo import EventRepo
 
 router = APIRouter(prefix="/events", tags=["events"])
 
+
 # ── Schemas ──────────────────────────────────────────────────────────────────
+
 
 class EventFilter(BaseModel):
     field: str
-    operator: str   # eq, ne, gt, lt, gte, lte, contains
+    operator: str  # eq, ne, gt, lt, gte, lte, contains
     value: Any
+
 
 class SearchRequest(BaseModel):
     query: str | None = None
@@ -27,96 +38,83 @@ class SearchRequest(BaseModel):
     size: int = 100
     from_: int = 0
 
+
 class AggregationRequest(BaseModel):
     field: str
-    agg_type: str = "terms"   # terms, date_histogram, stats
+    agg_type: str = "terms"  # terms, date_histogram, stats
     size: int = 10
     time_from: str = "now-7d"
     time_to: str = "now"
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _build_os_filter(f: EventFilter) -> dict:
-    op_map = {
-        "eq":       lambda: {"term":  {f.field: f.value}},
-        "ne":       lambda: {"bool": {"must_not": [{"term": {f.field: f.value}}]}},
-        "contains": lambda: {"match": {f.field: f.value}},
-        "gt":       lambda: {"range": {f.field: {"gt": f.value}}},
-        "lt":       lambda: {"range": {f.field: {"lt": f.value}}},
-        "gte":      lambda: {"range": {f.field: {"gte": f.value}}},
-        "lte":      lambda: {"range": {f.field: {"lte": f.value}}},
+# ── Serialization ─────────────────────────────────────────────────────────────
+
+
+def _event_to_dict(e: Event) -> dict:
+    """Serialize an Event ORM object to a JSON-safe dict."""
+    base: dict[str, Any] = {
+        "id":           e.id,
+        "event_uid":    e.event_uid,
+        "time":         e.time.isoformat() if isinstance(e.time, datetime) else e.time,
+        "class_name":   e.class_name,
+        "class_uid":    e.class_uid,
+        "severity_id":  e.severity_id,
+        "src_ip":       e.src_ip,
+        "dst_ip":       e.dst_ip,
+        "hostname":     e.hostname,
+        "username":     e.username,
+        "process_hash": e.process_hash,
+        "source":       e.source,
+        "summary":      e.summary,
     }
-    builder = op_map.get(f.operator)
-    return builder() if builder else {"term": {f.field: f.value}}
+    # Merge the full raw payload on top so callers get all OCSF fields
+    if e.raw:
+        base.update(e.raw)
+    return base
+
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
 @router.post("/search")
-async def search_events(body: SearchRequest, _: dict = Depends(require_permission("events:search"))):
-    """Full-text + filtered event search across all indexed data sources."""
-    os_filters = [_build_os_filter(f) for f in body.filters]
-    result = await get_opensearch().search_events(
+async def search_events(
+    body: SearchRequest,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("events:search")),
+):
+    """Full-text + filtered event search with time range — backed by PostgreSQL."""
+    items, total = await EventRepo.search(
+        db,
         query=body.query,
-        filters=os_filters,
+        filters=body.filters,
         time_from=body.time_from,
         time_to=body.time_to,
         size=body.size,
         from_=body.from_,
     )
-    hits = result.get("hits", {})
     return {
-        "total":  hits.get("total", {}).get("value", 0),
-        "items":  [h.get("_source", {}) for h in hits.get("hits", [])],
-        "from_":  body.from_,
-        "size":   body.size,
+        "total": total,
+        "items": [_event_to_dict(e) for e in items],
+        "from_": body.from_,
+        "size":  body.size,
     }
-
-
-@router.get("/{event_id}")
-async def get_event(event_id: str, _: dict = Depends(require_permission("events:search"))):
-    """Retrieve a single event by ID."""
-    event = await get_opensearch().get_event(event_id)
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    return event
 
 
 @router.post("/aggregate")
-async def aggregate_events(body: AggregationRequest, _: dict = Depends(require_permission("events:search"))):
-    """Aggregate events by a field (terms, date_histogram)."""
-    os = get_opensearch()
-    if os._client is None:
-        # Return mock aggregation when OpenSearch not available
-        return {
-            "field": body.field,
-            "buckets": [
-                {"key": "critical", "count": 23},
-                {"key": "high", "count": 187},
-                {"key": "medium", "count": 512},
-                {"key": "low", "count": 1204},
-            ],
-        }
-
-    agg_body = {
-        "query": {"range": {"time": {"gte": body.time_from, "lte": body.time_to}}},
-        "aggs": {
-            "result": {
-                body.agg_type: {"field": body.field, "size": body.size}
-                if body.agg_type == "terms"
-                else {"field": body.field, "calendar_interval": "day"}
-            }
-        },
-        "size": 0,
-    }
-    try:
-        resp = await os._client.search(index="mxtac-events-*", body=agg_body)
-        buckets = resp.get("aggregations", {}).get("result", {}).get("buckets", [])
-        return {
-            "field":   body.field,
-            "buckets": [{"key": b["key"], "count": b["doc_count"]} for b in buckets],
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+async def aggregate_events(
+    body: AggregationRequest,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("events:search")),
+):
+    """Aggregate events by a field (terms aggregation)."""
+    buckets = await EventRepo.count_by_field(
+        db,
+        field=body.field,
+        time_from=body.time_from,
+        time_to=body.time_to,
+        limit=body.size,
+    )
+    return {"field": body.field, "buckets": buckets}
 
 
 @router.get("/entity/{entity_type}/{entity_value}")
@@ -124,27 +122,33 @@ async def entity_timeline(
     entity_type: str,
     entity_value: str,
     time_from: str = "now-7d",
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("events:search")),
 ):
     """Return all events involving a specific entity (IP, host, user, hash)."""
-    field_map = {
-        "ip":   ["src_endpoint.ip", "dst_endpoint.ip"],
-        "host": ["dst_endpoint.hostname"],
-        "user": ["actor_user.name"],
-        "hash": ["process.hash_sha256"],
-    }
-    fields = field_map.get(entity_type, ["dst_endpoint.hostname"])
-    should = [{"term": {f: entity_value}} for f in fields]
-
-    result = await get_opensearch().search_events(
-        filters=[{"bool": {"should": should, "minimum_should_match": 1}}],
+    events, total = await EventRepo.entity_events(
+        db,
+        entity_type=entity_type,
+        entity_value=entity_value,
         time_from=time_from,
         size=200,
     )
-    hits = result.get("hits", {})
     return {
         "entity_type":  entity_type,
         "entity_value": entity_value,
-        "total":        hits.get("total", {}).get("value", 0),
-        "events":       [h.get("_source", {}) for h in hits.get("hits", [])],
+        "total":        total,
+        "events":       [_event_to_dict(e) for e in events],
     }
+
+
+@router.get("/{event_id}")
+async def get_event(
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("events:search")),
+):
+    """Retrieve a single event by its UUID primary key."""
+    event = await EventRepo.get(db, event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return _event_to_dict(event)
