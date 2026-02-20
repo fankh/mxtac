@@ -1,10 +1,12 @@
 import logging
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
 
 _DEV_SECRET = "dev-secret-change-in-production"
+_DEFAULT_PG_URL = "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"
 
 
 class Settings(BaseSettings):
@@ -19,7 +21,23 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
 
     # Database
-    database_url: str = "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"
+    database_url: str = _DEFAULT_PG_URL
+
+    # SQLite single-binary mode — no external DB required (feature 20.8)
+    # When True and DATABASE_URL is not explicitly overridden, the app uses a
+    # local SQLite file instead of PostgreSQL.  Valkey and OpenSearch become
+    # optional: the /ready probe only requires the DB check to pass.
+    sqlite_mode: bool = False
+    # Path for the SQLite database file (used only when sqlite_mode=True and
+    # DATABASE_URL has not been explicitly set to a sqlite:// URL).
+    sqlite_path: str = "./mxtac.db"
+
+    @model_validator(mode="after")
+    def _apply_sqlite_mode(self) -> "Settings":
+        """Auto-configure SQLite URL when sqlite_mode is enabled."""
+        if self.sqlite_mode and not self.database_url.startswith("sqlite"):
+            self.database_url = f"sqlite+aiosqlite:///{self.sqlite_path}"
+        return self
 
     # Valkey (Redis-compatible)
     valkey_url: str = "redis://localhost:6379/0"

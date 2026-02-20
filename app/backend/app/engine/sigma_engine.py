@@ -81,26 +81,265 @@ class SigmaAlert:
 
 # ── Condition evaluator ──────────────────────────────────────────────────────
 
+
+def _nested_get(event: dict, parts: list[str]) -> Any:
+    """Fast dot-notation field lookup (e.g. ['process', 'cmd_line'])."""
+    val: Any = event
+    for part in parts:
+        if not isinstance(val, dict):
+            return None
+        val = val.get(part)
+    return val
+
+
 class _Condition:
     """
     Evaluates a single Sigma detection block against a flat event dict.
     Supports: keywords, field modifiers (contains, startswith, endswith, re)
+
+    Detection criteria are pre-compiled at construction time into fast
+    callables so that repeated ``matches()`` calls incur no parsing overhead.
     """
 
     def __init__(self, detection: dict[str, Any]) -> None:
         self._detection = detection
         self._condition = detection.get("condition", "selection")
+        # Pre-compile each named selection into a fast callable (event → bool)
+        self._compiled: dict[str, Any] = {
+            name: self._precompile_criterion(criterion)
+            for name, criterion in detection.items()
+            if name != "condition"
+        }
 
     def matches(self, event: dict[str, Any]) -> bool:
         """Return True if the detection condition matches the event."""
-        named_results: dict[str, bool] = {}
+        compiled = self._compiled
+        condition = self._condition
 
-        for name, criterion in self._detection.items():
-            if name == "condition":
-                continue
-            named_results[name] = self._eval_selection(criterion, event)
+        # Fast path: single selection whose name equals the condition string.
+        # Avoids dict allocation and _eval_condition overhead for the common case.
+        if condition in compiled and len(compiled) == 1:
+            return compiled[condition](event)
 
-        return self._eval_condition(self._condition, named_results)
+        named_results: dict[str, bool] = {
+            name: fn(event) for name, fn in compiled.items()
+        }
+        return self._eval_condition(condition, named_results)
+
+    # ── Pre-compilation ───────────────────────────────────────────────────────
+
+    def _precompile_criterion(self, criterion: Any):
+        """Return a fast callable (event dict → bool) for a detection criterion."""
+        if isinstance(criterion, list):
+            keywords = [str(kw).lower() for kw in criterion]
+            flat = self._flatten_values
+
+            def _kw_fn(evt: dict, _kws=keywords, _flat=flat) -> bool:
+                return any(kw in str(v).lower() for v in _flat(evt) for kw in _kws)
+
+            return _kw_fn
+
+        if isinstance(criterion, dict):
+            field_fns = [
+                self._precompile_field(fe, vals)
+                for fe, vals in criterion.items()
+            ]
+            if len(field_fns) == 1:
+                return field_fns[0]
+
+            def _all_fields(evt: dict, _fns=field_fns) -> bool:
+                return all(fn(evt) for fn in _fns)
+
+            return _all_fields
+
+        kw = str(criterion).lower()
+        flat = self._flatten_values
+
+        def _scalar_fn(evt: dict, _kw=kw, _flat=flat) -> bool:
+            return any(_kw in str(v).lower() for v in _flat(evt))
+
+        return _scalar_fn
+
+    def _precompile_field(self, field_expr: str, values: Any):  # noqa: C901
+        """Return a fast callable for a single field|modifier expression."""
+        parts = field_expr.split("|")
+        field_key = parts[0]
+        field_parts = field_key.split(".")
+        modifiers = parts[1:]
+        all_mod = "all" in modifiers
+        value_list: list = values if isinstance(values, list) else [values]
+
+        # ── Special modifiers that require original (non-lowercased) values ──
+
+        if "re" in modifiers:
+            compiled_pats = []
+            for v in value_list:
+                try:
+                    compiled_pats.append(re.compile(str(v), re.IGNORECASE))
+                except re.error:
+                    compiled_pats.append(None)
+
+            def _re_fn(evt: dict, _fp=field_parts, _pats=compiled_pats, _all=all_mod) -> bool:
+                fv = _nested_get(evt, _fp)
+                if fv is None:
+                    return False
+                fs = str(fv).lower()
+                if _all:
+                    return all(p is not None and bool(p.search(fs)) for p in _pats)
+                return any(p is not None and bool(p.search(fs)) for p in _pats)
+
+            return _re_fn
+
+        if "base64" in modifiers:
+            import base64 as _b64
+            decoded: list[str] = []
+            for v in value_list:
+                try:
+                    decoded.append(_b64.b64decode(str(v)).decode(errors="replace").lower())
+                except Exception:
+                    decoded.append("")
+
+            def _b64_fn(evt: dict, _fp=field_parts, _dvs=decoded, _all=all_mod) -> bool:
+                fv = _nested_get(evt, _fp)
+                if fv is None:
+                    return False
+                fs = str(fv).lower()
+                if _all:
+                    return all(dv in fs for dv in _dvs)
+                return any(dv in fs for dv in _dvs)
+
+            return _b64_fn
+
+        if "cidr" in modifiers:
+            import ipaddress
+            networks: list = []
+            for v in value_list:
+                try:
+                    networks.append(ipaddress.ip_network(str(v), strict=False))
+                except Exception:
+                    networks.append(None)
+
+            def _cidr_fn(evt: dict, _fp=field_parts, _nets=networks, _all=all_mod) -> bool:
+                fv = _nested_get(evt, _fp)
+                if fv is None:
+                    return False
+                try:
+                    import ipaddress as _ip
+                    ip = _ip.ip_address(str(fv))
+                    if _all:
+                        return all(n is not None and ip in n for n in _nets)
+                    return any(n is not None and ip in n for n in _nets)
+                except Exception:
+                    return False
+
+            return _cidr_fn
+
+        # ── Standard modifiers: pre-lowercase values once ────────────────────
+
+        prep = [str(v).lower() for v in value_list]
+
+        # Specialise for the most common pattern: single-key field, single value
+        single_key = len(field_parts) == 1
+        single_val = not all_mod and len(prep) == 1
+
+        if "contains" in modifiers:
+            if single_key and single_val:
+                k, v0 = field_parts[0], prep[0]
+
+                def _c1(evt: dict, _k=k, _v=v0) -> bool:
+                    fv = evt.get(_k)
+                    if fv is None:
+                        return False
+                    return _v in str(fv).lower()
+
+                return _c1
+            if all_mod:
+                def _ca(evt: dict, _fp=field_parts, _pvs=prep) -> bool:
+                    fv = _nested_get(evt, _fp)
+                    if fv is None:
+                        return False
+                    fs = str(fv).lower()
+                    return all(vs in fs for vs in _pvs)
+
+                return _ca
+
+            def _co(evt: dict, _fp=field_parts, _pvs=prep) -> bool:
+                fv = _nested_get(evt, _fp)
+                if fv is None:
+                    return False
+                fs = str(fv).lower()
+                return any(vs in fs for vs in _pvs)
+
+            return _co
+
+        if "startswith" in modifiers:
+            if single_key and single_val:
+                k, v0 = field_parts[0], prep[0]
+
+                def _sw1(evt: dict, _k=k, _v=v0) -> bool:
+                    fv = evt.get(_k)
+                    if fv is None:
+                        return False
+                    return str(fv).lower().startswith(_v)
+
+                return _sw1
+
+            def _sw(evt: dict, _fp=field_parts, _pvs=prep, _all=all_mod) -> bool:
+                fv = _nested_get(evt, _fp)
+                if fv is None:
+                    return False
+                fs = str(fv).lower()
+                if _all:
+                    return all(fs.startswith(vs) for vs in _pvs)
+                return any(fs.startswith(vs) for vs in _pvs)
+
+            return _sw
+
+        if "endswith" in modifiers:
+            if single_key and single_val:
+                k, v0 = field_parts[0], prep[0]
+
+                def _ew1(evt: dict, _k=k, _v=v0) -> bool:
+                    fv = evt.get(_k)
+                    if fv is None:
+                        return False
+                    return str(fv).lower().endswith(_v)
+
+                return _ew1
+
+            def _ew(evt: dict, _fp=field_parts, _pvs=prep, _all=all_mod) -> bool:
+                fv = _nested_get(evt, _fp)
+                if fv is None:
+                    return False
+                fs = str(fv).lower()
+                if _all:
+                    return all(fs.endswith(vs) for vs in _pvs)
+                return any(fs.endswith(vs) for vs in _pvs)
+
+            return _ew
+
+        # Default: exact match
+        if single_key and single_val:
+            k, v0 = field_parts[0], prep[0]
+
+            def _ex1(evt: dict, _k=k, _v=v0) -> bool:
+                fv = evt.get(_k)
+                if fv is None:
+                    return False
+                return str(fv).lower() == _v
+
+            return _ex1
+
+        def _ex(evt: dict, _fp=field_parts, _pvs=prep, _all=all_mod) -> bool:
+            fv = _nested_get(evt, _fp)
+            if fv is None:
+                return False
+            fs = str(fv).lower()
+            if _all:
+                return all(fs == vs for vs in _pvs)
+            return any(fs == vs for vs in _pvs)
+
+        return _ex
 
     def _eval_selection(self, criterion: Any, event: dict[str, Any]) -> bool:
         """Evaluate one named selection block."""

@@ -15,7 +15,7 @@ Coverage:
   /ready (feature 19.9 — HAProxy health check):
   - Returns status field ("ready" or "degraded") and checks dict
   - Status code 200 when all services healthy, 503 when any degraded
-  - Each service check key is present (postgres, valkey, opensearch)
+  - Each service check key is present (db, valkey, opensearch)
   - No authentication required
   - Content-Type is application/json
   - Status code matches the status field value
@@ -24,9 +24,16 @@ Coverage:
   - Error check values start with "error:" and include the message
   - Successful check value is exactly "ok"
   - Timeout on any check reports "error: timeout" and causes 503
-  - Postgres timeout does not block valkey/opensearch checks
-  - Valkey timeout does not block postgres/opensearch checks
-  - OpenSearch timeout does not block postgres/valkey checks
+  - db timeout does not block valkey/opensearch checks
+  - Valkey timeout does not block db/opensearch checks
+  - OpenSearch timeout does not block db/valkey checks
+
+  /ready — SQLite single-binary mode (feature 20.8):
+  - In sqlite_mode, only db check is required for 200
+  - In sqlite_mode, Valkey failure does not cause 503
+  - In sqlite_mode, OpenSearch failure does not cause 503
+  - In sqlite_mode, db failure still causes 503
+  - All three service checks are still reported in the checks dict
 """
 
 from __future__ import annotations
@@ -52,7 +59,7 @@ READY_URL = "/ready"
 # ---------------------------------------------------------------------------
 
 
-def _mock_pg_factory(*, fail: bool = False, error: str = "postgres error") -> MagicMock:
+def _mock_db_factory(*, fail: bool = False, error: str = "db error") -> MagicMock:
     """Return a mock AsyncSessionLocal factory.
 
     The /ready handler calls ``async with AsyncSessionLocal() as session:``.
@@ -227,7 +234,7 @@ async def test_ready_has_checks_dict(client: AsyncClient) -> None:
     assert "checks" in data
     assert isinstance(data["checks"], dict)
     checks = data["checks"]
-    assert "postgres" in checks
+    assert "db" in checks
     assert "valkey" in checks
     assert "opensearch" in checks
 
@@ -273,10 +280,10 @@ async def test_ready_check_values_are_strings(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_ready_all_services_ok_returns_200(client: AsyncClient) -> None:
     """/ready returns 200 with status='ready' when all service mocks succeed."""
-    pg_factory = _mock_pg_factory()
+    db_factory = _mock_db_factory()
     vk_client = _mock_valkey_client()
 
-    with patch("app.main.AsyncSessionLocal", pg_factory), \
+    with patch("app.main.AsyncSessionLocal", db_factory), \
          patch("valkey.asyncio.from_url", return_value=vk_client), \
          _patch_opensearch():
         resp = await client.get(READY_URL)
@@ -284,7 +291,7 @@ async def test_ready_all_services_ok_returns_200(client: AsyncClient) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ready"
-    assert data["checks"]["postgres"] == "ok"
+    assert data["checks"]["db"] == "ok"
     assert data["checks"]["valkey"] == "ok"
     assert data["checks"]["opensearch"] == "ok"
 
@@ -295,20 +302,22 @@ async def test_ready_all_services_ok_returns_200(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ready_postgres_failure_returns_503(client: AsyncClient) -> None:
-    """/ready returns 503 + 'degraded' when the PostgreSQL check fails."""
-    pg_factory = _mock_pg_factory(fail=True, error="connection refused")
+async def test_ready_db_failure_returns_503(client: AsyncClient) -> None:
+    """/ready returns 503 + 'degraded' when the DB check fails."""
+    db_factory = _mock_db_factory(fail=True, error="connection refused")
     vk_client = _mock_valkey_client()
 
-    with patch("app.main.AsyncSessionLocal", pg_factory), \
+    with patch("app.main.AsyncSessionLocal", db_factory), \
          patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "sqlite_mode", False), \
+         patch.object(settings, "database_url", "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"), \
          _patch_opensearch():
         resp = await client.get(READY_URL)
 
     assert resp.status_code == 503
     data = resp.json()
     assert data["status"] == "degraded"
-    assert data["checks"]["postgres"].startswith("error:")
+    assert data["checks"]["db"].startswith("error:")
     assert data["checks"]["valkey"] == "ok"
     assert data["checks"]["opensearch"] == "ok"
 
@@ -316,18 +325,20 @@ async def test_ready_postgres_failure_returns_503(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_ready_valkey_failure_returns_503(client: AsyncClient) -> None:
     """/ready returns 503 + 'degraded' when the Valkey check fails."""
-    pg_factory = _mock_pg_factory()
+    db_factory = _mock_db_factory()
     vk_client = _mock_valkey_client(fail=True, error="ECONNREFUSED")
 
-    with patch("app.main.AsyncSessionLocal", pg_factory), \
+    with patch("app.main.AsyncSessionLocal", db_factory), \
          patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "sqlite_mode", False), \
+         patch.object(settings, "database_url", "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"), \
          _patch_opensearch():
         resp = await client.get(READY_URL)
 
     assert resp.status_code == 503
     data = resp.json()
     assert data["status"] == "degraded"
-    assert data["checks"]["postgres"] == "ok"
+    assert data["checks"]["db"] == "ok"
     assert data["checks"]["valkey"].startswith("error:")
     assert data["checks"]["opensearch"] == "ok"
 
@@ -335,18 +346,20 @@ async def test_ready_valkey_failure_returns_503(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_ready_opensearch_failure_returns_503(client: AsyncClient) -> None:
     """/ready returns 503 + 'degraded' when the OpenSearch check fails."""
-    pg_factory = _mock_pg_factory()
+    db_factory = _mock_db_factory()
     vk_client = _mock_valkey_client()
 
-    with patch("app.main.AsyncSessionLocal", pg_factory), \
+    with patch("app.main.AsyncSessionLocal", db_factory), \
          patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "sqlite_mode", False), \
+         patch.object(settings, "database_url", "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"), \
          _patch_opensearch(fail=True, error="timeout"):
         resp = await client.get(READY_URL)
 
     assert resp.status_code == 503
     data = resp.json()
     assert data["status"] == "degraded"
-    assert data["checks"]["postgres"] == "ok"
+    assert data["checks"]["db"] == "ok"
     assert data["checks"]["valkey"] == "ok"
     assert data["checks"]["opensearch"].startswith("error:")
 
@@ -359,18 +372,20 @@ async def test_ready_opensearch_failure_returns_503(client: AsyncClient) -> None
 @pytest.mark.asyncio
 async def test_ready_all_services_fail_returns_503(client: AsyncClient) -> None:
     """/ready returns 503 with all check values as errors when all services fail."""
-    pg_factory = _mock_pg_factory(fail=True, error="pg down")
+    db_factory = _mock_db_factory(fail=True, error="db down")
     vk_client = _mock_valkey_client(fail=True, error="vk down")
 
-    with patch("app.main.AsyncSessionLocal", pg_factory), \
+    with patch("app.main.AsyncSessionLocal", db_factory), \
          patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "sqlite_mode", False), \
+         patch.object(settings, "database_url", "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"), \
          _patch_opensearch(fail=True, error="os down"):
         resp = await client.get(READY_URL)
 
     assert resp.status_code == 503
     data = resp.json()
     assert data["status"] == "degraded"
-    for key in ("postgres", "valkey", "opensearch"):
+    for key in ("db", "valkey", "opensearch"):
         assert data["checks"][key].startswith("error:"), (
             f"Expected checks[{key!r}] to start with 'error:', got {data['checks'][key]!r}"
         )
@@ -385,29 +400,29 @@ async def test_ready_all_services_fail_returns_503(client: AsyncClient) -> None:
 async def test_ready_error_value_includes_exception_message(client: AsyncClient) -> None:
     """Error check values include the original exception message."""
     error_msg = "unique-sentinel-error-xyz"
-    pg_factory = _mock_pg_factory(fail=True, error=error_msg)
+    db_factory = _mock_db_factory(fail=True, error=error_msg)
     vk_client = _mock_valkey_client()
 
-    with patch("app.main.AsyncSessionLocal", pg_factory), \
+    with patch("app.main.AsyncSessionLocal", db_factory), \
          patch("valkey.asyncio.from_url", return_value=vk_client), \
          _patch_opensearch():
         resp = await client.get(READY_URL)
 
-    assert error_msg in resp.json()["checks"]["postgres"]
+    assert error_msg in resp.json()["checks"]["db"]
 
 
 @pytest.mark.asyncio
 async def test_ready_error_format_is_error_colon_prefix(client: AsyncClient) -> None:
     """Error check values follow the 'error: <message>' format exactly."""
-    pg_factory = _mock_pg_factory(fail=True, error="something went wrong")
+    db_factory = _mock_db_factory(fail=True, error="something went wrong")
     vk_client = _mock_valkey_client()
 
-    with patch("app.main.AsyncSessionLocal", pg_factory), \
+    with patch("app.main.AsyncSessionLocal", db_factory), \
          patch("valkey.asyncio.from_url", return_value=vk_client), \
          _patch_opensearch():
         resp = await client.get(READY_URL)
 
-    assert resp.json()["checks"]["postgres"] == "error: something went wrong"
+    assert resp.json()["checks"]["db"] == "error: something went wrong"
 
 
 # ---------------------------------------------------------------------------
@@ -415,7 +430,7 @@ async def test_ready_error_format_is_error_colon_prefix(client: AsyncClient) -> 
 # ---------------------------------------------------------------------------
 
 
-def _make_slow_pg_factory(delay: float = 10.0) -> MagicMock:
+def _make_slow_db_factory(delay: float = 10.0) -> MagicMock:
     """Return a mock AsyncSessionLocal factory whose __aenter__ hangs for ``delay`` seconds.
 
     We configure __aenter__ via AsyncMock(side_effect=...) on an AsyncMock instance.
@@ -461,12 +476,12 @@ def _patch_slow_opensearch(delay: float = 10.0) -> Generator[MagicMock, None, No
 
 
 @pytest.mark.asyncio
-async def test_ready_postgres_timeout_returns_503(client: AsyncClient) -> None:
-    """/ready returns 503 with 'error: timeout' when the Postgres check times out."""
-    pg_factory = _make_slow_pg_factory()
+async def test_ready_db_timeout_returns_503(client: AsyncClient) -> None:
+    """/ready returns 503 with 'error: timeout' when the DB check times out."""
+    db_factory = _make_slow_db_factory()
     vk_client = _mock_valkey_client()
 
-    with patch("app.main.AsyncSessionLocal", pg_factory), \
+    with patch("app.main.AsyncSessionLocal", db_factory), \
          patch("valkey.asyncio.from_url", return_value=vk_client), \
          patch("app.main._READY_CHECK_TIMEOUT", 0.05), \
          _patch_opensearch():
@@ -475,7 +490,7 @@ async def test_ready_postgres_timeout_returns_503(client: AsyncClient) -> None:
     assert resp.status_code == 503
     data = resp.json()
     assert data["status"] == "degraded"
-    assert data["checks"]["postgres"] == "error: timeout"
+    assert data["checks"]["db"] == "error: timeout"
     assert data["checks"]["valkey"] == "ok"
     assert data["checks"]["opensearch"] == "ok"
 
@@ -483,19 +498,21 @@ async def test_ready_postgres_timeout_returns_503(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_ready_valkey_timeout_returns_503(client: AsyncClient) -> None:
     """/ready returns 503 with 'error: timeout' when the Valkey check times out."""
-    pg_factory = _mock_pg_factory()
+    db_factory = _mock_db_factory()
     vk_client = _make_slow_valkey_client()
 
-    with patch("app.main.AsyncSessionLocal", pg_factory), \
+    with patch("app.main.AsyncSessionLocal", db_factory), \
          patch("valkey.asyncio.from_url", return_value=vk_client), \
          patch("app.main._READY_CHECK_TIMEOUT", 0.05), \
+         patch.object(settings, "sqlite_mode", False), \
+         patch.object(settings, "database_url", "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"), \
          _patch_opensearch():
         resp = await client.get(READY_URL)
 
     assert resp.status_code == 503
     data = resp.json()
     assert data["status"] == "degraded"
-    assert data["checks"]["postgres"] == "ok"
+    assert data["checks"]["db"] == "ok"
     assert data["checks"]["valkey"] == "error: timeout"
     assert data["checks"]["opensearch"] == "ok"
 
@@ -503,19 +520,21 @@ async def test_ready_valkey_timeout_returns_503(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_ready_opensearch_timeout_returns_503(client: AsyncClient) -> None:
     """/ready returns 503 with 'error: timeout' when the OpenSearch check times out."""
-    pg_factory = _mock_pg_factory()
+    db_factory = _mock_db_factory()
     vk_client = _mock_valkey_client()
 
-    with patch("app.main.AsyncSessionLocal", pg_factory), \
+    with patch("app.main.AsyncSessionLocal", db_factory), \
          patch("valkey.asyncio.from_url", return_value=vk_client), \
          patch("app.main._READY_CHECK_TIMEOUT", 0.05), \
+         patch.object(settings, "sqlite_mode", False), \
+         patch.object(settings, "database_url", "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"), \
          _patch_slow_opensearch():
         resp = await client.get(READY_URL)
 
     assert resp.status_code == 503
     data = resp.json()
     assert data["status"] == "degraded"
-    assert data["checks"]["postgres"] == "ok"
+    assert data["checks"]["db"] == "ok"
     assert data["checks"]["valkey"] == "ok"
     assert data["checks"]["opensearch"] == "error: timeout"
 
@@ -523,13 +542,104 @@ async def test_ready_opensearch_timeout_returns_503(client: AsyncClient) -> None
 @pytest.mark.asyncio
 async def test_ready_timeout_value_is_error_timeout_literal(client: AsyncClient) -> None:
     """Timeout check value is the exact string 'error: timeout'."""
-    pg_factory = _make_slow_pg_factory()
+    db_factory = _make_slow_db_factory()
     vk_client = _mock_valkey_client()
 
-    with patch("app.main.AsyncSessionLocal", pg_factory), \
+    with patch("app.main.AsyncSessionLocal", db_factory), \
          patch("valkey.asyncio.from_url", return_value=vk_client), \
          patch("app.main._READY_CHECK_TIMEOUT", 0.05), \
          _patch_opensearch():
         resp = await client.get(READY_URL)
 
-    assert resp.json()["checks"]["postgres"] == "error: timeout"
+    assert resp.json()["checks"]["db"] == "error: timeout"
+
+
+# ---------------------------------------------------------------------------
+# /ready — SQLite single-binary mode (feature 20.8)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ready_sqlite_mode_db_ok_returns_200_despite_valkey_failure(
+    client: AsyncClient,
+) -> None:
+    """In sqlite_mode, 200 is returned even when Valkey is unavailable."""
+    db_factory = _mock_db_factory()
+    vk_client = _mock_valkey_client(fail=True, error="no valkey")
+
+    with patch("app.main.AsyncSessionLocal", db_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "sqlite_mode", True), \
+         patch.object(settings, "database_url", "sqlite+aiosqlite:///./mxtac.db"), \
+         _patch_opensearch(fail=True, error="no opensearch"):
+        resp = await client.get(READY_URL)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ready"
+    assert data["checks"]["db"] == "ok"
+    # Valkey and OpenSearch are still reported but their failures are informational
+    assert data["checks"]["valkey"].startswith("error:")
+    assert data["checks"]["opensearch"].startswith("error:")
+
+
+@pytest.mark.asyncio
+async def test_ready_sqlite_mode_db_failure_still_returns_503(
+    client: AsyncClient,
+) -> None:
+    """In sqlite_mode, a DB failure still causes 503."""
+    db_factory = _mock_db_factory(fail=True, error="sqlite locked")
+    vk_client = _mock_valkey_client()
+
+    with patch("app.main.AsyncSessionLocal", db_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "sqlite_mode", True), \
+         patch.object(settings, "database_url", "sqlite+aiosqlite:///./mxtac.db"), \
+         _patch_opensearch():
+        resp = await client.get(READY_URL)
+
+    assert resp.status_code == 503
+    data = resp.json()
+    assert data["status"] == "degraded"
+    assert data["checks"]["db"].startswith("error:")
+
+
+@pytest.mark.asyncio
+async def test_ready_sqlite_mode_all_checks_present_in_response(
+    client: AsyncClient,
+) -> None:
+    """In sqlite_mode, all three check keys are still present in the response."""
+    db_factory = _mock_db_factory()
+    vk_client = _mock_valkey_client(fail=True, error="no valkey")
+
+    with patch("app.main.AsyncSessionLocal", db_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "sqlite_mode", True), \
+         patch.object(settings, "database_url", "sqlite+aiosqlite:///./mxtac.db"), \
+         _patch_opensearch(fail=True, error="no opensearch"):
+        resp = await client.get(READY_URL)
+
+    checks = resp.json()["checks"]
+    assert "db" in checks
+    assert "valkey" in checks
+    assert "opensearch" in checks
+
+
+@pytest.mark.asyncio
+async def test_ready_sqlite_url_without_sqlite_mode_flag_also_uses_optional_checks(
+    client: AsyncClient,
+) -> None:
+    """A sqlite:// DATABASE_URL (without sqlite_mode flag) also uses optional external checks."""
+    db_factory = _mock_db_factory()
+    vk_client = _mock_valkey_client(fail=True, error="no valkey")
+
+    with patch("app.main.AsyncSessionLocal", db_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "sqlite_mode", False), \
+         patch.object(settings, "database_url", "sqlite+aiosqlite:///./mxtac.db"), \
+         _patch_opensearch(fail=True, error="no opensearch"):
+        resp = await client.get(READY_URL)
+
+    # DB is ok → 200 even without Valkey/OpenSearch when URL is sqlite://
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ready"

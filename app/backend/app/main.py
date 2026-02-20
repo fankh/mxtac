@@ -97,6 +97,11 @@ async def on_startup() -> None:
     app.state.alert_file_writer = None
     app.state.alert_webhook_sender = None
 
+    # 0. Auto-migrate when running in SQLite single-binary mode (feature 20.8)
+    if settings.sqlite_mode or settings.database_url.startswith("sqlite"):
+        from .db.migrate import auto_migrate
+        await auto_migrate()
+
     # 1. Seed database (idempotent)
     try:
         async with AsyncSessionLocal() as session:
@@ -293,27 +298,33 @@ _READY_CHECK_TIMEOUT = 3.0  # seconds per service check
 
 @app.get("/ready", tags=["ops"])
 async def readiness() -> JSONResponse:
-    """Readiness probe — checks PostgreSQL, Valkey, and OpenSearch.
+    """Readiness probe — checks DB, Valkey, and OpenSearch.
 
     Each service check is bounded by ``_READY_CHECK_TIMEOUT`` seconds so that
     a hung dependency cannot stall the HAProxy health-check cycle.  A timeout
     is reported as ``"error: timeout"`` and causes a 503 response, which
     HAProxy interprets as the backend being unavailable.
+
+    In SQLite single-binary mode (``sqlite_mode=True`` or a sqlite:// URL),
+    only the database check is required for the probe to return 200.  Valkey
+    and OpenSearch checks are still performed and included in the response for
+    visibility, but failures do not make the probe return 503.
     """
     checks: dict[str, str] = {}
+    _sqlite = settings.sqlite_mode or settings.database_url.startswith("sqlite")
 
-    # Check PostgreSQL
-    async def _check_postgres() -> None:
+    # Check database (PostgreSQL or SQLite)
+    async def _check_db() -> None:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
 
     try:
-        await asyncio.wait_for(_check_postgres(), timeout=_READY_CHECK_TIMEOUT)
-        checks["postgres"] = "ok"
+        await asyncio.wait_for(_check_db(), timeout=_READY_CHECK_TIMEOUT)
+        checks["db"] = "ok"
     except asyncio.TimeoutError:
-        checks["postgres"] = "error: timeout"
+        checks["db"] = "error: timeout"
     except Exception as e:
-        checks["postgres"] = f"error: {e}"
+        checks["db"] = f"error: {e}"
 
     # Check Valkey
     async def _check_valkey() -> None:
@@ -355,7 +366,14 @@ async def readiness() -> JSONResponse:
     except Exception as e:
         checks["opensearch"] = f"error: {e}"
 
-    all_ok = all(v == "ok" for v in checks.values())
+    # In SQLite/single-binary mode only the DB check is required; external
+    # services (Valkey, OpenSearch) are optional and their failures are
+    # informational only.
+    if _sqlite:
+        all_ok = checks.get("db") == "ok"
+    else:
+        all_ok = all(v == "ok" for v in checks.values())
+
     return JSONResponse(
         status_code=200 if all_ok else 503,
         content={"status": "ready" if all_ok else "degraded", "checks": checks},
