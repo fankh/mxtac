@@ -9,6 +9,7 @@ from ....models.connector import Connector
 from ....repositories.connector_repo import ConnectorRepo
 from ....repositories.detection_repo import DetectionRepo
 from ....repositories.incident_repo import IncidentRepo
+from ....repositories.rule_repo import RuleRepo
 from ....schemas.overview import KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus
 from ....services.mock_data import KPI, TACTICS, HEATMAP, INTEGRATIONS, TACTIC_LABELS
 from ....schemas.detection import Detection
@@ -31,17 +32,73 @@ async def get_kpis(
 ):
     """KPI metrics for the Security Overview dashboard header cards."""
     now = datetime.now(timezone.utc)
-    raw = await IncidentRepo.get_metrics(
-        db, from_date=now - timedelta(days=30), to_date=now
+    days = _parse_range_days(range)
+    from_date = now - timedelta(days=days)
+    prev_from_date = from_date - timedelta(days=days)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
     )
-    kpi_dict = KPI.model_dump()
-    kpi_dict["open_incidents_count"] = raw["open_count"]
-    kpi_dict["mttr_minutes"] = (
-        round(raw["avg_ttr"] / 60, 2) if raw["avg_ttr"] is not None else None
+
+    # Fetch all real DB data
+    det_counts = await DetectionRepo.get_kpi_counts(
+        db,
+        from_date=from_date,
+        to_date=now,
+        prev_from_date=prev_from_date,
+        today_start=today_start,
     )
-    if raw["avg_ttd"] is not None:
-        kpi_dict["mttd_minutes"] = round(raw["avg_ttd"] / 60, 2)
-    return KpiMetrics(**kpi_dict)
+    inc_metrics = await IncidentRepo.get_metrics(db, from_date=from_date, to_date=now)
+    conn_counts = await ConnectorRepo.get_status_counts(db)
+    rule_counts = await RuleRepo.get_kpi_counts(db, week_start=week_start)
+
+    # Detection delta %: compare current period vs previous period
+    total_current = det_counts["total_current"]
+    total_prev = det_counts["total_prev"]
+    if total_prev > 0:
+        delta_pct = round((total_current - total_prev) / total_prev * 100, 1)
+    elif total_current > 0:
+        delta_pct = 100.0
+    else:
+        delta_pct = 0.0
+
+    # Mock baseline for fields that require external ATT&CK metadata
+    kpi_mock = KPI.model_dump()
+
+    return KpiMetrics(
+        # Detection counts — real DB; fall back to mock when DB has no detections
+        total_detections=total_current if total_current > 0 else kpi_mock["total_detections"],
+        total_detections_delta_pct=delta_pct if total_current > 0 else kpi_mock["total_detections_delta_pct"],
+        critical_alerts=det_counts["critical"] if total_current > 0 else kpi_mock["critical_alerts"],
+        critical_alerts_new_today=det_counts["critical_today"] if total_current > 0 else kpi_mock["critical_alerts_new_today"],
+        # ATT&CK coverage — requires external metadata, keep mock for now
+        attack_coverage_pct=kpi_mock["attack_coverage_pct"],
+        attack_covered=kpi_mock["attack_covered"],
+        attack_total=kpi_mock["attack_total"],
+        attack_coverage_delta=kpi_mock["attack_coverage_delta"],
+        # MTTD — real DB; fall back to mock when no incident TTD data
+        mttd_minutes=(
+            round(inc_metrics["avg_ttd"] / 60, 2)
+            if inc_metrics["avg_ttd"] is not None
+            else kpi_mock["mttd_minutes"]
+        ),
+        mttd_delta_minutes=kpi_mock["mttd_delta_minutes"],  # needs two TTD periods
+        # Integrations — real DB; fall back to mock when no connectors configured
+        integrations_active=conn_counts["active"] if conn_counts["total"] > 0 else kpi_mock["integrations_active"],
+        integrations_total=conn_counts["total"] if conn_counts["total"] > 0 else kpi_mock["integrations_total"],
+        # Sigma rules — always real DB (0 is valid before rules are imported)
+        sigma_rules_active=rule_counts["active"],
+        sigma_rules_critical=rule_counts["critical"],
+        sigma_rules_high=rule_counts["high"],
+        sigma_rules_deployed_this_week=rule_counts["deployed_this_week"],
+        # Incident SLA — always real DB
+        open_incidents_count=inc_metrics["open_count"],
+        mttr_minutes=(
+            round(inc_metrics["avg_ttr"] / 60, 2)
+            if inc_metrics["avg_ttr"] is not None
+            else None
+        ),
+    )
 
 
 @router.get("/timeline", response_model=list[TimelinePoint])
@@ -100,10 +157,14 @@ async def get_tactics(
 
 @router.get("/coverage/heatmap", response_model=list[HeatRow])
 async def get_heatmap(
+    db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("detections:read")),
 ):
     """ATT&CK technique coverage heatmap — 4 rows × 9 tactic columns."""
-    return HEATMAP
+    rows = await DetectionRepo.get_heatmap(db)
+    if rows is None:
+        return HEATMAP  # fallback to mock when no detections in DB
+    return [HeatRow(**r) for r in rows]
 
 
 @router.get("/coverage/tactic-labels", response_model=list[str])

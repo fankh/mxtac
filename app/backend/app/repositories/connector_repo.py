@@ -73,3 +73,15 @@ class ConnectorRepo:
     async def count(session: AsyncSession) -> int:
         result = await session.scalar(select(func.count()).select_from(Connector))
         return result or 0
+
+    @staticmethod
+    async def get_status_counts(session: AsyncSession) -> dict:
+        """Return active (enabled + connected/active status) and total connector counts."""
+        total = await session.scalar(select(func.count()).select_from(Connector)) or 0
+        active = await session.scalar(
+            select(func.count())
+            .select_from(Connector)
+            .where(Connector.enabled == True)  # noqa: E712
+            .where(Connector.status.in_(["active", "connected"]))
+        ) or 0
+        return {"active": active, "total": total}

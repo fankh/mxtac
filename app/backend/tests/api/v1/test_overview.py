@@ -172,6 +172,186 @@ async def test_recent_detections_limit(client: AsyncClient, auth_headers: dict) 
 
 
 @pytest.mark.asyncio
+async def test_kpis_from_db(
+    client: AsyncClient, db_session, auth_headers: dict
+) -> None:
+    """When detections + connectors + rules exist in DB, KPI returns real counts."""
+    from datetime import datetime, timezone
+    from app.models.detection import Detection as DetectionModel
+    from app.models.connector import Connector
+    from app.models.rule import Rule
+
+    now = datetime.now(timezone.utc)
+    det = DetectionModel(
+        score=9.5,
+        severity="critical",
+        technique_id="T1059.001",
+        technique_name="PowerShell",
+        name="Critical Detection",
+        host="host-a",
+        tactic="Execution",
+        tactic_id="TA0002",
+        status="active",
+        time=now,
+        description="test",
+        user="root",
+        process="pwsh",
+        rule_name="rule1",
+        log_source="syslog",
+        event_id="evt1",
+        occurrence_count=1,
+        cvss_v3=9.0,
+        confidence=90,
+        assigned_to=None,
+        priority="P1",
+    )
+    conn = Connector(
+        name="Wazuh",
+        connector_type="wazuh",
+        status="active",
+        enabled=True,
+        events_total=1000,
+    )
+    rule = Rule(
+        title="PowerShell Encoded",
+        content="detection: ...",
+        level="critical",
+        enabled=True,
+        technique_ids='["T1059.001"]',
+        tactic_ids='["TA0002"]',
+    )
+    db_session.add_all([det, conn, rule])
+    await db_session.flush()
+
+    resp = await client.get("/api/v1/overview/kpis", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Real detection counts
+    assert data["total_detections"] == 1
+    assert data["critical_alerts"] == 1
+
+    # Real connector counts
+    assert data["integrations_total"] == 1
+    assert data["integrations_active"] == 1
+
+    # Real rule counts
+    assert data["sigma_rules_active"] == 1
+    assert data["sigma_rules_critical"] == 1
+    assert data["sigma_rules_high"] == 0
+    assert data["sigma_rules_deployed_this_week"] == 1
+
+
+@pytest.mark.asyncio
+async def test_heatmap_from_db(
+    client: AsyncClient, db_session, auth_headers: dict
+) -> None:
+    """When detections exist in DB, heatmap returns real coverage data (not mock)."""
+    from datetime import datetime, timezone
+    from app.models.detection import Detection as DetectionModel
+
+    now = datetime.now(timezone.utc)
+    rows = [
+        DetectionModel(
+            score=9.0,
+            severity="critical",
+            technique_id="T1059.001",  # sub-technique of T1059
+            technique_name="PowerShell",
+            name="PowerShell Execution",
+            host="host-a",
+            tactic="Execution",  # maps to EXEC column
+            tactic_id="TA0002",
+            status="active",
+            time=now,
+            description="test",
+            user="root",
+            process="pwsh",
+            rule_name="rule1",
+            log_source="syslog",
+            event_id="evt1",
+            occurrence_count=1,
+            cvss_v3=9.0,
+            confidence=90,
+            assigned_to=None,
+            priority="P1",
+        ),
+        DetectionModel(
+            score=8.0,
+            severity="high",
+            technique_id="T1059.003",  # another T1059 sub-technique
+            technique_name="Windows Command Shell",
+            name="CMD Execution",
+            host="host-b",
+            tactic="Execution",
+            tactic_id="TA0002",
+            status="active",
+            time=now,
+            description="test",
+            user="user1",
+            process="cmd.exe",
+            rule_name="rule2",
+            log_source="syslog",
+            event_id="evt2",
+            occurrence_count=1,
+            cvss_v3=8.0,
+            confidence=85,
+            assigned_to=None,
+            priority="P2",
+        ),
+        DetectionModel(
+            score=7.0,
+            severity="high",
+            technique_id="T1059.001",  # duplicate — only counted once (DISTINCT)
+            technique_name="PowerShell",
+            name="PowerShell Again",
+            host="host-c",
+            tactic="Execution",
+            tactic_id="TA0002",
+            status="active",
+            time=now,
+            description="test",
+            user="user2",
+            process="pwsh.exe",
+            rule_name="rule3",
+            log_source="syslog",
+            event_id="evt3",
+            occurrence_count=2,
+            cvss_v3=7.0,
+            confidence=80,
+            assigned_to=None,
+            priority="P2",
+        ),
+    ]
+    db_session.add_all(rows)
+    await db_session.flush()
+
+    resp = await client.get("/api/v1/overview/coverage/heatmap", headers=auth_headers)
+    assert resp.status_code == 200
+    heatmap = resp.json()
+
+    # Should be 4 rows (one per technique family)
+    assert len(heatmap) == 4
+
+    # Row 0 is T1059 — find it
+    t1059_row = next((r for r in heatmap if r["technique_id"] == "T1059"), None)
+    assert t1059_row is not None
+
+    # EXEC column (Execution tactic) should have covered=2 (T1059.001 and T1059.003)
+    exec_cell = next((c for c in t1059_row["cells"] if c["tactic"] == "EXEC"), None)
+    assert exec_cell is not None
+    assert exec_cell["covered"] == 2  # distinct: T1059.001, T1059.003
+    assert exec_cell["total"] == 14   # fixed ATT&CK total for EXEC
+
+    # CRED column should have covered=0 (no Credential Access detections)
+    cred_cell = next((c for c in t1059_row["cells"] if c["tactic"] == "CRED"), None)
+    assert cred_cell is not None
+    assert cred_cell["covered"] == 0
+
+    # opacity is computed
+    assert isinstance(exec_cell["opacity"], float)
+
+
+@pytest.mark.asyncio
 async def test_recent_detections_from_db(
     client: AsyncClient, db_session, auth_headers: dict
 ) -> None:

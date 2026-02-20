@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,3 +72,42 @@ class RuleRepo:
     async def count(session: AsyncSession) -> int:
         result = await session.scalar(select(func.count()).select_from(Rule))
         return result or 0
+
+    @staticmethod
+    async def get_kpi_counts(session: AsyncSession, *, week_start: datetime) -> dict:
+        """Return rule statistics for the KPI endpoint.
+
+        Keys:
+            active               — enabled rules
+            critical             — enabled rules with level='critical'
+            high                 — enabled rules with level='high'
+            deployed_this_week   — rules created since week_start
+        """
+        active = await session.scalar(
+            select(func.count()).select_from(Rule).where(Rule.enabled == True)  # noqa: E712
+        ) or 0
+
+        critical = await session.scalar(
+            select(func.count())
+            .select_from(Rule)
+            .where(Rule.enabled == True)  # noqa: E712
+            .where(Rule.level == "critical")
+        ) or 0
+
+        high = await session.scalar(
+            select(func.count())
+            .select_from(Rule)
+            .where(Rule.enabled == True)  # noqa: E712
+            .where(Rule.level == "high")
+        ) or 0
+
+        deployed_this_week = await session.scalar(
+            select(func.count()).select_from(Rule).where(Rule.created_at >= week_start)
+        ) or 0
+
+        return {
+            "active": active,
+            "critical": critical,
+            "high": high,
+            "deployed_this_week": deployed_this_week,
+        }

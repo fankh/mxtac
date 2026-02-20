@@ -10,6 +10,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.detection import Detection
 
+# ---------------------------------------------------------------------------
+# Heatmap constants
+# ---------------------------------------------------------------------------
+
+# ATT&CK tactic full name → heatmap column abbreviation
+_TACTIC_LABEL_MAP: dict[str, str] = {
+    "Reconnaissance": "RECON",
+    "Resource Development": "RES",
+    "Initial Access": "INIT",
+    "Execution": "EXEC",
+    "Persistence": "PERS",
+    "Privilege Escalation": "PRIV",
+    "Defense Evasion": "DEF-E",
+    "Credential Access": "CRED",
+    "Discovery": "DISC",
+}
+
+# Total ATT&CK sub-techniques per tactic column (v14 metadata — static)
+_TACTIC_TOTALS: dict[str, int] = {
+    "RECON": 9, "RES": 6, "INIT": 9, "EXEC": 14,
+    "PERS": 12, "PRIV": 11, "DEF-E": 17, "CRED": 14, "DISC": 13,
+}
+
+_HEATMAP_ORDERED_LABELS = ["RECON", "RES", "INIT", "EXEC", "PERS", "PRIV", "DEF-E", "CRED", "DISC"]
+_HEATMAP_TECHNIQUE_FAMILIES = ["T1059", "T1003", "T1021", "T1078"]
+
 
 class DetectionRepo:
 
@@ -153,6 +179,109 @@ class DetectionRepo:
             result.append({"tactic": tactic, "count": count, "trend_pct": trend_pct})
 
         return result
+
+    @staticmethod
+    async def get_kpi_counts(
+        session: AsyncSession,
+        *,
+        from_date: datetime,
+        to_date: datetime,
+        prev_from_date: datetime,
+        today_start: datetime,
+    ) -> dict:
+        """Return detection counts needed for the KPI endpoint.
+
+        Keys:
+            total_current  — detections in [from_date, to_date]
+            total_prev     — detections in [prev_from_date, from_date)
+            critical       — critical-severity detections in [from_date, to_date]
+            critical_today — critical-severity detections since today_start
+        """
+        total_current = await session.scalar(
+            select(func.count())
+            .select_from(Detection)
+            .where(Detection.time >= from_date)
+            .where(Detection.time <= to_date)
+        ) or 0
+
+        total_prev = await session.scalar(
+            select(func.count())
+            .select_from(Detection)
+            .where(Detection.time >= prev_from_date)
+            .where(Detection.time < from_date)
+        ) or 0
+
+        critical = await session.scalar(
+            select(func.count())
+            .select_from(Detection)
+            .where(Detection.time >= from_date)
+            .where(Detection.time <= to_date)
+            .where(Detection.severity == "critical")
+        ) or 0
+
+        critical_today = await session.scalar(
+            select(func.count())
+            .select_from(Detection)
+            .where(Detection.time >= today_start)
+            .where(Detection.severity == "critical")
+        ) or 0
+
+        return {
+            "total_current": total_current,
+            "total_prev": total_prev,
+            "critical": critical,
+            "critical_today": critical_today,
+        }
+
+    @staticmethod
+    async def get_heatmap(session: AsyncSession) -> list[dict] | None:
+        """Build heatmap coverage from distinct (technique_id, tactic) detection pairs.
+
+        For each of the 4 top technique families × 9 tactic columns:
+          covered = # distinct sub-technique IDs detected for that family+tactic
+          total   = fixed ATT&CK v14 sub-technique count for that tactic column
+
+        Returns None when no detections exist (caller should fall back to mock).
+        """
+        q = (
+            select(Detection.technique_id, Detection.tactic)
+            .where(Detection.technique_id.is_not(None))
+            .where(Detection.tactic.is_not(None))
+            .distinct()
+        )
+        result = await session.execute(q)
+        rows = result.all()
+
+        if not rows:
+            return None
+
+        # Build coverage sets: {family: {label: set_of_covered_technique_ids}}
+        coverage: dict[str, dict[str, set]] = {
+            family: {label: set() for label in _HEATMAP_ORDERED_LABELS}
+            for family in _HEATMAP_TECHNIQUE_FAMILIES
+        }
+
+        for technique_id, tactic in rows:
+            label = _TACTIC_LABEL_MAP.get(tactic)
+            if not label:
+                continue
+            for family in _HEATMAP_TECHNIQUE_FAMILIES:
+                if technique_id.startswith(family):
+                    coverage[family][label].add(technique_id)
+
+        heatmap: list[dict] = []
+        for row_idx, family in enumerate(_HEATMAP_TECHNIQUE_FAMILIES):
+            cells = [
+                {
+                    "tactic": label,
+                    "covered": min(len(coverage[family][label]), _TACTIC_TOTALS.get(label, 10)),
+                    "total": _TACTIC_TOTALS.get(label, 10),
+                }
+                for label in _HEATMAP_ORDERED_LABELS
+            ]
+            heatmap.append({"technique_id": family, "row": row_idx, "cells": cells})
+
+        return heatmap
 
     @staticmethod
     async def get_timeline(
