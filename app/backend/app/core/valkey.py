@@ -47,3 +47,62 @@ async def blacklist_token(jti: str, ttl_seconds: int) -> None:
             "it will expire naturally at its exp time.",
             jti,
         )
+
+
+# ── Distributed ingest rate limiting ─────────────────────────────────────────
+# Atomic fixed-window counter: INCRBY the key by n, set EXPIRE only on creation
+# so the window resets automatically.  Single round-trip via Lua eval.
+_RATE_LIMIT_LUA = """
+local key     = KEYS[1]
+local n       = tonumber(ARGV[1])
+local window  = tonumber(ARGV[2])
+local current = redis.call('INCRBY', key, n)
+if current == n then
+    redis.call('EXPIRE', key, window)
+end
+return current
+"""
+
+
+async def check_ingest_rate_limit(
+    api_key_id: str,
+    n_events: int,
+    limit: int = 10_000,
+    window_secs: int = 60,
+) -> bool:
+    """Return True if the ingest request is within the rate limit, False if exceeded.
+
+    Uses a Valkey fixed-window counter shared across all API replicas so the
+    limit is enforced consistently in a horizontally-scaled deployment.
+
+    Falls back to allowing requests (fail-open) when Valkey is unavailable —
+    availability is preferred over strict enforcement during a Valkey outage.
+    """
+    try:
+        client = await get_valkey_client()
+        key = f"rate_limit:ingest:{api_key_id}"
+        current = await client.eval(_RATE_LIMIT_LUA, 1, key, n_events, window_secs)
+        return int(current) <= limit
+    except Exception:
+        logger.debug(
+            "Valkey unavailable — skipping rate limit check for api_key_id=%s", api_key_id
+        )
+        return True  # fail-open: prefer availability over strict enforcement
+
+
+# ── Rule-change pub/sub ───────────────────────────────────────────────────────
+RULE_RELOAD_CHANNEL = "mxtac:rules:reload"
+
+
+async def publish_rule_reload() -> None:
+    """Publish a rule-reload signal so peer replicas refresh their SigmaEngine.
+
+    Called after any rule create / update / delete / import so that each API
+    replica reloads from the database without a manual POST /rules/reload call.
+    Fails silently when Valkey is unavailable.
+    """
+    try:
+        client = await get_valkey_client()
+        await client.publish(RULE_RELOAD_CHANNEL, "reload")
+    except Exception:
+        logger.debug("Valkey unavailable — rule reload signal not published")

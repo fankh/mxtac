@@ -12,13 +12,12 @@ PostgreSQL as the authoritative store.
 Ingest path (POST /ingest):
   - Accepts batched OCSF events from agents authenticated with X-API-Key.
   - Validates batch size (max 1000 per request).
-  - Rate limited to 10,000 events/minute per API key.
+  - Rate limited to 10,000 events/minute per API key (distributed via Valkey).
   - Publishes events to the internal message queue.
 """
 
 from __future__ import annotations
 
-import time
 from datetime import datetime
 from typing import Annotated, Any
 
@@ -29,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ....core.api_key_auth import get_api_key
 from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....core.valkey import check_ingest_rate_limit
 from ....models.api_key import APIKey
 from ....models.event import Event
 from ....pipeline.queue import MessageQueue, Topic, get_queue
@@ -42,25 +42,12 @@ from ....services.query_builder import build_lucene_query
 
 router = APIRouter(prefix="/events", tags=["events"])
 
-# ── Rate limiter (in-memory, per API key) ────────────────────────────────────
+# ── Rate limiting (distributed via Valkey) ────────────────────────────────────
+# The counter is stored in Valkey so the limit is shared across all API replicas.
+# Falls back to allowing requests when Valkey is unavailable (fail-open).
 
 _RATE_LIMIT_EVENTS = 10_000   # max events per window
-_RATE_WINDOW_SECS  = 60.0     # sliding window in seconds
-
-# Maps api_key_id → (event_count, window_start_epoch)
-_rate_counters: dict[str, tuple[int, float]] = {}
-
-
-def _check_rate_limit(api_key_id: str, n_events: int) -> bool:
-    """Return True if the request is within the rate limit, False if exceeded."""
-    now = time.monotonic()
-    count, window_start = _rate_counters.get(api_key_id, (0, now))
-    if now - window_start >= _RATE_WINDOW_SECS:
-        count, window_start = 0, now
-    if count + n_events > _RATE_LIMIT_EVENTS:
-        return False
-    _rate_counters[api_key_id] = (count + n_events, window_start)
-    return True
+_RATE_WINDOW_SECS  = 60       # window duration in seconds
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -321,12 +308,12 @@ async def ingest_events(
 ) -> dict[str, Any]:
     """Batch-ingest OCSF events from agents.
 
-    Validates batch size (≤ 1,000), enforces per-key rate limit (10,000 events/min),
-    then publishes each event to the internal message queue.
+    Validates batch size (≤ 1,000), enforces per-key rate limit (10,000 events/min)
+    via a shared Valkey counter so the limit is consistent across all replicas.
     Returns 202 Accepted on success.
     """
     n = len(body.events)
-    if not _check_rate_limit(api_key.id, n):
+    if not await check_ingest_rate_limit(api_key.id, n, _RATE_LIMIT_EVENTS, _RATE_WINDOW_SECS):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Rate limit exceeded: 10,000 events per minute per API key",

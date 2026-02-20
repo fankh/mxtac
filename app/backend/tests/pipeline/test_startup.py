@@ -33,7 +33,7 @@ from app.pipeline.queue import InMemoryQueue, MessageQueue
 
 class TestStartupStateInit:
     async def test_startup_sets_connectors_to_empty_list_by_default(self) -> None:
-        """When DB has no enabled connectors, app.state.connectors is an empty list."""
+        """When DB has no enabled connectors, app.state.connectors is an empty dict."""
         with (
             patch("app.main.seed_database", new_callable=AsyncMock),
             patch("app.main.AsyncSessionLocal") as mock_session_cm,
@@ -58,7 +58,7 @@ class TestStartupStateInit:
 
             await on_startup()
 
-        assert isinstance(app.state.connectors, list)
+        assert isinstance(app.state.connectors, dict)
 
     async def test_startup_sets_queue_on_app_state(self) -> None:
         """app.state.queue is set to the queue returned by get_queue()."""
@@ -225,7 +225,7 @@ class TestShutdownCleanup:
         app.state.queue = mock_queue
         app.state.alert_mgr = None
         app.state.os_client = None
-        app.state.connectors = []
+        app.state.connectors = {}
 
         await on_shutdown()
 
@@ -238,7 +238,7 @@ class TestShutdownCleanup:
         app.state.queue = mock_queue
         app.state.alert_mgr = mock_alert_mgr
         app.state.os_client = None
-        app.state.connectors = []
+        app.state.connectors = {}
 
         await on_shutdown()
 
@@ -251,7 +251,7 @@ class TestShutdownCleanup:
         app.state.queue = mock_queue
         app.state.alert_mgr = None
         app.state.os_client = mock_os
-        app.state.connectors = []
+        app.state.connectors = {}
 
         await on_shutdown()
 
@@ -270,7 +270,7 @@ class TestShutdownCleanup:
         app.state.queue = mock_queue
         app.state.alert_mgr = None
         app.state.os_client = None
-        app.state.connectors = [conn_a, conn_b]
+        app.state.connectors = {"id-a": conn_a, "id-b": conn_b}
 
         await on_shutdown()
 
@@ -282,7 +282,7 @@ class TestShutdownCleanup:
         app.state.queue = None
         app.state.alert_mgr = None
         app.state.os_client = None
-        app.state.connectors = []
+        app.state.connectors = {}
 
         await on_shutdown()  # must not raise
 
@@ -292,7 +292,7 @@ class TestShutdownCleanup:
         app.state.queue = mock_queue
         app.state.alert_mgr = None
         app.state.os_client = None
-        app.state.connectors = []
+        app.state.connectors = {}
 
         await on_shutdown()  # must not raise
 
@@ -302,7 +302,7 @@ class TestShutdownCleanup:
         app.state.queue = mock_queue
         app.state.alert_mgr = None
         app.state.os_client = None
-        app.state.connectors = []
+        app.state.connectors = {}
 
         await on_shutdown()  # must not raise
 
@@ -330,7 +330,7 @@ class TestShutdownCleanup:
         app.state.queue = mock_queue
         app.state.alert_mgr = None
         app.state.os_client = mock_os
-        app.state.connectors = [bad_conn]
+        app.state.connectors = {"id-bad": bad_conn}
 
         await on_shutdown()
 
@@ -348,7 +348,7 @@ class TestShutdownCleanup:
         app.state.queue = mock_queue
         app.state.alert_mgr = mock_alert_mgr
         app.state.os_client = mock_os
-        app.state.connectors = []
+        app.state.connectors = {}
 
         await on_shutdown()
 
@@ -365,7 +365,7 @@ class TestShutdownCleanup:
         app.state.queue = mock_queue
         app.state.alert_mgr = mock_alert_mgr
         app.state.os_client = mock_os
-        app.state.connectors = []
+        app.state.connectors = {}
 
         await on_shutdown()
 
@@ -392,7 +392,7 @@ class TestShutdownCleanup:
         app.state.queue = mock_queue
         app.state.alert_mgr = mock_alert_mgr
         app.state.os_client = mock_os
-        app.state.connectors = [conn]
+        app.state.connectors = {"id-conn": conn}
 
         await on_shutdown()
 
