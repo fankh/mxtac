@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from math import ceil
 from typing import Literal
@@ -14,7 +15,7 @@ from ....core.rbac import require_permission
 from ....repositories.detection_repo import DetectionRepo
 from ....repositories.incident_repo import IncidentRepo, SortField
 from ....schemas.common import Pagination, PaginatedResponse
-from ....schemas.incident import Incident, IncidentCreate, IncidentDetail, IncidentNote, IncidentUpdate
+from ....schemas.incident import Incident, IncidentCreate, IncidentDetail, IncidentNote, IncidentUpdate, NoteCreate
 from ....services.audit import get_audit_logger
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
@@ -270,6 +271,16 @@ async def update_incident(
                 )
             changes["status"] = new_status
 
+            # Auto-create a timeline note for the status change
+            status_note = {
+                "id": str(uuid.uuid4()),
+                "author": current_user["email"],
+                "content": f"Status changed from {old_status} to {new_status} by {current_user['email']}",
+                "note_type": "status_change",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            changes["notes"] = list(incident.notes or []) + [status_note]
+
             # Auto-set closed_at and ttr_seconds on first close
             if new_status in ("resolved", "closed") and incident.closed_at is None:
                 now = datetime.now(timezone.utc)
@@ -342,3 +353,57 @@ async def update_incident(
         )
 
     return _incident_to_schema(incident)
+
+
+@router.post("/{incident_id}/notes", response_model=IncidentNote, status_code=201)
+async def add_note(
+    incident_id: int,
+    body: NoteCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("incidents:write")),
+) -> dict:
+    """
+    Add a timestamped note to an incident's timeline.
+
+    - Requires analyst+ role (incidents:write).
+    - author is auto-populated from the JWT.
+    - note_type: comment | status_change | evidence (default: comment).
+    """
+    incident = await IncidentRepo.get_by_id(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+    now = datetime.now(timezone.utc)
+    note = {
+        "id": str(uuid.uuid4()),
+        "author": current_user["email"],
+        "content": body.content,
+        "note_type": body.note_type,
+        "created_at": now.isoformat(),
+    }
+
+    # Assign new list so SQLAlchemy detects the JSON column change
+    incident.notes = list(incident.notes or []) + [note]
+    await db.flush()
+
+    return note
+
+
+@router.get("/{incident_id}/notes", response_model=list[IncidentNote])
+async def list_notes(
+    incident_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("incidents:read")),
+) -> list[dict]:
+    """
+    List all notes for an incident in chronological order (oldest first).
+
+    - Requires viewer+ role (incidents:read).
+    - Returns 404 if the incident does not exist.
+    """
+    incident = await IncidentRepo.get_by_id(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+    raw_notes = incident.notes or []
+    return sorted(raw_notes, key=lambda n: n.get("created_at", ""))

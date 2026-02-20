@@ -11,6 +11,7 @@ from .detection import Detection as DetectionSchema
 
 SeverityLevel = Literal["critical", "high", "medium", "low"]
 IncidentStatus = Literal["new", "investigating", "contained", "resolved", "closed"]
+NoteType = Literal["comment", "status_change", "evidence"]
 
 
 class IncidentCreate(BaseModel):
@@ -33,10 +34,16 @@ class IncidentUpdate(BaseModel):
     detection_ids: list[str] | None = None
 
 
+class NoteCreate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=5000)
+    note_type: NoteType = "comment"
+
+
 class IncidentNote(BaseModel):
     id: str
     author: str
     content: str
+    note_type: NoteType = "comment"  # default preserves backward compat with existing notes
     created_at: datetime
 
 
