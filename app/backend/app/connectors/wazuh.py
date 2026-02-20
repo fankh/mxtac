@@ -11,6 +11,7 @@ Required config.extra keys:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncGenerator
 
@@ -28,11 +29,23 @@ DEFAULT_PAGE_SIZE = 100
 class WazuhConnector(BaseConnector):
     """Polls Wazuh Manager REST API and publishes raw alerts to mxtac.raw.wazuh."""
 
-    def __init__(self, config: ConnectorConfig, queue) -> None:
+    def __init__(
+        self,
+        config: ConnectorConfig,
+        queue,
+        *,
+        initial_last_fetched_at: datetime | None = None,
+        checkpoint_callback: Callable[[datetime], Awaitable[None]] | None = None,
+    ) -> None:
         super().__init__(config, queue)
         self._client: httpx.AsyncClient | None = None
         self._token: str | None = None
-        self._last_fetched_at: datetime = datetime.now(timezone.utc) - timedelta(minutes=5)
+        self._last_fetched_at: datetime = (
+            initial_last_fetched_at
+            if initial_last_fetched_at is not None
+            else datetime.now(timezone.utc) - timedelta(minutes=5)
+        )
+        self._checkpoint_callback = checkpoint_callback
 
     @property
     def topic(self) -> str:
@@ -106,6 +119,8 @@ class WazuhConnector(BaseConnector):
                 break
 
         self._last_fetched_at = datetime.now(timezone.utc)
+        if self._checkpoint_callback is not None:
+            await self._checkpoint_callback(self._last_fetched_at)
 
     # ── Cleanup ──────────────────────────────────────────────────────────────
 

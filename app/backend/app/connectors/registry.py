@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.logging import get_logger
 from ..models.connector import Connector
 from ..pipeline.queue import MessageQueue
+from ..repositories.connector_repo import ConnectorRepo
 from .base import BaseConnector, ConnectorConfig
 from .wazuh import WazuhConnector
 from .zeek import ZeekConnector
@@ -40,6 +42,35 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
         poll_interval_seconds=extra.pop("poll_interval_seconds", 60),
         extra=extra,
     )
+
+    if cls is WazuhConnector:
+        # Feature 6.3: load persisted timestamp to avoid re-ingesting on restart
+        initial_last_fetched_at: datetime | None = None
+        if db_conn.last_seen_at:
+            try:
+                initial_last_fetched_at = datetime.fromisoformat(db_conn.last_seen_at)
+            except ValueError:
+                logger.warning(
+                    "Ignoring invalid last_seen_at for connector=%s value=%r",
+                    db_conn.name,
+                    db_conn.last_seen_at,
+                )
+
+        connector_id = db_conn.id
+
+        async def _checkpoint(ts: datetime, _id: str = connector_id) -> None:
+            from ..core.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                await ConnectorRepo.update(session, _id, last_seen_at=ts.isoformat())
+                await session.commit()
+
+        return WazuhConnector(
+            config,
+            queue,
+            initial_last_fetched_at=initial_last_fetched_at,
+            checkpoint_callback=_checkpoint,
+        )
+
     return cls(config, queue)
 
 

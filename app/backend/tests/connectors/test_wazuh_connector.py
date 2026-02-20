@@ -11,6 +11,11 @@ Feature 6.2 — Poll /alerts endpoint — paginated:
     correct per-page offsets, updates last_fetched_at after all pages, re-auths on 401
     and retries, raises on non-401 errors, empty results handled correctly
 
+Feature 6.3 — Track last-seen timestamp:
+  - initial_last_fetched_at: used when provided, falls back to 5-min-ago when None
+  - checkpoint_callback: called after each fetch cycle with the new timestamp,
+    not called when None, receives the updated _last_fetched_at value
+
 Common:
   - Initialisation: client/token None, last_fetched_at ~5 min ago, topic, health status
   - stop(): closes httpx client, clears _client and _token refs, safe when no client
@@ -514,3 +519,107 @@ class TestWazuhConnectorFactory:
             InMemoryQueue(),
         )
         assert conn.config.connector_type == "wazuh"
+
+
+# ── Feature 6.3 — Track last-seen timestamp ────────────────────────────────────
+
+
+class TestWazuhConnectorCheckpoint:
+    def test_initial_last_fetched_at_used_when_provided(self) -> None:
+        fixed = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        conn = WazuhConnector(_make_config(), InMemoryQueue(), initial_last_fetched_at=fixed)
+        assert conn._last_fetched_at == fixed
+
+    def test_initial_last_fetched_at_none_falls_back_to_5_min_ago(self) -> None:
+        before = datetime.now(timezone.utc)
+        conn = WazuhConnector(_make_config(), InMemoryQueue(), initial_last_fetched_at=None)
+        delta = before - conn._last_fetched_at
+        assert 4 * 60 < delta.total_seconds() < 6 * 60
+
+    def test_checkpoint_callback_none_by_default(self) -> None:
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        assert conn._checkpoint_callback is None
+
+    async def test_checkpoint_callback_called_after_fetch(self) -> None:
+        captured: list[datetime] = []
+
+        async def _cb(ts: datetime) -> None:
+            captured.append(ts)
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue(), checkpoint_callback=_cb)
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=_alerts_resp([], total=0))
+        conn._client = mock_client
+        conn._token = "tok"
+
+        [e async for e in conn._fetch_events()]
+
+        assert len(captured) == 1
+
+    async def test_checkpoint_callback_receives_updated_timestamp(self) -> None:
+        captured: list[datetime] = []
+
+        async def _cb(ts: datetime) -> None:
+            captured.append(ts)
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue(), checkpoint_callback=_cb)
+        old_time = conn._last_fetched_at
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=_alerts_resp([], total=0))
+        conn._client = mock_client
+        conn._token = "tok"
+
+        [e async for e in conn._fetch_events()]
+
+        assert captured[0] == conn._last_fetched_at
+        assert captured[0] > old_time
+
+    async def test_checkpoint_callback_not_called_when_none(self) -> None:
+        conn = WazuhConnector(_make_config(), InMemoryQueue(), checkpoint_callback=None)
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=_alerts_resp([], total=0))
+        conn._client = mock_client
+        conn._token = "tok"
+
+        # Must not raise
+        [e async for e in conn._fetch_events()]
+
+    async def test_checkpoint_callback_called_once_per_fetch_cycle(self) -> None:
+        """Callback fires once per _fetch_events() call, even across multiple pages."""
+        call_count = 0
+
+        async def _cb(ts: datetime) -> None:
+            nonlocal call_count
+            call_count += 1
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue(), checkpoint_callback=_cb)
+        page1 = [{"id": str(i)} for i in range(100)]
+        page2 = [{"id": str(i)} for i in range(100, 110)]
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(
+            side_effect=[
+                _alerts_resp(page1, total=110),
+                _alerts_resp(page2, total=110),
+            ]
+        )
+        conn._client = mock_client
+        conn._token = "tok"
+
+        [e async for e in conn._fetch_events()]
+
+        assert call_count == 1
+
+    async def test_fetch_query_uses_initial_last_fetched_at(self) -> None:
+        fixed = datetime(2025, 6, 1, 8, 0, 0, tzinfo=timezone.utc)
+        conn = WazuhConnector(
+            _make_config(), InMemoryQueue(), initial_last_fetched_at=fixed
+        )
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=_alerts_resp([], total=0))
+        conn._client = mock_client
+        conn._token = "tok"
+
+        [e async for e in conn._fetch_events()]
+
+        call_kwargs = mock_client.get.call_args[1]
+        assert call_kwargs["params"]["q"] == "timestamp>2025-06-01T08:00:00Z"
