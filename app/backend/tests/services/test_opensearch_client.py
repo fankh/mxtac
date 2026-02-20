@@ -1627,3 +1627,176 @@ def test_filter_to_dsl_src_endpoint_ip_passthrough() -> None:
     """'src_endpoint.ip' nested path passes through unchanged."""
     clause = filter_to_dsl("src_endpoint.ip", "eq", "192.168.1.1")
     assert clause == {"term": {"src_endpoint.ip": "192.168.1.1"}}
+
+
+# ---------------------------------------------------------------------------
+# feature 12.6 — OpenSearchService.get_event() — fetch by _id
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_event_returns_none_when_client_unavailable() -> None:
+    """get_event() returns None when no OpenSearch connection is established."""
+    svc = OpenSearchService()
+    # _client is None by default — short-circuit path
+    result = await svc.get_event("some-event-id")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_event_returns_source_on_success() -> None:
+    """get_event() returns the _source dict from the OpenSearch get response."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    source_data = {"class_name": "Process Activity", "severity_id": 4}
+    mock_client.get = AsyncMock(return_value={"_id": "pg-uuid-123", "_source": source_data})
+    svc._client = mock_client
+
+    result = await svc.get_event("pg-uuid-123")
+    assert result == source_data
+
+
+@pytest.mark.asyncio
+async def test_get_event_passes_id_to_client() -> None:
+    """get_event() passes the event_id as the 'id' keyword argument to the OS client."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value={"_source": {}})
+    svc._client = mock_client
+
+    await svc.get_event("test-event-uuid")
+
+    call_kwargs = mock_client.get.call_args.kwargs
+    assert call_kwargs.get("id") == "test-event-uuid"
+
+
+@pytest.mark.asyncio
+async def test_get_event_default_index_is_wildcard_events() -> None:
+    """When no index is specified, get_event() searches across mxtac-events-*."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value={"_source": {}})
+    svc._client = mock_client
+
+    await svc.get_event("some-id")
+
+    call_kwargs = mock_client.get.call_args.kwargs
+    assert call_kwargs.get("index") == "mxtac-events-*"
+
+
+@pytest.mark.asyncio
+async def test_get_event_custom_index_overrides_default() -> None:
+    """When an index is provided, get_event() uses it instead of the wildcard default."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value={"_source": {}})
+    svc._client = mock_client
+
+    await svc.get_event("some-id", index="mxtac-events-2026.02.20")
+
+    call_kwargs = mock_client.get.call_args.kwargs
+    assert call_kwargs.get("index") == "mxtac-events-2026.02.20"
+
+
+@pytest.mark.asyncio
+async def test_get_event_exception_returns_none() -> None:
+    """get_event() catches any exception from the OS client and returns None."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(side_effect=Exception("cluster error"))
+    svc._client = mock_client
+
+    result = await svc.get_event("some-id")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_event_not_found_exception_returns_none() -> None:
+    """A document-not-found exception is caught — None is returned, not raised."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    # Simulate opensearch-py NotFoundError (HTTP 404 from OS cluster)
+    mock_client.get = AsyncMock(side_effect=Exception("NotFound: 404 Not Found"))
+    svc._client = mock_client
+
+    result = await svc.get_event("nonexistent-id")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_event_empty_source_returns_empty_dict() -> None:
+    """When _source is an empty dict, get_event() returns {} (not None)."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value={"_id": "x", "_source": {}})
+    svc._client = mock_client
+
+    result = await svc.get_event("x")
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_get_event_source_missing_returns_none() -> None:
+    """When the response has no _source key, get_event() returns None."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    # Response without _source — dict.get("_source") returns None
+    mock_client.get = AsyncMock(return_value={"_id": "x", "_index": "mxtac-events-2026.02.20"})
+    svc._client = mock_client
+
+    result = await svc.get_event("x")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_event_returns_full_ocsf_source_unchanged() -> None:
+    """get_event() returns the complete _source payload without any transformation."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    ocsf_source = {
+        "id": "pg-uuid-999",
+        "class_name": "Network Activity",
+        "class_uid": 4001,
+        "severity_id": 4,
+        "time": "2026-02-20T12:00:00Z",
+        "metadata_product": "wazuh",
+        "src_endpoint": {"ip": "192.168.1.10", "hostname": "workstation-01"},
+        "dst_endpoint": {"ip": "10.0.0.1", "port": 443},
+        "actor_user": {"name": "jsmith", "domain": "CORP"},
+    }
+    mock_client.get = AsyncMock(
+        return_value={"_id": "pg-uuid-999", "_source": ocsf_source}
+    )
+    svc._client = mock_client
+
+    result = await svc.get_event("pg-uuid-999")
+    assert result is ocsf_source
+
+
+@pytest.mark.asyncio
+async def test_get_event_called_once_per_invocation() -> None:
+    """get_event() makes exactly one call to the underlying OS client per invocation."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value={"_source": {"class_name": "Authentication"}})
+    svc._client = mock_client
+
+    await svc.get_event("event-abc")
+
+    mock_client.get.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_event_wildcard_index_not_an_alerts_index() -> None:
+    """The default index pattern used by get_event() must not target alerts indices."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value={"_source": {}})
+    svc._client = mock_client
+
+    await svc.get_event("some-id")
+
+    index_arg = mock_client.get.call_args.kwargs.get("index")
+    assert "alerts" not in index_arg, (
+        f"get_event() must not search alerts index, got {index_arg!r}"
+    )

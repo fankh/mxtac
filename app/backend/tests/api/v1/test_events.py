@@ -334,6 +334,207 @@ async def test_get_event_not_found(client: AsyncClient, hunter_headers: dict) ->
     assert resp.json()["detail"] == "Event not found"
 
 
+@pytest.mark.asyncio
+async def test_get_event_unauthenticated(client: AsyncClient) -> None:
+    """GET /events/{id} without auth → 401 or 403."""
+    resp = await client.get(f"{BASE_URL}/some-event-id")
+    assert resp.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_get_event_viewer_denied(client: AsyncClient, viewer_headers: dict) -> None:
+    """GET /events/{id} with viewer role → 403 (events:search requires hunter+)."""
+    resp = await client.get(f"{BASE_URL}/some-event-id", headers=viewer_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_event_analyst_denied(client: AsyncClient, analyst_headers: dict) -> None:
+    """GET /events/{id} with analyst role → 403 (events:search requires hunter+)."""
+    resp = await client.get(f"{BASE_URL}/some-event-id", headers=analyst_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_event_engineer_allowed(
+    client: AsyncClient,
+    engineer_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """GET /events/{id} with engineer role → 200."""
+    (evt,) = await _seed(db_session, {"summary": "engineer test event"})
+    resp = await client.get(f"{BASE_URL}/{evt.id}", headers=engineer_headers)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_get_event_admin_allowed(
+    client: AsyncClient,
+    admin_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """GET /events/{id} with admin role → 200."""
+    (evt,) = await _seed(db_session, {"summary": "admin test event"})
+    resp = await client.get(f"{BASE_URL}/{evt.id}", headers=admin_headers)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_get_event_response_contains_all_base_fields(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """GET /events/{id} response includes all base serialized fields."""
+    (evt,) = await _seed(db_session, {
+        "event_uid": "uid-001",
+        "class_name": "Process Activity",
+        "class_uid": 4007,
+        "severity_id": 4,
+        "src_ip": "10.0.0.1",
+        "dst_ip": "10.0.0.2",
+        "hostname": "ws-01",
+        "username": "CORP\\jdoe",
+        "process_hash": "abc123",
+        "source": "wazuh",
+        "summary": "test event",
+    })
+    resp = await client.get(f"{BASE_URL}/{evt.id}", headers=hunter_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    for field in (
+        "id", "event_uid", "time", "class_name", "class_uid", "severity_id",
+        "src_ip", "dst_ip", "hostname", "username", "process_hash", "source", "summary",
+    ):
+        assert field in data, f"Expected field '{field}' in response"
+    assert data["event_uid"] == "uid-001"
+    assert data["class_name"] == "Process Activity"
+    assert data["class_uid"] == 4007
+    assert data["severity_id"] == 4
+    assert data["src_ip"] == "10.0.0.1"
+    assert data["dst_ip"] == "10.0.0.2"
+    assert data["hostname"] == "ws-01"
+    assert data["username"] == "CORP\\jdoe"
+    assert data["process_hash"] == "abc123"
+    assert data["source"] == "wazuh"
+
+
+@pytest.mark.asyncio
+async def test_get_event_raw_payload_merged_into_response(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """When the event has a raw OCSF payload, its fields are merged into the response."""
+    raw = {
+        "actor_user": {"name": "jdoe", "domain": "CORP"},
+        "process": {"pid": 1234, "name": "powershell.exe"},
+    }
+    (evt,) = await _seed(db_session, {"summary": "raw event", "raw": raw})
+    resp = await client.get(f"{BASE_URL}/{evt.id}", headers=hunter_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["summary"] == "raw event"
+    assert data["actor_user"]["name"] == "jdoe"
+    assert data["process"]["pid"] == 1234
+
+
+@pytest.mark.asyncio
+async def test_get_event_raw_overrides_base_field(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Raw payload fields with the same key overwrite the corresponding base fields."""
+    raw = {"summary": "raw-overridden-summary"}
+    (evt,) = await _seed(db_session, {"summary": "original summary", "raw": raw})
+    resp = await client.get(f"{BASE_URL}/{evt.id}", headers=hunter_headers)
+    assert resp.status_code == 200
+    # raw["summary"] must overwrite the ORM-extracted summary
+    assert resp.json()["summary"] == "raw-overridden-summary"
+
+
+@pytest.mark.asyncio
+async def test_get_event_no_raw_payload(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """When the event has no raw payload, the response contains only the base fields."""
+    (evt,) = await _seed(db_session, {"summary": "no raw", "raw": None})
+    resp = await client.get(f"{BASE_URL}/{evt.id}", headers=hunter_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == evt.id
+    assert data["summary"] == "no raw"
+    # No extra OCSF-nested keys that would only come from a raw payload
+    assert "actor_user" not in data
+    assert "process" not in data
+
+
+@pytest.mark.asyncio
+async def test_get_event_id_in_response_matches_path(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """The 'id' field in the response matches the UUID used in the URL path."""
+    (evt,) = await _seed(db_session, {"summary": "id check"})
+    resp = await client.get(f"{BASE_URL}/{evt.id}", headers=hunter_headers)
+    assert resp.status_code == 200
+    assert resp.json()["id"] == evt.id
+
+
+@pytest.mark.asyncio
+async def test_get_event_time_serialized_as_isoformat(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """The 'time' field is returned as an ISO-8601 string."""
+    (evt,) = await _seed(db_session, {"summary": "time check"})
+    resp = await client.get(f"{BASE_URL}/{evt.id}", headers=hunter_headers)
+    assert resp.status_code == 200
+    time_val = resp.json()["time"]
+    assert isinstance(time_val, str)
+    # Must be parseable as ISO 8601
+    datetime.fromisoformat(time_val.replace("Z", "+00:00"))
+
+
+@pytest.mark.asyncio
+async def test_get_event_not_found_uuid_format(
+    client: AsyncClient,
+    hunter_headers: dict,
+) -> None:
+    """GET /events/{id} with a well-formed UUID that does not exist → 404."""
+    resp = await client.get(
+        f"{BASE_URL}/00000000-0000-0000-0000-000000000000",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Event not found"
+
+
+@pytest.mark.asyncio
+async def test_get_event_different_events_return_different_data(
+    client: AsyncClient,
+    hunter_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    """Each event ID returns its own data — no cross-contamination between events."""
+    evt_a, evt_b = await _seed(
+        db_session,
+        {"summary": "event-alpha", "hostname": "host-alpha"},
+        {"summary": "event-beta", "hostname": "host-beta"},
+    )
+    resp_a = await client.get(f"{BASE_URL}/{evt_a.id}", headers=hunter_headers)
+    resp_b = await client.get(f"{BASE_URL}/{evt_b.id}", headers=hunter_headers)
+    assert resp_a.json()["summary"] == "event-alpha"
+    assert resp_b.json()["summary"] == "event-beta"
+    assert resp_a.json()["hostname"] == "host-alpha"
+    assert resp_b.json()["hostname"] == "host-beta"
+
+
 # ---------------------------------------------------------------------------
 # POST /aggregate
 # ---------------------------------------------------------------------------
