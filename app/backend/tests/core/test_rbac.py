@@ -1,4 +1,7 @@
-"""Tests for app/core/rbac.py — Feature 3.1: Roles: viewer / analyst / hunter / engineer / admin
+"""Tests for app/core/rbac.py
+
+Feature 3.1: Roles: viewer / analyst / hunter / engineer / admin
+Feature 3.2: Permission map — role → allowed actions
 
 Coverage:
   ROLES constant:
@@ -9,6 +12,16 @@ Coverage:
     - Each permission maps to the correct set of allowed roles
     - Viewer-only permissions return empty denied sets for viewer
     - Admin-only permissions deny all other roles
+  ROLE_PERMISSIONS map (Feature 3.2):
+    - Dict with exactly 5 keys (one per role)
+    - Each value is a frozenset of valid permission strings
+    - Correct permission sets for each role
+    - Monotonically increasing: each role is a superset of roles below it
+    - Consistent with PERMISSIONS (inverse relationship)
+  permissions_for_role() (Feature 3.2):
+    - Returns correct frozenset for each known role
+    - Returns empty frozenset for unknown roles
+    - Return type is always frozenset
   require_permission():
     - Raises ValueError at call-time for unknown permission (developer safeguard)
     - Returns a callable for valid permissions
@@ -36,7 +49,7 @@ from httpx import AsyncClient
 from unittest.mock import AsyncMock, patch
 
 from app.core.exceptions import ForbiddenError
-from app.core.rbac import PERMISSIONS, ROLES, require_permission
+from app.core.rbac import PERMISSIONS, ROLE_PERMISSIONS, ROLES, permissions_for_role, require_permission
 
 # ---------------------------------------------------------------------------
 # Constants under test

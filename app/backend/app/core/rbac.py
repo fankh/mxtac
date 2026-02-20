@@ -40,6 +40,27 @@ PERMISSIONS: dict[str, set[str]] = {
     "events:search":    {"hunter", "engineer", "admin"},
 }
 
+# ── Role → permissions (inverse map) ──────────────────────────────────────────
+# Derived from PERMISSIONS: maps each role to the frozenset of permissions it
+# is granted.  Kept in sync automatically — edit PERMISSIONS above, not here.
+
+ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
+    role: frozenset(perm for perm, allowed in PERMISSIONS.items() if role in allowed)
+    for role in ROLES
+}
+
+
+def permissions_for_role(role: str) -> frozenset[str]:
+    """Return the frozenset of permissions granted to *role*.
+
+    Parameters
+    ----------
+    role:
+        A role string.  If the role is not in :data:`ROLES`, an empty
+        frozenset is returned rather than raising an error.
+    """
+    return ROLE_PERMISSIONS.get(role, frozenset())
+
 
 def require_permission(permission: str) -> Callable:
     """Return a FastAPI dependency that enforces *permission* for the current user.

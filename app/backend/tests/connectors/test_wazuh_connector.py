@@ -16,6 +16,13 @@ Feature 6.3 — Track last-seen timestamp:
   - checkpoint_callback: called after each fetch cycle with the new timestamp,
     not called when None, receives the updated _last_fetched_at value
 
+Feature 6.4 — Token refresh on 401:
+  - _refresh_token(): clears _token to None before calling _connect(), calls _connect(),
+    logs a warning with the connector name
+  - _fetch_events() delegates to _refresh_token() (not _connect()) on 401
+  - re-auth failure propagates out of _fetch_events()
+  - 401 on any page (including page 2+) triggers refresh and retry
+
 Common:
   - Initialisation: client/token None, last_fetched_at ~5 min ago, topic, health status
   - stop(): closes httpx client, clears _client and _token refs, safe when no client
@@ -623,3 +630,106 @@ class TestWazuhConnectorCheckpoint:
 
         call_kwargs = mock_client.get.call_args[1]
         assert call_kwargs["params"]["q"] == "timestamp>2025-06-01T08:00:00Z"
+
+
+# ── Feature 6.4 — Token refresh on 401 ────────────────────────────────────────
+
+
+class TestWazuhConnectorTokenRefresh:
+    async def test_refresh_token_clears_token_before_connect(self) -> None:
+        """_token is set to None before _connect() is called."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        conn._token = "old"
+        captured: list = []
+
+        async def _spy_connect() -> None:
+            captured.append(conn._token)
+
+        conn._connect = _spy_connect
+        await conn._refresh_token()
+
+        assert captured[0] is None
+
+    async def test_refresh_token_calls_connect(self) -> None:
+        """_refresh_token() delegates to _connect()."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        conn._connect = AsyncMock()
+
+        await conn._refresh_token()
+
+        conn._connect.assert_awaited_once()
+
+    async def test_refresh_token_logs_warning(self) -> None:
+        """A warning is logged when _refresh_token() is called."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        conn._connect = AsyncMock()
+
+        with patch("app.connectors.wazuh.logger") as mock_logger:
+            await conn._refresh_token()
+
+        mock_logger.warning.assert_called_once()
+
+    async def test_refresh_token_warning_includes_connector_name(self) -> None:
+        """The warning message includes the connector name."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        conn._connect = AsyncMock()
+
+        with patch("app.connectors.wazuh.logger") as mock_logger:
+            await conn._refresh_token()
+
+        warning_args = mock_logger.warning.call_args
+        assert "wazuh-test" in str(warning_args)
+
+    async def test_fetch_events_delegates_to_refresh_token_on_401(self) -> None:
+        """_fetch_events() calls _refresh_token() (not _connect()) on 401."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=_make_response(401, {}))
+        conn._client = mock_client
+        conn._token = "old"
+
+        refresh_mock = AsyncMock(side_effect=RuntimeError("refresh called"))
+        conn._refresh_token = refresh_mock
+
+        with pytest.raises(RuntimeError, match="refresh called"):
+            [e async for e in conn._fetch_events()]
+
+        refresh_mock.assert_awaited_once()
+
+    async def test_reauth_failure_propagates(self) -> None:
+        """If re-authentication fails during token refresh, the error propagates."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(
+            side_effect=[
+                _make_response(401, {}),                          # /alerts → expired
+                _make_response(401, {"error": "bad credentials"}),  # re-auth fails
+            ]
+        )
+        conn._client = mock_client
+        conn._token = "expired-token"
+
+        with pytest.raises(httpx.HTTPStatusError):
+            [e async for e in conn._fetch_events()]
+
+    async def test_second_page_401_triggers_refresh_and_retries(self) -> None:
+        """A 401 on a subsequent page also triggers token refresh and retries."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        page1 = [{"id": str(i)} for i in range(100)]
+        alert2 = {"id": "200"}
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(
+            side_effect=[
+                _alerts_resp(page1, total=101),    # page 1 OK
+                _make_response(401, {}),            # page 2 → expired token
+                _auth_resp("refreshed"),            # re-auth OK
+                _alerts_resp([alert2], total=101),  # page 2 retry OK
+            ]
+        )
+        conn._client = mock_client
+        conn._token = "tok"
+
+        received = [e async for e in conn._fetch_events()]
+
+        assert len(received) == 101
+        assert conn._token == "refreshed"

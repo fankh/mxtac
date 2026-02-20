@@ -78,6 +78,17 @@ class WazuhConnector(BaseConnector):
         self._token = resp.json()["data"]["token"]
         logger.info("WazuhConnector authenticated url=%s", base_url)
 
+    # ── Token refresh ─────────────────────────────────────────────────────────
+
+    async def _refresh_token(self) -> None:
+        """Invalidate the current token and re-authenticate."""
+        logger.warning(
+            "WazuhConnector token expired, refreshing name=%s",
+            self.config.name,
+        )
+        self._token = None
+        await self._connect()
+
     # ── Fetch ────────────────────────────────────────────────────────────────
 
     async def _fetch_events(self) -> AsyncGenerator[dict[str, Any], None]:
@@ -99,8 +110,7 @@ class WazuhConnector(BaseConnector):
             resp = await self._client.get("/alerts", headers=headers, params=params)
 
             if resp.status_code == 401:
-                # Token expired — re-authenticate and retry once
-                await self._connect()
+                await self._refresh_token()
                 headers = {"Authorization": f"Bearer {self._token}"}
                 resp = await self._client.get("/alerts", headers=headers, params=params)
 
