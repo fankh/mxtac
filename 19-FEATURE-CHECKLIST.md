@@ -534,7 +534,7 @@
 | 28.5 | Auth: token refresh | `[x]` | `[x]` | P0 | 18 tests: happy path, type validation, inactive/unknown user, 422 |
 | 28.6 | RBAC: viewer cannot PATCH rules | `[x]` | `[T]` | P0 | 6 tests: viewer/analyst/hunter→403, engineer/admin→404, unauth→401/403 |
 | 28.7 | RBAC: analyst can update detection status | `[x]` | `[T]` | P0 | 8 tests: viewer→403 (×2), analyst/hunter/engineer/admin→200, assigned_to, priority |
-| 28.8 | RBAC: engineer can create rules | `[ ]` | `[ ]` | P0 | |
+| 28.8 | RBAC: engineer can create rules | `[x]` | `[T]` | P0 | 8 tests: unauth→401/403, viewer/analyst/hunter→403, engineer/admin→201, invalid→422, disabled |
 | 28.9 | RBAC: admin can manage users | `[ ]` | `[ ]` | P0 | |
 | 28.10 | Normalizer: Wazuh level 14 → severity_id 5 | `[ ]` | `[ ]` | P0 | |
 | 28.11 | Normalizer: Wazuh MITRE tags → attacks[] | `[ ]` | `[ ]` | P0 | |

@@ -1,12 +1,17 @@
 """Tests for Sigma Rules CRUD endpoints — GET, POST, PATCH, DELETE, import.
 
 Coverage:
-  - List rules: unauthenticated → 401; hunter+ required for rules:read
-  - GET rule by ID: 404 when not found
-  - POST create rule: 422 on invalid YAML; 201 on valid Sigma YAML
-  - POST /rules/import: bulk import returns imported count
-  - GET /rules/stats/summary: total/enabled/by_level
-  - POST /rules/test: test arbitrary YAML against a sample event
+  - List rules: unauthenticated → 401/403; viewer/analyst → 403 (rules:read requires hunter+)
+  - GET rule by ID: 404 when not found (hunter+)
+  - Feature 28.8 — RBAC: engineer can create rules
+      viewer / analyst / hunter → 403 on POST /rules (rules:write requires engineer+)
+      engineer → 201 on POST /rules with valid Sigma YAML
+      admin → 201 on POST /rules with valid Sigma YAML
+      unauthenticated → 401 or 403 on POST /rules
+      invalid YAML → 422
+  - POST /rules/import: bulk import returns imported count (engineer+)
+  - GET /rules/stats/summary: total/enabled/by_level (hunter+)
+  - POST /rules/test: test arbitrary YAML against a sample event (hunter+)
 
 The module-level ``_rule_store`` in the endpoint is reset by an autouse fixture
 so tests are fully isolated.
@@ -52,7 +57,7 @@ def _clear_rule_store():
 
 
 # ---------------------------------------------------------------------------
-# Auth / access control
+# GET /rules — access control (rules:read requires hunter+)
 # ---------------------------------------------------------------------------
 
 
@@ -64,18 +69,17 @@ async def test_list_rules_unauthenticated(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_rules_any_auth_succeeds(client: AsyncClient, viewer_headers: dict) -> None:
-    """GET /rules with any valid JWT → 200 (endpoint uses plain get_current_user)."""
+async def test_list_rules_viewer_forbidden(client: AsyncClient, viewer_headers: dict) -> None:
+    """GET /rules with viewer role → 403 (rules:read requires hunter+)."""
     resp = await client.get(BASE_URL, headers=viewer_headers)
-    assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
-async def test_list_rules_all_roles_can_list(client: AsyncClient, analyst_headers: dict) -> None:
-    """GET /rules with analyst role also returns 200 (no RBAC on list yet)."""
+async def test_list_rules_analyst_forbidden(client: AsyncClient, analyst_headers: dict) -> None:
+    """GET /rules with analyst role → 403 (rules:read requires hunter+)."""
     resp = await client.get(BASE_URL, headers=analyst_headers)
-    assert resp.status_code == 200
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -87,7 +91,7 @@ async def test_list_rules_hunter_empty(client: AsyncClient, hunter_headers: dict
 
 
 # ---------------------------------------------------------------------------
-# GET single rule
+# GET /rules/{id} — access control (rules:read requires hunter+)
 # ---------------------------------------------------------------------------
 
 
@@ -100,13 +104,92 @@ async def test_get_rule_not_found(client: AsyncClient, hunter_headers: dict) -> 
 
 
 # ---------------------------------------------------------------------------
-# POST create rule
+# Feature 28.8 — RBAC: engineer can create rules (POST /rules)
+# rules:write is granted to engineer and admin only
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_create_rule_invalid_yaml(client: AsyncClient, engineer_headers: dict) -> None:
-    """POST /rules with non-dict YAML content (plain string) → 422.
+async def test_create_rule_unauthenticated(client: AsyncClient) -> None:
+    """POST /rules without auth → 401 or 403."""
+    resp = await client.post(
+        BASE_URL,
+        json={"title": "Test Rule", "content": _SIGMA_YAML},
+    )
+    assert resp.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_create_rule_viewer_forbidden(client: AsyncClient, viewer_headers: dict) -> None:
+    """POST /rules with viewer role → 403 (rules:write requires engineer+)."""
+    resp = await client.post(
+        BASE_URL,
+        headers=viewer_headers,
+        json={"title": "Test Rule", "content": _SIGMA_YAML},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_rule_analyst_forbidden(client: AsyncClient, analyst_headers: dict) -> None:
+    """POST /rules with analyst role → 403 (rules:write requires engineer+)."""
+    resp = await client.post(
+        BASE_URL,
+        headers=analyst_headers,
+        json={"title": "Test Rule", "content": _SIGMA_YAML},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_rule_hunter_forbidden(client: AsyncClient, hunter_headers: dict) -> None:
+    """POST /rules with hunter role → 403.
+
+    Hunter has rules:read but NOT rules:write; create is blocked.
+    """
+    resp = await client.post(
+        BASE_URL,
+        headers=hunter_headers,
+        json={"title": "Test Rule", "content": _SIGMA_YAML},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_rule_engineer_valid(client: AsyncClient, engineer_headers: dict) -> None:
+    """POST /rules with engineer role and valid Sigma YAML → 201.
+
+    Confirms engineer has rules:write permission and the rule is created.
+    """
+    resp = await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Test Rule", "content": _SIGMA_YAML},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert "id" in data
+    assert data["level"] == "high"
+    assert data["enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_rule_admin_valid(client: AsyncClient, admin_headers: dict) -> None:
+    """POST /rules with admin role and valid Sigma YAML → 201."""
+    resp = await client.post(
+        BASE_URL,
+        headers=admin_headers,
+        json={"title": "Test Rule", "content": _SIGMA_YAML},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert "id" in data
+    assert data["level"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_create_rule_engineer_invalid_yaml(client: AsyncClient, engineer_headers: dict) -> None:
+    """POST /rules with engineer role but non-dict YAML content → 422.
 
     The engine returns an empty list when the YAML document is not a dict
     (e.g. a bare string), which triggers the 422 guard in the endpoint.
@@ -120,22 +203,19 @@ async def test_create_rule_invalid_yaml(client: AsyncClient, engineer_headers: d
 
 
 @pytest.mark.asyncio
-async def test_create_rule_valid(client: AsyncClient, engineer_headers: dict) -> None:
-    """POST /rules with valid Sigma YAML → 201, rule id and level returned."""
+async def test_create_rule_engineer_disabled(client: AsyncClient, engineer_headers: dict) -> None:
+    """POST /rules with enabled=False → 201, rule created with enabled=False."""
     resp = await client.post(
         BASE_URL,
         headers=engineer_headers,
-        json={"title": "Test Rule", "content": _SIGMA_YAML},
+        json={"title": "Disabled Rule", "content": _SIGMA_YAML, "enabled": False},
     )
     assert resp.status_code == 201
-    data = resp.json()
-    assert "id" in data
-    assert data["level"] == "high"
-    assert data["enabled"] is True
+    assert resp.json()["enabled"] is False
 
 
 # ---------------------------------------------------------------------------
-# Import rules
+# POST /rules/import — bulk import (engineer+)
 # ---------------------------------------------------------------------------
 
 
@@ -154,7 +234,7 @@ async def test_import_single_rule(client: AsyncClient, engineer_headers: dict) -
 
 
 # ---------------------------------------------------------------------------
-# Stats summary
+# GET /rules/stats/summary (hunter+)
 # ---------------------------------------------------------------------------
 
 
@@ -186,7 +266,7 @@ async def test_rules_summary_after_import(client: AsyncClient, engineer_headers:
 
 
 # ---------------------------------------------------------------------------
-# Test arbitrary YAML (POST /rules/test)
+# POST /rules/test — test arbitrary YAML against event (hunter+)
 # ---------------------------------------------------------------------------
 
 
