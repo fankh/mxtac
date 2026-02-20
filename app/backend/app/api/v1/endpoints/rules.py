@@ -40,6 +40,14 @@ class RuleResponse(BaseModel):
     hit_count: int = 0
     fp_count: int = 0
 
+
+class RuleDetailResponse(RuleResponse):
+    """Extended response for GET /rules/{id} — includes raw YAML and metadata."""
+    content: str
+    description: str = ""
+    source: str | None = None
+    created_by: str | None = None
+
 class RuleTestRequest(BaseModel):
     content: str          # YAML to test
     sample_event: dict    # event to test against
@@ -86,6 +94,18 @@ def _rule_to_response(rule: Any) -> dict:
         "hit_count": rule.hit_count,
         "fp_count": rule.fp_count,
     }
+
+
+def _rule_to_detail_response(rule: Any) -> dict:
+    """Convert ORM Rule → RuleDetailResponse-compatible dict (superset of RuleResponse)."""
+    base = _rule_to_response(rule)
+    base.update({
+        "content": rule.content or "",
+        "description": rule.description or "",
+        "source": rule.source,
+        "created_by": rule.created_by,
+    })
+    return base
 
 
 async def _parse_and_persist(
@@ -188,16 +208,17 @@ async def import_rules(
         raise HTTPException(status_code=422, detail=f"Import failed: {exc}")
 
 
-@router.get("/{rule_id}", response_model=RuleResponse)
+@router.get("/{rule_id}", response_model=RuleDetailResponse)
 async def get_rule(
     rule_id: str,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("rules:read")),
 ):
+    """Fetch a single Sigma rule by ID, including raw YAML content and metadata."""
     rule = await RuleRepo.get_by_id(db, rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    return _rule_to_response(rule)
+    return _rule_to_detail_response(rule)
 
 
 @router.post("", response_model=RuleResponse, status_code=201)

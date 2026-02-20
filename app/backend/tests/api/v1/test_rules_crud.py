@@ -217,6 +217,78 @@ async def test_get_rule_not_found(client: AsyncClient, hunter_headers: dict) -> 
 
 
 # ---------------------------------------------------------------------------
+# Feature 13.2 — GET /rules/{id} — detail + YAML content
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_rule_detail_returns_yaml_content(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """GET /rules/{id} returns raw YAML content field."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.get(f"{BASE_URL}/test-rule-0001", headers=hunter_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "content" in data
+    assert "mimikatz" in data["content"].lower()
+
+
+@pytest.mark.asyncio
+async def test_get_rule_detail_schema(
+    client: AsyncClient, hunter_headers: dict, engineer_headers: dict
+) -> None:
+    """GET /rules/{id} response includes all RuleDetailResponse fields."""
+    await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={"title": "Mimikatz", "content": _SIGMA_YAML},
+    )
+    resp = await client.get(f"{BASE_URL}/test-rule-0001", headers=hunter_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    # Base fields
+    assert data["id"] == "test-rule-0001"
+    assert data["title"] == "Test Mimikatz Detection"
+    assert data["level"] == "high"
+    assert data["status"] == "experimental"
+    assert data["enabled"] is True
+    assert isinstance(data["technique_ids"], list)
+    assert isinstance(data["tactic_ids"], list)
+    assert isinstance(data["logsource"], dict)
+    assert isinstance(data["hit_count"], int)
+    assert isinstance(data["fp_count"], int)
+    # Detail-only fields
+    assert "content" in data
+    assert isinstance(data["content"], str)
+    assert len(data["content"]) > 0
+    assert "description" in data
+    assert "source" in data
+
+
+@pytest.mark.asyncio
+async def test_get_rule_detail_viewer_forbidden(
+    client: AsyncClient, viewer_headers: dict
+) -> None:
+    """GET /rules/{id} with viewer role → 403."""
+    resp = await client.get(f"{BASE_URL}/any-rule-id", headers=viewer_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_rule_detail_analyst_forbidden(
+    client: AsyncClient, analyst_headers: dict
+) -> None:
+    """GET /rules/{id} with analyst role → 403 (rules:read requires hunter+)."""
+    resp = await client.get(f"{BASE_URL}/any-rule-id", headers=analyst_headers)
+    assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # Feature 28.8 — RBAC: engineer can create rules (POST /rules)
 # rules:write is granted to engineer and admin only
 # ---------------------------------------------------------------------------
