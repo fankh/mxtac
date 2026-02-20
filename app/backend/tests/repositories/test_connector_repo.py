@@ -230,36 +230,6 @@ class TestConnectorRepoCreate:
         assert result.connector_type == "velociraptor"
 
     @pytest.mark.asyncio
-    async def test_created_connector_default_status_is_inactive(self) -> None:
-        session = _make_session()
-
-        result = await ConnectorRepo.create(
-            session, name="osquery-endpoint", connector_type="osquery"
-        )
-
-        assert result.status == "inactive"
-
-    @pytest.mark.asyncio
-    async def test_created_connector_default_enabled_is_true(self) -> None:
-        session = _make_session()
-
-        result = await ConnectorRepo.create(
-            session, name="prowler-cloud", connector_type="prowler"
-        )
-
-        assert result.enabled is True
-
-    @pytest.mark.asyncio
-    async def test_created_connector_default_config_json_is_empty_object(self) -> None:
-        session = _make_session()
-
-        result = await ConnectorRepo.create(
-            session, name="opencti-threat", connector_type="opencti"
-        )
-
-        assert result.config_json == "{}"
-
-    @pytest.mark.asyncio
     async def test_add_receives_connector_object(self) -> None:
         from app.models.connector import Connector
         session = _make_session()

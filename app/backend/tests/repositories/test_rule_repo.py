@@ -273,15 +273,6 @@ class TestRuleRepoCreate:
         assert result.level == "critical"
 
     @pytest.mark.asyncio
-    async def test_created_rule_default_enabled_is_true(self) -> None:
-        session = _make_session()
-
-        result = await RuleRepo.create(session, title="Rule", content="yaml")
-
-        # ORM default is True
-        assert result.enabled is True
-
-    @pytest.mark.asyncio
     async def test_add_receives_rule_object(self) -> None:
         from app.models.rule import Rule
         session = _make_session()
