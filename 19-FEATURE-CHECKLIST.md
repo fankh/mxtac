@@ -145,7 +145,7 @@
 | 7.1 | `OCSFEvent` Pydantic schema | `[x]` | `[ ]` | P0 | `normalizers/ocsf.py` |
 | 7.2 | Wazuh → OCSF: `rule.level` → `severity_id` | `[x]` | `[x]` | P0 | 74 tests: all tiers, boundaries, classify, MITRE, round-trip |
 | 7.3 | Wazuh → OCSF: MITRE tags → `attacks[]` | `[x]` | `[x]` | P0 | 29 tests: technique names, sub-techniques, full-name tactics, serialization |
-| 7.4 | Wazuh → OCSF: `agent` → `dst_endpoint` | `[ ]` | `[ ]` | P0 | |
+| 7.4 | Wazuh → OCSF: `agent` → `dst_endpoint` | `[x]` | `[x]` | P0 | `agent.id→uid`, `name→hostname`, `ip→ip`, `os.name→os_name`; 34 tests |
 | 7.5 | Wazuh → OCSF: Windows event data → `process` | `[ ]` | `[ ]` | P0 | |
 | 7.6 | Zeek → OCSF: `conn` → `NetworkActivity` (class 4001) | `[~]` | `[ ]` | P0 | |
 | 7.7 | Zeek → OCSF: `dns` → `DNSActivity` (class 4003) | `[ ]` | `[ ]` | P0 | |

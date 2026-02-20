@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 # ── Shared sub-objects ───────────────────────────────────────────────────────
 
 class Endpoint(BaseModel):
+    uid: str | None = None      # Unique identifier (e.g., Wazuh agent.id)
     hostname: str | None = None
     ip: str | None = None
     port: int | None = None

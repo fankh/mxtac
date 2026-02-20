@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ....core.config import settings
 from ....core.database import get_db
 from ....core.security import create_access_token, create_refresh_token, verify_password, decode_token
 from ....core.valkey import blacklist_token
@@ -30,7 +31,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(
         access_token=token,
         refresh_token=refresh,
-        expires_in=3600,
+        expires_in=settings.access_token_expire_minutes * 60,
     )
 
 
@@ -50,7 +51,7 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(
         access_token=token,
         refresh_token=new_refresh,
-        expires_in=3600,
+        expires_in=settings.access_token_expire_minutes * 60,
     )
 
 

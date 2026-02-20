@@ -1,10 +1,10 @@
 """Tests for WazuhNormalizer — Feature 7.4: agent → dst_endpoint
 
 Coverage:
-  - agent.name  → dst_endpoint.hostname
-  - agent.ip    → dst_endpoint.ip
+  - agent.name    → dst_endpoint.hostname
+  - agent.ip      → dst_endpoint.ip
   - agent.os.name → dst_endpoint.os_name
-  - agent.id    → unmapped["agent_id"]
+  - agent.id      → dst_endpoint.uid (Feature 7.4 — not stored in unmapped)
   - Fallback: agent.ip absent → data.dstip used for dst_endpoint.ip
   - Graceful handling of missing/empty agent block
   - Minimal alert (no agent key) normalizes without error
@@ -166,29 +166,37 @@ def test_agent_os_name_key_absent_os_name_is_none(normalizer: WazuhNormalizer) -
 
 
 # ---------------------------------------------------------------------------
-# Feature 7.4: agent.id → unmapped["agent_id"]
+# Feature 7.4: agent.id → dst_endpoint.uid
 # ---------------------------------------------------------------------------
 
 
-def test_agent_id_stored_in_unmapped(
+def test_agent_id_stored_in_dst_endpoint_uid(
     normalizer: WazuhNormalizer, agent_alert: dict
 ) -> None:
-    """agent.id must be preserved in unmapped for traceability."""
+    """agent.id must appear as dst_endpoint.uid (Feature 7.4)."""
     event = normalizer.normalize(agent_alert)
-    assert event.unmapped.get("agent_id") == "007"
+    assert event.dst_endpoint.uid == "007"
 
 
-def test_agent_id_absent_not_in_unmapped(normalizer: WazuhNormalizer) -> None:
-    """When agent.id is missing, unmapped must not contain 'agent_id'."""
+def test_agent_id_not_in_unmapped(
+    normalizer: WazuhNormalizer, agent_alert: dict
+) -> None:
+    """agent.id must NOT appear in unmapped — it lives in dst_endpoint.uid now."""
+    event = normalizer.normalize(agent_alert)
+    assert "agent_id" not in event.unmapped
+
+
+def test_agent_id_absent_uid_is_none(normalizer: WazuhNormalizer) -> None:
+    """When agent.id is missing, dst_endpoint.uid must be None."""
     alert = {"agent": {"name": "NOAGENTID-HOST", "ip": "10.5.0.1"}}
     event = normalizer.normalize(alert)
-    assert "agent_id" not in event.unmapped
+    assert event.dst_endpoint.uid is None
 
 
-def test_agent_block_absent_no_agent_id_in_unmapped(normalizer: WazuhNormalizer) -> None:
-    """Completely missing agent block → no agent_id in unmapped."""
+def test_agent_block_absent_uid_is_none(normalizer: WazuhNormalizer) -> None:
+    """Completely missing agent block → dst_endpoint.uid is None."""
     event = normalizer.normalize({"rule": {"level": 3}})
-    assert "agent_id" not in event.unmapped
+    assert event.dst_endpoint.uid is None
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +206,7 @@ def test_agent_block_absent_no_agent_id_in_unmapped(normalizer: WazuhNormalizer)
 
 def test_missing_agent_block_does_not_raise(normalizer: WazuhNormalizer) -> None:
     event = normalizer.normalize({})
+    assert event.dst_endpoint.uid is None
     assert event.dst_endpoint.hostname is None
     assert event.dst_endpoint.ip is None
     assert event.dst_endpoint.os_name is None
@@ -206,6 +215,7 @@ def test_missing_agent_block_does_not_raise(normalizer: WazuhNormalizer) -> None
 def test_empty_agent_block_produces_none_fields(normalizer: WazuhNormalizer) -> None:
     alert = {"agent": {}}
     event = normalizer.normalize(alert)
+    assert event.dst_endpoint.uid is None
     assert event.dst_endpoint.hostname is None
     assert event.dst_endpoint.ip is None
     assert event.dst_endpoint.os_name is None
@@ -216,25 +226,27 @@ def test_empty_agent_block_produces_none_fields(normalizer: WazuhNormalizer) -> 
 # ---------------------------------------------------------------------------
 
 
-def test_dst_endpoint_os_name_in_json_dump(
+def test_dst_endpoint_all_fields_in_json_dump(
     normalizer: WazuhNormalizer, agent_alert: dict
 ) -> None:
-    """model_dump(mode='json') must include os_name in dst_endpoint."""
+    """model_dump(mode='json') must include uid, hostname, ip, os_name in dst_endpoint."""
     event = normalizer.normalize(agent_alert)
     dumped = event.model_dump(mode="json")
+    assert dumped["dst_endpoint"]["uid"] == "007"
     assert dumped["dst_endpoint"]["os_name"] == "Microsoft Windows Server 2022"
     assert dumped["dst_endpoint"]["hostname"] == "WIN-SRV01"
     assert dumped["dst_endpoint"]["ip"] == "10.1.2.3"
 
 
-def test_agent_id_in_unmapped_json_serializable(
+def test_dst_endpoint_json_serializable(
     normalizer: WazuhNormalizer, agent_alert: dict
 ) -> None:
-    """unmapped["agent_id"] must survive JSON serialization."""
+    """Full event including dst_endpoint.uid must survive JSON serialization."""
     event = normalizer.normalize(agent_alert)
     dumped = event.model_dump(mode="json")
     json.dumps(dumped)  # must not raise
-    assert dumped["unmapped"]["agent_id"] == "007"
+    assert dumped["dst_endpoint"]["uid"] == "007"
+    assert dumped["unmapped"] == {}
 
 
 def test_full_agent_alert_json_round_trip(
@@ -245,10 +257,10 @@ def test_full_agent_alert_json_round_trip(
     dumped = event.model_dump(mode="json")
     serialized = json.dumps(dumped)
     restored = json.loads(serialized)
+    assert restored["dst_endpoint"]["uid"] == "007"
     assert restored["dst_endpoint"]["hostname"] == "WIN-SRV01"
     assert restored["dst_endpoint"]["ip"] == "10.1.2.3"
     assert restored["dst_endpoint"]["os_name"] == "Microsoft Windows Server 2022"
-    assert restored["unmapped"]["agent_id"] == "007"
     assert restored["src_endpoint"]["ip"] == "172.16.0.50"
 
 
@@ -292,12 +304,13 @@ def test_normalize_all_agent_fields_end_to_end(normalizer: WazuhNormalizer) -> N
     event = normalizer.normalize(alert)
 
     # dst_endpoint fields (Feature 7.4)
+    assert event.dst_endpoint.uid == "042"
     assert event.dst_endpoint.hostname == "WIN-WORKSTATION"
     assert event.dst_endpoint.ip == "192.168.10.42"
     assert event.dst_endpoint.os_name == "Microsoft Windows 10 Enterprise"
 
-    # unmapped.agent_id (Feature 7.4)
-    assert event.unmapped["agent_id"] == "042"
+    # agent_id is NOT in unmapped (it's in dst_endpoint.uid)
+    assert "agent_id" not in event.unmapped
 
     # src_endpoint (unchanged)
     assert event.src_endpoint.ip == "192.168.10.5"
