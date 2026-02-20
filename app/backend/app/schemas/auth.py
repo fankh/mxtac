@@ -57,3 +57,15 @@ class MfaLoginResponse(BaseModel):
 class MfaVerifyLoginRequest(BaseModel):
     mfa_token: str
     code: str
+
+
+# Feature 32.3 — MFA management
+class MeResponse(BaseModel):
+    email: str
+    role: str
+    full_name: str | None = None
+    mfa_enabled: bool
+
+
+class MfaDisableRequest(BaseModel):
+    user_id: str

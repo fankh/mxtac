@@ -22,9 +22,12 @@ from ....core.security import (
 )
 from ....core.valkey import blacklist_token, increment_mfa_attempts
 from ....repositories.user_repo import UserRepo
+from ....core.rbac import require_permission
 from ....schemas.auth import (
     LoginRequest,
     LogoutResponse,
+    MeResponse,
+    MfaDisableRequest,
     MfaLoginResponse,
     MfaSetupResponse,
     MfaVerifyLoginRequest,
