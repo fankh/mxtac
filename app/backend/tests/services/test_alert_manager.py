@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter.
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter.
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -33,6 +33,10 @@ Coverage:
   - counter: severity label matches alert.level for all Sigma levels (low/medium/high/critical)
   - counter: severity label defaults to "medium" when alert level is empty
   - counter: counter NOT incremented for deduplicated alerts (only processed count)
+  - dedup counter: alerts_deduplicated.inc() called when _is_duplicate() returns True (feature 21.5)
+  - dedup counter: alerts_deduplicated.inc() NOT called for non-duplicate alerts (feature 21.5)
+  - dedup counter: alerts_deduplicated.inc() called exactly once per duplicate (feature 21.5)
+  - dedup counter: two back-to-back duplicates each increment the counter once (feature 21.5)
 """
 
 from __future__ import annotations
@@ -1210,6 +1214,130 @@ async def test_process_counter_incremented_before_dedup_check():
     assert call_order[0] == "counter_inc", (
         "alerts_processed counter must be incremented before _is_duplicate() check; "
         f"actual call order: {call_order}"
+    )
+
+    await queue.stop()
+
+
+# ---------------------------------------------------------------------------
+# Section 10 — mxtac_alerts_deduplicated_total counter (feature 21.5)
+# ---------------------------------------------------------------------------
+#
+# The counter tracks every alert that is dropped by the deduplication window.
+# It must be incremented exactly once for each duplicate that is blocked, and
+# must NOT be incremented for new (non-duplicate) alerts.
+#
+# Implementation: alert_manager.py lines 85-88
+#   if await self._is_duplicate(alert):
+#       alerts_deduplicated.inc()
+#       return
+
+
+@pytest.mark.asyncio
+async def test_process_increments_alerts_deduplicated_counter_for_duplicate():
+    """process() must call alerts_deduplicated.inc() exactly once when the alert is a duplicate."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="high")
+
+    with (
+        patch("app.services.alert_manager.alerts_deduplicated") as mock_dedup_counter,
+        patch.object(mgr, "_is_duplicate", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    mock_dedup_counter.inc.assert_called_once()
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_does_not_increment_alerts_deduplicated_for_new_alert():
+    """process() must NOT call alerts_deduplicated.inc() when the alert is new (not a duplicate)."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="medium")
+
+    with (
+        patch("app.services.alert_manager.alerts_deduplicated") as mock_dedup_counter,
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    mock_dedup_counter.inc.assert_not_called()
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_increments_alerts_deduplicated_exactly_once_per_duplicate():
+    """process() must increment alerts_deduplicated exactly once, not more, for a single duplicate."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="critical")
+
+    with (
+        patch("app.services.alert_manager.alerts_deduplicated") as mock_dedup_counter,
+        patch.object(mgr, "_is_duplicate", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    assert mock_dedup_counter.inc.call_count == 1, (
+        f"alerts_deduplicated.inc() must be called exactly once per duplicate; "
+        f"got {mock_dedup_counter.inc.call_count}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_increments_alerts_deduplicated_for_each_back_to_back_duplicate():
+    """process() must increment alerts_deduplicated once per duplicate call.
+
+    Two consecutive duplicate alerts must each increment the counter,
+    so the total count reflects the number of duplicates seen.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="high")
+
+    # Simulate: first alert is new, second and third are duplicates
+    set_returns = [True, None, None]
+    call_index = 0
+
+    async def mock_set(*args, **kwargs):
+        nonlocal call_index
+        rv = set_returns[call_index]
+        call_index += 1
+        return rv
+
+    with (
+        patch("app.services.alert_manager.alerts_deduplicated") as mock_dedup_counter,
+        patch.object(mgr._valkey, "set", side_effect=mock_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)   # new — not counted
+        await mgr.process(alert_dict)   # duplicate — counted
+        await mgr.process(alert_dict)   # duplicate — counted
+
+    assert mock_dedup_counter.inc.call_count == 2, (
+        f"alerts_deduplicated.inc() must be called once per duplicate; "
+        f"expected 2, got {mock_dedup_counter.inc.call_count}"
     )
 
     await queue.stop()

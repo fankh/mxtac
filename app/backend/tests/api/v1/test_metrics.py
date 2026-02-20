@@ -1,5 +1,6 @@
-"""Tests for GET /metrics — Prometheus format (feature 21.3) and
-mxtac_alerts_processed_total{severity} counter (feature 21.4).
+"""Tests for GET /metrics — Prometheus format (feature 21.3),
+mxtac_alerts_processed_total{severity} counter (feature 21.4), and
+mxtac_alerts_deduplicated_total counter (feature 21.5).
 
 Coverage:
   /metrics endpoint:
@@ -29,6 +30,11 @@ Coverage:
   - All four Sigma severity levels (low/medium/high/critical) produce distinct labeled series
   - Label key is "severity" (not "level" or other names)
   - Counter declared as counter type (not gauge/histogram)
+
+  mxtac_alerts_deduplicated_total — feature 21.5:
+  - Counter declared as counter type (not gauge/histogram)
+  - Counter value is >= 1.0 after alerts_deduplicated.inc()
+  - Counter has no labels (label-free counter — dedup is not partitioned by severity)
 """
 
 from __future__ import annotations
@@ -36,7 +42,7 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-from app.core.metrics import alerts_processed
+from app.core.metrics import alerts_deduplicated, alerts_processed
 
 
 METRICS_URL = "/metrics"
@@ -417,3 +423,74 @@ async def test_metrics_alerts_processed_counter_increments_are_cumulative(
     assert value >= 1.0, (
         f"Counter value must be >= 1.0 after inc(); got {value}"
     )
+
+
+# ---------------------------------------------------------------------------
+# mxtac_alerts_deduplicated_total — feature 21.5
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_metrics_alerts_deduplicated_declared_as_counter(client: AsyncClient) -> None:
+    """/metrics declares mxtac_alerts_deduplicated_total as a counter."""
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    type_line = next(
+        (l for l in lines if l.startswith("# TYPE mxtac_alerts_deduplicated_total")),
+        None,
+    )
+    assert type_line is not None, "No # TYPE line for mxtac_alerts_deduplicated_total"
+    assert "counter" in type_line
+
+
+@pytest.mark.asyncio
+async def test_metrics_alerts_deduplicated_value_increases_after_inc(
+    client: AsyncClient,
+) -> None:
+    """After alerts_deduplicated.inc(), the counter value in /metrics must be >= 1.
+
+    Counters are monotonically increasing.  One increment is sufficient to
+    produce a positive value in the Prometheus text exposition.
+    """
+    alerts_deduplicated.inc()
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    dedup_lines = [
+        l for l in lines
+        if l.startswith("mxtac_alerts_deduplicated_total") and not l.startswith("#")
+    ]
+    assert len(dedup_lines) > 0, (
+        "Expected a mxtac_alerts_deduplicated_total line in /metrics after inc()"
+    )
+    value = float(dedup_lines[0].split()[-1])
+    assert value >= 1.0, (
+        f"Counter value must be >= 1.0 after inc(); got {value}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_alerts_deduplicated_has_no_labels(client: AsyncClient) -> None:
+    """mxtac_alerts_deduplicated_total is a label-free counter.
+
+    Deduplication is not partitioned by severity; the counter has no label
+    dimensions.  The metric line must not contain a '{...}' label set.
+    """
+    alerts_deduplicated.inc()
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    # Find the data line(s) for this metric (not comments)
+    dedup_lines = [
+        l for l in lines
+        if l.startswith("mxtac_alerts_deduplicated_total") and not l.startswith("#")
+    ]
+    assert len(dedup_lines) > 0, (
+        "Expected a mxtac_alerts_deduplicated_total data line in /metrics"
+    )
+    for line in dedup_lines:
+        # A label-free counter line looks like:
+        #   mxtac_alerts_deduplicated_total_total 3.0
+        # NOT like:
+        #   mxtac_alerts_deduplicated_total{foo="bar"} 3.0
+        assert "{" not in line, (
+            f"mxtac_alerts_deduplicated_total must have no labels; got: {line}"
+        )
