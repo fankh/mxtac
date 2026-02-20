@@ -1,43 +1,49 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 64" width="280" height="64">
   <defs>
-    <filter id="neonStrong">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur"/>
-      <feFlood flood-color="#00FF41" flood-opacity="0.4" result="color"/>
-      <feComposite in="color" in2="blur" operator="in" result="glow"/>
-      <feMerge>
-        <feMergeNode in="glow"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <filter id="textGlow">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="1" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <clipPath id="clip"><rect width="64" height="64" rx="10"/></clipPath>
+    <pattern id="grid" width="8" height="8" patternUnits="userSpaceOnUse">
+      <rect width="7" height="7" rx="0.5" fill="#111111"/>
+    </pattern>
+    <filter id="glow">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1" result="b"/>
+      <feFlood flood-color="#00FF41" flood-opacity="0.3" result="c"/>
+      <feComposite in="c" in2="b" operator="in" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  <!-- Icon: black rounded square -->
-  <rect x="0" y="0" width="64" height="64" rx="12" fill="#0A0A0A"/>
-  <!-- Digital rain in icon -->
-  <g opacity="0.12" fill="#00FF41" font-family="monospace" font-size="5">
-    <text x="5" y="10">1</text><text x="5" y="18">0</text><text x="5" y="26">1</text>
-    <text x="5" y="42">0</text><text x="5" y="50">1</text><text x="5" y="58">0</text>
-    <text x="13" y="14">0</text><text x="13" y="22">1</text><text x="13" y="38">0</text>
-    <text x="13" y="54">1</text>
-    <text x="49" y="12">1</text><text x="49" y="20">0</text><text x="49" y="36">1</text>
-    <text x="49" y="52">0</text>
-    <text x="57" y="8">0</text><text x="57" y="16">1</text><text x="57" y="24">0</text>
-    <text x="57" y="40">1</text><text x="57" y="48">0</text><text x="57" y="56">1</text>
+  <!-- Icon 64x64 with pixel grid -->
+  <g clip-path="url(#clip)">
+    <rect width="64" height="64" fill="#080808"/>
+    <rect width="64" height="64" fill="url(#grid)"/>
+    <!-- Rain cells -->
+    <g fill="#112211">
+      <rect x="0" y="8" width="7" height="7"/><rect x="0" y="32" width="7" height="7"/>
+      <rect x="0" y="56" width="7" height="7"/>
+      <rect x="56" y="0" width="7" height="7"/><rect x="56" y="24" width="7" height="7"/>
+      <rect x="56" y="48" width="7" height="7"/>
+    </g>
+    <!-- Shield hint -->
+    <g fill="#1A3A1A">
+      <rect x="24" y="0" width="7" height="7"/><rect x="32" y="0" width="7" height="7"/>
+      <rect x="8" y="56" width="7" height="7"/><rect x="48" y="56" width="7" height="7"/>
+    </g>
+    <!-- M pixel blocks 8x8 grid -->
+    <g fill="#00FF41" filter="url(#glow)">
+      <rect x="8" y="8" width="7" height="7"/><rect x="16" y="8" width="7" height="7"/>
+      <rect x="40" y="8" width="7" height="7"/><rect x="48" y="8" width="7" height="7"/>
+      <rect x="8" y="16" width="7" height="7"/><rect x="16" y="16" width="7" height="7"/>
+      <rect x="24" y="16" width="7" height="7"/>
+      <rect x="32" y="16" width="7" height="7"/>
+      <rect x="40" y="16" width="7" height="7"/><rect x="48" y="16" width="7" height="7"/>
+      <rect x="8" y="24" width="7" height="7"/><rect x="48" y="24" width="7" height="7"/>
+      <rect x="8" y="32" width="7" height="7"/><rect x="48" y="32" width="7" height="7"/>
+      <rect x="8" y="40" width="7" height="7"/><rect x="48" y="40" width="7" height="7"/>
+      <rect x="8" y="48" width="7" height="7"/><rect x="48" y="48" width="7" height="7"/>
+    </g>
   </g>
-  <!-- M letterform -->
-  <path d="M19 46 V24 L32 34 L45 24 V46"
-        fill="none" stroke="#00FF41" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"
-        filter="url(#neonStrong)"/>
-  <!-- Wordmark: Matrix green on light bg -->
+  <!-- Wordmark -->
   <text x="80" y="30" font-family="'Courier New', 'Consolas', monospace"
         font-size="28" font-weight="700" fill="#0A0A0A" letter-spacing="1">Mx<tspan fill="#00CC33">Tac</tspan></text>
-  <!-- Tagline -->
   <text x="80" y="48" font-family="'Courier New', 'Consolas', monospace"
         font-size="9" font-weight="500" fill="#00AA2A" letter-spacing="3">SECURITY PLATFORM</text>
 </svg>

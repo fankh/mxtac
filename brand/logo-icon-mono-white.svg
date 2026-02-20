@@ -1,18 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
   <defs>
-    <filter id="neonGlow">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur"/>
-      <feFlood flood-color="#00FF41" flood-opacity="0.35" result="color"/>
-      <feComposite in="color" in2="blur" operator="in" result="glow"/>
-      <feMerge>
-        <feMergeNode in="glow"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <filter id="glow">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="b"/>
+      <feFlood flood-color="#00FF41" flood-opacity="0.3" result="c"/>
+      <feComposite in="c" in2="b" operator="in" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  <!-- Outline-only: green border + green M for overlays on dark/photo backgrounds -->
-  <rect width="128" height="128" rx="24" fill="none" stroke="#00FF41" stroke-width="4" filter="url(#neonGlow)"/>
-  <path d="M38 90 V48 L64 68 L90 48 V90"
-        fill="none" stroke="#00FF41" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"
-        filter="url(#neonGlow)"/>
+  <!-- Outline container: green grid border -->
+  <rect width="128" height="128" rx="20" fill="none" stroke="#00FF41" stroke-width="3" filter="url(#glow)"/>
+  <!-- M pixel blocks — green on transparent for overlay use -->
+  <g fill="#00FF41" filter="url(#glow)">
+    <rect x="24" y="24" width="7" height="7"/><rect x="32" y="24" width="7" height="7"/><rect x="40" y="24" width="7" height="7"/>
+    <rect x="80" y="24" width="7" height="7"/><rect x="88" y="24" width="7" height="7"/><rect x="96" y="24" width="7" height="7"/>
+    <rect x="24" y="32" width="7" height="7"/><rect x="32" y="32" width="7" height="7"/><rect x="40" y="32" width="7" height="7"/>
+    <rect x="80" y="32" width="7" height="7"/><rect x="88" y="32" width="7" height="7"/><rect x="96" y="32" width="7" height="7"/>
+    <rect x="24" y="40" width="7" height="7"/><rect x="32" y="40" width="7" height="7"/><rect x="48" y="40" width="7" height="7"/>
+    <rect x="72" y="40" width="7" height="7"/><rect x="88" y="40" width="7" height="7"/><rect x="96" y="40" width="7" height="7"/>
+    <rect x="24" y="48" width="7" height="7"/><rect x="32" y="48" width="7" height="7"/><rect x="56" y="48" width="7" height="7"/>
+    <rect x="64" y="48" width="7" height="7"/><rect x="88" y="48" width="7" height="7"/><rect x="96" y="48" width="7" height="7"/>
+    <rect x="24" y="56" width="7" height="7"/><rect x="32" y="56" width="7" height="7"/><rect x="56" y="56" width="7" height="7"/>
+    <rect x="64" y="56" width="7" height="7"/><rect x="88" y="56" width="7" height="7"/><rect x="96" y="56" width="7" height="7"/>
+    <rect x="24" y="64" width="7" height="7"/><rect x="32" y="64" width="7" height="7"/>
+    <rect x="88" y="64" width="7" height="7"/><rect x="96" y="64" width="7" height="7"/>
+    <rect x="24" y="72" width="7" height="7"/><rect x="32" y="72" width="7" height="7"/>
+    <rect x="88" y="72" width="7" height="7"/><rect x="96" y="72" width="7" height="7"/>
+    <rect x="24" y="80" width="7" height="7"/><rect x="32" y="80" width="7" height="7"/>
+    <rect x="88" y="80" width="7" height="7"/><rect x="96" y="80" width="7" height="7"/>
+    <rect x="24" y="88" width="7" height="7"/><rect x="32" y="88" width="7" height="7"/>
+    <rect x="88" y="88" width="7" height="7"/><rect x="96" y="88" width="7" height="7"/>
+    <rect x="24" y="96" width="7" height="7"/><rect x="32" y="96" width="7" height="7"/>
+    <rect x="88" y="96" width="7" height="7"/><rect x="96" y="96" width="7" height="7"/>
+  </g>
 </svg>

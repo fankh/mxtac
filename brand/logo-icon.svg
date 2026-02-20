@@ -1,56 +1,102 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
   <defs>
-    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#00FF41" stop-opacity="0.15"/>
-      <stop offset="100%" stop-color="#00FF41" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="neon">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <filter id="neonStrong">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
-      <feFlood flood-color="#00FF41" flood-opacity="0.4" result="color"/>
-      <feComposite in="color" in2="blur" operator="in" result="glow"/>
-      <feMerge>
-        <feMergeNode in="glow"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <clipPath id="clip"><rect width="128" height="128" rx="20"/></clipPath>
+    <pattern id="grid" width="8" height="8" patternUnits="userSpaceOnUse">
+      <rect width="7" height="7" rx="0.5" fill="#111111"/>
+    </pattern>
+    <filter id="glow">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="b"/>
+      <feFlood flood-color="#00FF41" flood-opacity="0.35" result="c"/>
+      <feComposite in="c" in2="b" operator="in" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  <!-- Black rounded square -->
-  <rect width="128" height="128" rx="24" fill="#0A0A0A"/>
-  <rect width="128" height="128" rx="24" fill="url(#glow)"/>
-  <!-- Digital rain columns -->
-  <g opacity="0.12" fill="#00FF41" font-family="monospace" font-size="8">
-    <text x="12" y="14">1</text><text x="12" y="26">0</text><text x="12" y="38">1</text>
-    <text x="12" y="50">1</text><text x="12" y="62">0</text><text x="12" y="86">0</text>
-    <text x="12" y="98">1</text><text x="12" y="110">0</text>
-    <text x="24" y="20">0</text><text x="24" y="32">1</text><text x="24" y="44">0</text>
-    <text x="24" y="68">1</text><text x="24" y="80">0</text><text x="24" y="104">1</text>
-    <text x="24" y="116">0</text>
-    <text x="100" y="18">1</text><text x="100" y="30">0</text><text x="100" y="42">1</text>
-    <text x="100" y="66">0</text><text x="100" y="78">1</text><text x="100" y="102">0</text>
-    <text x="100" y="114">1</text>
-    <text x="112" y="12">0</text><text x="112" y="24">1</text><text x="112" y="36">0</text>
-    <text x="112" y="48">1</text><text x="112" y="72">1</text><text x="112" y="84">0</text>
-    <text x="112" y="96">1</text><text x="112" y="108">0</text>
+  <g clip-path="url(#clip)">
+    <!-- Black background + grid of small boxes -->
+    <rect width="128" height="128" fill="#080808"/>
+    <rect width="128" height="128" fill="url(#grid)"/>
+
+    <!-- Shield outline cells (dim green) -->
+    <g fill="#1A3A1A">
+      <rect x="48" y="8" width="7" height="7"/><rect x="56" y="8" width="7" height="7"/>
+      <rect x="64" y="8" width="7" height="7"/><rect x="72" y="8" width="7" height="7"/>
+      <rect x="32" y="16" width="7" height="7"/><rect x="40" y="16" width="7" height="7"/>
+      <rect x="48" y="16" width="7" height="7"/><rect x="56" y="16" width="7" height="7"/>
+      <rect x="64" y="16" width="7" height="7"/><rect x="72" y="16" width="7" height="7"/>
+      <rect x="80" y="16" width="7" height="7"/><rect x="88" y="16" width="7" height="7"/>
+      <rect x="16" y="24" width="7" height="7"/><rect x="104" y="24" width="7" height="7"/>
+      <rect x="16" y="32" width="7" height="7"/><rect x="104" y="32" width="7" height="7"/>
+      <rect x="16" y="40" width="7" height="7"/><rect x="104" y="40" width="7" height="7"/>
+      <rect x="16" y="48" width="7" height="7"/><rect x="104" y="48" width="7" height="7"/>
+      <rect x="16" y="56" width="7" height="7"/><rect x="104" y="56" width="7" height="7"/>
+      <rect x="16" y="64" width="7" height="7"/><rect x="104" y="64" width="7" height="7"/>
+      <rect x="16" y="72" width="7" height="7"/><rect x="104" y="72" width="7" height="7"/>
+      <rect x="16" y="80" width="7" height="7"/><rect x="104" y="80" width="7" height="7"/>
+      <rect x="16" y="88" width="7" height="7"/><rect x="104" y="88" width="7" height="7"/>
+      <rect x="32" y="96" width="7" height="7"/><rect x="40" y="96" width="7" height="7"/>
+      <rect x="80" y="96" width="7" height="7"/><rect x="88" y="96" width="7" height="7"/>
+      <rect x="48" y="104" width="7" height="7"/><rect x="56" y="104" width="7" height="7"/>
+      <rect x="64" y="104" width="7" height="7"/><rect x="72" y="104" width="7" height="7"/>
+      <rect x="56" y="112" width="7" height="7"/><rect x="64" y="112" width="7" height="7"/>
+    </g>
+
+    <!-- Digital rain cells (subtle green tint in margins) -->
+    <g fill="#112211">
+      <rect x="0" y="8" width="7" height="7"/><rect x="0" y="32" width="7" height="7"/>
+      <rect x="0" y="56" width="7" height="7"/><rect x="0" y="80" width="7" height="7"/>
+      <rect x="0" y="112" width="7" height="7"/>
+      <rect x="8" y="16" width="7" height="7"/><rect x="8" y="48" width="7" height="7"/>
+      <rect x="8" y="72" width="7" height="7"/><rect x="8" y="104" width="7" height="7"/>
+      <rect x="112" y="0" width="7" height="7"/><rect x="112" y="24" width="7" height="7"/>
+      <rect x="112" y="48" width="7" height="7"/><rect x="112" y="80" width="7" height="7"/>
+      <rect x="112" y="112" width="7" height="7"/>
+      <rect x="120" y="8" width="7" height="7"/><rect x="120" y="40" width="7" height="7"/>
+      <rect x="120" y="64" width="7" height="7"/><rect x="120" y="96" width="7" height="7"/>
+    </g>
+    <g fill="#1A3A1A" opacity="0.7">
+      <rect x="8" y="0" width="7" height="7"/><rect x="0" y="48" width="7" height="7"/>
+      <rect x="8" y="88" width="7" height="7"/>
+      <rect x="120" y="24" width="7" height="7"/><rect x="112" y="64" width="7" height="7"/>
+      <rect x="120" y="104" width="7" height="7"/>
+    </g>
+
+    <!-- M letterform — pixel blocks with glow -->
+    <g fill="#00FF41" filter="url(#glow)">
+      <!-- Row 3 (y=24): shoulders -->
+      <rect x="24" y="24" width="7" height="7"/><rect x="32" y="24" width="7" height="7"/>
+      <rect x="40" y="24" width="7" height="7"/>
+      <rect x="80" y="24" width="7" height="7"/>
+      <rect x="88" y="24" width="7" height="7"/><rect x="96" y="24" width="7" height="7"/>
+      <!-- Row 4 (y=32): shoulders continue -->
+      <rect x="24" y="32" width="7" height="7"/><rect x="32" y="32" width="7" height="7"/>
+      <rect x="40" y="32" width="7" height="7"/>
+      <rect x="80" y="32" width="7" height="7"/>
+      <rect x="88" y="32" width="7" height="7"/><rect x="96" y="32" width="7" height="7"/>
+      <!-- Row 5 (y=40): diagonal step 1 -->
+      <rect x="24" y="40" width="7" height="7"/><rect x="32" y="40" width="7" height="7"/>
+      <rect x="48" y="40" width="7" height="7"/>
+      <rect x="72" y="40" width="7" height="7"/>
+      <rect x="88" y="40" width="7" height="7"/><rect x="96" y="40" width="7" height="7"/>
+      <!-- Row 6 (y=48): diagonal step 2 -->
+      <rect x="24" y="48" width="7" height="7"/><rect x="32" y="48" width="7" height="7"/>
+      <rect x="56" y="48" width="7" height="7"/>
+      <rect x="64" y="48" width="7" height="7"/>
+      <rect x="88" y="48" width="7" height="7"/><rect x="96" y="48" width="7" height="7"/>
+      <!-- Row 7 (y=56): V bottom -->
+      <rect x="24" y="56" width="7" height="7"/><rect x="32" y="56" width="7" height="7"/>
+      <rect x="56" y="56" width="7" height="7"/><rect x="64" y="56" width="7" height="7"/>
+      <rect x="88" y="56" width="7" height="7"/><rect x="96" y="56" width="7" height="7"/>
+      <!-- Rows 8-12 (y=64-96): legs -->
+      <rect x="24" y="64" width="7" height="7"/><rect x="32" y="64" width="7" height="7"/>
+      <rect x="88" y="64" width="7" height="7"/><rect x="96" y="64" width="7" height="7"/>
+      <rect x="24" y="72" width="7" height="7"/><rect x="32" y="72" width="7" height="7"/>
+      <rect x="88" y="72" width="7" height="7"/><rect x="96" y="72" width="7" height="7"/>
+      <rect x="24" y="80" width="7" height="7"/><rect x="32" y="80" width="7" height="7"/>
+      <rect x="88" y="80" width="7" height="7"/><rect x="96" y="80" width="7" height="7"/>
+      <rect x="24" y="88" width="7" height="7"/><rect x="32" y="88" width="7" height="7"/>
+      <rect x="88" y="88" width="7" height="7"/><rect x="96" y="88" width="7" height="7"/>
+      <rect x="24" y="96" width="7" height="7"/><rect x="32" y="96" width="7" height="7"/>
+      <rect x="88" y="96" width="7" height="7"/><rect x="96" y="96" width="7" height="7"/>
+    </g>
   </g>
-  <!-- Katakana-style rain -->
-  <g opacity="0.08" fill="#00FF41" font-family="monospace" font-size="7">
-    <text x="6" y="74">&#x30A2;</text><text x="18" y="56">&#x30BF;</text>
-    <text x="106" y="54">&#x30DE;</text><text x="118" y="60">&#x30C8;</text>
-    <text x="6" y="120">&#x30EA;</text><text x="118" y="22">&#x30AF;</text>
-    <text x="106" y="90">&#x30B9;</text><text x="18" y="92">&#x30E0;</text>
-  </g>
-  <!-- Shield silhouette (dark green) -->
-  <path d="M64 22 L96 38 V68 C96 88 80 104 64 110 C48 104 32 88 32 68 V38 Z"
-        fill="rgba(0,255,65,0.06)"/>
-  <!-- M letterform — neon green with glow -->
-  <path d="M38 90 V48 L64 68 L90 48 V90"
-        fill="none" stroke="#00FF41" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"
-        filter="url(#neonStrong)"/>
 </svg>
