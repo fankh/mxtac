@@ -6,7 +6,8 @@ cluster is required.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+import sys
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -224,3 +225,258 @@ async def test_index_event_exception_returns_none() -> None:
 
     result = await svc.index_event({"class_name": "Network Activity"})
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# OpenSearchService.connect — feature 12.1
+# ---------------------------------------------------------------------------
+#
+# Helper: build a fake opensearchpy module with a mock AsyncOpenSearch class.
+# Injected via patch.dict(sys.modules) so the in-function import resolves to
+# our mock without requiring the real package to be installed.
+
+
+def _make_os_module(instance: MagicMock) -> MagicMock:
+    """Return a mock module whose AsyncOpenSearch() returns *instance*."""
+    mod = MagicMock()
+    mod.AsyncOpenSearch.return_value = instance
+    return mod
+
+
+def _make_os_instance(info_return: dict | None = None, info_exc: Exception | None = None) -> MagicMock:
+    """Return a mock AsyncOpenSearch instance with a configured .info() coroutine."""
+    inst = MagicMock()
+    if info_exc is not None:
+        inst.info = AsyncMock(side_effect=info_exc)
+    else:
+        inst.info = AsyncMock(return_value=info_return or {"version": {"number": "2.11.0"}})
+    return inst
+
+
+@pytest.mark.asyncio
+async def test_connect_sets_client_on_success() -> None:
+    """connect() assigns _client when the OpenSearch handshake succeeds."""
+    svc = OpenSearchService()
+    inst = _make_os_instance()
+    with patch.dict(sys.modules, {"opensearchpy": _make_os_module(inst)}):
+        await svc.connect()
+
+    assert svc._client is inst
+    assert svc.is_available is True
+
+
+@pytest.mark.asyncio
+async def test_connect_calls_info_to_verify_connectivity() -> None:
+    """connect() calls .info() on the created client to confirm a live cluster."""
+    svc = OpenSearchService()
+    inst = _make_os_instance()
+    with patch.dict(sys.modules, {"opensearchpy": _make_os_module(inst)}):
+        await svc.connect()
+
+    inst.info.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_connect_uses_url_from_settings() -> None:
+    """connect() passes settings.opensearch_url as the host list."""
+    svc = OpenSearchService()
+    inst = _make_os_instance()
+    mod = _make_os_module(inst)
+    custom_url = "http://opensearch.internal:9200"
+
+    with (
+        patch.dict(sys.modules, {"opensearchpy": mod}),
+        patch("app.services.opensearch_client.settings") as mock_settings,
+    ):
+        mock_settings.opensearch_url = custom_url
+        await svc.connect()
+
+    call_kwargs = mod.AsyncOpenSearch.call_args.kwargs
+    assert call_kwargs["hosts"] == [custom_url]
+
+
+@pytest.mark.asyncio
+async def test_connect_uses_default_url_when_setting_absent() -> None:
+    """connect() falls back to http://localhost:9200 when opensearch_url is absent."""
+    svc = OpenSearchService()
+    inst = _make_os_instance()
+    mod = _make_os_module(inst)
+
+    # A settings object without opensearch_url; getattr default kicks in.
+    class _NoUrlSettings:
+        pass
+
+    with (
+        patch.dict(sys.modules, {"opensearchpy": mod}),
+        patch("app.services.opensearch_client.settings", _NoUrlSettings()),
+    ):
+        await svc.connect()
+
+    call_kwargs = mod.AsyncOpenSearch.call_args.kwargs
+    assert call_kwargs["hosts"] == ["http://localhost:9200"]
+
+
+@pytest.mark.asyncio
+async def test_connect_http_url_disables_ssl() -> None:
+    """HTTP scheme must set use_ssl=False."""
+    svc = OpenSearchService()
+    inst = _make_os_instance()
+    mod = _make_os_module(inst)
+
+    with (
+        patch.dict(sys.modules, {"opensearchpy": mod}),
+        patch("app.services.opensearch_client.settings") as mock_settings,
+    ):
+        mock_settings.opensearch_url = "http://localhost:9200"
+        await svc.connect()
+
+    assert mod.AsyncOpenSearch.call_args.kwargs["use_ssl"] is False
+
+
+@pytest.mark.asyncio
+async def test_connect_https_url_enables_ssl() -> None:
+    """HTTPS scheme must set use_ssl=True."""
+    svc = OpenSearchService()
+    inst = _make_os_instance()
+    mod = _make_os_module(inst)
+
+    with (
+        patch.dict(sys.modules, {"opensearchpy": mod}),
+        patch("app.services.opensearch_client.settings") as mock_settings,
+    ):
+        mock_settings.opensearch_url = "https://opensearch.example.com:9200"
+        await svc.connect()
+
+    assert mod.AsyncOpenSearch.call_args.kwargs["use_ssl"] is True
+
+
+@pytest.mark.asyncio
+async def test_connect_always_sets_http_compress_and_disables_cert_verification() -> None:
+    """connect() always enables http_compress and suppresses certificate errors."""
+    svc = OpenSearchService()
+    inst = _make_os_instance()
+    mod = _make_os_module(inst)
+
+    with (
+        patch.dict(sys.modules, {"opensearchpy": mod}),
+        patch("app.services.opensearch_client.settings") as mock_settings,
+    ):
+        mock_settings.opensearch_url = "http://localhost:9200"
+        await svc.connect()
+
+    kw = mod.AsyncOpenSearch.call_args.kwargs
+    assert kw["http_compress"] is True
+    assert kw["verify_certs"] is False
+    assert kw["ssl_show_warn"] is False
+
+
+@pytest.mark.asyncio
+async def test_connect_import_error_leaves_client_none() -> None:
+    """When opensearch-py is not installed, _client stays None (graceful fallback)."""
+    svc = OpenSearchService()
+
+    with patch.dict(sys.modules, {"opensearchpy": None}):
+        await svc.connect()
+
+    assert svc._client is None
+    assert svc.is_available is False
+
+
+@pytest.mark.asyncio
+async def test_connect_info_exception_leaves_client_none() -> None:
+    """When .info() raises, connect() catches it and sets _client to None."""
+    svc = OpenSearchService()
+    inst = _make_os_instance(info_exc=Exception("Connection refused"))
+    with patch.dict(sys.modules, {"opensearchpy": _make_os_module(inst)}):
+        await svc.connect()
+
+    assert svc._client is None
+    assert svc.is_available is False
+
+
+@pytest.mark.asyncio
+async def test_connect_recovers_after_previous_failure() -> None:
+    """A successful connect() after a prior failure sets _client correctly."""
+    svc = OpenSearchService()
+
+    # First call — info() times out
+    inst_fail = _make_os_instance(info_exc=Exception("timeout"))
+    mod = _make_os_module(inst_fail)
+    with patch.dict(sys.modules, {"opensearchpy": mod}):
+        await svc.connect()
+    assert svc.is_available is False
+
+    # Second call — info() succeeds
+    inst_ok = _make_os_instance()
+    mod.AsyncOpenSearch.return_value = inst_ok
+    with patch.dict(sys.modules, {"opensearchpy": mod}):
+        await svc.connect()
+
+    assert svc._client is inst_ok
+    assert svc.is_available is True
+
+
+@pytest.mark.asyncio
+async def test_connect_overwrites_client_on_repeated_calls() -> None:
+    """Repeated connect() calls replace _client with the newest instance."""
+    svc = OpenSearchService()
+    inst1 = _make_os_instance(info_return={"version": {"number": "2.11.0"}})
+    inst2 = _make_os_instance(info_return={"version": {"number": "2.12.0"}})
+    mod = MagicMock()
+    mod.AsyncOpenSearch.side_effect = [inst1, inst2]
+
+    with patch.dict(sys.modules, {"opensearchpy": mod}):
+        await svc.connect()
+        assert svc._client is inst1
+
+        await svc.connect()
+        assert svc._client is inst2
+
+    assert svc.is_available is True
+
+
+@pytest.mark.asyncio
+async def test_connect_logs_version_on_success(caplog: pytest.LogCaptureFixture) -> None:
+    """connect() logs the cluster version number at INFO level on success."""
+    import logging
+
+    svc = OpenSearchService()
+    inst = _make_os_instance(info_return={"version": {"number": "2.11.1"}})
+    with (
+        patch.dict(sys.modules, {"opensearchpy": _make_os_module(inst)}),
+        caplog.at_level(logging.INFO),
+    ):
+        await svc.connect()
+
+    assert "2.11.1" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_connect_logs_warning_on_import_error(caplog: pytest.LogCaptureFixture) -> None:
+    """connect() logs a warning when opensearch-py is not installed."""
+    import logging
+
+    svc = OpenSearchService()
+    with (
+        patch.dict(sys.modules, {"opensearchpy": None}),
+        caplog.at_level(logging.WARNING),
+    ):
+        await svc.connect()
+
+    assert "not installed" in caplog.text.lower() or "opensearch" in caplog.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_connect_logs_warning_on_connection_failure(caplog: pytest.LogCaptureFixture) -> None:
+    """connect() logs a warning when the cluster is unreachable."""
+    import logging
+
+    svc = OpenSearchService()
+    inst = _make_os_instance(info_exc=Exception("cluster not ready"))
+    with (
+        patch.dict(sys.modules, {"opensearchpy": _make_os_module(inst)}),
+        caplog.at_level(logging.WARNING),
+    ):
+        await svc.connect()
+
+    assert "cluster not ready" in caplog.text
