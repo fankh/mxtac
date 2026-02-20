@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.25 risk score formula.
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula.
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -16,11 +16,14 @@ Coverage:
   - _asset_criticality(): correct prefix-based lookup
   - _is_duplicate(): returns False for new alert (Valkey SET succeeds)
   - _is_duplicate(): returns True for seen alert within 5 min (Valkey SET returns None)
+  - _is_duplicate(): returns False again after TTL expiry (Valkey SET succeeds again)
   - _is_duplicate(): Valkey called with nx=True, ex=300
   - _is_duplicate(): fail-open when Valkey raises
   - _dedup_key(): consistent for same (rule_id, host)
   - _dedup_key(): differs for different rule_id or host
   - process(): Valkey SET None → second identical alert is blocked end-to-end
+  - process(): same alert after TTL expiry (Valkey SET True again) is published end-to-end
+  - DEDUP_WINDOW_SECONDS: constant is 300 (5 minutes)
 """
 
 from __future__ import annotations
@@ -32,7 +35,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.pipeline.queue import InMemoryQueue, Topic
-from app.services.alert_manager import AlertManager, MAX_SCORE, W_ASSET, W_RECUR, W_SEVERITY
+from app.services.alert_manager import AlertManager, DEDUP_WINDOW_SECONDS, MAX_SCORE, W_ASSET, W_RECUR, W_SEVERITY
 
 
 # ---------------------------------------------------------------------------
@@ -538,7 +541,159 @@ async def test_process_second_identical_alert_blocked_via_valkey():
 
 
 # ---------------------------------------------------------------------------
-# Section 6 — _score(): exact formula validation (feature 28.25)
+# Section 6 — TTL expiry: same alert accepted after 5 min (feature 28.24)
+# ---------------------------------------------------------------------------
+#
+# Valkey's SET NX EX auto-deletes the dedup key after DEDUP_WINDOW_SECONDS.
+# Once the key is gone, a new SET NX succeeds (returns True) → alert accepted.
+# These tests simulate that lifecycle: new → blocked → expired → accepted.
+
+
+def test_dedup_window_seconds_is_300():
+    """DEDUP_WINDOW_SECONDS constant must be 300 (5 minutes)."""
+    assert DEDUP_WINDOW_SECONDS == 300
+
+
+@pytest.mark.asyncio
+async def test_is_duplicate_accepts_same_alert_after_ttl_expiry():
+    """_is_duplicate() must return False once the Valkey TTL expires.
+
+    Simulates three consecutive calls with the same (rule_id, host):
+      call 1: Valkey SET returns True  → key was new  → NOT a duplicate (False)
+      call 2: Valkey SET returns None  → key exists   → IS  a duplicate (True)
+      call 3: Valkey SET returns True  → key expired  → NOT a duplicate (False)
+    """
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+    alert = _make_alert_dict()
+
+    from app.engine.sigma_engine import SigmaAlert
+
+    sigma_alert = SigmaAlert(
+        id=alert["id"],
+        rule_id=alert["rule_id"],
+        rule_title=alert["rule_title"],
+        level=alert["level"],
+        severity_id=alert["severity_id"],
+        technique_ids=alert["technique_ids"],
+        tactic_ids=alert["tactic_ids"],
+        host=alert["host"],
+        time=datetime.now(timezone.utc),
+        event_snapshot=alert["event_snapshot"],
+    )
+
+    # Simulate: new → dup (within window) → expired (accepted again)
+    set_sequence = [True, None, True]
+    call_index = 0
+
+    async def mock_set(*args, **kwargs):
+        nonlocal call_index
+        rv = set_sequence[call_index]
+        call_index += 1
+        return rv
+
+    with patch.object(mgr._valkey, "set", side_effect=mock_set):
+        result_new     = await mgr._is_duplicate(sigma_alert)  # 1st: new
+        result_dup     = await mgr._is_duplicate(sigma_alert)  # 2nd: within window
+        result_expired = await mgr._is_duplicate(sigma_alert)  # 3rd: TTL expired
+
+    assert result_new     is False, "First alert must not be a duplicate"
+    assert result_dup     is True,  "Second alert within 5-min window must be a duplicate"
+    assert result_expired is False, "Alert after TTL expiry must be accepted (not a duplicate)"
+
+
+@pytest.mark.asyncio
+async def test_is_duplicate_renews_ttl_on_expiry_acceptance():
+    """_is_duplicate() must call SET with ex=DEDUP_WINDOW_SECONDS on the post-expiry alert.
+
+    After expiry, the new SET call must again use nx=True and ex=300 so the
+    renewed alert starts a fresh 5-minute dedup window.
+    """
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+    alert = _make_alert_dict()
+
+    from app.engine.sigma_engine import SigmaAlert
+
+    sigma_alert = SigmaAlert(
+        id=alert["id"],
+        rule_id=alert["rule_id"],
+        rule_title=alert["rule_title"],
+        level=alert["level"],
+        severity_id=alert["severity_id"],
+        technique_ids=alert["technique_ids"],
+        tactic_ids=alert["tactic_ids"],
+        host=alert["host"],
+        time=datetime.now(timezone.utc),
+        event_snapshot=alert["event_snapshot"],
+    )
+
+    # First call blocked (within window), second call simulates post-expiry acceptance
+    mock_set = AsyncMock(side_effect=[None, True])
+    with patch.object(mgr._valkey, "set", new=mock_set):
+        await mgr._is_duplicate(sigma_alert)  # dup (within window)
+        await mgr._is_duplicate(sigma_alert)  # post-expiry
+
+    # Verify both calls used nx=True and ex=300 (the post-expiry call renews the TTL)
+    assert mock_set.await_count == 2
+    for call in mock_set.await_args_list:
+        _, kw = call
+        assert kw.get("nx") is True,              "SET must use NX flag"
+        assert kw.get("ex") == DEDUP_WINDOW_SECONDS, "SET must use ex=300 TTL"
+
+
+@pytest.mark.asyncio
+async def test_process_alert_accepted_again_after_ttl_expiry():
+    """End-to-end: same alert is published again once the Valkey TTL expires.
+
+    Sequence:
+      process() #1 → Valkey returns True  → published to mxtac.enriched
+      process() #2 → Valkey returns None  → blocked (duplicate within 5 min)
+      process() #3 → Valkey returns True  → published again (TTL expired, new window)
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="srv-01")
+
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    set_sequence = [True, None, True]
+    call_index = 0
+
+    async def mock_set(*args, **kwargs):
+        nonlocal call_index
+        rv = set_sequence[call_index]
+        call_index += 1
+        return rv
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=mock_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)  # #1 → new → published
+        await mgr.process(alert_dict)  # #2 → dup within window → blocked
+        await mgr.process(alert_dict)  # #3 → post-expiry → published again
+
+    assert len(published) == 2, (
+        "Alert should be published on 1st call and again after TTL expiry (3rd call); "
+        "the duplicate within the 5-min window (2nd call) must be blocked"
+    )
+    assert published[0][0] == Topic.ENRICHED
+    assert published[1][0] == Topic.ENRICHED
+    assert published[0][1]["id"] == alert_dict["id"]
+    assert published[1][1]["id"] == alert_dict["id"]
+
+    await queue.stop()
+
+
+# ---------------------------------------------------------------------------
+# Section 7 — _score(): exact formula validation (feature 28.25)
 # ---------------------------------------------------------------------------
 #
 # Formula (from alert_manager.py):
