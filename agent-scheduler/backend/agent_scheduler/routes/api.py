@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from ..config import settings
 from ..database import get_session
 from ..models import Run, RunStatus, Task, TaskStatus
+from ..executor import executor
 from ..scheduler import scheduler
 from ..task_loader import load_tasks_into_db, parse_yaml_directory, parse_yaml_tasks
 
@@ -61,7 +62,7 @@ async def get_stats(session: AsyncSession = Depends(get_session)):
             "paused": scheduler.is_paused,
         },
         "executor": {
-            "running_count": 0,  # Will be filled from executor
+            "running_count": executor.running_count,
         },
     }
 

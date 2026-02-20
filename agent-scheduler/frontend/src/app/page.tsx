@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { StatsBar } from "@/components/StatsBar";
 import { TaskTable } from "@/components/TaskTable";
 import { useApi } from "@/hooks/useApi";
@@ -47,6 +47,12 @@ export default function DashboardPage() {
 
   const { connected } = useSSE(handleSSE);
 
+  // Extract sorted phase list from stats
+  const phases = useMemo(() => {
+    if (!stats?.phase_counts) return [];
+    return Object.keys(stats.phase_counts).sort();
+  }, [stats?.phase_counts]);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -71,6 +77,7 @@ export default function DashboardPage() {
           <TaskTable
             tasks={taskData?.tasks || []}
             total={taskData?.total || 0}
+            phases={phases}
             onFilter={setFilters}
           />
         )}

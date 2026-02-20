@@ -646,6 +646,12 @@ async def test_dcm_broadcast_success_does_not_call_local_fanout():
 
 # ---------------------------------------------------------------------------
 # Section 10 — _subscriber_loop unit tests
+#
+# IMPORTANT: mock_client must be MagicMock (not AsyncMock) because
+# self._sub_client.pubsub() is a *synchronous* call in the production code.
+# Using AsyncMock would make pubsub() return a coroutine instead of the
+# pubsub mock, causing AttributeError → infinite retry → test hangs.
+# Async methods (aclose, subscribe) are set explicitly as AsyncMock.
 # ---------------------------------------------------------------------------
 
 
@@ -653,10 +659,11 @@ async def test_dcm_broadcast_success_does_not_call_local_fanout():
 async def test_dcm_subscriber_loop_exits_cleanly_on_cancelled_error():
     """_subscriber_loop() must break out of the retry loop on CancelledError."""
     m = DistributedConnectionManager("redis://localhost:6379/0")
-    mock_client = AsyncMock()
-    mock_pubsub = AsyncMock()
+    mock_client = MagicMock()          # sync — pubsub() is a sync call
+    mock_client.aclose = AsyncMock()   # but aclose() is async
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = AsyncMock(side_effect=asyncio.CancelledError())
     mock_client.pubsub.return_value = mock_pubsub
-    mock_pubsub.subscribe.side_effect = asyncio.CancelledError()
 
     with patch.object(ws_module, "aioredis") as mock_aioredis:
         mock_aioredis.from_url.return_value = mock_client
@@ -679,10 +686,11 @@ async def test_dcm_subscriber_loop_retries_after_connection_error():
             raise ConnectionError("Valkey unavailable")
         raise asyncio.CancelledError()
 
-    mock_client = AsyncMock()
-    mock_pubsub = AsyncMock()
-    mock_client.pubsub.return_value = mock_pubsub
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
     mock_pubsub.subscribe = mock_subscribe
+    mock_client.pubsub.return_value = mock_pubsub
 
     with (
         patch.object(ws_module, "aioredis") as mock_aioredis,
@@ -707,10 +715,11 @@ async def test_dcm_subscriber_loop_closes_sub_client_in_finally():
             raise ConnectionError("first failure")
         raise asyncio.CancelledError()
 
-    mock_client = AsyncMock()
-    mock_pubsub = AsyncMock()
-    mock_client.pubsub.return_value = mock_pubsub
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
     mock_pubsub.subscribe = mock_subscribe
+    mock_client.pubsub.return_value = mock_pubsub
 
     with (
         patch.object(ws_module, "aioredis") as mock_aioredis,
@@ -728,24 +737,37 @@ async def test_dcm_subscriber_loop_fanouts_messages_to_local_connections():
     """_subscriber_loop() must call _fanout_local() for 'message' type events only."""
     m = DistributedConnectionManager("redis://localhost:6379/0")
     alert_payload = json.dumps({"type": "alert", "data": {"id": "t-fan"}})
+    subscribe_count = 0
+
+    async def mock_subscribe(_channel):
+        """Raise CancelledError on the second subscribe (after listen() error triggers retry)."""
+        nonlocal subscribe_count
+        subscribe_count += 1
+        if subscribe_count >= 2:
+            raise asyncio.CancelledError()
 
     async def fake_listen():
+        """Yield test messages then raise RuntimeError to trigger the retry path."""
         yield {"type": "subscribe", "data": None}   # ignored — not 'message'
         yield {"type": "message", "data": alert_payload}
-        raise asyncio.CancelledError()
+        raise RuntimeError("connection lost")  # caught by except Exception, triggers retry
 
-    mock_client = AsyncMock()
-    mock_pubsub = AsyncMock()
-    mock_client.pubsub.return_value = mock_pubsub
-    mock_pubsub.subscribe = AsyncMock()
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
     mock_pubsub.listen = fake_listen
+    mock_client.pubsub.return_value = mock_pubsub
 
     fanout_calls: list[str] = []
 
     async def capture_fanout(payload: str) -> None:
         fanout_calls.append(payload)
 
-    with patch.object(ws_module, "aioredis") as mock_aioredis:
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
         mock_aioredis.from_url.return_value = mock_client
         with patch.object(m, "_fanout_local", side_effect=capture_fanout):
             await m._subscriber_loop()
