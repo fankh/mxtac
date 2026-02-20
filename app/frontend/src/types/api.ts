@@ -8,7 +8,7 @@ export interface Pagination {
 }
 
 export interface PaginatedResponse<T> {
-  data: T[]
+  items: T[]
   pagination: Pagination
 }
 
@@ -51,9 +51,11 @@ export interface HeatCell {
   tactic: string
   covered: number
   total: number
+  opacity: number
 }
 
 export interface HeatRow {
+  technique_id: string
   row: number
   cells: HeatCell[]
 }

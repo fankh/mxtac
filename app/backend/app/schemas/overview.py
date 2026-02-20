@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 class KpiMetrics(BaseModel):
@@ -42,6 +42,7 @@ class HeatCell(BaseModel):
     covered: int
     total: int
 
+    @computed_field
     @property
     def opacity(self) -> float:
         if self.total == 0:
@@ -52,6 +53,7 @@ class HeatCell(BaseModel):
 
 
 class HeatRow(BaseModel):
+    technique_id: str
     row: int
     cells: list[HeatCell]
 

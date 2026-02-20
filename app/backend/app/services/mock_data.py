@@ -206,7 +206,7 @@ TACTICS: list[TacticBar] = [
 TACTIC_LABELS = ["RECON", "RES", "INIT", "EXEC", "PERS", "PRIV", "DEF-E", "CRED", "DISC"]
 
 HEATMAP: list[HeatRow] = [
-    HeatRow(row=0, cells=[
+    HeatRow(technique_id="T1059", row=0, cells=[
         HeatCell(tactic="RECON", covered=4, total=9),
         HeatCell(tactic="RES",   covered=3, total=6),
         HeatCell(tactic="INIT",  covered=9, total=9),
@@ -217,7 +217,7 @@ HEATMAP: list[HeatRow] = [
         HeatCell(tactic="CRED",  covered=5, total=14),
         HeatCell(tactic="DISC",  covered=8, total=13),
     ]),
-    HeatRow(row=1, cells=[
+    HeatRow(technique_id="T1003", row=1, cells=[
         HeatCell(tactic="RECON", covered=6, total=9),
         HeatCell(tactic="RES",   covered=2, total=6),
         HeatCell(tactic="INIT",  covered=8, total=9),
@@ -228,7 +228,7 @@ HEATMAP: list[HeatRow] = [
         HeatCell(tactic="CRED",  covered=6, total=14),
         HeatCell(tactic="DISC",  covered=9, total=13),
     ]),
-    HeatRow(row=2, cells=[
+    HeatRow(technique_id="T1021", row=2, cells=[
         HeatCell(tactic="RECON", covered=2, total=9),
         HeatCell(tactic="RES",   covered=1, total=6),
         HeatCell(tactic="INIT",  covered=7, total=9),
@@ -239,7 +239,7 @@ HEATMAP: list[HeatRow] = [
         HeatCell(tactic="CRED",  covered=8, total=14),
         HeatCell(tactic="DISC",  covered=6, total=13),
     ]),
-    HeatRow(row=3, cells=[
+    HeatRow(technique_id="T1078", row=3, cells=[
         HeatCell(tactic="RECON", covered=1, total=9),
         HeatCell(tactic="RES",   covered=3, total=6),
         HeatCell(tactic="INIT",  covered=6, total=9),

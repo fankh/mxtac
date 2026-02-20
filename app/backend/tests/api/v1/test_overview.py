@@ -54,8 +54,28 @@ async def test_heatmap(client: AsyncClient, auth_headers: dict) -> None:
     assert resp.status_code == 200
     rows = resp.json()
     assert isinstance(rows, list)
-    assert "row" in rows[0]
-    assert "cells" in rows[0]
+    assert len(rows) > 0
+    first_row = rows[0]
+    assert "row" in first_row
+    assert "technique_id" in first_row
+    assert "cells" in first_row
+    assert len(first_row["cells"]) > 0
+    first_cell = first_row["cells"][0]
+    assert "tactic" in first_cell
+    assert "covered" in first_cell
+    assert "total" in first_cell
+    assert "opacity" in first_cell
+    assert isinstance(first_cell["opacity"], float)
+
+
+@pytest.mark.asyncio
+async def test_tactic_labels(client: AsyncClient, auth_headers: dict) -> None:
+    resp = await client.get("/api/v1/overview/coverage/tactic-labels", headers=auth_headers)
+    assert resp.status_code == 200
+    labels = resp.json()
+    assert isinstance(labels, list)
+    assert len(labels) > 0
+    assert all(isinstance(label, str) for label in labels)
 
 
 @pytest.mark.asyncio
