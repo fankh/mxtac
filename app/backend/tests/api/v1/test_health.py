@@ -416,12 +416,17 @@ async def test_ready_error_format_is_error_colon_prefix(client: AsyncClient) -> 
 
 
 def _make_slow_pg_factory(delay: float = 10.0) -> MagicMock:
-    """Return a mock AsyncSessionLocal whose execute hangs for ``delay`` seconds."""
-    async def _slow_execute(*_args, **_kwargs):
+    """Return a mock AsyncSessionLocal factory whose __aenter__ hangs for ``delay`` seconds.
+
+    We configure __aenter__ via AsyncMock(side_effect=...) on an AsyncMock instance.
+    Python's AsyncMock correctly delegates instance-level dunder assignments through
+    the class machinery, so this pattern works — unlike plain assignment to a MagicMock.
+    """
+    async def _slow_enter(*_args, **_kwargs):
         await asyncio.sleep(delay)
 
     session = AsyncMock()
-    session.execute = _slow_execute
+    session.__aenter__ = AsyncMock(side_effect=_slow_enter)
     factory = MagicMock(return_value=session)
     return factory
 

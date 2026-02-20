@@ -44,6 +44,19 @@ class ConnectorResponse(BaseModel):
     error_message: str | None
 
 
+class ConnectorHealthResponse(BaseModel):
+    id: str
+    name: str
+    connector_type: str
+    status: str
+    enabled: bool
+    healthy: bool
+    events_total: int
+    errors_total: int
+    last_seen_at: str | None
+    error_message: str | None
+
+
 def _conn_to_response(c) -> dict:
     return {
         "id": c.id,
@@ -214,7 +227,7 @@ async def test_connector(
     }
 
 
-@router.get("/{connector_id}/health", response_model=dict)
+@router.get("/{connector_id}/health", response_model=ConnectorHealthResponse)
 async def connector_health(
     connector_id: str,
     db: AsyncSession = Depends(get_db),
@@ -223,12 +236,16 @@ async def connector_health(
     conn = await ConnectorRepo.get_by_id(db, connector_id)
     if not conn:
         raise HTTPException(status_code=404, detail="Connector not found")
-    return {
-        "id": conn.id,
-        "name": conn.name,
-        "status": conn.status,
-        "events_total": conn.events_total,
-        "errors_total": conn.errors_total,
-        "last_seen_at": conn.last_seen_at,
-        "error_message": conn.error_message,
-    }
+    healthy = bool(conn.enabled and conn.status in ("active", "connected"))
+    return ConnectorHealthResponse(
+        id=conn.id,
+        name=conn.name,
+        connector_type=conn.connector_type,
+        status=conn.status,
+        enabled=conn.enabled,
+        healthy=healthy,
+        events_total=conn.events_total,
+        errors_total=conn.errors_total,
+        last_seen_at=conn.last_seen_at,
+        error_message=conn.error_message,
+    )
