@@ -1,4 +1,4 @@
-"""Tests for WS /api/v1/ws/alerts — Features 17.1 and 17.3
+"""Tests for WS /api/v1/ws/alerts — Features 17.1, 17.3, and 17.5
 
 Coverage:
   - Happy path: WebSocket connection, "connected" handshake schema
@@ -31,7 +31,11 @@ Feature 17.3 — Ping every 30s keep-alive (comprehensive):
   - alerts_ws: _ping_loop is started as a background task on connect
   - alerts_ws: _ping_loop receives the WebSocket instance
   - alerts_ws: ping task is cancelled when the client disconnects
-  - alerts_ws: both ping and replay tasks are cancelled on disconnect
+
+Feature 17.5 — Broadcast enriched alerts to all clients (single instance):
+  - ws_broadcaster subscribes to mxtac.enriched topic
+  - ws_broadcaster forwards each enriched alert to broadcast_alert()
+  - broadcast_alert() delivers enriched alert to every connected WebSocket client
 """
 
 from __future__ import annotations
@@ -82,7 +86,6 @@ def ws_mocks():
     with (
         patch.object(manager, "_ensure_subscriber", new=AsyncMock()),
         patch("app.api.v1.endpoints.websocket._ping_loop", new=AsyncMock()),
-        patch("app.api.v1.endpoints.websocket._mock_replay", new=AsyncMock()),
     ):
         yield
 
@@ -1041,12 +1044,11 @@ def test_alerts_ws_ping_task_cancelled_on_disconnect():
     assert ping_was_cancelled.wait(timeout=2.0), "ping task was not cancelled on disconnect"
 
 
-def test_alerts_ws_both_tasks_cancelled_on_disconnect():
-    """alerts_ws must cancel both ping_task and replay_task in its finally block."""
+def test_alerts_ws_ping_task_cancelled_when_both_tasks_present():
+    """alerts_ws must cancel the ping task in its finally block (only ping task started)."""
     import threading
 
     ping_cancelled = threading.Event()
-    replay_cancelled = threading.Event()
 
     async def cancellable_ping(ws):
         try:
@@ -1055,21 +1057,99 @@ def test_alerts_ws_both_tasks_cancelled_on_disconnect():
             ping_cancelled.set()
             raise
 
-    async def cancellable_replay(ws):
-        try:
-            await asyncio.sleep(3600)
-        except asyncio.CancelledError:
-            replay_cancelled.set()
-            raise
-
     with (
         patch.object(manager, "_ensure_subscriber", new=AsyncMock()),
         patch("app.api.v1.endpoints.websocket._ping_loop", new=cancellable_ping),
-        patch("app.api.v1.endpoints.websocket._mock_replay", new=cancellable_replay),
     ):
         with TestClient(app) as client:
             with client.websocket_connect(WS_URL) as ws:
                 ws.receive_json()
 
     assert ping_cancelled.wait(timeout=2.0), "ping task was not cancelled"
-    assert replay_cancelled.wait(timeout=2.0), "replay task was not cancelled"
+
+
+# ---------------------------------------------------------------------------
+# Section 13 — Feature 17.5: Broadcast enriched alerts to all clients
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_17_5_ws_broadcaster_subscribes_to_enriched_topic():
+    """websocket_broadcaster() must register a subscriber on the mxtac.enriched topic."""
+    from app.pipeline.queue import InMemoryQueue, Topic
+    from app.services.ws_broadcaster import websocket_broadcaster
+
+    queue = InMemoryQueue()
+    await queue.start()
+
+    with patch("app.api.v1.endpoints.websocket.broadcast_alert", new=AsyncMock()):
+        await websocket_broadcaster(queue)
+
+    # A consumer task must have been created for the enriched topic
+    assert len(queue._tasks) >= 1
+    assert Topic.ENRICHED in queue._queues or any(
+        "consumer-mxtac.enriched" in (t.get_name() or "") for t in queue._tasks
+    )
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_17_5_ws_broadcaster_calls_broadcast_alert_on_enriched_message():
+    """ws_broadcaster must forward each mxtac.enriched message to broadcast_alert()."""
+    from app.pipeline.queue import InMemoryQueue, Topic
+    from app.services.ws_broadcaster import websocket_broadcaster
+
+    queue = InMemoryQueue()
+    await queue.start()
+
+    enriched_alert = {
+        "id": "e2e-17-5",
+        "rule_title": "Suspicious Process Execution",
+        "level": "high",
+        "score": 7.2,
+        "host": "srv-01",
+    }
+
+    with patch(
+        "app.api.v1.endpoints.websocket.broadcast_alert", new=AsyncMock()
+    ) as mock_bcast:
+        await websocket_broadcaster(queue)
+        await queue.publish(Topic.ENRICHED, enriched_alert)
+        # Yield to the event loop so the consumer task processes the message
+        await asyncio.sleep(0)
+
+    mock_bcast.assert_awaited_once_with(enriched_alert)
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_17_5_broadcast_alert_delivers_to_all_connected_clients():
+    """Feature 17.5: broadcast_alert() must deliver enriched alert to every local client."""
+    ws_a, ws_b = _make_ws(), _make_ws()
+    manager._connections.update({ws_a, ws_b})
+
+    alert_data = {"id": "fan-17-5", "level": "critical", "score": 9.5, "host": "dc-01"}
+
+    # Simulate Valkey unavailable → triggers graceful local fanout
+    mock_pub = AsyncMock()
+    mock_pub.publish.side_effect = ConnectionError("no valkey in test")
+
+    with patch.object(manager, "_get_pub_client", new=AsyncMock(return_value=mock_pub)):
+        await broadcast_alert(alert_data)
+
+    expected_payload = json.dumps({"type": "alert", "data": alert_data})
+    ws_a.send_text.assert_awaited_once_with(expected_payload)
+    ws_b.send_text.assert_awaited_once_with(expected_payload)
+
+
+@pytest.mark.asyncio
+async def test_17_5_broadcast_alert_wraps_with_type_alert():
+    """broadcast_alert() must always wrap the payload as {type: 'alert', data: <alert>}."""
+    alert_data = {"id": "wrap-17-5", "level": "medium", "host": "win-01"}
+
+    with patch.object(manager, "broadcast", new=AsyncMock()) as mock_bcast:
+        await broadcast_alert(alert_data)
+
+    call_arg = mock_bcast.call_args[0][0]
+    assert call_arg["type"] == "alert"
+    assert call_arg["data"] is alert_data
