@@ -505,3 +505,127 @@ async def test_viewer_rbac_check_precedes_db_lookup(client: AsyncClient) -> None
         json={"status": "investigating"},
     )
     assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Feature 10.7 — Sort by score / time / severity / host / tactic
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sort_default_is_time_desc(client: AsyncClient, auth_headers: dict) -> None:
+    """Without sort params, DetectionRepo.list is called with sort='time', order='desc'."""
+    mock_list = AsyncMock(return_value=([], 0))
+    with patch(f"{MOCK_REPO}.list", new=mock_list):
+        await client.get("/api/v1/detections", headers=auth_headers)
+    kwargs = mock_list.call_args.kwargs
+    assert kwargs.get("sort") == "time"
+    assert kwargs.get("order") == "desc"
+
+
+@pytest.mark.asyncio
+async def test_sort_by_score_desc(client: AsyncClient, auth_headers: dict) -> None:
+    """?sort=score&order=desc forwards sort='score', order='desc' to the repo."""
+    mock_list = AsyncMock(return_value=([], 0))
+    with patch(f"{MOCK_REPO}.list", new=mock_list):
+        await client.get("/api/v1/detections?sort=score&order=desc", headers=auth_headers)
+    kwargs = mock_list.call_args.kwargs
+    assert kwargs.get("sort") == "score"
+    assert kwargs.get("order") == "desc"
+
+
+@pytest.mark.asyncio
+async def test_sort_by_score_asc(client: AsyncClient, auth_headers: dict) -> None:
+    """?sort=score&order=asc forwards sort='score', order='asc' to the repo."""
+    mock_list = AsyncMock(return_value=([], 0))
+    with patch(f"{MOCK_REPO}.list", new=mock_list):
+        await client.get("/api/v1/detections?sort=score&order=asc", headers=auth_headers)
+    kwargs = mock_list.call_args.kwargs
+    assert kwargs.get("sort") == "score"
+    assert kwargs.get("order") == "asc"
+
+
+@pytest.mark.asyncio
+async def test_sort_by_time(client: AsyncClient, auth_headers: dict) -> None:
+    """?sort=time forwards sort='time' to the repo."""
+    mock_list = AsyncMock(return_value=([], 0))
+    with patch(f"{MOCK_REPO}.list", new=mock_list):
+        await client.get("/api/v1/detections?sort=time&order=asc", headers=auth_headers)
+    kwargs = mock_list.call_args.kwargs
+    assert kwargs.get("sort") == "time"
+    assert kwargs.get("order") == "asc"
+
+
+@pytest.mark.asyncio
+async def test_sort_by_severity(client: AsyncClient, auth_headers: dict) -> None:
+    """?sort=severity forwards sort='severity' to the repo."""
+    mock_list = AsyncMock(return_value=([], 0))
+    with patch(f"{MOCK_REPO}.list", new=mock_list):
+        await client.get("/api/v1/detections?sort=severity&order=asc", headers=auth_headers)
+    kwargs = mock_list.call_args.kwargs
+    assert kwargs.get("sort") == "severity"
+    assert kwargs.get("order") == "asc"
+
+
+@pytest.mark.asyncio
+async def test_sort_by_host(client: AsyncClient, auth_headers: dict) -> None:
+    """?sort=host forwards sort='host' to the repo."""
+    mock_list = AsyncMock(return_value=([], 0))
+    with patch(f"{MOCK_REPO}.list", new=mock_list):
+        await client.get("/api/v1/detections?sort=host&order=asc", headers=auth_headers)
+    kwargs = mock_list.call_args.kwargs
+    assert kwargs.get("sort") == "host"
+    assert kwargs.get("order") == "asc"
+
+
+@pytest.mark.asyncio
+async def test_sort_by_tactic(client: AsyncClient, auth_headers: dict) -> None:
+    """?sort=tactic forwards sort='tactic' to the repo."""
+    mock_list = AsyncMock(return_value=([], 0))
+    with patch(f"{MOCK_REPO}.list", new=mock_list):
+        await client.get("/api/v1/detections?sort=tactic&order=desc", headers=auth_headers)
+    kwargs = mock_list.call_args.kwargs
+    assert kwargs.get("sort") == "tactic"
+    assert kwargs.get("order") == "desc"
+
+
+@pytest.mark.asyncio
+async def test_sort_invalid_field_returns_422(client: AsyncClient, auth_headers: dict) -> None:
+    """?sort=invalid_field → 422 Unprocessable Entity (FastAPI validation rejects it)."""
+    resp = await client.get("/api/v1/detections?sort=invalid_field", headers=auth_headers)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_sort_invalid_order_returns_422(client: AsyncClient, auth_headers: dict) -> None:
+    """?order=sideways → 422 Unprocessable Entity."""
+    resp = await client.get("/api/v1/detections?order=sideways", headers=auth_headers)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_sort_score_desc_returns_highest_first(client: AsyncClient, auth_headers: dict) -> None:
+    """?sort=score&order=desc — response items appear in repo-returned order (highest score first)."""
+    high = _make_detection(id="DET-HIGH", score=9.8)
+    low = _make_detection(id="DET-LOW", score=2.1)
+    with patch(f"{MOCK_REPO}.list", new=AsyncMock(return_value=([high, low], 2))):
+        resp = await client.get("/api/v1/detections?sort=score&order=desc", headers=auth_headers)
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert items[0]["id"] == "DET-HIGH"
+    assert items[1]["id"] == "DET-LOW"
+
+
+@pytest.mark.asyncio
+async def test_sort_combined_with_filter(client: AsyncClient, auth_headers: dict) -> None:
+    """Sort and filter params can be combined — both forwarded to the repo."""
+    mock_list = AsyncMock(return_value=([], 0))
+    with patch(f"{MOCK_REPO}.list", new=mock_list):
+        await client.get(
+            "/api/v1/detections?severity=critical&sort=score&order=desc",
+            headers=auth_headers,
+        )
+    kwargs = mock_list.call_args.kwargs
+    assert kwargs.get("severity") == ["critical"]
+    assert kwargs.get("sort") == "score"
+    assert kwargs.get("order") == "desc"

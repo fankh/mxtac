@@ -216,11 +216,11 @@ async def alerts_ws(ws: WebSocket):
     })
 
     try:
-        ping_task   = asyncio.create_task(_ping_loop(ws))
-        # In dev: replay mock alerts slowly so the UI is not empty
-        replay_task = asyncio.create_task(_mock_replay(ws))
+        ping_task = asyncio.create_task(_ping_loop(ws))
 
-        # Keep alive -- wait for client messages (e.g. filter updates)
+        # Keep alive -- wait for client messages (e.g. filter updates).
+        # Real alerts arrive via broadcast_alert() → manager.broadcast() → _fanout_local(),
+        # driven by the ws_broadcaster service subscribed to mxtac.enriched.
         while True:
             try:
                 raw = await asyncio.wait_for(ws.receive_text(), timeout=60)
@@ -236,7 +236,6 @@ async def alerts_ws(ws: WebSocket):
         logger.exception("WebSocket error")
     finally:
         ping_task.cancel()
-        replay_task.cancel()
         manager.disconnect(ws)
 
 

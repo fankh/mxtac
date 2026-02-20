@@ -111,6 +111,7 @@ class AlertManager:
                 "AlertManager published rule_id=%s host=%s score=%.1f",
                 alert.rule_id, alert.host, scored.get("score", 0),
             )
+            await self._persist_to_db(scored)
         except Exception:
             logger.exception("AlertManager process error")
         finally:
@@ -192,6 +193,38 @@ class AlertManager:
 
         enriched["score"] = round(min(raw_score, MAX_SCORE), 1)
         return enriched
+
+    # -- Persistence -------------------------------------------------------
+
+    async def _persist_to_db(self, scored: dict[str, Any]) -> None:
+        """Persist enriched alert to PostgreSQL. Non-fatal — pipeline continues on error."""
+        try:
+            from ..core.database import AsyncSessionLocal
+            from ..repositories.detection_repo import DetectionRepo
+            technique_ids = scored.get("technique_ids") or []
+            tactic_ids    = scored.get("tactic_ids") or []
+            alert_time    = datetime.fromisoformat(scored["time"])
+            async with AsyncSessionLocal() as session:
+                await DetectionRepo.create(
+                    session,
+                    id            = scored["id"],
+                    score         = scored["score"],
+                    severity      = scored["level"],
+                    technique_id  = (technique_ids[0] if technique_ids else "unknown")[:20],
+                    technique_name= scored["rule_title"][:255],
+                    tactic        = (tactic_ids[0] if tactic_ids else "unknown")[:100],
+                    tactic_id     = tactic_ids[0] if tactic_ids else None,
+                    name          = scored["rule_title"][:500],
+                    host          = scored["host"],
+                    time          = alert_time,
+                    rule_name     = (scored["rule_id"] or "")[:500] or None,
+                )
+                await session.commit()
+            logger.debug("AlertManager persisted detection id=%s", scored["id"])
+        except Exception:
+            logger.exception(
+                "AlertManager DB persistence failed (non-fatal) id=%s", scored.get("id")
+            )
 
     # -- Cleanup -----------------------------------------------------------
 
