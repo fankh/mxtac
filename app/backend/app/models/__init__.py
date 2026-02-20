@@ -1,5 +1,6 @@
 from .api_key import APIKey
 from .asset import Asset
+from .audit_log import AuditLog
 from .base import Base
 from .connector import Connector
 from .detection import Detection
@@ -10,4 +11,4 @@ from .notification import NotificationChannel
 from .rule import Rule
 from .user import User
 
-__all__ = ["APIKey", "Asset", "Base", "Connector", "Detection", "Event", "Incident", "IOC", "NotificationChannel", "Rule", "User"]
+__all__ = ["APIKey", "Asset", "AuditLog", "Base", "Connector", "Detection", "Event", "Incident", "IOC", "NotificationChannel", "Rule", "User"]

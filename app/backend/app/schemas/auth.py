@@ -32,3 +32,17 @@ class RefreshRequest(BaseModel):
 
 class LogoutResponse(BaseModel):
     message: str
+
+
+class MfaSetupResponse(BaseModel):
+    secret: str
+    qr_code_uri: str
+    backup_codes: list[str]
+
+
+class MfaVerifyRequest(BaseModel):
+    code: str
+
+
+class MfaVerifyResponse(BaseModel):
+    message: str

@@ -120,13 +120,14 @@ class TestPermissionsMatrix:
         "threat_intel:write",
         "assets:read",
         "assets:write",
+        "audit_logs:read",
     }
 
     def test_permissions_is_dict(self) -> None:
         assert isinstance(PERMISSIONS, dict)
 
     def test_permissions_has_eleven_entries(self) -> None:
-        assert len(PERMISSIONS) == 17
+        assert len(PERMISSIONS) == 18
 
     @pytest.mark.parametrize("perm", list(_EXPECTED_PERMISSIONS))
     def test_expected_permission_exists(self, perm: str) -> None:
@@ -291,7 +292,7 @@ _VIEWER_PERMS = frozenset({"detections:read", "incidents:read"})
 _ANALYST_PERMS = _VIEWER_PERMS | {"detections:write", "incidents:write", "assets:read"}
 _HUNTER_PERMS = _ANALYST_PERMS | {"rules:read", "events:search", "threat_intel:read"}
 _ENGINEER_PERMS = _HUNTER_PERMS | {"rules:write", "connectors:read", "connectors:write", "threat_intel:write", "assets:write"}
-_ADMIN_PERMS = _ENGINEER_PERMS | {"users:read", "users:write", "incidents:delete", "detections:delete"}
+_ADMIN_PERMS = _ENGINEER_PERMS | {"users:read", "users:write", "incidents:delete", "detections:delete", "audit_logs:read"}
 
 
 class TestRolePermissionsCorrectness:
@@ -313,7 +314,7 @@ class TestRolePermissionsCorrectness:
         assert ROLE_PERMISSIONS["admin"] == _ADMIN_PERMS
 
     def test_admin_has_all_eleven_permissions(self) -> None:
-        assert len(ROLE_PERMISSIONS["admin"]) == 17
+        assert len(ROLE_PERMISSIONS["admin"]) == 18
 
     def test_viewer_has_two_permissions(self) -> None:
         assert len(ROLE_PERMISSIONS["viewer"]) == 2
@@ -494,6 +495,7 @@ class TestRequirePermissionValidation:
         "events:search",
         "threat_intel:read", "threat_intel:write",
         "assets:read", "assets:write",
+        "audit_logs:read",
     ])
     def test_all_known_permissions_return_callable(self, perm: str) -> None:
         checker = require_permission(perm)

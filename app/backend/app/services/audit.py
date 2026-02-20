@@ -16,12 +16,15 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import Request
 
 from ..core.config import settings
 from ..core.logging import get_logger
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
 
@@ -95,9 +98,15 @@ class AuditLogger:
         resource_id: str = "",
         details: dict[str, Any] | None = None,
         request: Request | None = None,
+        session: "AsyncSession | None" = None,
     ) -> str | None:
         """
-        Write an audit log entry to OpenSearch.
+        Write an audit log entry.
+
+        Dual-write strategy:
+          - If *session* is provided the entry is written to the ``audit_logs``
+            PostgreSQL/SQLite table (always available, no external dependency).
+          - The entry is also written to OpenSearch when the client is reachable.
 
         Args:
             actor: Identity of the user performing the action (e.g. email).
@@ -106,50 +115,87 @@ class AuditLogger:
             resource_id: Identifier of the specific resource.
             details: Arbitrary context dict for the action.
             request: FastAPI Request object (for IP, method, path, user-agent).
+            session: Optional AsyncSession for DB write.
 
         Returns:
-            The document ID of the audit entry, or None on failure.
+            The document/entry ID of the audit entry, or None on failure.
         """
-        await self._ensure_client()
-        if self._client is None:
-            logger.debug("Audit log skipped (no OpenSearch client): actor=%s action=%s", actor, action)
-            return None
-
-        await self._ensure_index()
+        # Extract request metadata once
+        request_ip: str | None = None
+        request_method: str | None = None
+        request_path: str | None = None
+        user_agent: str | None = None
+        if request is not None:
+            request_ip = request.client.host if request.client else None
+            request_method = request.method
+            request_path = str(request.url.path)
+            user_agent = request.headers.get("user-agent", "")
 
         doc_id = str(uuid.uuid4())
-        doc: dict[str, Any] = {
-            "id":            doc_id,
-            "timestamp":     datetime.now(timezone.utc).isoformat(),
-            "actor":         actor,
-            "action":        action,
-            "resource_type": resource_type,
-            "resource_id":   resource_id,
-            "details":       details or {},
-        }
 
-        # Extract request metadata
-        if request is not None:
-            doc["request_ip"] = request.client.host if request.client else None
-            doc["request_method"] = request.method
-            doc["request_path"] = str(request.url.path)
-            doc["user_agent"] = request.headers.get("user-agent", "")
+        # ── DB write (primary, always attempted when session given) ──────────
+        if session is not None:
+            try:
+                from ..repositories.audit_log_repo import AuditLogRepo
 
-        try:
-            resp = await self._client.index(
-                index=AUDIT_INDEX,
-                id=doc_id,
-                body=doc,
-                refresh="true",
+                entry = await AuditLogRepo.create(
+                    session,
+                    actor=actor,
+                    action=action,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    details=details,
+                    request_ip=request_ip,
+                    request_method=request_method,
+                    request_path=request_path,
+                    user_agent=user_agent,
+                )
+                doc_id = entry.id
+                logger.info(
+                    "Audit(db): actor=%s action=%s resource=%s/%s",
+                    actor, action, resource_type, resource_id,
+                )
+            except Exception as exc:
+                logger.error("AuditLogger DB write failed: %s", exc)
+
+        # ── OpenSearch write (secondary, best-effort) ────────────────────────
+        await self._ensure_client()
+        if self._client is not None:
+            await self._ensure_index()
+            doc: dict[str, Any] = {
+                "id":            doc_id,
+                "timestamp":     datetime.now(timezone.utc).isoformat(),
+                "actor":         actor,
+                "action":        action,
+                "resource_type": resource_type,
+                "resource_id":   resource_id,
+                "details":       details or {},
+                "request_ip":    request_ip,
+                "request_method": request_method,
+                "request_path":  request_path,
+                "user_agent":    user_agent,
+            }
+            try:
+                resp = await self._client.index(
+                    index=AUDIT_INDEX,
+                    id=doc_id,
+                    body=doc,
+                    refresh="true",
+                )
+                logger.info(
+                    "Audit(opensearch): actor=%s action=%s resource=%s/%s",
+                    actor, action, resource_type, resource_id,
+                )
+                return resp.get("_id") or doc_id
+            except Exception as exc:
+                logger.error("AuditLogger OpenSearch write failed: %s", exc)
+        else:
+            logger.debug(
+                "Audit OpenSearch skipped (no client): actor=%s action=%s",
+                actor, action,
             )
-            logger.info(
-                "Audit: actor=%s action=%s resource=%s/%s",
-                actor, action, resource_type, resource_id,
-            )
-            return resp.get("_id")
-        except Exception as exc:
-            logger.error("AuditLogger write failed: %s", exc)
-            return None
+
+        return doc_id
 
     async def search(
         self,
