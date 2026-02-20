@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence.
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup.
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -8,6 +8,13 @@ Coverage:
   - _persist_to_db(): logs and continues when DB raises (non-fatal)
   - _score(): attaches score field to enriched dict
   - _asset_criticality(): correct prefix-based lookup
+  - _is_duplicate(): returns False for new alert (Valkey SET succeeds)
+  - _is_duplicate(): returns True for seen alert within 5 min (Valkey SET returns None)
+  - _is_duplicate(): Valkey called with nx=True, ex=300
+  - _is_duplicate(): fail-open when Valkey raises
+  - _dedup_key(): consistent for same (rule_id, host)
+  - _dedup_key(): differs for different rule_id or host
+  - process(): Valkey SET None → second identical alert is blocked end-to-end
 """
 
 from __future__ import annotations
@@ -294,3 +301,231 @@ def test_asset_criticality_empty_hostname_defaults():
     mgr = AlertManager.__new__(AlertManager)
     mgr._queue = queue
     assert mgr._asset_criticality("") == 0.5
+
+
+# ---------------------------------------------------------------------------
+# Section 5 — Dedup: Valkey-backed 5-minute window (feature 28.23)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_is_duplicate_returns_false_for_new_alert():
+    """_is_duplicate() must return False when Valkey SET succeeds (key did not exist)."""
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+    alert = _make_alert_dict()
+
+    from app.engine.sigma_engine import SigmaAlert
+
+    sigma_alert = SigmaAlert(
+        id=alert["id"],
+        rule_id=alert["rule_id"],
+        rule_title=alert["rule_title"],
+        level=alert["level"],
+        severity_id=alert["severity_id"],
+        technique_ids=alert["technique_ids"],
+        tactic_ids=alert["tactic_ids"],
+        host=alert["host"],
+        time=datetime.now(timezone.utc),
+        event_snapshot=alert["event_snapshot"],
+    )
+
+    # Valkey SET returns True → key was newly created → NOT a duplicate
+    with patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)):
+        result = await mgr._is_duplicate(sigma_alert)
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_is_duplicate_returns_true_for_seen_alert_within_window():
+    """_is_duplicate() must return True when Valkey SET returns None (key exists = within 5-min window)."""
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+    alert = _make_alert_dict()
+
+    from app.engine.sigma_engine import SigmaAlert
+
+    sigma_alert = SigmaAlert(
+        id=alert["id"],
+        rule_id=alert["rule_id"],
+        rule_title=alert["rule_title"],
+        level=alert["level"],
+        severity_id=alert["severity_id"],
+        technique_ids=alert["technique_ids"],
+        tactic_ids=alert["tactic_ids"],
+        host=alert["host"],
+        time=datetime.now(timezone.utc),
+        event_snapshot=alert["event_snapshot"],
+    )
+
+    # Valkey SET returns None → key already existed → IS a duplicate
+    with patch.object(mgr._valkey, "set", new=AsyncMock(return_value=None)):
+        result = await mgr._is_duplicate(sigma_alert)
+
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_is_duplicate_valkey_called_with_nx_ex_300():
+    """_is_duplicate() must call Valkey SET with nx=True and ex=300 (5-min window)."""
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+    alert = _make_alert_dict()
+
+    from app.engine.sigma_engine import SigmaAlert
+
+    sigma_alert = SigmaAlert(
+        id=alert["id"],
+        rule_id=alert["rule_id"],
+        rule_title=alert["rule_title"],
+        level=alert["level"],
+        severity_id=alert["severity_id"],
+        technique_ids=alert["technique_ids"],
+        tactic_ids=alert["tactic_ids"],
+        host=alert["host"],
+        time=datetime.now(timezone.utc),
+        event_snapshot=alert["event_snapshot"],
+    )
+
+    mock_set = AsyncMock(return_value=True)
+    with patch.object(mgr._valkey, "set", new=mock_set):
+        await mgr._is_duplicate(sigma_alert)
+
+    mock_set.assert_awaited_once()
+    _, call_kwargs = mock_set.call_args
+    assert call_kwargs.get("nx") is True
+    assert call_kwargs.get("ex") == 300
+
+
+@pytest.mark.asyncio
+async def test_is_duplicate_fail_open_on_valkey_error():
+    """_is_duplicate() must return False (fail-open) when Valkey raises an exception."""
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+    alert = _make_alert_dict()
+
+    from app.engine.sigma_engine import SigmaAlert
+
+    sigma_alert = SigmaAlert(
+        id=alert["id"],
+        rule_id=alert["rule_id"],
+        rule_title=alert["rule_title"],
+        level=alert["level"],
+        severity_id=alert["severity_id"],
+        technique_ids=alert["technique_ids"],
+        tactic_ids=alert["tactic_ids"],
+        host=alert["host"],
+        time=datetime.now(timezone.utc),
+        event_snapshot=alert["event_snapshot"],
+    )
+
+    with patch.object(mgr._valkey, "set", new=AsyncMock(side_effect=ConnectionError("Valkey down"))):
+        result = await mgr._is_duplicate(sigma_alert)
+
+    assert result is False
+
+
+def test_dedup_key_is_consistent_for_same_rule_and_host():
+    """_dedup_key() must return the same key for identical (rule_id, host)."""
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+    alert = _make_alert_dict()
+
+    from app.engine.sigma_engine import SigmaAlert
+
+    sigma_alert = SigmaAlert(
+        id=alert["id"],
+        rule_id=alert["rule_id"],
+        rule_title=alert["rule_title"],
+        level=alert["level"],
+        severity_id=alert["severity_id"],
+        technique_ids=alert["technique_ids"],
+        tactic_ids=alert["tactic_ids"],
+        host=alert["host"],
+        time=datetime.now(timezone.utc),
+        event_snapshot=alert["event_snapshot"],
+    )
+
+    key1 = mgr._dedup_key(sigma_alert)
+    key2 = mgr._dedup_key(sigma_alert)
+    assert key1 == key2
+    assert key1.startswith("mxtac:dedup:")
+
+
+def test_dedup_key_differs_for_different_rule_id():
+    """_dedup_key() must produce different keys for different rule_ids."""
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+
+    from app.engine.sigma_engine import SigmaAlert
+
+    base = dict(
+        rule_title="Test", level="medium", severity_id=3,
+        technique_ids=[], tactic_ids=[], host="srv-01",
+        time=datetime.now(timezone.utc), event_snapshot={},
+    )
+    a1 = SigmaAlert(id="1", rule_id="sigma-A", **base)
+    a2 = SigmaAlert(id="2", rule_id="sigma-B", **base)
+
+    assert mgr._dedup_key(a1) != mgr._dedup_key(a2)
+
+
+def test_dedup_key_differs_for_different_host():
+    """_dedup_key() must produce different keys for different hosts."""
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+
+    from app.engine.sigma_engine import SigmaAlert
+
+    base = dict(
+        rule_id="sigma-T1059", rule_title="Test", level="medium", severity_id=3,
+        technique_ids=[], tactic_ids=[],
+        time=datetime.now(timezone.utc), event_snapshot={},
+    )
+    a1 = SigmaAlert(id="1", host="srv-01", **base)
+    a2 = SigmaAlert(id="2", host="dc-01", **base)
+
+    assert mgr._dedup_key(a1) != mgr._dedup_key(a2)
+
+
+@pytest.mark.asyncio
+async def test_process_second_identical_alert_blocked_via_valkey():
+    """End-to-end: second process() call with same (rule_id, host) is blocked by Valkey dedup.
+
+    Simulates the 5-minute window: first SET returns True (new), second SET returns None (dup).
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="srv-01")
+
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    # First call: Valkey SET returns True (new alert) → should publish
+    # Second call: Valkey SET returns None (duplicate within window) → should NOT publish
+    set_returns = [True, None]
+    call_count = 0
+
+    async def mock_set(*args, **kwargs):
+        nonlocal call_count
+        rv = set_returns[call_count]
+        call_count += 1
+        return rv
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=mock_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)   # first → new → published
+        await mgr.process(alert_dict)   # second → duplicate → blocked
+
+    assert len(published) == 1, "Only the first alert should be published; duplicate must be blocked"
+    assert published[0][0] == Topic.ENRICHED
+
+    await queue.stop()
