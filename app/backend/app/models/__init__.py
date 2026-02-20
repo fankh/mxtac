@@ -4,8 +4,9 @@ from .connector import Connector
 from .detection import Detection
 from .event import Event
 from .incident import Incident
+from .ioc import IOC
 from .notification import NotificationChannel
 from .rule import Rule
 from .user import User
 
-__all__ = ["APIKey", "Base", "Connector", "Detection", "Event", "Incident", "NotificationChannel", "Rule", "User"]
+__all__ = ["APIKey", "Base", "Connector", "Detection", "Event", "Incident", "IOC", "NotificationChannel", "Rule", "User"]

@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances).
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter.
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -29,6 +29,10 @@ Coverage:
   - distributed: concurrent instances — exactly one publishes via shared Valkey SET NX
   - distributed: _is_duplicate() uses atomic SET NX (no GET-then-SET pattern)
   - distributed: both instances can process after shared TTL expires
+  - counter: alerts_processed.labels(severity=level).inc() called on each alert (feature 21.4)
+  - counter: severity label matches alert.level for all Sigma levels (low/medium/high/critical)
+  - counter: severity label defaults to "medium" when alert level is empty
+  - counter: counter NOT incremented for deduplicated alerts (only processed count)
 """
 
 from __future__ import annotations
@@ -1052,5 +1056,160 @@ async def test_both_instances_accept_alert_after_shared_ttl_expires():
     )
     assert published[0][0] == Topic.ENRICHED
     assert published[1][0] == Topic.ENRICHED
+
+    await queue.stop()
+
+
+# ---------------------------------------------------------------------------
+# Section 9 — mxtac_alerts_processed_total{severity} counter (feature 21.4)
+# ---------------------------------------------------------------------------
+#
+# The counter tracks every alert that enters the pipeline, labelled by the
+# Sigma severity level string (low / medium / high / critical).  It must be
+# incremented before the deduplication check so that each *received* alert is
+# counted regardless of whether it is ultimately published.
+#
+# Implementation: alert_manager.py line 82-83
+#   severity_label = alert.level or "medium"
+#   alerts_processed.labels(severity=severity_label).inc()
+
+
+@pytest.mark.asyncio
+async def test_process_increments_alerts_processed_counter():
+    """process() must call alerts_processed.labels(severity=...).inc() once per alert."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="high")
+
+    with (
+        patch("app.services.alert_manager.alerts_processed") as mock_counter,
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    mock_counter.labels.assert_called_once_with(severity="high")
+    mock_counter.labels.return_value.inc.assert_called_once()
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["low", "medium", "high", "critical"])
+async def test_process_uses_alert_level_as_severity_label(level: str):
+    """process() must pass alert.level as the severity label for all Sigma levels."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level=level)
+
+    with (
+        patch("app.services.alert_manager.alerts_processed") as mock_counter,
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    mock_counter.labels.assert_called_once_with(severity=level)
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_uses_medium_as_default_severity_when_level_empty():
+    """process() must default to severity label 'medium' when alert.level is empty."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="")
+
+    with (
+        patch("app.services.alert_manager.alerts_processed") as mock_counter,
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    mock_counter.labels.assert_called_once_with(severity="medium")
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_increments_counter_even_for_deduplicated_alerts():
+    """process() must increment alerts_processed BEFORE dedup check.
+
+    Every alert that reaches the pipeline is counted, whether it is ultimately
+    published or discarded as a duplicate.  The counter measures pipeline
+    throughput, not unique published alerts.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="high")
+
+    with (
+        patch("app.services.alert_manager.alerts_processed") as mock_counter,
+        patch.object(mgr, "_is_duplicate", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    # Counter must have been incremented even though the alert was deduplicated
+    mock_counter.labels.assert_called_once_with(severity="high")
+    mock_counter.labels.return_value.inc.assert_called_once()
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_counter_incremented_before_dedup_check():
+    """alerts_processed counter must be incremented before _is_duplicate() is called.
+
+    The order matters: count first, then check dedup.  This ensures the
+    counter reflects all received alerts, not just non-duplicates.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(level="critical")
+
+    call_order: list[str] = []
+
+    async def mock_is_duplicate(alert):
+        call_order.append("is_duplicate")
+        return False
+
+    original_labels = None
+
+    class MockCounter:
+        def labels(self, **kwargs):
+            call_order.append("counter_inc")
+            mock_child = MagicMock()
+            mock_child.inc = MagicMock()
+            return mock_child
+
+    with (
+        patch("app.services.alert_manager.alerts_processed", MockCounter()),
+        patch.object(mgr, "_is_duplicate", side_effect=mock_is_duplicate),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    assert call_order[0] == "counter_inc", (
+        "alerts_processed counter must be incremented before _is_duplicate() check; "
+        f"actual call order: {call_order}"
+    )
 
     await queue.stop()

@@ -1,4 +1,5 @@
-"""Tests for GET /metrics — Prometheus format (feature 21.3).
+"""Tests for GET /metrics — Prometheus format (feature 21.3) and
+mxtac_alerts_processed_total{severity} counter (feature 21.4).
 
 Coverage:
   /metrics endpoint:
@@ -22,12 +23,20 @@ Coverage:
   - mxtac_sigma_matches_total is present
   - mxtac_events_ingested_total is present
   - mxtac_connectors_active is present
+
+  mxtac_alerts_processed_total{severity} — feature 21.4:
+  - Severity label appears in /metrics output after incrementing the counter
+  - All four Sigma severity levels (low/medium/high/critical) produce distinct labeled series
+  - Label key is "severity" (not "level" or other names)
+  - Counter declared as counter type (not gauge/histogram)
 """
 
 from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
+
+from app.core.metrics import alerts_processed
 
 
 METRICS_URL = "/metrics"
@@ -319,3 +328,92 @@ async def test_metrics_alerts_processed_declared_as_counter(client: AsyncClient)
     )
     assert type_line is not None, "No # TYPE line for mxtac_alerts_processed_total"
     assert "counter" in type_line
+
+
+# ---------------------------------------------------------------------------
+# mxtac_alerts_processed_total{severity} — feature 21.4
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_metrics_alerts_processed_severity_label_appears_after_increment(
+    client: AsyncClient,
+) -> None:
+    """After incrementing the counter with a severity label, the label appears in /metrics.
+
+    The Prometheus text format only emits label series that have been observed
+    at least once.  Calling alerts_processed.labels(severity=...).inc() causes
+    the labelled series to appear in the output.
+    """
+    alerts_processed.labels(severity="high").inc()
+    resp = await client.get(METRICS_URL)
+    assert 'severity="high"' in resp.text, (
+        "Expected 'severity=\"high\"' label in /metrics after incrementing the counter"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["low", "medium", "high", "critical"])
+async def test_metrics_alerts_processed_all_sigma_levels_produce_labeled_series(
+    client: AsyncClient,
+    level: str,
+) -> None:
+    """Each Sigma severity level produces a distinct labelled series in /metrics.
+
+    Verifies that alerts_processed.labels(severity=<level>).inc() for every
+    standard Sigma level (low, medium, high, critical) results in a separate
+    'severity="<level>"' series visible in the Prometheus exposition output.
+    """
+    alerts_processed.labels(severity=level).inc()
+    resp = await client.get(METRICS_URL)
+    assert f'severity="{level}"' in resp.text, (
+        f"Expected 'severity=\"{level}\"' label in /metrics output"
+    )
+
+
+@pytest.mark.asyncio
+async def test_metrics_alerts_processed_label_key_is_severity(client: AsyncClient) -> None:
+    """The label key for mxtac_alerts_processed_total must be 'severity' (not 'level').
+
+    The Prometheus label name must match what the AlertManager emits:
+      alerts_processed.labels(severity=severity_label).inc()
+    """
+    alerts_processed.labels(severity="medium").inc()
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    # Find lines with the metric name and verify the label key is 'severity'
+    metric_lines = [
+        l for l in lines
+        if l.startswith("mxtac_alerts_processed_total{") and "severity=" in l
+    ]
+    assert len(metric_lines) > 0, (
+        "Expected at least one mxtac_alerts_processed_total{severity=...} line in /metrics"
+    )
+    for line in metric_lines:
+        assert "severity=" in line, f"Label key must be 'severity'; got: {line}"
+
+
+@pytest.mark.asyncio
+async def test_metrics_alerts_processed_counter_increments_are_cumulative(
+    client: AsyncClient,
+) -> None:
+    """Prometheus counter values for mxtac_alerts_processed_total must be >= 1 after inc().
+
+    Counters are monotonically increasing.  After at least one increment the
+    reported value must be a positive number (>= 1.0 in the text exposition).
+    """
+    alerts_processed.labels(severity="critical").inc()
+    resp = await client.get(METRICS_URL)
+    lines = resp.text.splitlines()
+    critical_lines = [
+        l for l in lines
+        if l.startswith("mxtac_alerts_processed_total") and 'severity="critical"' in l
+    ]
+    assert len(critical_lines) > 0, (
+        "Expected mxtac_alerts_processed_total{severity='critical'} line in /metrics"
+    )
+    # The value is the last whitespace-separated token; must be a positive float
+    value = float(critical_lines[0].split()[-1])
+    assert value >= 1.0, (
+        f"Counter value must be >= 1.0 after inc(); got {value}"
+    )
