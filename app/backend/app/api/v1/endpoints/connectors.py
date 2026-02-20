@@ -59,7 +59,7 @@ def _conn_to_response(c) -> dict:
 @router.get("", response_model=list[ConnectorResponse])
 async def list_connectors(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("connectors:read")),
 ):
     connectors = await ConnectorRepo.list(db)
     return [_conn_to_response(c) for c in connectors]
@@ -69,7 +69,7 @@ async def list_connectors(
 async def get_connector(
     connector_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("connectors:read")),
 ):
     conn = await ConnectorRepo.get_by_id(db, connector_id)
     if not conn:
@@ -81,7 +81,7 @@ async def get_connector(
 async def create_connector(
     body: ConnectorCreate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("connectors:write")),
 ):
     if body.connector_type not in CONNECTOR_TYPES:
         raise HTTPException(status_code=422, detail=f"Unknown connector type: {body.connector_type}")
@@ -100,7 +100,7 @@ async def update_connector(
     connector_id: str,
     body: ConnectorUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("connectors:write")),
 ):
     updates = {}
     if body.enabled is not None:
@@ -121,7 +121,7 @@ async def update_connector(
 async def delete_connector(
     connector_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("connectors:write")),
 ):
     deleted = await ConnectorRepo.delete(db, connector_id)
     if not deleted:
@@ -132,7 +132,7 @@ async def delete_connector(
 async def test_connector(
     connector_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("connectors:write")),
 ):
     conn = await ConnectorRepo.get_by_id(db, connector_id)
     if not conn:
@@ -148,7 +148,7 @@ async def test_connector(
 async def connector_health(
     connector_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("connectors:read")),
 ):
     conn = await ConnectorRepo.get_by_id(db, connector_id)
     if not conn:

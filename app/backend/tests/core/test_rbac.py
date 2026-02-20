@@ -855,16 +855,21 @@ class TestRbacIntegrationDetectionsWrite:
 
 
 class TestRbacIntegrationUsersEndpoints:
-    """Users endpoints use plain get_current_user (no require_permission guard)."""
+    """Users endpoints enforce users:read (admin only)."""
 
     async def test_unauthenticated_list_users_returns_401_or_403(self, client: AsyncClient) -> None:
         resp = await client.get("/api/v1/users")
         assert resp.status_code in (401, 403)
 
-    async def test_viewer_can_list_users(self, client: AsyncClient, viewer_headers: dict) -> None:
-        """Users endpoint does not enforce RBAC — any authenticated user can list."""
+    async def test_viewer_list_users_returns_403(self, client: AsyncClient, viewer_headers: dict) -> None:
+        """Users endpoint enforces users:read — viewer is denied."""
         resp = await client.get("/api/v1/users", headers=viewer_headers)
-        assert resp.status_code == 200
+        assert resp.status_code == 403
+
+    async def test_engineer_list_users_returns_403(self, client: AsyncClient, engineer_headers: dict) -> None:
+        """Users endpoint enforces users:read — engineer is denied."""
+        resp = await client.get("/api/v1/users", headers=engineer_headers)
+        assert resp.status_code == 403
 
     async def test_admin_can_list_users(self, client: AsyncClient, admin_headers: dict) -> None:
         resp = await client.get("/api/v1/users", headers=admin_headers)

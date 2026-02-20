@@ -44,11 +44,10 @@ async def test_list_connectors_unauthenticated(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_connectors_any_auth_succeeds(client: AsyncClient, analyst_headers: dict) -> None:
-    """GET /connectors with any valid JWT → 200 (endpoint uses plain get_current_user)."""
+async def test_list_connectors_analyst_denied(client: AsyncClient, analyst_headers: dict) -> None:
+    """GET /connectors with analyst role → 403 (connectors:read requires engineer+)."""
     resp = await client.get(BASE_URL, headers=analyst_headers)
-    assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
+    assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------

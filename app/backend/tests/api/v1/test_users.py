@@ -44,19 +44,17 @@ async def test_list_users_unauthenticated(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_users_analyst_succeeds(client: AsyncClient, analyst_headers: dict) -> None:
-    """GET /users with analyst role → 200 (endpoint uses plain get_current_user)."""
+async def test_list_users_analyst_denied(client: AsyncClient, analyst_headers: dict) -> None:
+    """GET /users with analyst role → 403 (users:read is admin-only)."""
     resp = await client.get(BASE_URL, headers=analyst_headers)
-    assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
-async def test_list_users_engineer_succeeds(client: AsyncClient, engineer_headers: dict) -> None:
-    """GET /users with engineer role → 200 (no RBAC on users endpoint yet)."""
+async def test_list_users_engineer_denied(client: AsyncClient, engineer_headers: dict) -> None:
+    """GET /users with engineer role → 403 (users:read is admin-only)."""
     resp = await client.get(BASE_URL, headers=engineer_headers)
-    assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
+    assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------

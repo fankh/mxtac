@@ -61,12 +61,11 @@ async def test_search_events_unauthenticated(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_events_any_auth_succeeds(client: AsyncClient, analyst_headers: dict) -> None:
-    """POST /events/search with any valid JWT → 200 (endpoint uses plain get_current_user)."""
+async def test_search_events_analyst_denied(client: AsyncClient, analyst_headers: dict) -> None:
+    """POST /events/search with analyst role → 403 (events:search requires hunter+)."""
     with patch(MOCK_OS, return_value=_mock_os_empty()):
         resp = await client.post(BASE_URL + "/search", headers=analyst_headers, json={})
-    assert resp.status_code == 200
-    assert "total" in resp.json()
+    assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------
