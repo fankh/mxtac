@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from math import ceil
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.detection import Detection
@@ -126,6 +126,32 @@ class DetectionRepo:
     async def count(session: AsyncSession) -> int:
         result = await session.scalar(select(func.count()).select_from(Detection))
         return result or 0
+
+    @staticmethod
+    async def bulk_update_status(
+        session: AsyncSession, ids: list[str], status: str
+    ) -> dict:
+        """Update status for multiple detections by ID.
+
+        Returns a dict with:
+            updated   — number of detections successfully updated
+            not_found — list of IDs that were not found in the database
+        """
+        found_result = await session.execute(
+            select(Detection.id).where(Detection.id.in_(ids))
+        )
+        found_ids = [row[0] for row in found_result.all()]
+
+        if found_ids:
+            await session.execute(
+                sa_update(Detection)
+                .where(Detection.id.in_(found_ids))
+                .values(status=status)
+            )
+            await session.flush()
+
+        not_found = [id_ for id_ in ids if id_ not in set(found_ids)]
+        return {"updated": len(found_ids), "not_found": not_found}
 
     @staticmethod
     async def get_tactics(

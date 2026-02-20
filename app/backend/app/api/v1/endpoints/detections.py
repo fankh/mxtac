@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
-from ....schemas.detection import Detection, DetectionUpdate, SeverityLevel, DetectionStatus
+from ....schemas.detection import Detection, DetectionUpdate, SeverityLevel, DetectionStatus, BulkStatusUpdate, BulkUpdateResult
 from ....schemas.common import PaginatedResponse, Pagination
 from ....repositories.detection_repo import DetectionRepo
 
@@ -104,6 +104,16 @@ async def update_detection(
     if not d:
         raise HTTPException(status_code=404, detail=f"Detection {detection_id} not found")
     return _detection_to_schema(d)
+
+
+@router.post("/bulk", response_model=BulkUpdateResult)
+async def bulk_update_detections(
+    body: BulkStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("detections:write")),
+):
+    result = await DetectionRepo.bulk_update_status(db, body.ids, body.status)
+    return result
 
 
 @router.delete("/{detection_id}", status_code=204)

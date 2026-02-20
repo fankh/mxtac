@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal
 from datetime import datetime
 
@@ -37,3 +37,13 @@ class DetectionUpdate(BaseModel):
     status: DetectionStatus | None = None
     assigned_to: str | None = None
     priority: str | None = None
+
+
+class BulkStatusUpdate(BaseModel):
+    ids: list[str] = Field(..., min_length=1)
+    status: DetectionStatus
+
+
+class BulkUpdateResult(BaseModel):
+    updated: int
+    not_found: list[str]
