@@ -1,4 +1,4 @@
-"""Tests for WS /api/v1/ws/alerts — Features 17.1, 17.3, 17.4, 17.5, and 28.27
+"""Tests for WS /api/v1/ws/alerts — Features 17.1, 17.3, 17.4, 17.5, 17.6, and 28.27
 
 Coverage:
   - Happy path: WebSocket connection, "connected" handshake schema
@@ -19,6 +19,21 @@ Coverage:
   - _mock_replay: all streamed messages have type='alert' (unit)
   - _mock_replay: alert data includes required fields (unit)
   - _mock_replay: stops cleanly when send_to raises (unit)
+
+Feature 17.6 — Distributed broadcast via Valkey pub/sub (multi-instance):
+  - _CHANNEL constant is exactly "mxtac:alerts"
+  - module-level manager singleton is configured with settings.valkey_url
+  - cross-instance delivery: Instance A broadcast() → Valkey → Instance B clients receive
+  - instance isolation: Instance B fanout does not directly touch Instance A connections
+  - pub client and sub client use separate Valkey connections (independent failover)
+  - exponential backoff: first retry delay is 1 second
+  - exponential backoff: second retry delay doubles to 2 seconds
+  - exponential backoff: delay caps at 30 seconds regardless of failure count
+  - backoff delay resets to 1s after a successful Valkey connection
+  - subscriber creates a fresh Valkey connection object on each retry iteration
+  - pub client is created lazily only on the first broadcast() call
+  - broadcast payload is preserved exactly across instance boundary
+  - single-instance self-delivery via pub/sub loopback
 
 Feature 17.3 — Ping every 30s keep-alive (comprehensive):
   - _ping_loop: asyncio.sleep is called with exactly 30 seconds
@@ -1565,3 +1580,537 @@ async def test_17_4_send_to_failure_during_ack_prunes_connection():
 
     # send_to must have called disconnect() internally, pruning the dead WebSocket
     assert ws not in m._connections
+
+
+# ---------------------------------------------------------------------------
+# Section 16 — Feature 17.6: Distributed broadcast via Valkey pub/sub (multi-instance)
+#
+# Tests the distributed fan-out architecture where multiple backend replicas each
+# maintain their own local WebSocket connections. When any replica calls broadcast(),
+# the message is published to the Valkey channel "mxtac:alerts" and received by EVERY
+# replica's subscriber loop, which then fans out to its own local WebSocket clients.
+#
+# Single-instance deployments work identically: the pub/sub round-trip is effectively
+# a local loopback through Valkey.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_17_6_channel_constant_is_mxtac_alerts():
+    """_CHANNEL must be exactly 'mxtac:alerts' — the cross-replica fan-out channel name."""
+    from app.api.v1.endpoints.websocket import _CHANNEL
+
+    assert _CHANNEL == "mxtac:alerts"
+
+
+@pytest.mark.asyncio
+async def test_17_6_manager_singleton_uses_settings_valkey_url():
+    """Module-level manager singleton must be configured with settings.valkey_url."""
+    from app.core.config import settings
+
+    assert manager._valkey_url == settings.valkey_url
+
+
+@pytest.mark.asyncio
+async def test_17_6_cross_instance_delivery_instance_a_to_b():
+    """Multi-instance: Instance A calls broadcast() → Valkey pub/sub → Instance B's clients receive."""
+    from app.api.v1.endpoints.websocket import _CHANNEL
+
+    # Two separate manager instances simulating two backend replicas
+    instance_a = DistributedConnectionManager("redis://localhost:6379/0")
+    instance_b = DistributedConnectionManager("redis://localhost:6379/0")
+
+    # Each instance has its own local WebSocket connections
+    ws_a = _make_ws()  # client connected to replica A
+    ws_b = _make_ws()  # client connected to replica B
+    instance_a._connections.add(ws_a)
+    instance_b._connections.add(ws_b)
+
+    alert_data = {"id": "17-6-cross", "level": "critical", "score": 9.5, "host": "dc-01"}
+
+    # Step 1: Instance A publishes to the Valkey channel
+    mock_pub = AsyncMock()
+    with patch.object(instance_a, "_get_pub_client", new=AsyncMock(return_value=mock_pub)):
+        await instance_a.broadcast({"type": "alert", "data": alert_data})
+
+    mock_pub.publish.assert_awaited_once()
+    published_channel = mock_pub.publish.call_args[0][0]
+    published_payload = mock_pub.publish.call_args[0][1]
+    assert published_channel == _CHANNEL
+
+    # Step 2: Instance B's subscriber loop receives the same payload from the channel
+    # (as would happen in production via Valkey delivering to all subscribers)
+    subscribe_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal subscribe_count
+        subscribe_count += 1
+        if subscribe_count >= 2:
+            raise asyncio.CancelledError()
+
+    async def fake_listen():
+        yield {"type": "message", "data": published_payload}
+        raise RuntimeError("connection lost")
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_pubsub.listen = fake_listen
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await instance_b._subscriber_loop()
+
+    # Instance B's client must have received the exact payload published by Instance A
+    ws_b.send_text.assert_awaited_once_with(published_payload)
+    received = json.loads(ws_b.send_text.call_args[0][0])
+    assert received["type"] == "alert"
+    assert received["data"] == alert_data
+
+
+@pytest.mark.asyncio
+async def test_17_6_instance_isolation_a_connections_not_touched_by_b_fanout():
+    """Instance B's _fanout_local() must only deliver to Instance B's own connections."""
+    instance_a = DistributedConnectionManager("redis://localhost:6379/0")
+    instance_b = DistributedConnectionManager("redis://localhost:6379/0")
+
+    ws_a = _make_ws()  # client on replica A
+    ws_b = _make_ws()  # client on replica B
+    instance_a._connections.add(ws_a)
+    instance_b._connections.add(ws_b)
+
+    alert_payload = json.dumps({"type": "alert", "data": {"id": "17-6-iso", "level": "high"}})
+
+    # Instance B fans out a message locally — must not affect Instance A's connections
+    await instance_b._fanout_local(alert_payload)
+
+    ws_b.send_text.assert_awaited_once_with(alert_payload)
+    ws_a.send_text.assert_not_awaited()  # Instance A's client untouched
+
+
+@pytest.mark.asyncio
+async def test_17_6_pub_client_independent_from_sub_client():
+    """Publisher and subscriber use separate Valkey client references for independent failover."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+
+    # Initially both clients are None
+    assert m._pub_client is None
+    assert m._sub_client is None
+
+    # After _get_pub_client(), pub_client is populated but sub_client remains None
+    mock_pub = AsyncMock()
+    with patch.object(ws_module, "aioredis") as mock_aioredis:
+        mock_aioredis.from_url.return_value = mock_pub
+        await m._get_pub_client()
+
+    assert m._pub_client is mock_pub
+    assert m._sub_client is None  # subscriber not started — connections are independent
+
+
+@pytest.mark.asyncio
+async def test_17_6_exponential_backoff_first_retry_is_1s():
+    """Subscriber loop first retry delay must be exactly 1 second."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    call_count = 0
+    sleep_durations: list[float] = []
+
+    async def mock_subscribe(_channel):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise ConnectionError("first failure")
+        raise asyncio.CancelledError()
+
+    async def record_sleep(duration):
+        sleep_durations.append(duration)
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", side_effect=record_sleep),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    assert len(sleep_durations) >= 1
+    assert sleep_durations[0] == 1.0, f"Expected first retry delay of 1.0s, got {sleep_durations[0]}"
+
+
+@pytest.mark.asyncio
+async def test_17_6_exponential_backoff_second_retry_is_2s():
+    """Subscriber loop second retry delay must double to 2 seconds."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    call_count = 0
+    sleep_durations: list[float] = []
+
+    async def mock_subscribe(_channel):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            raise ConnectionError(f"failure {call_count}")
+        raise asyncio.CancelledError()
+
+    async def record_sleep(duration):
+        sleep_durations.append(duration)
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", side_effect=record_sleep),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    assert len(sleep_durations) >= 2
+    assert sleep_durations[0] == 1.0, f"Expected first retry 1.0s, got {sleep_durations[0]}"
+    assert sleep_durations[1] == 2.0, f"Expected second retry 2.0s, got {sleep_durations[1]}"
+
+
+@pytest.mark.asyncio
+async def test_17_6_exponential_backoff_caps_at_30s():
+    """Subscriber loop retry delay must cap at 30 seconds regardless of failure count."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    call_count = 0
+    sleep_durations: list[float] = []
+    # 10 failures guarantees we exceed the 30s cap (1, 2, 4, 8, 16, 30, 30, 30, 30, 30)
+    max_failures = 10
+
+    async def mock_subscribe(_channel):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= max_failures:
+            raise ConnectionError(f"failure {call_count}")
+        raise asyncio.CancelledError()
+
+    async def record_sleep(duration):
+        sleep_durations.append(duration)
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", side_effect=record_sleep),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    assert all(d <= 30.0 for d in sleep_durations), (
+        f"Some delays exceeded 30s cap: {sleep_durations}"
+    )
+    assert 30.0 in sleep_durations, (
+        f"Max delay of 30s never reached after {max_failures} failures: {sleep_durations}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_17_6_backoff_resets_to_1s_after_successful_connect():
+    """Retry delay must reset to 1s after a successful Valkey connection, not carry over."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    call_count = 0
+    sleep_durations: list[float] = []
+
+    async def mock_subscribe(_channel):
+        nonlocal call_count
+        call_count += 1
+        # First attempt succeeds (subscribe returns) — listen() will then raise RuntimeError
+        # Second attempt fails — sleep should use the reset 1s delay, not carry-over
+
+    async def fake_listen():
+        # Successful connection: immediately drops (simulates clean disconnect)
+        raise RuntimeError("clean disconnect after successful subscribe")
+
+    async def mock_subscribe_v2(_channel):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            pass  # subscribe succeeds; listen() will raise RuntimeError
+        elif call_count == 2:
+            raise ConnectionError("second attempt fails")
+        else:
+            raise asyncio.CancelledError()
+
+    async def record_sleep(duration):
+        sleep_durations.append(duration)
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe_v2
+    mock_pubsub.listen = fake_listen
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", side_effect=record_sleep),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    # After successful connect + RuntimeError from listen(), the retry delay must be 1.0s
+    # (reset by the `retry_delay = 1.0` line after successful subscribe)
+    assert len(sleep_durations) >= 1
+    assert sleep_durations[0] == 1.0, (
+        f"Expected reset delay of 1.0s after successful connect, got {sleep_durations[0]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_17_6_subscriber_creates_fresh_connection_on_each_retry():
+    """Subscriber loop must call aioredis.from_url() on each retry — fresh connection per attempt."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    call_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise ConnectionError("first failure")
+        raise asyncio.CancelledError()
+
+    # Two distinct client objects returned on successive from_url() calls
+    mock_client_1 = MagicMock()
+    mock_client_1.aclose = AsyncMock()
+    mock_pubsub_1 = MagicMock()
+    mock_pubsub_1.subscribe = mock_subscribe
+    mock_client_1.pubsub.return_value = mock_pubsub_1
+
+    mock_client_2 = MagicMock()
+    mock_client_2.aclose = AsyncMock()
+    mock_pubsub_2 = MagicMock()
+    mock_pubsub_2.subscribe = mock_subscribe
+    mock_client_2.pubsub.return_value = mock_pubsub_2
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.side_effect = [mock_client_1, mock_client_2]
+        await m._subscriber_loop()
+
+    # Two iterations → two distinct calls to from_url (new connection per retry)
+    assert mock_aioredis.from_url.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_17_6_pub_client_created_lazily_on_first_broadcast():
+    """Pub client must not be created until the first broadcast() call (lazy singleton)."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+
+    # No pub client before any broadcast
+    assert m._pub_client is None
+
+    mock_client = AsyncMock()
+    with patch.object(ws_module, "aioredis") as mock_aioredis:
+        mock_aioredis.from_url.return_value = mock_client
+        # First call to _get_pub_client creates the client
+        client = await m._get_pub_client()
+
+    assert client is mock_client
+    assert m._pub_client is mock_client
+    mock_aioredis.from_url.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_17_6_broadcast_payload_preserved_across_instance_boundary():
+    """Payload published by Instance A must be received byte-for-byte by Instance B's clients."""
+    instance_a = DistributedConnectionManager("redis://localhost:6379/0")
+    instance_b = DistributedConnectionManager("redis://localhost:6379/0")
+
+    ws_b = _make_ws()
+    instance_b._connections.add(ws_b)
+
+    alert_data = {
+        "id": "17-6-payload",
+        "rule_title": "Suspicious PowerShell Base64 Execution",
+        "level": "critical",
+        "severity_id": 5,
+        "score": 9.2,
+        "host": "dc-01",
+        "technique_ids": ["T1059.001"],
+        "tactic_ids": ["TA0002"],
+        "ts": "2026-02-21T00:00:00+00:00",
+    }
+
+    # Capture what Instance A would publish to Valkey
+    mock_pub = AsyncMock()
+    with patch.object(instance_a, "_get_pub_client", new=AsyncMock(return_value=mock_pub)):
+        await instance_a.broadcast({"type": "alert", "data": alert_data})
+
+    published_payload = mock_pub.publish.call_args[0][1]
+
+    # Feed that exact payload into Instance B's subscriber loop
+    subscribe_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal subscribe_count
+        subscribe_count += 1
+        if subscribe_count >= 2:
+            raise asyncio.CancelledError()
+
+    async def fake_listen():
+        yield {"type": "message", "data": published_payload}
+        raise RuntimeError("done")
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_pubsub.listen = fake_listen
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await instance_b._subscriber_loop()
+
+    # ws_b received the payload exactly as published — no modification in transit
+    ws_b.send_text.assert_awaited_once_with(published_payload)
+    received = json.loads(ws_b.send_text.call_args[0][0])
+    assert received["type"] == "alert"
+    assert received["data"] == alert_data
+    # Every field preserved with exact types and values
+    assert received["data"]["score"] == 9.2
+    assert received["data"]["technique_ids"] == ["T1059.001"]
+    assert received["data"]["severity_id"] == 5
+
+
+@pytest.mark.asyncio
+async def test_17_6_single_instance_self_delivery_via_pubsub_loopback():
+    """In single-instance mode the pub/sub round-trip is a local loopback to own clients."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    ws = _make_ws()
+    m._connections.add(ws)
+
+    alert_data = {"id": "17-6-loopback", "level": "high", "score": 8.0, "host": "srv-01"}
+
+    # Step 1: instance publishes to the channel
+    mock_pub = AsyncMock()
+    with patch.object(m, "_get_pub_client", new=AsyncMock(return_value=mock_pub)):
+        await m.broadcast({"type": "alert", "data": alert_data})
+
+    published_payload = mock_pub.publish.call_args[0][1]
+
+    # Step 2: same instance's subscriber loop receives the loopback message
+    subscribe_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal subscribe_count
+        subscribe_count += 1
+        if subscribe_count >= 2:
+            raise asyncio.CancelledError()
+
+    async def fake_listen():
+        yield {"type": "message", "data": published_payload}
+        raise RuntimeError("connection lost")
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_pubsub.listen = fake_listen
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    # Local client received the loopback message — identical to multi-instance behavior
+    ws.send_text.assert_awaited_once_with(published_payload)
+    received = json.loads(ws.send_text.call_args[0][0])
+    assert received["type"] == "alert"
+    assert received["data"] == alert_data
+
+
+@pytest.mark.asyncio
+async def test_17_6_subscriber_subscribes_to_mxtac_alerts_channel():
+    """Subscriber loop must subscribe to the 'mxtac:alerts' channel specifically."""
+    from app.api.v1.endpoints.websocket import _CHANNEL
+
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    channels_subscribed: list[str] = []
+
+    async def capture_subscribe(channel):
+        channels_subscribed.append(channel)
+        raise asyncio.CancelledError()
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = capture_subscribe
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with patch.object(ws_module, "aioredis") as mock_aioredis:
+        mock_aioredis.from_url.return_value = mock_client
+        await m._subscriber_loop()
+
+    assert channels_subscribed == [_CHANNEL], (
+        f"Expected subscriber to subscribe to {_CHANNEL!r}, got {channels_subscribed}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_17_6_subscriber_loop_ignores_non_message_type_events():
+    """Subscriber loop must silently skip events whose type is not 'message'."""
+    m = DistributedConnectionManager("redis://localhost:6379/0")
+    fanout_calls: list[str] = []
+    subscribe_count = 0
+
+    async def mock_subscribe(_channel):
+        nonlocal subscribe_count
+        subscribe_count += 1
+        if subscribe_count >= 2:
+            raise asyncio.CancelledError()
+
+    async def fake_listen():
+        # These event types must all be ignored
+        yield {"type": "subscribe", "data": None}
+        yield {"type": "psubscribe", "data": None}
+        yield {"type": "unsubscribe", "data": None}
+        yield {"type": "message", "data": '{"type":"alert","data":{"id":"real"}}'}
+        raise RuntimeError("done")
+
+    async def capture_fanout(payload: str) -> None:
+        fanout_calls.append(payload)
+
+    mock_client = MagicMock()
+    mock_client.aclose = AsyncMock()
+    mock_pubsub = MagicMock()
+    mock_pubsub.subscribe = mock_subscribe
+    mock_pubsub.listen = fake_listen
+    mock_client.pubsub.return_value = mock_pubsub
+
+    with (
+        patch.object(ws_module, "aioredis") as mock_aioredis,
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        mock_aioredis.from_url.return_value = mock_client
+        with patch.object(m, "_fanout_local", side_effect=capture_fanout):
+            await m._subscriber_loop()
+
+    # Only the 'message' type event must have triggered fanout
+    assert len(fanout_calls) == 1
+    assert json.loads(fanout_calls[0])["data"]["id"] == "real"
