@@ -635,7 +635,7 @@
 | 7. OCSF normalizers | 15 | 1 | 4 | 10 | 0 |
 | 8. Sigma engine | 23 | 2 | 0 | 21 | 0 |
 | 9. Alert manager | 12 | 4 | 1 | 7 | 0 |
-| 10. Detections API | 11 | 0 | 9 | 2 | 0 |
+| 10. Detections API | 11 | 10 | 0 | 1 | 0 |
 | 11. Event search | 8 | 0 | 4 | 4 | 0 |
 | 12. OpenSearch | 11 | 5 | 1 | 5 | 0 |
 | 13. Rules API | 10 | 0 | 8 | 2 | 0 |
