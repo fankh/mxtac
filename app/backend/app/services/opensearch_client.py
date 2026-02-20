@@ -24,6 +24,10 @@ EVENTS_INDEX_TEMPLATE = "mxtac-events"
 ALERTS_INDEX_TEMPLATE = "mxtac-alerts"
 RULES_INDEX = "mxtac-rules"
 
+# ILM / ISM policy
+ILM_POLICY_NAME = "mxtac-90day-retention"
+ILM_RETENTION_DAYS = 90
+
 # Maps EventFilter.field names to their OpenSearch document field paths.
 # Flat column aliases (e.g. "src_ip") are mapped to the nested OCSF paths
 # used in the indexed document; nested paths pass through unchanged.
@@ -323,6 +327,7 @@ class OpenSearchService:
                         "settings": {
                             "number_of_shards": 3,
                             "number_of_replicas": 1,
+                            "plugins.index_state_management.policy_id": ILM_POLICY_NAME,
                         },
                         "mappings": {
                             "properties": {
@@ -397,6 +402,7 @@ class OpenSearchService:
                         "settings": {
                             "number_of_shards": 3,
                             "number_of_replicas": 1,
+                            "plugins.index_state_management.policy_id": ILM_POLICY_NAME,
                         },
                         "mappings": {
                             "properties": {
@@ -476,6 +482,80 @@ class OpenSearchService:
                 logger.debug("Rules index already exists: %s", RULES_INDEX)
         except Exception as exc:
             logger.warning("ensure_indices: rules index failed: %s", exc)
+
+    async def ensure_ilm_policy(self) -> None:
+        """Create or update the ISM policy that enforces 90-day index retention.
+
+        Creates an OpenSearch ISM (Index State Management) policy named
+        ``mxtac-90day-retention`` that automatically deletes
+        ``mxtac-events-*`` and ``mxtac-alerts-*`` indices after 90 days.
+
+        The policy body uses two states:
+        - ``ingest`` — the initial state; transitions to ``delete`` once the
+          index reaches ``ILM_RETENTION_DAYS`` days old.
+        - ``delete`` — removes the index.
+
+        The ``ism_template`` section auto-attaches the policy to every new
+        index whose name matches the events or alerts wildcard patterns, so no
+        additional per-index configuration is required.
+
+        This operation is idempotent — a PUT on an existing policy updates it.
+        If the ISM plugin is unavailable (e.g. a minimal OpenSearch build) the
+        failure is logged at WARNING level and startup continues normally.
+        """
+        if self._client is None:
+            return
+
+        policy_body = {
+            "policy": {
+                "description": (
+                    f"Delete MxTac event/alert indices after {ILM_RETENTION_DAYS} days."
+                ),
+                "default_state": "ingest",
+                "states": [
+                    {
+                        "name": "ingest",
+                        "actions": [],
+                        "transitions": [
+                            {
+                                "state_name": "delete",
+                                "conditions": {
+                                    "min_index_age": f"{ILM_RETENTION_DAYS}d"
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "name": "delete",
+                        "actions": [{"delete": {}}],
+                        "transitions": [],
+                    },
+                ],
+                "ism_template": [
+                    {
+                        "index_patterns": [
+                            f"{EVENTS_INDEX_TEMPLATE}-*",
+                            f"{ALERTS_INDEX_TEMPLATE}-*",
+                        ],
+                        "priority": 100,
+                    }
+                ],
+            }
+        }
+
+        try:
+            await self._client.transport.perform_request(
+                "PUT",
+                f"/_plugins/_ism/policies/{ILM_POLICY_NAME}",
+                body=policy_body,
+            )
+            logger.info(
+                "Applied ISM policy: %s (retention=%dd)",
+                ILM_POLICY_NAME,
+                ILM_RETENTION_DAYS,
+            )
+        except Exception as exc:
+            logger.warning("ensure_ilm_policy: ISM policy creation failed: %s", exc)
 
     async def close(self) -> None:
         if self._client:

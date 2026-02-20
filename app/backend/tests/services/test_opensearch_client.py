@@ -12,6 +12,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.opensearch_client import (
+    ALERTS_INDEX_TEMPLATE,
+    EVENTS_INDEX_TEMPLATE,
+    ILM_POLICY_NAME,
+    ILM_RETENTION_DAYS,
     OpenSearchService,
     _daily_index,
     filter_to_dsl,
@@ -2058,3 +2062,264 @@ async def test_aggregate_queries_events_index_wildcard() -> None:
     index_arg = mock_client.search.call_args.kwargs.get("index")
     assert index_arg == "mxtac-events-*"
     assert "alerts" not in index_arg
+
+
+# ---------------------------------------------------------------------------
+# OpenSearchService.ensure_ilm_policy — feature 12.9 (90-day retention)
+# ---------------------------------------------------------------------------
+
+
+def _make_transport_mock(*, exc: Exception | None = None) -> MagicMock:
+    """Return a mock transport with perform_request mocked as async."""
+    transport = MagicMock()
+    if exc is not None:
+        transport.perform_request = AsyncMock(side_effect=exc)
+    else:
+        transport.perform_request = AsyncMock(return_value={"_id": ILM_POLICY_NAME, "policy": {}})
+    return transport
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_noop_when_unavailable() -> None:
+    """ensure_ilm_policy() is a no-op when no client is connected."""
+    svc = OpenSearchService()
+    # _client is None — must not raise
+    await svc.ensure_ilm_policy()
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_calls_put_via_transport() -> None:
+    """ensure_ilm_policy() calls transport.perform_request with PUT method."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policy()
+
+    mock_client.transport.perform_request.assert_awaited_once()
+    call_args = mock_client.transport.perform_request.call_args
+    method = call_args.args[0] if call_args.args else call_args.kwargs.get("method")
+    assert method == "PUT"
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_targets_correct_ism_endpoint() -> None:
+    """ensure_ilm_policy() targets the ISM policies API endpoint."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policy()
+
+    call_args = mock_client.transport.perform_request.call_args
+    url = call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs.get("url")
+    assert ILM_POLICY_NAME in url
+    assert "_ism" in url or "_plugins" in url
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_body_has_correct_policy_name() -> None:
+    """ensure_ilm_policy() sends the canonical policy name in the ISM path."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policy()
+
+    assert ILM_POLICY_NAME == "mxtac-90day-retention"
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_body_has_ingest_and_delete_states() -> None:
+    """Policy body contains 'ingest' and 'delete' states."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policy()
+
+    call_args = mock_client.transport.perform_request.call_args
+    body = call_args.kwargs.get("body") or (call_args.args[2] if len(call_args.args) > 2 else None)
+    assert body is not None
+    state_names = {s["name"] for s in body["policy"]["states"]}
+    assert "ingest" in state_names
+    assert "delete" in state_names
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_retention_is_90_days() -> None:
+    """Policy transition uses 'min_index_age' of 90d."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policy()
+
+    call_args = mock_client.transport.perform_request.call_args
+    body = call_args.kwargs.get("body") or (call_args.args[2] if len(call_args.args) > 2 else None)
+    ingest_state = next(s for s in body["policy"]["states"] if s["name"] == "ingest")
+    transition = ingest_state["transitions"][0]
+    assert transition["state_name"] == "delete"
+    assert transition["conditions"]["min_index_age"] == f"{ILM_RETENTION_DAYS}d"
+    assert ILM_RETENTION_DAYS == 90
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_delete_state_has_delete_action() -> None:
+    """Policy 'delete' state includes the delete action."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policy()
+
+    call_args = mock_client.transport.perform_request.call_args
+    body = call_args.kwargs.get("body") or (call_args.args[2] if len(call_args.args) > 2 else None)
+    delete_state = next(s for s in body["policy"]["states"] if s["name"] == "delete")
+    assert {"delete": {}} in delete_state["actions"]
+    assert delete_state["transitions"] == []
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_ism_template_covers_events_index() -> None:
+    """ISM template in the policy covers mxtac-events-* pattern."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policy()
+
+    call_args = mock_client.transport.perform_request.call_args
+    body = call_args.kwargs.get("body") or (call_args.args[2] if len(call_args.args) > 2 else None)
+    ism_patterns = body["policy"]["ism_template"][0]["index_patterns"]
+    assert f"{EVENTS_INDEX_TEMPLATE}-*" in ism_patterns
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_ism_template_covers_alerts_index() -> None:
+    """ISM template in the policy covers mxtac-alerts-* pattern."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policy()
+
+    call_args = mock_client.transport.perform_request.call_args
+    body = call_args.kwargs.get("body") or (call_args.args[2] if len(call_args.args) > 2 else None)
+    ism_patterns = body["policy"]["ism_template"][0]["index_patterns"]
+    assert f"{ALERTS_INDEX_TEMPLATE}-*" in ism_patterns
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_ism_template_priority_is_100() -> None:
+    """ISM template priority is 100 so it wins over lower-priority templates."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policy()
+
+    call_args = mock_client.transport.perform_request.call_args
+    body = call_args.kwargs.get("body") or (call_args.args[2] if len(call_args.args) > 2 else None)
+    priority = body["policy"]["ism_template"][0]["priority"]
+    assert priority == 100
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_exception_does_not_crash() -> None:
+    """An exception from the transport is caught; method returns without raising."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock(exc=Exception("ISM plugin unavailable"))
+    svc._client = mock_client
+
+    # Must not raise
+    await svc.ensure_ilm_policy()
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_exception_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """A transport exception is logged at WARNING level."""
+    import logging
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock(exc=Exception("ISM plugin unavailable"))
+    svc._client = mock_client
+
+    with caplog.at_level(logging.WARNING):
+        await svc.ensure_ilm_policy()
+
+    assert "ISM plugin unavailable" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policy_logs_success_on_apply(caplog: pytest.LogCaptureFixture) -> None:
+    """ensure_ilm_policy() logs INFO on successful policy application."""
+    import logging
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    with caplog.at_level(logging.INFO):
+        await svc.ensure_ilm_policy()
+
+    assert ILM_POLICY_NAME in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# ensure_indices — ISM policy_id embedded in template settings (feature 12.9)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_events_template_has_ism_policy_id() -> None:
+    """Events template settings include the ISM policy_id for 90-day retention."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    calls = {
+        c.kwargs.get("name"): c.kwargs.get("body")
+        for c in mock_client.indices.put_index_template.call_args_list
+    }
+    events_body = calls.get("mxtac-events-template")
+    assert events_body is not None
+    settings = events_body["template"]["settings"]
+    assert settings.get("plugins.index_state_management.policy_id") == ILM_POLICY_NAME
+
+
+@pytest.mark.asyncio
+async def test_ensure_indices_alerts_template_has_ism_policy_id() -> None:
+    """Alerts template settings include the ISM policy_id for 90-day retention."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = _make_indices_client(rules_exist=True)
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_indices()
+
+    calls = {
+        c.kwargs.get("name"): c.kwargs.get("body")
+        for c in mock_client.indices.put_index_template.call_args_list
+    }
+    alerts_body = calls.get("mxtac-alerts-template")
+    assert alerts_body is not None
+    settings = alerts_body["template"]["settings"]
+    assert settings.get("plugins.index_state_management.policy_id") == ILM_POLICY_NAME
