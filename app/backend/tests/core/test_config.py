@@ -170,3 +170,52 @@ class TestJwtKeyVersion:
         importlib.reload(config_module)
         assert config_module.settings.jwt_key_version == 5
         importlib.reload(config_module)
+
+
+class TestSensitiveFieldsNotInOpenAPISchema:
+    """Sensitive config field *values* must not appear in the OpenAPI JSON schema.
+
+    The Settings class is an internal config object, not a FastAPI response model,
+    so its field values should never be embedded in the /openapi.json output.
+    """
+
+    async def test_secret_key_value_not_in_openapi(self, client) -> None:
+        """The actual secret_key value must not appear anywhere in /openapi.json."""
+        from app.core.config import settings
+
+        resp = await client.get("/openapi.json")
+        assert resp.status_code == 200
+        body = resp.text
+        # Only check if the key is non-trivially short (avoid false positives)
+        if len(settings.secret_key) > 8:
+            assert settings.secret_key not in body
+
+    async def test_database_url_not_in_openapi(self, client) -> None:
+        """The database_url (which may contain a password) must not appear in /openapi.json."""
+        from app.core.config import settings
+
+        resp = await client.get("/openapi.json")
+        assert resp.status_code == 200
+        body = resp.text
+        assert settings.database_url not in body
+
+    async def test_opensearch_password_not_in_openapi(self, client) -> None:
+        """The opensearch_password must not appear in /openapi.json."""
+        from app.core.config import settings
+
+        if not settings.opensearch_password:
+            pytest.skip("opensearch_password is empty — nothing to check")
+        resp = await client.get("/openapi.json")
+        assert resp.status_code == 200
+        assert settings.opensearch_password not in resp.text
+
+    async def test_health_response_does_not_expose_sensitive_config(self, client) -> None:
+        """/health must not expose secret_key or database_url."""
+        from app.core.config import settings
+
+        resp = await client.get("/health")
+        assert resp.status_code == 200
+        body = resp.text
+        if len(settings.secret_key) > 8:
+            assert settings.secret_key not in body
+        assert settings.database_url not in body
