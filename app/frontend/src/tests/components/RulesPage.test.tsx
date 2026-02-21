@@ -13,6 +13,25 @@ vi.mock('../../components/layout/TopBar', () => ({
   ),
 }))
 
+// Mock Monaco Editor — renders a plain textarea so existing tests can interact
+// with the YAML content via fireEvent.change without loading the real editor.
+vi.mock('@monaco-editor/react', () => ({
+  default: ({
+    value,
+    onChange,
+  }: {
+    value?: string
+    onChange?: (value: string | undefined) => void
+    onMount?: (editor: unknown, monaco: unknown) => void
+    [key: string]: unknown
+  }) => (
+    <textarea
+      value={value ?? ''}
+      onChange={(e) => onChange?.(e.target.value)}
+    />
+  ),
+}))
+
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -932,6 +951,202 @@ describe('RulesPage', () => {
     it('renders the TopBar with the "Sigma Rules" crumb', () => {
       renderPage()
       expect(screen.getByTestId('topbar')).toHaveTextContent('Sigma Rules')
+    })
+  })
+
+  // =========================================================================
+  // Monaco YAML editor
+  // =========================================================================
+  describe('Monaco YAML editor', () => {
+    beforeEach(() => {
+      mockGet.mockResolvedValue({ data: [] })
+    })
+
+    it('renders the YAML editor (mocked as textarea) inside the modal', async () => {
+      renderPage()
+      await openEditor()
+      expect(getEditorTextarea()).toBeInTheDocument()
+    })
+
+    it('pre-fills the editor with the EXAMPLE_SIGMA template', async () => {
+      renderPage()
+      await openEditor()
+      expect(getEditorTextarea().value).toContain('title: Suspicious LSASS Memory Access')
+    })
+
+    it('updates the editor value as the user types', async () => {
+      renderPage()
+      await openEditor()
+      fireEvent.change(getEditorTextarea(), { target: { value: 'title: My Rule' } })
+      expect(getEditorTextarea().value).toBe('title: My Rule')
+    })
+  })
+
+  // =========================================================================
+  // Format YAML button
+  // =========================================================================
+  describe('Format YAML button', () => {
+    beforeEach(() => {
+      mockGet.mockResolvedValue({ data: [] })
+    })
+
+    it('renders the "Format" button inside the modal', async () => {
+      renderPage()
+      await openEditor()
+      expect(screen.getByRole('button', { name: 'Format' })).toBeInTheDocument()
+    })
+
+    it('reformats valid YAML when "Format" is clicked', async () => {
+      renderPage()
+      await openEditor()
+      // Write unformatted but valid YAML
+      fireEvent.change(getEditorTextarea(), {
+        target: {
+          value:
+            'title: My Rule\ndetection:\n  selection:\n    x: y\n  condition: selection\nlogsource:\n  product: linux\n',
+        },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Format' }))
+      // After formatting, the editor should still contain the key fields
+      await waitFor(() => {
+        const val = getEditorTextarea().value
+        expect(val).toContain('title:')
+        expect(val).toContain('detection:')
+        expect(val).toContain('logsource:')
+      })
+    })
+
+    it('does not throw when "Format" is clicked with invalid YAML', async () => {
+      renderPage()
+      await openEditor()
+      fireEvent.change(getEditorTextarea(), { target: { value: ': invalid: yaml:' } })
+      // Should not throw — invalid YAML is returned unchanged
+      expect(() => fireEvent.click(screen.getByRole('button', { name: 'Format' }))).not.toThrow()
+    })
+  })
+
+  // =========================================================================
+  // Test Rule button
+  // =========================================================================
+  describe('Test Rule button', () => {
+    beforeEach(() => {
+      mockGet.mockResolvedValue({ data: [] })
+    })
+
+    it('renders the "Test Rule" button inside the modal', async () => {
+      renderPage()
+      await openEditor()
+      expect(screen.getByRole('button', { name: 'Test Rule' })).toBeInTheDocument()
+    })
+
+    it('calls apiClient.post /rules/test with yaml content and empty sample_event', async () => {
+      mockPost.mockResolvedValue({ data: { matched: true, errors: [] } })
+      renderPage()
+      await openEditor()
+      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
+      await waitFor(() => {
+        expect(mockPost).toHaveBeenCalledWith(
+          '/rules/test',
+          expect.objectContaining({
+            content: expect.stringContaining('title: Suspicious LSASS Memory Access'),
+            sample_event: {},
+          }),
+        )
+      })
+    })
+
+    it('shows "✓ Matched" when the test returns matched: true', async () => {
+      mockPost.mockResolvedValue({ data: { matched: true, errors: [] } })
+      renderPage()
+      await openEditor()
+      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
+      await waitFor(() => {
+        expect(screen.getByText('✓ Matched')).toBeInTheDocument()
+      })
+    })
+
+    it('shows "✗ No match" when the test returns matched: false with no errors', async () => {
+      mockPost.mockResolvedValue({ data: { matched: false, errors: [] } })
+      renderPage()
+      await openEditor()
+      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
+      await waitFor(() => {
+        expect(screen.getByText('✗ No match')).toBeInTheDocument()
+      })
+    })
+
+    it('shows "⚠ Error" with message when the test returns errors', async () => {
+      mockPost.mockResolvedValue({ data: { matched: false, errors: ['Invalid condition'] } })
+      renderPage()
+      await openEditor()
+      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
+      await waitFor(() => {
+        expect(screen.getByText('⚠ Error')).toBeInTheDocument()
+        expect(screen.getByText('Invalid condition')).toBeInTheDocument()
+      })
+    })
+
+    it('shows error result when the test API call fails', async () => {
+      mockPost.mockRejectedValue({
+        response: { data: { detail: 'Rule engine error' } },
+      })
+      renderPage()
+      await openEditor()
+      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
+      await waitFor(() => {
+        expect(screen.getByText('⚠ Error')).toBeInTheDocument()
+        expect(screen.getByText('Rule engine error')).toBeInTheDocument()
+      })
+    })
+
+    it('shows "Test failed" fallback when the error has no detail', async () => {
+      mockPost.mockRejectedValue(new Error('Network error'))
+      renderPage()
+      await openEditor()
+      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
+      await waitFor(() => {
+        expect(screen.getByText('Test failed')).toBeInTheDocument()
+      })
+    })
+
+    it('shows "Testing..." and disables the button while in-flight', async () => {
+      mockPost.mockReturnValue(new Promise<never>(() => {}))
+      renderPage()
+      await openEditor()
+      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
+      const testingBtn = await screen.findByRole('button', { name: 'Testing...' })
+      expect(testingBtn).toBeDisabled()
+    })
+
+    it('does not call /rules/test when YAML is invalid', async () => {
+      renderPage()
+      await openEditor()
+      fireEvent.change(getEditorTextarea(), { target: { value: '' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
+      expect(mockPost).not.toHaveBeenCalled()
+      expect(screen.getByText('YAML content is empty')).toBeInTheDocument()
+    })
+
+    it('clears the test result when the editor content changes', async () => {
+      mockPost.mockResolvedValue({ data: { matched: true, errors: [] } })
+      renderPage()
+      await openEditor()
+      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
+      await waitFor(() => expect(screen.getByText('✓ Matched')).toBeInTheDocument())
+      // Edit the YAML — test result should disappear
+      fireEvent.change(getEditorTextarea(), { target: { value: 'title: changed' } })
+      expect(screen.queryByText('✓ Matched')).not.toBeInTheDocument()
+    })
+
+    it('clears the test result when the modal is closed and reopened', async () => {
+      mockPost.mockResolvedValue({ data: { matched: true, errors: [] } })
+      renderPage()
+      await openEditor()
+      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
+      await waitFor(() => expect(screen.getByText('✓ Matched')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      fireEvent.click(screen.getByRole('button', { name: '+ New Rule' }))
+      expect(screen.queryByText('✓ Matched')).not.toBeInTheDocument()
     })
   })
 })

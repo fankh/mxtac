@@ -1,7 +1,10 @@
 import { useState, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import Editor, { type OnMount } from '@monaco-editor/react'
+import { load as yamlLoad, dump as yamlDump, YAMLException } from 'js-yaml'
 import { TopBar } from '../../layout/TopBar'
 import { apiClient } from '../../../lib/api'
+import { useUIStore, type Theme } from '../../../stores/uiStore'
 
 interface Rule {
   id: string
@@ -14,6 +17,14 @@ interface Rule {
   hit_count: number
   fp_count: number
 }
+
+interface TestResult {
+  matched: boolean
+  errors: string[]
+}
+
+type IStandaloneCodeEditor = Parameters<OnMount>[0]
+type Monaco = Parameters<OnMount>[1]
 
 const LEVEL_COLOR: Record<string, string> = {
   critical: 'text-crit-text bg-crit-bg',
@@ -30,7 +41,7 @@ async function fetchRules(): Promise<Rule[]> {
   return resp.data
 }
 
-// ── YAML validation helpers ─────────────────────────────────────────────────
+// ── YAML helpers ─────────────────────────────────────────────────────────────
 
 /**
  * Lightweight YAML validation for Sigma rules.
@@ -68,9 +79,28 @@ function validateSigmaYaml(yaml: string): string[] {
   return errors
 }
 
+/** Map app theme to Monaco built-in theme name. */
+function getMonacoTheme(theme: Theme): string {
+  return theme === 'light' ? 'vs' : 'vs-dark'
+}
+
+/** Re-serialize YAML through js-yaml for consistent formatting. Returns original on parse error. */
+function formatYaml(yaml: string): string {
+  try {
+    const parsed = yamlLoad(yaml)
+    return yamlDump(parsed, { indent: 2, lineWidth: -1, noRefs: true })
+  } catch {
+    return yaml
+  }
+}
+
 export function RulesPage() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const editorRef = useRef<IStandaloneCodeEditor | null>(null)
+  const monacoRef = useRef<Monaco | null>(null)
+
+  const theme = useUIStore((s) => s.theme)
 
   const [levelFilter, setLevelFilter] = useState<string | null>(null)
   const [enabledFilter, setEnabledFilter] = useState<boolean | null>(null)
@@ -79,8 +109,9 @@ export function RulesPage() {
   const [editorYaml, setEditorYaml] = useState(EXAMPLE_SIGMA)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [testResult, setTestResult] = useState<TestResult | null>(null)
 
-  const { data = [], isLoading, refetch } = useQuery({
+  const { data = [], isLoading } = useQuery({
     queryKey: ['rules'],
     queryFn: fetchRules,
   })
@@ -104,6 +135,7 @@ export function RulesPage() {
       setEditorYaml(EXAMPLE_SIGMA)
       setValidationErrors([])
       setSaveError(null)
+      setTestResult(null)
       queryClient.invalidateQueries({ queryKey: ['rules'] })
     },
     onError: (err: unknown) => {
@@ -114,7 +146,68 @@ export function RulesPage() {
     },
   })
 
+  // ── Test mutation ──────────────────────────────────────────────────────────
+
+  const testMutation = useMutation({
+    mutationFn: async (yamlContent: string) => {
+      const resp = await apiClient.post('/rules/test', {
+        content: yamlContent,
+        sample_event: {},
+      })
+      return resp.data as TestResult
+    },
+    onSuccess: (result) => {
+      setTestResult(result)
+    },
+    onError: (err: unknown) => {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data
+          ?.detail ?? 'Test failed'
+      setTestResult({ matched: false, errors: [detail] })
+    },
+  })
+
   // ── Handlers ──────────────────────────────────────────────────────────────
+
+  const handleEditorMount: OnMount = useCallback((editor, monaco) => {
+    editorRef.current = editor
+    monacoRef.current = monaco
+  }, [])
+
+  const handleEditorChange = (value: string | undefined) => {
+    const yaml = value ?? ''
+    setEditorYaml(yaml)
+    if (validationErrors.length > 0) setValidationErrors([])
+    if (saveError) setSaveError(null)
+    if (testResult) setTestResult(null)
+
+    // Update YAML error markers in the Monaco gutter
+    const monaco = monacoRef.current
+    const editorInst = editorRef.current
+    if (monaco && editorInst) {
+      const model = editorInst.getModel()
+      if (model) {
+        try {
+          yamlLoad(yaml)
+          monaco.editor.setModelMarkers(model, 'yaml', [])
+        } catch (e) {
+          if (e instanceof YAMLException && e.mark) {
+            const { line, column } = e.mark
+            monaco.editor.setModelMarkers(model, 'yaml', [
+              {
+                startLineNumber: line + 1,
+                endLineNumber: line + 1,
+                startColumn: column + 1,
+                endColumn: column + 2,
+                message: e.message,
+                severity: monaco.MarkerSeverity.Error,
+              },
+            ])
+          }
+        }
+      }
+    }
+  }
 
   const handleSave = useCallback(() => {
     setSaveError(null)
@@ -123,6 +216,19 @@ export function RulesPage() {
     if (errors.length > 0) return
     saveMutation.mutate(editorYaml)
   }, [editorYaml, saveMutation])
+
+  const handleTest = useCallback(() => {
+    setTestResult(null)
+    const errors = validateSigmaYaml(editorYaml)
+    setValidationErrors(errors)
+    if (errors.length > 0) return
+    testMutation.mutate(editorYaml)
+  }, [editorYaml, testMutation])
+
+  const handleFormat = useCallback(() => {
+    const formatted = formatYaml(editorYaml)
+    setEditorYaml(formatted)
+  }, [editorYaml])
 
   const handleFileImport = useCallback(() => {
     fileInputRef.current?.click()
@@ -139,6 +245,7 @@ export function RulesPage() {
           setEditorYaml(content)
           setValidationErrors([])
           setSaveError(null)
+          setTestResult(null)
           setShowEditor(true)
         }
       }
@@ -153,6 +260,7 @@ export function RulesPage() {
     setShowEditor(false)
     setValidationErrors([])
     setSaveError(null)
+    setTestResult(null)
   }, [])
 
   const visible = data.filter((r) => {
@@ -211,7 +319,7 @@ export function RulesPage() {
             Import YAML
           </button>
           <button
-            onClick={() => { setEditorYaml(EXAMPLE_SIGMA); setShowEditor(true); setValidationErrors([]); setSaveError(null) }}
+            onClick={() => { setEditorYaml(EXAMPLE_SIGMA); setShowEditor(true); setValidationErrors([]); setSaveError(null); setTestResult(null) }}
             className="h-[28px] px-4 bg-blue text-white text-[12px] rounded-md hover:opacity-90"
           >
             + New Rule
@@ -274,7 +382,7 @@ export function RulesPage() {
         {/* Editor modal */}
         {showEditor && (
           <div className="fixed inset-0 bg-overlay z-50 flex items-center justify-center">
-            <div className="bg-surface rounded-lg shadow-panel w-[680px] max-h-[80vh] flex flex-col">
+            <div className="bg-surface rounded-lg shadow-panel w-[800px] max-h-[85vh] flex flex-col">
               <div className="flex items-center justify-between px-5 py-3 border-b border-border">
                 <h2 className="text-[13px] font-semibold text-text-primary">New Sigma Rule</h2>
                 <div className="flex items-center gap-2">
@@ -287,20 +395,56 @@ export function RulesPage() {
                   <button onClick={handleEditorClose} className="text-text-muted text-lg">x</button>
                 </div>
               </div>
+
               <div className="flex-1 overflow-auto p-4">
-                <textarea
-                  className={`w-full h-[400px] text-[11px] font-mono bg-page border rounded-md p-3 text-text-primary focus:outline-none resize-none ${
-                    validationErrors.length > 0 ? 'border-crit-text focus:border-crit-text' : 'border-border focus:border-blue'
-                  }`}
-                  value={editorYaml}
-                  onChange={(e) => {
-                    setEditorYaml(e.target.value)
-                    // Clear errors as user types
-                    if (validationErrors.length > 0) setValidationErrors([])
-                    if (saveError) setSaveError(null)
-                  }}
-                  spellCheck={false}
-                />
+                {/* Monaco YAML editor */}
+                <div className="border border-border rounded-md overflow-hidden">
+                  <Editor
+                    height="400px"
+                    defaultLanguage="yaml"
+                    value={editorYaml}
+                    onChange={handleEditorChange}
+                    onMount={handleEditorMount}
+                    theme={getMonacoTheme(theme)}
+                    loading={
+                      <div className="flex items-center justify-center h-[400px] bg-page text-text-muted text-[11px]">
+                        Loading editor...
+                      </div>
+                    }
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 11,
+                      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                      lineNumbers: 'on',
+                      scrollBeyondLastLine: false,
+                      wordWrap: 'on',
+                      automaticLayout: true,
+                      padding: { top: 8, bottom: 8 },
+                    }}
+                  />
+                </div>
+
+                {/* Test result */}
+                {testResult && (
+                  <div className={`mt-2 px-3 py-2 rounded text-[11px] flex items-start gap-2 ${
+                    testResult.matched
+                      ? 'bg-resolved-bg text-resolved-text'
+                      : testResult.errors.length > 0
+                        ? 'bg-crit-bg text-crit-text'
+                        : 'bg-warn-bg text-warn-text'
+                  }`}>
+                    <span className="font-medium flex-shrink-0">
+                      {testResult.matched
+                        ? '✓ Matched'
+                        : testResult.errors.length > 0
+                          ? '⚠ Error'
+                          : '✗ No match'}
+                    </span>
+                    {testResult.errors.length > 0 && (
+                      <span>{testResult.errors.join('; ')}</span>
+                    )}
+                  </div>
+                )}
 
                 {/* Validation errors */}
                 {validationErrors.length > 0 && (
@@ -321,19 +465,38 @@ export function RulesPage() {
                   </div>
                 )}
               </div>
+
               <div className="flex items-center gap-2 px-5 py-3 border-t border-border">
+                {/* Left: utility actions */}
                 <button
-                  className="flex-1 h-[30px] bg-blue text-white text-[12px] rounded-md hover:opacity-90 disabled:opacity-50"
-                  onClick={handleSave}
-                  disabled={saveMutation.isPending}
+                  className="h-[28px] px-3 border border-border text-[11px] text-text-secondary rounded-md hover:border-blue transition-colors"
+                  onClick={handleFormat}
+                  title="Auto-format YAML"
                 >
-                  {saveMutation.isPending ? 'Saving...' : 'Save Rule'}
+                  Format
                 </button>
+                <button
+                  className="h-[28px] px-3 border border-border text-[11px] text-text-secondary rounded-md hover:border-blue transition-colors disabled:opacity-50"
+                  onClick={handleTest}
+                  disabled={testMutation.isPending}
+                  title="Test rule against a sample event"
+                >
+                  {testMutation.isPending ? 'Testing...' : 'Test Rule'}
+                </button>
+                <div className="flex-1" />
+                {/* Right: primary actions */}
                 <button
                   className="h-[30px] px-4 border border-border text-[12px] text-text-secondary rounded-md"
                   onClick={handleEditorClose}
                 >
                   Cancel
+                </button>
+                <button
+                  className="h-[30px] px-4 bg-blue text-white text-[12px] rounded-md hover:opacity-90 disabled:opacity-50"
+                  onClick={handleSave}
+                  disabled={saveMutation.isPending}
+                >
+                  {saveMutation.isPending ? 'Saving...' : 'Save Rule'}
                 </button>
               </div>
             </div>
