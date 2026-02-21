@@ -347,6 +347,14 @@ async def on_startup() -> None:
     asyncio.create_task(_rule_reload_subscriber(), name="rule-reload-subscriber")
     logger.info("Rule reload subscriber started")
 
+    # 11. Start agent status monitor — auto-degrade agents that stop heartbeating
+    try:
+        from .services.agent_monitor import agent_status_monitor
+        asyncio.create_task(agent_status_monitor(), name="agent-status-monitor")
+        logger.info("Agent status monitor started")
+    except Exception:
+        logger.exception("Agent status monitor start failed")
+
     logger.info("MxTac API startup complete")
 
 

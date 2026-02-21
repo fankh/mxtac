@@ -45,6 +45,8 @@ PERMISSIONS: dict[str, set[str]] = {
     "assets:read":        {"analyst", "hunter", "engineer", "admin"},
     "assets:write":       {"engineer", "admin"},
     "audit_logs:read":    {"admin"},
+    "agents:read":        {"engineer", "admin"},
+    "agents:write":       {"engineer", "admin"},
 }
 
 # ── Role → permissions (inverse map) ──────────────────────────────────────────

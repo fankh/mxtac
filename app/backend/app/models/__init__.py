@@ -1,3 +1,4 @@
+from .agent import Agent
 from .api_key import APIKey
 from .asset import Asset
 from .audit_log import AuditLog
@@ -11,4 +12,4 @@ from .notification import NotificationChannel
 from .rule import Rule
 from .user import User
 
-__all__ = ["APIKey", "Asset", "AuditLog", "Base", "Connector", "Detection", "Event", "Incident", "IOC", "NotificationChannel", "Rule", "User"]
+__all__ = ["Agent", "APIKey", "Asset", "AuditLog", "Base", "Connector", "Detection", "Event", "Incident", "IOC", "NotificationChannel", "Rule", "User"]
