@@ -287,14 +287,17 @@ mod tests {
     #[test]
     fn test_different_dst_ips_are_independent() {
         let mut det = make_detector(1_000, 60);
+        // Each destination accumulates independently.
         assert!(det.record_bytes(SRC, "10.0.0.1", 443, 999).is_none());
         assert!(det.record_bytes(SRC, "10.0.0.2", 443, 999).is_none());
-        // Neither has crossed the threshold individually.
+        // 10.0.0.1 reaches the threshold (999 + 1 = 1 000).
         let alert = det.record_bytes(SRC, "10.0.0.1", 443, 1);
-        assert!(alert.is_some(), "10.0.0.1 should alert");
-        let alert2 = det.record_bytes(SRC, "10.0.0.2", 443, 999);
-        assert!(alert2.is_none(), "10.0.0.2 not yet at threshold (1998 < 2x1000, but already sent 999+1=1000 so should alert)");
-        // Actually 10.0.0.2 has 999+999 = 1998 which is >= 1000, alert fires.
+        assert!(alert.is_some(), "10.0.0.1 should alert at 1 000 bytes");
+        assert!(alert.unwrap().description.contains("10.0.0.1"));
+        // 10.0.0.2 also reaches the threshold independently (999 + 1 = 1 000).
+        let alert2 = det.record_bytes(SRC, "10.0.0.2", 443, 1);
+        assert!(alert2.is_some(), "10.0.0.2 should alert at 1 000 bytes");
+        assert!(alert2.unwrap().description.contains("10.0.0.2"));
     }
 
     // -----------------------------------------------------------------------
