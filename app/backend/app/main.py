@@ -444,6 +444,14 @@ async def on_startup() -> None:
             "STIX feed poller: no feeds configured (set THREAT_INTEL_FEEDS to enable)"
         )
 
+    # 13. Start IOC expiry task — deactivate expired and stale IOCs hourly (feature 29.8)
+    try:
+        from .services.ioc_expiry import ioc_expiry_task
+        asyncio.create_task(ioc_expiry_task(), name="ioc-expiry-task")
+        logger.info("IOC expiry task started")
+    except Exception:
+        logger.exception("IOC expiry task start failed")
+
     logger.info("MxTac API startup complete")
 
 
