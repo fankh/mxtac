@@ -10,6 +10,7 @@ from .incident import Incident
 from .ioc import IOC
 from .notification import NotificationChannel
 from .rule import Rule
+from .saved_query import SavedQuery
 from .user import User
 
-__all__ = ["Agent", "APIKey", "Asset", "AuditLog", "Base", "Connector", "Detection", "Event", "Incident", "IOC", "NotificationChannel", "Rule", "User"]
+__all__ = ["Agent", "APIKey", "Asset", "AuditLog", "Base", "Connector", "Detection", "Event", "Incident", "IOC", "NotificationChannel", "Rule", "SavedQuery", "User"]

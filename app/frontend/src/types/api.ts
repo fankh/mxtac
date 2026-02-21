@@ -230,6 +230,45 @@ export interface BulkAssetResult {
   skipped: number
 }
 
+// ── Saved Hunt Queries ────────────────────────────────────────────────────────
+
+export interface SavedQueryFilter {
+  field: string
+  operator: string
+  value: string | number | boolean
+}
+
+export interface SavedQuery {
+  id: string
+  name: string
+  description: string | null
+  query: string | null
+  filters: SavedQueryFilter[]
+  time_from: string
+  time_to: string
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SavedQueryCreate {
+  name: string
+  description?: string
+  query?: string
+  filters?: SavedQueryFilter[]
+  time_from?: string
+  time_to?: string
+}
+
+export interface SavedQueryUpdate {
+  name?: string
+  description?: string
+  query?: string
+  filters?: SavedQueryFilter[]
+  time_from?: string
+  time_to?: string
+}
+
 // ── Audit Logs ────────────────────────────────────────────────────────────────
 
 export interface AuditLogEntry {

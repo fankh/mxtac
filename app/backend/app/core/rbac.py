@@ -47,6 +47,8 @@ PERMISSIONS: dict[str, set[str]] = {
     "audit_logs:read":    {"admin"},
     "agents:read":        {"engineer", "admin"},
     "agents:write":       {"engineer", "admin"},
+    "hunt_queries:read":  {"hunter", "engineer", "admin"},
+    "hunt_queries:write": {"hunter", "engineer", "admin"},
 }
 
 # ── Role → permissions (inverse map) ──────────────────────────────────────────

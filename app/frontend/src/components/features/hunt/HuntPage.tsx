@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { eventsApi } from '../../../lib/api'
+import { eventsApi, savedQueriesApi } from '../../../lib/api'
 import type {
-  EventFilter, EventItem, SearchRequest, AggregationBucket,
+  EventFilter, EventItem, SearchRequest, AggregationBucket, SavedQuery,
 } from '../../../types/api'
 import { TopBar } from '../../layout/TopBar'
 import { chartColors } from '../../../lib/themeVars'
@@ -87,10 +87,162 @@ function formatEventTime(iso: string): string {
   })
 }
 
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
 // ── Local filter type (adds a stable `id` for React keys) ────────────────────
 
 type LocalFilter = { id: number; field: string; operator: string; value: string }
 let _nextFilterId = 0
+
+// ── Save Query Dialog ─────────────────────────────────────────────────────────
+
+function SaveQueryDialog({
+  onSave,
+  onCancel,
+}: {
+  onSave: (name: string, description: string) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-surface border border-border rounded-lg shadow-panel w-[400px] p-5">
+        <p className="text-[13px] font-semibold text-text-primary mb-4">Save Hunt Query</p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-[11px] text-text-muted block mb-1">Name <span className="text-crit-text">*</span></label>
+            <input
+              autoFocus
+              type="text"
+              placeholder="e.g. Lateral movement from 10.0.x.x"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && name.trim()) onSave(name.trim(), description.trim()) }}
+              className="w-full h-[32px] px-3 text-[12px] border border-border rounded-md bg-page text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] text-text-muted block mb-1">Description <span className="text-text-muted">(optional)</span></label>
+            <textarea
+              placeholder="Brief note about what this query hunts for…"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              rows={2}
+              className="w-full px-3 py-2 text-[12px] border border-border rounded-md bg-page text-text-primary placeholder-text-muted focus:outline-none focus:border-blue resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2 justify-end mt-4">
+          <button
+            onClick={onCancel}
+            className="h-[30px] px-4 text-[11px] border border-border rounded-md text-text-secondary hover:bg-page"
+          >
+            Cancel
+          </button>
+          <button
+            disabled={!name.trim()}
+            onClick={() => onSave(name.trim(), description.trim())}
+            className="h-[30px] px-4 text-[11px] bg-blue text-white rounded-md hover:opacity-90 disabled:opacity-40"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Saved Queries Panel ───────────────────────────────────────────────────────
+
+function SavedQueriesPanel({
+  onLoad,
+  onClose,
+}: {
+  onLoad: (sq: SavedQuery) => void
+  onClose: () => void
+}) {
+  const qc = useQueryClient()
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['saved-queries'],
+    queryFn: () => savedQueriesApi.list(),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => savedQueriesApi.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['saved-queries'] }),
+  })
+
+  const queries = data?.items ?? []
+
+  return (
+    <div className="fixed inset-y-0 right-0 w-[360px] bg-surface border-l border-border shadow-panel z-40 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <span className="text-[12px] font-semibold text-text-primary">Saved Queries</span>
+        <button
+          onClick={onClose}
+          className="text-text-muted hover:text-text-primary text-lg leading-none"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-2">
+        {isLoading && (
+          <div className="flex items-center justify-center h-24 text-text-muted text-sm">Loading…</div>
+        )}
+        {isError && (
+          <div className="flex items-center justify-center h-24 text-crit-text text-sm">
+            Failed to load saved queries.
+          </div>
+        )}
+        {!isLoading && !isError && queries.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-32 text-center">
+            <p className="text-[12px] text-text-muted">No saved queries yet.</p>
+            <p className="text-[11px] text-text-muted mt-1">Run a hunt and click "Save Query" to bookmark it.</p>
+          </div>
+        )}
+        {!isLoading && !isError && queries.map(sq => (
+          <div
+            key={sq.id}
+            className="group flex items-start justify-between gap-2 px-3 py-2.5 rounded-md hover:bg-page border border-transparent hover:border-border mb-1"
+          >
+            <button
+              className="flex-1 text-left min-w-0"
+              onClick={() => onLoad(sq)}
+            >
+              <p className="text-[12px] font-medium text-text-primary truncate">{sq.name}</p>
+              {sq.description && (
+                <p className="text-[10px] text-text-muted truncate mt-0.5">{sq.description}</p>
+              )}
+              <p className="text-[10px] text-text-muted mt-0.5">
+                {sq.time_from.replace('now-', '')} window · {formatRelativeTime(sq.created_at)}
+              </p>
+            </button>
+            <button
+              onClick={() => deleteMutation.mutate(sq.id)}
+              className="text-text-muted hover:text-crit-text text-sm opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5"
+              title="Delete"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 // ── Event Detail Panel ────────────────────────────────────────────────────────
 
@@ -285,6 +437,7 @@ export function HuntPage() {
   // Subscribe to theme changes so chartColors() stays in sync with CSS vars
   const theme = useUIStore(s => s.theme)
   const c = chartColors()
+  const qc = useQueryClient()
 
   const [query, setQuery]           = useState('')
   const [timeRange, setTimeRange]   = useState('now-24h')
@@ -294,6 +447,8 @@ export function HuntPage() {
   const [selected, setSelected]     = useState<EventItem | null>(null)
   const [entityView, setEntityView] = useState<{ type: string; value: string } | null>(null)
   const [showDsl, setShowDsl]       = useState(false)
+  const [showSaveDialog, setShowSaveDialog]       = useState(false)
+  const [showSavedPanel, setShowSavedPanel]       = useState(false)
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -318,6 +473,24 @@ export function HuntPage() {
     queryKey: ['events-dsl', submitted],
     queryFn: () => eventsApi.queryDsl(submitted!),
     enabled: submitted !== null && showDsl,
+  })
+
+  // ── Save mutation ──────────────────────────────────────────────────────────
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: { name: string; description: string }) =>
+      savedQueriesApi.create({
+        name: payload.name,
+        description: payload.description || undefined,
+        query: submitted?.query,
+        filters: submitted?.filters ?? [],
+        time_from: submitted?.time_from ?? 'now-24h',
+        time_to: submitted?.time_to ?? 'now',
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['saved-queries'] })
+      setShowSaveDialog(false)
+    },
   })
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -366,6 +539,37 @@ export function HuntPage() {
   function handleEntityPivot(type: string, value: string | undefined) {
     if (!value) return
     setEntityView({ type, value })
+    setSelected(null)
+  }
+
+  function loadSavedQuery(sq: SavedQuery) {
+    setQuery(sq.query ?? '')
+    setTimeRange(sq.time_from)
+    setLocalFilters(
+      (sq.filters ?? []).map(f => ({
+        id: ++_nextFilterId,
+        field: f.field,
+        operator: f.operator,
+        value: String(f.value),
+      }))
+    )
+    setShowSavedPanel(false)
+    // Auto-run the loaded query
+    const req: SearchRequest = {
+      query: sq.query || undefined,
+      filters: (sq.filters ?? []).map(f => ({
+        field: f.field,
+        operator: f.operator as EventFilter['operator'],
+        value: f.value,
+      })),
+      time_from: sq.time_from,
+      time_to: sq.time_to,
+      size: PAGE_SIZE,
+      from_: 0,
+    }
+    setPage(0)
+    setSubmitted(req)
+    setEntityView(null)
     setSelected(null)
   }
 
@@ -472,13 +676,33 @@ export function HuntPage() {
           </div>
         )}
 
-        {/* ── Toolbar: Add Filter, DSL, count ── */}
+        {/* ── Toolbar: Add Filter, Save, Saved Queries, DSL, count ── */}
         <div className="flex items-center gap-2 mb-3">
           <button
             onClick={addFilter}
             className="h-[26px] px-3 text-[11px] border border-border rounded-md text-text-secondary hover:border-blue hover:text-blue bg-surface transition-colors"
           >
             + Add Filter
+          </button>
+
+          {submitted && (
+            <button
+              onClick={() => setShowSaveDialog(true)}
+              className="h-[26px] px-3 text-[11px] border border-border rounded-md text-text-secondary hover:border-blue hover:text-blue bg-surface transition-colors"
+            >
+              Save Query
+            </button>
+          )}
+
+          <button
+            onClick={() => { setShowSavedPanel(!showSavedPanel); setSelected(null); setEntityView(null) }}
+            className={`h-[26px] px-3 text-[11px] border rounded-md transition-colors ${
+              showSavedPanel
+                ? 'border-blue text-blue bg-blue-faint'
+                : 'border-border text-text-secondary hover:border-blue hover:text-blue bg-surface'
+            }`}
+          >
+            Saved
           </button>
 
           {submitted && (
@@ -680,13 +904,29 @@ export function HuntPage() {
         )}
       </div>
 
+      {/* ── Save query dialog ── */}
+      {showSaveDialog && (
+        <SaveQueryDialog
+          onSave={(name, description) => saveMutation.mutate({ name, description })}
+          onCancel={() => setShowSaveDialog(false)}
+        />
+      )}
+
+      {/* ── Slide-out: Saved queries panel ── */}
+      {showSavedPanel && (
+        <SavedQueriesPanel
+          onLoad={loadSavedQuery}
+          onClose={() => setShowSavedPanel(false)}
+        />
+      )}
+
       {/* ── Slide-out: Event detail ── */}
-      {selected && !entityView && (
+      {selected && !entityView && !showSavedPanel && (
         <EventDetailPanel event={selected} onClose={() => setSelected(null)} />
       )}
 
       {/* ── Slide-out: Entity timeline ── */}
-      {entityView && (
+      {entityView && !showSavedPanel && (
         <EntityPanel
           entityType={entityView.type}
           entityValue={entityView.value}

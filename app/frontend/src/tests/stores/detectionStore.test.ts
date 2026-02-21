@@ -43,6 +43,7 @@ describe('detectionStore', () => {
       filters: { ...DEFAULT_FILTERS },
       selected: null,
       liveAlerts: [],
+      unreadCount: 0,
     })
   })
 
@@ -465,6 +466,71 @@ describe('detectionStore', () => {
       useDetectionStore.getState().setSelected(det)
       useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'live-1' }))
       expect(useDetectionStore.getState().selected?.id).toBe('selected-det')
+    })
+  })
+
+  // =========================================================================
+  // unreadCount
+  // =========================================================================
+  describe('unreadCount', () => {
+    it('defaults to 0', () => {
+      expect(useDetectionStore.getState().unreadCount).toBe(0)
+    })
+
+    it('increments by 1 when addLiveAlert is called', () => {
+      useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'a1' }))
+      expect(useDetectionStore.getState().unreadCount).toBe(1)
+    })
+
+    it('increments on each successive addLiveAlert call', () => {
+      useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'a1' }))
+      useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'a2' }))
+      useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'a3' }))
+      expect(useDetectionStore.getState().unreadCount).toBe(3)
+    })
+
+    it('does not affect liveAlerts count tracking', () => {
+      useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'a1' }))
+      useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'a2' }))
+      expect(useDetectionStore.getState().liveAlerts).toHaveLength(2)
+      expect(useDetectionStore.getState().unreadCount).toBe(2)
+    })
+  })
+
+  // =========================================================================
+  // clearUnread
+  // =========================================================================
+  describe('clearUnread', () => {
+    it('resets unreadCount to 0', () => {
+      useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'a1' }))
+      useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'a2' }))
+      useDetectionStore.getState().clearUnread()
+      expect(useDetectionStore.getState().unreadCount).toBe(0)
+    })
+
+    it('is a no-op when unreadCount is already 0', () => {
+      useDetectionStore.getState().clearUnread()
+      expect(useDetectionStore.getState().unreadCount).toBe(0)
+    })
+
+    it('does not affect liveAlerts', () => {
+      useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'a1' }))
+      useDetectionStore.getState().clearUnread()
+      expect(useDetectionStore.getState().liveAlerts).toHaveLength(1)
+    })
+
+    it('does not affect filters', () => {
+      useDetectionStore.getState().setFilter('status', 'active')
+      useDetectionStore.getState().addLiveAlert(makeDetection())
+      useDetectionStore.getState().clearUnread()
+      expect(useDetectionStore.getState().filters.status).toBe('active')
+    })
+
+    it('unreadCount can be incremented again after being cleared', () => {
+      useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'a1' }))
+      useDetectionStore.getState().clearUnread()
+      useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'a2' }))
+      expect(useDetectionStore.getState().unreadCount).toBe(1)
     })
   })
 })

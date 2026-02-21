@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useUIStore, type Theme } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
+import { useDetectionStore } from '../../stores/detectionStore'
 import { MfaSetupModal } from '../features/auth/MfaSetupModal'
 
 const NAV = [
@@ -26,9 +27,19 @@ const THEMES: { value: Theme; icon: string; label: string }[] = [
 export function Sidebar() {
   const { theme, setTheme } = useUIStore()
   const user = useAuthStore(s => s.user)
+  const unreadCount = useDetectionStore(s => s.unreadCount)
+  const clearUnread = useDetectionStore(s => s.clearUnread)
+  const location = useLocation()
   const [showThemeMenu, setShowThemeMenu] = useState(false)
   const [showMfaModal, setShowMfaModal] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // Clear unread count whenever the user is on the Detections page
+  useEffect(() => {
+    if (location.pathname === '/detections') {
+      clearUnread()
+    }
+  }, [location.pathname, clearUnread])
 
   // Derive initials from email (e.g. "khchoi@..." → "KH")
   const initials = user?.email
@@ -58,23 +69,31 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 flex flex-col gap-1 py-2">
-        {NAV.map(({ to, icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            title={label}
-            className={({ isActive }) =>
-              `relative flex items-center justify-center h-[34px] mx-1.5 rounded-md text-base transition-colors
-              ${isActive
-                ? 'bg-blue-light text-blue before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-blue before:rounded-sm'
-                : 'text-text-muted hover:bg-section'
-              }`
-            }
-          >
-            {icon}
-          </NavLink>
-        ))}
+        {NAV.map(({ to, icon, label }) => {
+          const badge = to === '/detections' ? unreadCount : 0
+          return (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === '/'}
+              title={label}
+              className={({ isActive }) =>
+                `relative flex items-center justify-center h-[34px] mx-1.5 rounded-md text-base transition-colors
+                ${isActive
+                  ? 'bg-blue-light text-blue before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-blue before:rounded-sm'
+                  : 'text-text-muted hover:bg-section'
+                }`
+              }
+            >
+              {icon}
+              {badge > 0 && (
+                <span className="absolute top-0.5 right-0.5 min-w-[14px] h-[14px] bg-crit-text text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none pointer-events-none">
+                  {badge > 99 ? '99+' : badge}
+                </span>
+              )}
+            </NavLink>
+          )
+        })}
       </nav>
 
       {/* Bottom */}

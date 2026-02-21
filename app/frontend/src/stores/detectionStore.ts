@@ -25,6 +25,9 @@ interface DetectionState {
   /** Live alerts pushed via WebSocket (newest first). */
   liveAlerts: Detection[]
 
+  /** Count of live alerts received since the user last visited /detections. */
+  unreadCount: number
+
   setFilter: <K extends keyof DetectionFilters>(key: K, value: DetectionFilters[K]) => void
   resetFilters: () => void
   toggleSort: (key: SortKey) => void
@@ -34,6 +37,9 @@ interface DetectionState {
 
   /** Prepend a live alert from the WebSocket stream. Caps at MAX_LIVE_ALERTS. */
   addLiveAlert: (alert: Detection) => void
+
+  /** Reset the unread count to 0 (call when user visits /detections). */
+  clearUnread: () => void
 }
 
 const DEFAULT_FILTERS: DetectionFilters = {
@@ -52,6 +58,7 @@ export const useDetectionStore = create<DetectionState>()((set, get) => ({
   filters: { ...DEFAULT_FILTERS },
   selected: null,
   liveAlerts: [],
+  unreadCount: 0,
 
   setFilter: (key, value) =>
     set((s) => ({ filters: { ...s.filters, [key]: value, page: 1 } })),
@@ -79,5 +86,8 @@ export const useDetectionStore = create<DetectionState>()((set, get) => ({
   addLiveAlert: (alert) =>
     set((s) => ({
       liveAlerts: [alert, ...s.liveAlerts].slice(0, MAX_LIVE_ALERTS),
+      unreadCount: s.unreadCount + 1,
     })),
+
+  clearUnread: () => set({ unreadCount: 0 }),
 }))

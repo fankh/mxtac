@@ -5,6 +5,7 @@ import type {
   SearchRequest, SearchResponse, AggregationRequest, AggregationResponse, EntityTimeline,
   AuditLogEntry,
   Asset, AssetCreate, AssetStats, BulkAssetResult,
+  SavedQuery, SavedQueryCreate, SavedQueryUpdate,
 } from '../types/api'
 
 const http = axios.create({
@@ -182,4 +183,23 @@ export const assetsApi = {
 
   getIncidents: (id: number, params: { page?: number; page_size?: number } = {}): Promise<PaginatedResponse<Record<string, unknown>>> =>
     http.get(`/assets/${id}/incidents`, { params }).then(r => r.data),
+}
+
+// ── Saved Hunt Queries ────────────────────────────────────────────────────────
+
+export const savedQueriesApi = {
+  list: (): Promise<{ items: SavedQuery[]; total: number }> =>
+    http.get('/hunt/queries').then(r => r.data),
+
+  get: (id: string): Promise<SavedQuery> =>
+    http.get(`/hunt/queries/${id}`).then(r => r.data),
+
+  create: (body: SavedQueryCreate): Promise<SavedQuery> =>
+    http.post('/hunt/queries', body).then(r => r.data),
+
+  update: (id: string, body: SavedQueryUpdate): Promise<SavedQuery> =>
+    http.put(`/hunt/queries/${id}`, body).then(r => r.data),
+
+  delete: (id: string): Promise<void> =>
+    http.delete(`/hunt/queries/${id}`).then(r => r.data),
 }
