@@ -1,11 +1,12 @@
 //! Agent orchestrator for MxGuard.
 //!
-//! Coordinates collectors, event batching, transport, and graceful shutdown.
+//! Coordinates collectors, event batching, transport, graceful shutdown, and
+//! resource usage monitoring.
 
 use std::time::Duration;
 
 use tokio::sync::{mpsc, watch};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::collectors::process::ProcessCollector;
 use crate::collectors::file::FileCollector;
@@ -16,6 +17,7 @@ use crate::config::Config;
 use crate::events::ocsf::OcsfDevice;
 use crate::events::OcsfEvent;
 use crate::health::{self, HealthState};
+use crate::resource_limits::ResourceMonitor;
 use crate::transport::HttpTransport;
 
 /// Top-level agent that owns the runtime lifecycle.
@@ -116,6 +118,22 @@ impl Agent {
             }
         });
 
+        // --- Spawn resource monitor ----------------------------------------------
+        let resource_stats_rx = if self.config.resource_limits.enabled {
+            let (monitor, stats_rx) =
+                ResourceMonitor::new(self.config.resource_limits.clone());
+            let resource_shutdown = shutdown_rx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = monitor.run(resource_shutdown).await {
+                    error!("Resource monitor error: {e}");
+                }
+            });
+            Some(stats_rx)
+        } else {
+            info!("Resource monitor disabled");
+            None
+        };
+
         // --- Spawn transport (batched sender) ------------------------------------
         let transport = HttpTransport::new(&self.config.transport, &self.config.agent.agent_id)?;
         let batch_size = self.config.transport.batch_size;
@@ -132,10 +150,22 @@ impl Agent {
                             Some(event) => {
                                 batch.push(event);
                                 if batch.len() >= batch_size {
-                                    if let Err(e) = transport.send_batch(&batch).await {
+                                    // Check throttle before a full-batch flush.
+                                    let throttled = resource_stats_rx
+                                        .as_ref()
+                                        .map(|rx| rx.borrow().throttled)
+                                        .unwrap_or(false);
+                                    if throttled {
+                                        warn!(
+                                            batch_len = batch.len(),
+                                            "Resource limit exceeded — deferring batch flush"
+                                        );
+                                    } else if let Err(e) = transport.send_batch(&batch).await {
                                         error!("Transport error: {e}");
                                     }
-                                    batch.clear();
+                                    if !throttled {
+                                        batch.clear();
+                                    }
                                 }
                             }
                             None => {
@@ -149,10 +179,20 @@ impl Agent {
                     }
                     _ = flush_timer.tick() => {
                         if !batch.is_empty() {
-                            if let Err(e) = transport.send_batch(&batch).await {
+                            let throttled = resource_stats_rx
+                                .as_ref()
+                                .map(|rx| rx.borrow().throttled)
+                                .unwrap_or(false);
+                            if throttled {
+                                warn!(
+                                    batch_len = batch.len(),
+                                    "Resource limit exceeded — skipping periodic flush"
+                                );
+                            } else if let Err(e) = transport.send_batch(&batch).await {
                                 error!("Transport flush error: {e}");
+                            } else {
+                                batch.clear();
                             }
-                            batch.clear();
                         }
                     }
                 }

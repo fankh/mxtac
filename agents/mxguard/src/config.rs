@@ -7,24 +7,28 @@
 //!
 //! # Environment Variables
 //!
-//! | Variable                           | Config field                         |
-//! |------------------------------------|--------------------------------------|
-//! | `MXGUARD_AGENT_ID`                 | `agent.agent_id`                     |
-//! | `MXGUARD_AGENT_NAME`               | `agent.name`                         |
-//! | `MXGUARD_LOG_LEVEL`                | `agent.log_level`                    |
-//! | `MXGUARD_TRANSPORT_ENDPOINT`       | `transport.endpoint`                 |
-//! | `MXGUARD_API_KEY`                  | `transport.api_key`                  |
-//! | `MXGUARD_TRANSPORT_BATCH_SIZE`     | `transport.batch_size`               |
-//! | `MXGUARD_TRANSPORT_FLUSH_MS`       | `transport.flush_interval_ms`        |
-//! | `MXGUARD_TRANSPORT_RETRY_ATTEMPTS` | `transport.retry_attempts`           |
-//! | `MXGUARD_HEALTH_ADDR`              | `health.listen_addr`                 |
-//! | `MXGUARD_PROCESS_ENABLED`          | `collectors.process.enabled`         |
-//! | `MXGUARD_PROCESS_SCAN_INTERVAL_MS` | `collectors.process.scan_interval_ms`|
-//! | `MXGUARD_FILE_ENABLED`             | `collectors.file.enabled`            |
-//! | `MXGUARD_NETWORK_ENABLED`          | `collectors.network.enabled`         |
-//! | `MXGUARD_NETWORK_SCAN_INTERVAL_MS` | `collectors.network.scan_interval_ms`|
-//! | `MXGUARD_AUTH_ENABLED`             | `collectors.auth.enabled`            |
-//! | `MXGUARD_AUTH_POLL_INTERVAL_MS`    | `collectors.auth.poll_interval_ms`   |
+//! | Variable                              | Config field                            |
+//! |---------------------------------------|-----------------------------------------|
+//! | `MXGUARD_AGENT_ID`                    | `agent.agent_id`                        |
+//! | `MXGUARD_AGENT_NAME`                  | `agent.name`                            |
+//! | `MXGUARD_LOG_LEVEL`                   | `agent.log_level`                       |
+//! | `MXGUARD_TRANSPORT_ENDPOINT`          | `transport.endpoint`                    |
+//! | `MXGUARD_API_KEY`                     | `transport.api_key`                     |
+//! | `MXGUARD_TRANSPORT_BATCH_SIZE`        | `transport.batch_size`                  |
+//! | `MXGUARD_TRANSPORT_FLUSH_MS`          | `transport.flush_interval_ms`           |
+//! | `MXGUARD_TRANSPORT_RETRY_ATTEMPTS`    | `transport.retry_attempts`              |
+//! | `MXGUARD_HEALTH_ADDR`                 | `health.listen_addr`                    |
+//! | `MXGUARD_PROCESS_ENABLED`             | `collectors.process.enabled`            |
+//! | `MXGUARD_PROCESS_SCAN_INTERVAL_MS`    | `collectors.process.scan_interval_ms`   |
+//! | `MXGUARD_FILE_ENABLED`               | `collectors.file.enabled`               |
+//! | `MXGUARD_NETWORK_ENABLED`             | `collectors.network.enabled`            |
+//! | `MXGUARD_NETWORK_SCAN_INTERVAL_MS`    | `collectors.network.scan_interval_ms`   |
+//! | `MXGUARD_AUTH_ENABLED`                | `collectors.auth.enabled`               |
+//! | `MXGUARD_AUTH_POLL_INTERVAL_MS`       | `collectors.auth.poll_interval_ms`      |
+//! | `MXGUARD_RESOURCE_ENABLED`            | `resource_limits.enabled`               |
+//! | `MXGUARD_RESOURCE_CPU_LIMIT`          | `resource_limits.cpu_limit_percent`     |
+//! | `MXGUARD_RESOURCE_RAM_LIMIT_MB`       | `resource_limits.ram_limit_mb`          |
+//! | `MXGUARD_RESOURCE_CHECK_INTERVAL_MS`  | `resource_limits.check_interval_ms`     |
 
 use serde::Deserialize;
 use std::path::Path;
@@ -57,6 +61,8 @@ pub struct Config {
     pub transport: TransportConfig,
     #[serde(default)]
     pub health: HealthConfig,
+    #[serde(default)]
+    pub resource_limits: ResourceLimitsConfig,
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +223,40 @@ impl Default for HealthConfig {
     }
 }
 
+// -- Resource Limits ---------------------------------------------------------
+
+/// Configuration for the agent resource usage monitor.
+///
+/// The monitor samples CPU and RSS memory on each `check_interval_ms` tick
+/// and logs a warning whenever either limit is exceeded.  A throttle signal
+/// is also published so the transport layer can back off under pressure.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResourceLimitsConfig {
+    /// Enable the resource monitor (default: true).
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Maximum allowed CPU usage as a percentage (default: 1.0 %).
+    #[serde(default = "default_cpu_limit")]
+    pub cpu_limit_percent: f64,
+    /// Maximum allowed RSS memory in megabytes (default: 30 MB).
+    #[serde(default = "default_ram_limit_mb")]
+    pub ram_limit_mb: u64,
+    /// How often to sample resource usage in milliseconds (default: 5 000 ms).
+    #[serde(default = "default_resource_check_interval")]
+    pub check_interval_ms: u64,
+}
+
+impl Default for ResourceLimitsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            cpu_limit_percent: default_cpu_limit(),
+            ram_limit_mb: default_ram_limit_mb(),
+            check_interval_ms: default_resource_check_interval(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Default helpers
 // ---------------------------------------------------------------------------
@@ -255,6 +295,15 @@ fn default_auth_log_paths() -> Vec<String> {
 }
 fn default_auth_poll_interval() -> u64 {
     2000
+}
+fn default_cpu_limit() -> f64 {
+    1.0
+}
+fn default_ram_limit_mb() -> u64 {
+    30
+}
+fn default_resource_check_interval() -> u64 {
+    5000
 }
 
 // ---------------------------------------------------------------------------
@@ -302,6 +351,7 @@ impl Config {
             collectors: CollectorsConfig::default(),
             transport: TransportConfig::default(),
             health: HealthConfig::default(),
+            resource_limits: ResourceLimitsConfig::default(),
         };
         config.apply_env_overrides()?;
         Ok(config)
@@ -418,6 +468,32 @@ impl Config {
                 })?;
         }
 
+        // -- Resource limits -------------------------------------------------
+        if let Some(v) = get_env("MXGUARD_RESOURCE_ENABLED") {
+            self.resource_limits.enabled = parse_bool("MXGUARD_RESOURCE_ENABLED", &v)?;
+        }
+        if let Some(v) = get_env("MXGUARD_RESOURCE_CPU_LIMIT") {
+            self.resource_limits.cpu_limit_percent =
+                v.trim().parse::<f64>().map_err(|e| ConfigError::EnvParse {
+                    var: "MXGUARD_RESOURCE_CPU_LIMIT",
+                    reason: e.to_string(),
+                })?;
+        }
+        if let Some(v) = get_env("MXGUARD_RESOURCE_RAM_LIMIT_MB") {
+            self.resource_limits.ram_limit_mb =
+                v.trim().parse::<u64>().map_err(|e| ConfigError::EnvParse {
+                    var: "MXGUARD_RESOURCE_RAM_LIMIT_MB",
+                    reason: e.to_string(),
+                })?;
+        }
+        if let Some(v) = get_env("MXGUARD_RESOURCE_CHECK_INTERVAL_MS") {
+            self.resource_limits.check_interval_ms =
+                v.trim().parse::<u64>().map_err(|e| ConfigError::EnvParse {
+                    var: "MXGUARD_RESOURCE_CHECK_INTERVAL_MS",
+                    reason: e.to_string(),
+                })?;
+        }
+
         Ok(())
     }
 }
@@ -479,6 +555,7 @@ log_level = "debug"
             collectors: CollectorsConfig::default(),
             transport: TransportConfig::default(),
             health: HealthConfig::default(),
+            resource_limits: ResourceLimitsConfig::default(),
         };
         cfg.apply_env_overrides_from(|name| {
             map.get(name).filter(|v| !v.is_empty()).cloned()
@@ -820,5 +897,93 @@ retry_attempts = 5
         assert_eq!(cfg.collectors.network.scan_interval_ms, 5000);
         assert!(cfg.collectors.auth.enabled);
         assert_eq!(cfg.collectors.auth.poll_interval_ms, 2000);
+    }
+
+    // -----------------------------------------------------------------------
+    // Resource limits defaults
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_resource_limits_defaults() {
+        let cfg = default_with_env(&[]).expect("default");
+        assert!(cfg.resource_limits.enabled);
+        assert_eq!(cfg.resource_limits.cpu_limit_percent, 1.0);
+        assert_eq!(cfg.resource_limits.ram_limit_mb, 30);
+        assert_eq!(cfg.resource_limits.check_interval_ms, 5000);
+    }
+
+    #[test]
+    fn test_resource_limits_default_struct() {
+        let rl = ResourceLimitsConfig::default();
+        assert!(rl.enabled);
+        assert_eq!(rl.cpu_limit_percent, 1.0);
+        assert_eq!(rl.ram_limit_mb, 30);
+        assert_eq!(rl.check_interval_ms, 5000);
+    }
+
+    // -----------------------------------------------------------------------
+    // Resource limits env var overrides
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_env_resource_enabled_false() {
+        let cfg = default_with_env(&[("MXGUARD_RESOURCE_ENABLED", "false")]).expect("default");
+        assert!(!cfg.resource_limits.enabled);
+    }
+
+    #[test]
+    fn test_env_resource_cpu_limit() {
+        let cfg =
+            default_with_env(&[("MXGUARD_RESOURCE_CPU_LIMIT", "2.5")]).expect("default");
+        assert_eq!(cfg.resource_limits.cpu_limit_percent, 2.5);
+    }
+
+    #[test]
+    fn test_env_resource_ram_limit_mb() {
+        let cfg =
+            default_with_env(&[("MXGUARD_RESOURCE_RAM_LIMIT_MB", "64")]).expect("default");
+        assert_eq!(cfg.resource_limits.ram_limit_mb, 64);
+    }
+
+    #[test]
+    fn test_env_resource_check_interval_ms() {
+        let cfg =
+            default_with_env(&[("MXGUARD_RESOURCE_CHECK_INTERVAL_MS", "10000")]).expect("default");
+        assert_eq!(cfg.resource_limits.check_interval_ms, 10000);
+    }
+
+    #[test]
+    fn test_env_resource_cpu_limit_invalid() {
+        let result = default_with_env(&[("MXGUARD_RESOURCE_CPU_LIMIT", "not-a-float")]);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("MXGUARD_RESOURCE_CPU_LIMIT"), "msg={msg}");
+    }
+
+    #[test]
+    fn test_env_resource_ram_limit_invalid() {
+        let result = default_with_env(&[("MXGUARD_RESOURCE_RAM_LIMIT_MB", "abc")]);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("MXGUARD_RESOURCE_RAM_LIMIT_MB"), "msg={msg}");
+    }
+
+    #[test]
+    fn test_resource_limits_toml() {
+        let toml = r#"
+[agent]
+name = "test"
+
+[resource_limits]
+enabled = false
+cpu_limit_percent = 0.5
+ram_limit_mb = 16
+check_interval_ms = 2000
+"#;
+        let cfg = config_with_env(toml, &[]).expect("load");
+        assert!(!cfg.resource_limits.enabled);
+        assert_eq!(cfg.resource_limits.cpu_limit_percent, 0.5);
+        assert_eq!(cfg.resource_limits.ram_limit_mb, 16);
+        assert_eq!(cfg.resource_limits.check_interval_ms, 2000);
     }
 }

@@ -8,6 +8,7 @@ mod collectors;
 mod config;
 mod events;
 mod health;
+mod resource_limits;
 mod transport;
 
 use clap::Parser;
