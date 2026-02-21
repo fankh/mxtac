@@ -8,16 +8,65 @@ name = "mxwatch-node-01"
 log_level = "info"
 
 [capture]
-# Network interface to capture on (e.g. eth0, ens3, lo)
+# Network interface to capture on (e.g. eth0, ens3, en0, lo)
+# If the named interface is not found, MxWatch falls back to the OS-default
+# capture interface automatically (useful when promoting configs across OSes).
 interface = "eth0"
 # Maximum bytes per packet (65535 = full packet)
 snaplen = 65535
 # Capture all traffic, not just traffic addressed to this host
 promiscuous = true
-# BPF filter applied at the kernel level (empty = capture all)
+# BPF filter applied at the kernel level (empty string = capture all)
 bpf_filter = "tcp or udp"
-# Internal packet buffer size (number of packets)
-buffer_size = 10000
+# Kernel capture buffer size in bytes (pcap backend only)
+buffer_size = 2097152   # 2 MiB
+
+# ── Backend selection ──────────────────────────────────────────────────────────
+# On Linux, set use_afpacket = true for zero-copy TPACKET_V3 ring-buffer capture
+# (1–5 M pps).  On other platforms or when use_afpacket = false, the libpcap
+# backend is used (~100 K pps).
+use_afpacket = false
+
+# ── libpcap tuning (capture.pcap) ────────────────────────────────────────────
+# Applied when use_afpacket = false or on non-Linux platforms.
+[capture.pcap]
+# Read timeout in milliseconds.
+# A non-zero value allows the capture loop to detect shutdown signals promptly
+# without waiting for the next packet.  Set to 0 to block indefinitely.
+timeout_ms = 1000
+
+# Offline pcap file replay.
+# Set to a file path to replay a pre-recorded capture instead of opening a
+# live interface.  Original timestamps are preserved.  Useful for testing and
+# forensic analysis.  Comment out (or leave empty) for live capture.
+# read_file = "/tmp/capture.pcap"
+
+# Log kernel capture statistics (received / dropped counters) every N packets.
+# Helps detect packet loss due to kernel buffer overflow.  Set to 0 to disable.
+stats_interval = 10000
+
+# ── AF_PACKET ring-buffer tuning (capture.afpacket) ──────────────────────────
+# Only used when use_afpacket = true (Linux only).
+# Sensible defaults work for most deployments; adjust when profiling shows
+# packet loss at the capture layer.
+[capture.afpacket]
+# Block size in bytes.  Must be a power of two and at least the system page
+# size (4096).  Larger blocks reduce the number of kernel hand-offs per second.
+block_size = 1048576      # 1 MiB
+
+# Number of blocks in the ring buffer.
+# Total ring memory = block_size × block_count.  More blocks provide a larger
+# burst buffer at the cost of higher memory usage.
+block_count = 64          # 64 MiB total ring buffer
+
+# Maximum expected frame size in bytes.
+# Set to at least TPACKET_ALIGN(sizeof(tpacket3_hdr)) + snaplen (≈ 48 + MTU).
+frame_size = 2048         # handles standard Ethernet MTU (1500 bytes)
+
+# Block retire timeout in milliseconds.
+# When non-zero, the kernel flushes a partially filled block after this many
+# milliseconds, bounding capture latency at low packet rates.
+block_retire_tov_ms = 60
 
 [parsers.http]
 enabled = true

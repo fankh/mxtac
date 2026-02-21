@@ -72,6 +72,9 @@ pub struct CaptureConfig {
     /// AF_PACKET ring-buffer tuning (only used when `use_afpacket = true`).
     #[serde(default)]
     pub afpacket: AfPacketConfig,
+    /// libpcap-specific tuning (only used when `use_afpacket = false`).
+    #[serde(default)]
+    pub pcap: PcapConfig,
 }
 
 impl Default for CaptureConfig {
@@ -84,6 +87,7 @@ impl Default for CaptureConfig {
             buffer_size: default_buffer_size(),
             use_afpacket: false,
             afpacket: AfPacketConfig::default(),
+            pcap: PcapConfig::default(),
         }
     }
 }
@@ -161,6 +165,56 @@ fn default_afpacket_frame_size() -> usize {
 }
 fn default_afpacket_retire_tov() -> u32 {
     60 // retire partial blocks after 60 ms
+}
+
+// -- libpcap tuning ----------------------------------------------------------
+
+/// Tuning parameters for the libpcap capture backend.
+///
+/// Applied when `use_afpacket = false` (the default) or on non-Linux platforms.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PcapConfig {
+    /// Read timeout in milliseconds.
+    ///
+    /// `0` blocks indefinitely until a packet arrives (libpcap default).
+    /// A non-zero value (e.g. `1000`) enables periodic wakeups so the agent
+    /// can detect when the downstream processing pipeline has shut down and
+    /// exit gracefully without waiting for the next packet.
+    #[serde(default = "default_pcap_timeout_ms")]
+    pub timeout_ms: i32,
+
+    /// Path to an offline `.pcap` file for replay.
+    ///
+    /// When set to a non-empty path, MxWatch replays packets from the file
+    /// instead of opening a live interface.  Useful for testing, forensic
+    /// analysis, and CI pipelines.  When `None` or empty, live capture is used.
+    #[serde(default)]
+    pub read_file: Option<String>,
+
+    /// Log capture statistics every N packets (`0` = disabled).
+    ///
+    /// Requests kernel-level receive and drop counts from libpcap and emits
+    /// them at `info` level.  Helps detect packet loss due to ring-buffer
+    /// overflow.
+    #[serde(default = "default_pcap_stats_interval")]
+    pub stats_interval: u64,
+}
+
+impl Default for PcapConfig {
+    fn default() -> Self {
+        Self {
+            timeout_ms: default_pcap_timeout_ms(),
+            read_file: None,
+            stats_interval: default_pcap_stats_interval(),
+        }
+    }
+}
+
+fn default_pcap_timeout_ms() -> i32 {
+    1_000 // 1-second read timeout for graceful shutdown handling
+}
+fn default_pcap_stats_interval() -> u64 {
+    10_000 // log stats every 10 000 packets
 }
 
 // -- Parsers -----------------------------------------------------------------
@@ -579,6 +633,63 @@ window_secs     = 30
         assert!(!cfg.detectors.port_scan.enabled);
         assert_eq!(cfg.detectors.port_scan.threshold_ports, 10);
         assert_eq!(cfg.detectors.port_scan.window_secs, 30);
+    }
+
+    // -----------------------------------------------------------------------
+    // PcapConfig
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_default_pcap_config() {
+        let cfg = CaptureConfig::default();
+        assert_eq!(cfg.pcap.timeout_ms, 1_000);
+        assert!(cfg.pcap.read_file.is_none());
+        assert_eq!(cfg.pcap.stats_interval, 10_000);
+    }
+
+    #[test]
+    fn test_parse_pcap_section() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[capture.pcap]
+timeout_ms     = 500
+read_file      = "/tmp/capture.pcap"
+stats_interval = 5000
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert_eq!(cfg.capture.pcap.timeout_ms, 500);
+        assert_eq!(
+            cfg.capture.pcap.read_file.as_deref(),
+            Some("/tmp/capture.pcap")
+        );
+        assert_eq!(cfg.capture.pcap.stats_interval, 5000);
+    }
+
+    #[test]
+    fn test_pcap_defaults_when_section_omitted() {
+        let toml = r#"
+[agent]
+name = "w"
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert_eq!(cfg.capture.pcap.timeout_ms, 1_000);
+        assert!(cfg.capture.pcap.read_file.is_none());
+        assert_eq!(cfg.capture.pcap.stats_interval, 10_000);
+    }
+
+    #[test]
+    fn test_pcap_read_file_absent_is_none() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[capture.pcap]
+timeout_ms = 2000
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert!(cfg.capture.pcap.read_file.is_none());
     }
 
     #[test]
