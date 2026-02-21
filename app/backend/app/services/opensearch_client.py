@@ -26,13 +26,23 @@ ALERTS_INDEX_TEMPLATE = "mxtac-alerts"
 AUDIT_INDEX_TEMPLATE = "mxtac-audit"
 RULES_INDEX = "mxtac-rules"
 
-# ILM / ISM policy — events & alerts (90-day)
+# ILM / ISM policy — events & alerts (90-day, legacy name kept for compat)
 ILM_POLICY_NAME = "mxtac-90day-retention"
 ILM_RETENTION_DAYS = 90
 
-# ILM / ISM policy — audit logs (3-year / 1095-day, feature 21.14)
+# ILM / ISM policy — audit logs (3-year / 1095-day, legacy name kept for compat)
 AUDIT_ILM_POLICY_NAME = "mxtac-3year-audit-retention"
 AUDIT_ILM_RETENTION_DAYS = 1095  # 365 × 3
+
+# Per-type ILM policy names — feature 38.2 (hot/warm/delete lifecycle)
+EVENTS_ILM_POLICY_NAME = "mxtac-events-ilm"
+ALERTS_ILM_POLICY_NAME = "mxtac-alerts-ilm"
+AUDIT_TYPE_ILM_POLICY_NAME = "mxtac-audit-ilm"
+
+# Hot-phase durations: indices stay in hot before transitioning to warm
+EVENTS_HOT_DAYS = 7
+ALERTS_HOT_DAYS = 30
+AUDIT_HOT_DAYS = 90
 
 # ---------------------------------------------------------------------------
 # Index mapping constants — feature 12.10
@@ -557,7 +567,7 @@ class OpenSearchService:
                         "settings": {
                             "number_of_shards": 3,
                             "number_of_replicas": 1,
-                            "plugins.index_state_management.policy_id": ILM_POLICY_NAME,
+                            "plugins.index_state_management.policy_id": EVENTS_ILM_POLICY_NAME,
                         },
                         "mappings": EVENTS_MAPPING,
                     },
@@ -577,7 +587,7 @@ class OpenSearchService:
                         "settings": {
                             "number_of_shards": 3,
                             "number_of_replicas": 1,
-                            "plugins.index_state_management.policy_id": ILM_POLICY_NAME,
+                            "plugins.index_state_management.policy_id": ALERTS_ILM_POLICY_NAME,
                         },
                         "mappings": ALERTS_MAPPING,
                     },
@@ -587,7 +597,7 @@ class OpenSearchService:
         except Exception as exc:
             logger.warning("ensure_indices: alerts template failed: %s", exc)
 
-        # ── mxtac-audit-* index template (feature 21.14: 3-year retention) ──────
+        # ── mxtac-audit-* index template (feature 38.2: 3-year retention) ──────
         try:
             await self._client.indices.put_index_template(
                 name="mxtac-audit-template",
@@ -597,7 +607,7 @@ class OpenSearchService:
                         "settings": {
                             "number_of_shards": 1,
                             "number_of_replicas": 1,
-                            "plugins.index_state_management.policy_id": AUDIT_ILM_POLICY_NAME,
+                            "plugins.index_state_management.policy_id": AUDIT_TYPE_ILM_POLICY_NAME,
                         },
                         "mappings": AUDIT_MAPPING,
                     },
@@ -775,6 +785,184 @@ class OpenSearchService:
             )
         except Exception as exc:
             logger.warning("ensure_audit_ilm_policy: ISM policy creation failed: %s", exc)
+
+    async def ensure_ilm_policies(self) -> None:
+        """Create or update all three ILM policies with hot → warm → delete phases.
+
+        Feature 38.2 — replaces the legacy single-policy approach with per-type
+        policies that include a force_merge step in the warm phase to reduce
+        segment count and storage pressure before eventual deletion.
+
+        Policy schedule (days from index creation):
+          Events: hot 0–7d → warm 7–90d (force_merge) → delete at 90d
+          Alerts: hot 0–30d → warm 30–365d (force_merge) → delete at 365d
+          Audit:  hot 0–90d → warm 90–1095d (force_merge) → delete at 1095d
+
+        Retention values are read from settings so operators can override them
+        without code changes. Safe to call multiple times (idempotent PUT).
+        """
+        if self._client is None:
+            return
+
+        events_delete = settings.opensearch_events_retention_days
+        alerts_delete = settings.opensearch_alerts_retention_days
+        audit_delete = settings.opensearch_audit_retention_days
+
+        policies = [
+            {
+                "name": EVENTS_ILM_POLICY_NAME,
+                "description": (
+                    f"MxTac events: hot {EVENTS_HOT_DAYS}d → warm (force_merge)"
+                    f" → delete at {events_delete}d"
+                ),
+                "hot_days": EVENTS_HOT_DAYS,
+                "delete_days": events_delete,
+                "index_patterns": [f"{EVENTS_INDEX_TEMPLATE}-*"],
+                "priority": 100,
+            },
+            {
+                "name": ALERTS_ILM_POLICY_NAME,
+                "description": (
+                    f"MxTac alerts: hot {ALERTS_HOT_DAYS}d → warm (force_merge)"
+                    f" → delete at {alerts_delete}d"
+                ),
+                "hot_days": ALERTS_HOT_DAYS,
+                "delete_days": alerts_delete,
+                "index_patterns": [f"{ALERTS_INDEX_TEMPLATE}-*"],
+                "priority": 100,
+            },
+            {
+                "name": AUDIT_TYPE_ILM_POLICY_NAME,
+                "description": (
+                    f"MxTac audit: hot {AUDIT_HOT_DAYS}d → warm (force_merge)"
+                    f" → delete at {audit_delete}d ({audit_delete // 365} years)"
+                ),
+                "hot_days": AUDIT_HOT_DAYS,
+                "delete_days": audit_delete,
+                "index_patterns": [f"{AUDIT_INDEX_TEMPLATE}-*"],
+                "priority": 200,
+            },
+        ]
+
+        for pol in policies:
+            policy_body = {
+                "policy": {
+                    "description": pol["description"],
+                    "default_state": "hot",
+                    "states": [
+                        {
+                            "name": "hot",
+                            "actions": [],
+                            "transitions": [
+                                {
+                                    "state_name": "warm",
+                                    "conditions": {
+                                        "min_index_age": f"{pol['hot_days']}d"
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "name": "warm",
+                            "actions": [
+                                {"force_merge": {"max_num_segments": 1}}
+                            ],
+                            "transitions": [
+                                {
+                                    "state_name": "delete",
+                                    "conditions": {
+                                        "min_index_age": f"{pol['delete_days']}d"
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "name": "delete",
+                            "actions": [{"delete": {}}],
+                            "transitions": [],
+                        },
+                    ],
+                    "ism_template": [
+                        {
+                            "index_patterns": pol["index_patterns"],
+                            "priority": pol["priority"],
+                        }
+                    ],
+                }
+            }
+            try:
+                await self._client.transport.perform_request(
+                    "PUT",
+                    f"/_plugins/_ism/policies/{pol['name']}",
+                    body=policy_body,
+                )
+                logger.info(
+                    "Applied ISM policy: %s (hot=%dd warm→delete=%dd)",
+                    pol["name"],
+                    pol["hot_days"],
+                    pol["delete_days"],
+                )
+            except Exception as exc:
+                logger.warning(
+                    "ensure_ilm_policies: failed to apply %s: %s", pol["name"], exc
+                )
+
+    async def get_storage_metrics(self) -> dict[str, Any]:
+        """Query OpenSearch for index storage size and per-day event counts.
+
+        Returns a dict with:
+          ``index_sizes``  — mapping of index-pattern label → total bytes
+          ``events_per_day`` — mapping of date string (YYYY-MM-DD) → doc count
+
+        Returns empty structures when the client is unavailable or queries fail.
+        """
+        if self._client is None:
+            return {"index_sizes": {}, "events_per_day": {}}
+
+        index_sizes: dict[str, int] = {}
+
+        # ── Index storage sizes ────────────────────────────────────────────────
+        for label, pattern in [
+            ("events", f"{EVENTS_INDEX_TEMPLATE}-*"),
+            ("alerts", f"{ALERTS_INDEX_TEMPLATE}-*"),
+            ("audit", f"{AUDIT_INDEX_TEMPLATE}-*"),
+        ]:
+            try:
+                stats = await self._client.indices.stats(index=pattern, metric="store")
+                total_bytes = (
+                    stats.get("_all", {})
+                    .get("total", {})
+                    .get("store", {})
+                    .get("size_in_bytes", 0)
+                )
+                index_sizes[label] = total_bytes
+            except Exception as exc:
+                logger.debug("get_storage_metrics: stats failed for %s: %s", pattern, exc)
+                index_sizes[label] = 0
+
+        # ── Per-day event counts ───────────────────────────────────────────────
+        events_per_day: dict[str, int] = {}
+        try:
+            stats = await self._client.indices.stats(
+                index=f"{EVENTS_INDEX_TEMPLATE}-*", metric="docs"
+            )
+            indices_data = stats.get("indices", {})
+            for index_name, index_stat in indices_data.items():
+                # Extract date from index name: mxtac-events-YYYY.MM.DD → YYYY-MM-DD
+                suffix = index_name.removeprefix(f"{EVENTS_INDEX_TEMPLATE}-")
+                # Convert YYYY.MM.DD → YYYY-MM-DD
+                if len(suffix) == 10 and suffix.count(".") == 2:
+                    date_str = suffix.replace(".", "-")
+                    doc_count = (
+                        index_stat.get("total", {})
+                        .get("docs", {})
+                        .get("count", 0)
+                    )
+                    events_per_day[date_str] = doc_count
+        except Exception as exc:
+            logger.debug("get_storage_metrics: per-day query failed: %s", exc)
+
+        return {"index_sizes": index_sizes, "events_per_day": events_per_day}
 
     async def close(self) -> None:
         if self._client:

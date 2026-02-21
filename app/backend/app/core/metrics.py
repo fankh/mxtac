@@ -116,3 +116,19 @@ iocs_expired = Counter(
     "mxtac_iocs_expired_total",
     "Total IOCs deactivated by the IOC expiry background task (expires_at + stale-hit)",
 )
+
+# ---------------------------------------------------------------------------
+# OpenSearch storage — feature 38.2
+# ---------------------------------------------------------------------------
+
+opensearch_index_size_bytes = Gauge(
+    "mxtac_opensearch_index_size_bytes",
+    "Total size of MxTac OpenSearch indices in bytes",
+    ["index_pattern"],  # "events", "alerts", "audit"
+)
+
+opensearch_events_per_day = Gauge(
+    "mxtac_opensearch_events_per_day",
+    "Number of events stored in each daily OpenSearch index",
+    ["date"],  # ISO date string e.g. "2024-01-15"
+)

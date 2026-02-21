@@ -197,6 +197,36 @@ async def _rule_reload_subscriber() -> None:
             pass
 
 
+async def _storage_metrics_collector() -> None:
+    """Periodically refresh OpenSearch storage Prometheus gauges.
+
+    Queries OpenSearch index stats every 5 minutes and updates:
+      - mxtac_opensearch_index_size_bytes{index_pattern} — bytes per index type
+      - mxtac_opensearch_events_per_day{date}             — daily event counts
+
+    Runs silently when OpenSearch is unavailable.
+    """
+    from .core.metrics import opensearch_index_size_bytes, opensearch_events_per_day
+
+    _INTERVAL_SECONDS = 300  # 5 minutes
+
+    while True:
+        await asyncio.sleep(_INTERVAL_SECONDS)
+        try:
+            os_client = get_opensearch()
+            if not os_client.is_available:
+                continue
+            data = await os_client.get_storage_metrics()
+            for pattern, size in data.get("index_sizes", {}).items():
+                opensearch_index_size_bytes.labels(index_pattern=pattern).set(size)
+            for date_str, count in data.get("events_per_day", {}).items():
+                opensearch_events_per_day.labels(date=date_str).set(count)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("Storage metrics collection failed — will retry in %ds", _INTERVAL_SECONDS)
+
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.version,
@@ -269,10 +299,12 @@ async def on_startup() -> None:
     # 3. Connect OpenSearch, apply ILM policies, and create index templates
     os_client = get_opensearch()
     await os_client.connect()
-    await os_client.ensure_ilm_policy()        # 90-day retention for events/alerts
-    await os_client.ensure_audit_ilm_policy()  # 3-year retention for audit logs (feature 21.14)
+    await os_client.ensure_ilm_policies()  # hot/warm/delete per-type policies (feature 38.2)
     await os_client.ensure_indices()
     app.state.os_client = os_client
+
+    # 3.2. Start storage metrics collection — updates Prometheus gauges every 5 minutes
+    asyncio.create_task(_storage_metrics_collector(), name="storage-metrics-collector")
 
     # 3.1. Connect DuckDB embedded event store (feature 20.9)
     if settings.duckdb_enabled:

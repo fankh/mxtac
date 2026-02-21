@@ -150,6 +150,15 @@ class Settings(BaseSettings):
     backup_dir: str = "./backups"
     backup_stale_hours: int = 48
 
+    # OpenSearch index lifecycle management retention — feature 38.2
+    # Controls how long each index type is kept before deletion.
+    # hot_days (configured in opensearch_client.py) determines when indices
+    # transition from hot to warm (with force_merge); these settings control
+    # the total retention before deletion.
+    opensearch_events_retention_days: int = 90    # events: hot 7d → warm → delete
+    opensearch_alerts_retention_days: int = 365   # alerts: hot 30d → warm → delete
+    opensearch_audit_retention_days: int = 1095   # audit: hot 90d → warm → delete (3 years)
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 

@@ -12,8 +12,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.opensearch_client import (
+    ALERTS_ILM_POLICY_NAME,
     ALERTS_INDEX_TEMPLATE,
     ALERTS_MAPPING,
+    AUDIT_INDEX_TEMPLATE,
+    AUDIT_TYPE_ILM_POLICY_NAME,
+    EVENTS_HOT_DAYS,
+    ALERTS_HOT_DAYS,
+    AUDIT_HOT_DAYS,
+    EVENTS_ILM_POLICY_NAME,
     EVENTS_INDEX_TEMPLATE,
     EVENTS_MAPPING,
     ILM_POLICY_NAME,
@@ -2288,7 +2295,7 @@ async def test_ensure_ilm_policy_logs_success_on_apply(caplog: pytest.LogCapture
 
 @pytest.mark.asyncio
 async def test_ensure_indices_events_template_has_ism_policy_id() -> None:
-    """Events template settings include the ISM policy_id for 90-day retention."""
+    """Events template settings include the per-type ISM policy_id (feature 38.2)."""
     svc = OpenSearchService()
     mock_client = MagicMock()
     mock_client.indices = _make_indices_client(rules_exist=True)
@@ -2304,12 +2311,12 @@ async def test_ensure_indices_events_template_has_ism_policy_id() -> None:
     events_body = calls.get("mxtac-events-template")
     assert events_body is not None
     settings = events_body["template"]["settings"]
-    assert settings.get("plugins.index_state_management.policy_id") == ILM_POLICY_NAME
+    assert settings.get("plugins.index_state_management.policy_id") == EVENTS_ILM_POLICY_NAME
 
 
 @pytest.mark.asyncio
 async def test_ensure_indices_alerts_template_has_ism_policy_id() -> None:
-    """Alerts template settings include the ISM policy_id for 90-day retention."""
+    """Alerts template settings include the per-type ISM policy_id (feature 38.2)."""
     svc = OpenSearchService()
     mock_client = MagicMock()
     mock_client.indices = _make_indices_client(rules_exist=True)
@@ -2325,7 +2332,7 @@ async def test_ensure_indices_alerts_template_has_ism_policy_id() -> None:
     alerts_body = calls.get("mxtac-alerts-template")
     assert alerts_body is not None
     settings = alerts_body["template"]["settings"]
-    assert settings.get("plugins.index_state_management.policy_id") == ILM_POLICY_NAME
+    assert settings.get("plugins.index_state_management.policy_id") == ALERTS_ILM_POLICY_NAME
 
 
 # ---------------------------------------------------------------------------
@@ -2617,3 +2624,359 @@ async def test_ensure_indices_rules_index_uses_rules_mapping_constant() -> None:
 
     create_kwargs = mock_client.indices.create.call_args.kwargs
     assert create_kwargs["body"]["mappings"] is RULES_MAPPING
+
+
+# ---------------------------------------------------------------------------
+# ensure_ilm_policies — feature 38.2 (hot/warm/delete per-type lifecycle)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_noop_when_unavailable() -> None:
+    """ensure_ilm_policies() is a no-op when no client is connected."""
+    svc = OpenSearchService()
+    # _client is None — must not raise
+    await svc.ensure_ilm_policies()
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_creates_three_policies() -> None:
+    """ensure_ilm_policies() issues three PUT requests — one per index type."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    assert mock_client.transport.perform_request.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_targets_events_policy_endpoint() -> None:
+    """ensure_ilm_policies() creates the mxtac-events-ilm policy."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    urls = [
+        call.args[1] if len(call.args) > 1 else call.kwargs.get("url", "")
+        for call in mock_client.transport.perform_request.call_args_list
+    ]
+    assert any(EVENTS_ILM_POLICY_NAME in u for u in urls)
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_targets_alerts_policy_endpoint() -> None:
+    """ensure_ilm_policies() creates the mxtac-alerts-ilm policy."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    urls = [
+        call.args[1] if len(call.args) > 1 else call.kwargs.get("url", "")
+        for call in mock_client.transport.perform_request.call_args_list
+    ]
+    assert any(ALERTS_ILM_POLICY_NAME in u for u in urls)
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_targets_audit_policy_endpoint() -> None:
+    """ensure_ilm_policies() creates the mxtac-audit-ilm policy."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    urls = [
+        call.args[1] if len(call.args) > 1 else call.kwargs.get("url", "")
+        for call in mock_client.transport.perform_request.call_args_list
+    ]
+    assert any(AUDIT_TYPE_ILM_POLICY_NAME in u for u in urls)
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_events_has_hot_warm_delete_states() -> None:
+    """Events policy has hot, warm, and delete states."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    # Find the events policy call
+    events_body = None
+    for call in mock_client.transport.perform_request.call_args_list:
+        url = call.args[1] if len(call.args) > 1 else call.kwargs.get("url", "")
+        if EVENTS_ILM_POLICY_NAME in url:
+            events_body = call.kwargs.get("body") or (call.args[2] if len(call.args) > 2 else None)
+            break
+    assert events_body is not None
+    state_names = {s["name"] for s in events_body["policy"]["states"]}
+    assert state_names == {"hot", "warm", "delete"}
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_events_hot_phase_duration() -> None:
+    """Events policy hot phase lasts EVENTS_HOT_DAYS before transitioning to warm."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    events_body = None
+    for call in mock_client.transport.perform_request.call_args_list:
+        url = call.args[1] if len(call.args) > 1 else call.kwargs.get("url", "")
+        if EVENTS_ILM_POLICY_NAME in url:
+            events_body = call.kwargs.get("body") or (call.args[2] if len(call.args) > 2 else None)
+            break
+    assert events_body is not None
+    hot_state = next(s for s in events_body["policy"]["states"] if s["name"] == "hot")
+    transition = hot_state["transitions"][0]
+    assert transition["state_name"] == "warm"
+    assert transition["conditions"]["min_index_age"] == f"{EVENTS_HOT_DAYS}d"
+    assert EVENTS_HOT_DAYS == 7
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_warm_state_has_force_merge_action() -> None:
+    """Warm state for each policy includes a force_merge action."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    for call in mock_client.transport.perform_request.call_args_list:
+        body = call.kwargs.get("body") or (call.args[2] if len(call.args) > 2 else None)
+        if body is None:
+            continue
+        warm_state = next(
+            (s for s in body["policy"]["states"] if s["name"] == "warm"), None
+        )
+        if warm_state is None:
+            continue
+        action_names = [list(a.keys())[0] for a in warm_state.get("actions", [])]
+        assert "force_merge" in action_names, (
+            f"warm state missing force_merge in policy {body['policy'].get('description', '?')}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_alerts_hot_phase_duration() -> None:
+    """Alerts policy hot phase lasts ALERTS_HOT_DAYS before transitioning to warm."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    alerts_body = None
+    for call in mock_client.transport.perform_request.call_args_list:
+        url = call.args[1] if len(call.args) > 1 else call.kwargs.get("url", "")
+        if ALERTS_ILM_POLICY_NAME in url:
+            alerts_body = call.kwargs.get("body") or (call.args[2] if len(call.args) > 2 else None)
+            break
+    assert alerts_body is not None
+    hot_state = next(s for s in alerts_body["policy"]["states"] if s["name"] == "hot")
+    assert hot_state["transitions"][0]["conditions"]["min_index_age"] == f"{ALERTS_HOT_DAYS}d"
+    assert ALERTS_HOT_DAYS == 30
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_audit_hot_phase_duration() -> None:
+    """Audit policy hot phase lasts AUDIT_HOT_DAYS before transitioning to warm."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    audit_body = None
+    for call in mock_client.transport.perform_request.call_args_list:
+        url = call.args[1] if len(call.args) > 1 else call.kwargs.get("url", "")
+        if AUDIT_TYPE_ILM_POLICY_NAME in url:
+            audit_body = call.kwargs.get("body") or (call.args[2] if len(call.args) > 2 else None)
+            break
+    assert audit_body is not None
+    hot_state = next(s for s in audit_body["policy"]["states"] if s["name"] == "hot")
+    assert hot_state["transitions"][0]["conditions"]["min_index_age"] == f"{AUDIT_HOT_DAYS}d"
+    assert AUDIT_HOT_DAYS == 90
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_events_delete_uses_retention_config() -> None:
+    """Events policy warm→delete transition respects opensearch_events_retention_days config."""
+    from app.core.config import settings as app_settings
+
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    events_body = None
+    for call in mock_client.transport.perform_request.call_args_list:
+        url = call.args[1] if len(call.args) > 1 else call.kwargs.get("url", "")
+        if EVENTS_ILM_POLICY_NAME in url:
+            events_body = call.kwargs.get("body") or (call.args[2] if len(call.args) > 2 else None)
+            break
+    assert events_body is not None
+    warm_state = next(s for s in events_body["policy"]["states"] if s["name"] == "warm")
+    transition = warm_state["transitions"][0]
+    assert transition["state_name"] == "delete"
+    assert transition["conditions"]["min_index_age"] == (
+        f"{app_settings.opensearch_events_retention_days}d"
+    )
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_exception_does_not_crash() -> None:
+    """A transport error is caught and does not propagate to the caller."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock(exc=Exception("ISM unavailable"))
+    svc._client = mock_client
+
+    # Must not raise — ISM may not be available on minimal OpenSearch builds
+    await svc.ensure_ilm_policies()
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_ism_template_covers_events_pattern() -> None:
+    """Events policy ISM template covers the mxtac-events-* pattern."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    events_body = None
+    for call in mock_client.transport.perform_request.call_args_list:
+        url = call.args[1] if len(call.args) > 1 else call.kwargs.get("url", "")
+        if EVENTS_ILM_POLICY_NAME in url:
+            events_body = call.kwargs.get("body") or (call.args[2] if len(call.args) > 2 else None)
+            break
+    assert events_body is not None
+    patterns = events_body["policy"]["ism_template"][0]["index_patterns"]
+    assert any(EVENTS_INDEX_TEMPLATE in p for p in patterns)
+
+
+@pytest.mark.asyncio
+async def test_ensure_ilm_policies_ism_template_covers_audit_pattern() -> None:
+    """Audit policy ISM template covers the mxtac-audit-* pattern."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.transport = _make_transport_mock()
+    svc._client = mock_client
+
+    await svc.ensure_ilm_policies()
+
+    audit_body = None
+    for call in mock_client.transport.perform_request.call_args_list:
+        url = call.args[1] if len(call.args) > 1 else call.kwargs.get("url", "")
+        if AUDIT_TYPE_ILM_POLICY_NAME in url:
+            audit_body = call.kwargs.get("body") or (call.args[2] if len(call.args) > 2 else None)
+            break
+    assert audit_body is not None
+    patterns = audit_body["policy"]["ism_template"][0]["index_patterns"]
+    assert any(AUDIT_INDEX_TEMPLATE in p for p in patterns)
+
+
+# ---------------------------------------------------------------------------
+# get_storage_metrics — feature 38.2
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_storage_metrics_returns_empty_when_unavailable() -> None:
+    """get_storage_metrics() returns empty dicts when no client is connected."""
+    svc = OpenSearchService()
+    result = await svc.get_storage_metrics()
+    assert result == {"index_sizes": {}, "events_per_day": {}}
+
+
+@pytest.mark.asyncio
+async def test_get_storage_metrics_returns_index_sizes() -> None:
+    """get_storage_metrics() returns bytes for events, alerts, and audit indices."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+
+    def _stats_response(index, metric):
+        sizes = {
+            "mxtac-events-*": 1_000_000,
+            "mxtac-alerts-*": 500_000,
+            "mxtac-audit-*": 2_000_000,
+        }
+        return {"_all": {"total": {"store": {"size_in_bytes": sizes.get(index, 0)}}}, "indices": {}}
+
+    mock_client.indices = MagicMock()
+    mock_client.indices.stats = AsyncMock(side_effect=_stats_response)
+    svc._client = mock_client
+
+    result = await svc.get_storage_metrics()
+
+    assert result["index_sizes"]["events"] == 1_000_000
+    assert result["index_sizes"]["alerts"] == 500_000
+    assert result["index_sizes"]["audit"] == 2_000_000
+
+
+@pytest.mark.asyncio
+async def test_get_storage_metrics_returns_events_per_day() -> None:
+    """get_storage_metrics() returns per-day event counts from daily index names."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+
+    def _stats_response(index, metric):
+        if "events" in index and metric == "docs":
+            return {
+                "_all": {"total": {"store": {"size_in_bytes": 0}}},
+                "indices": {
+                    "mxtac-events-2024.01.15": {"total": {"docs": {"count": 1500}}},
+                    "mxtac-events-2024.01.16": {"total": {"docs": {"count": 2300}}},
+                },
+            }
+        return {"_all": {"total": {"store": {"size_in_bytes": 0}}}, "indices": {}}
+
+    mock_client.indices = MagicMock()
+    mock_client.indices.stats = AsyncMock(side_effect=_stats_response)
+    svc._client = mock_client
+
+    result = await svc.get_storage_metrics()
+
+    assert result["events_per_day"]["2024-01-15"] == 1500
+    assert result["events_per_day"]["2024-01-16"] == 2300
+
+
+@pytest.mark.asyncio
+async def test_get_storage_metrics_handles_stats_exception() -> None:
+    """get_storage_metrics() returns zeros and empty dicts when stats calls fail."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.indices = MagicMock()
+    mock_client.indices.stats = AsyncMock(side_effect=Exception("connection refused"))
+    svc._client = mock_client
+
+    result = await svc.get_storage_metrics()
+
+    # index_sizes should have keys with 0 values
+    assert result["index_sizes"].get("events", 0) == 0
+    assert result["index_sizes"].get("alerts", 0) == 0
+    # events_per_day should be empty due to exception
+    assert result["events_per_day"] == {}
