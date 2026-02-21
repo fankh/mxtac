@@ -3,6 +3,7 @@
 //! Detectors analyze parsed flow data and raise alerts when suspicious
 //! patterns are identified.
 
+pub mod beacon;
 pub mod c2_beacon;
 pub mod data_exfil;
 pub mod dga;

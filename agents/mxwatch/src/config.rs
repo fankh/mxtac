@@ -371,6 +371,8 @@ pub struct DetectorsConfig {
     pub dga: DgaDetectorConfig,
     #[serde(default)]
     pub data_exfil: DataExfilDetectorConfig,
+    #[serde(default)]
+    pub beacon: BeaconDetectorConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -573,6 +575,64 @@ fn default_exfil_window_secs() -> u64 {
 }
 fn default_exfil_max_flow_age_secs() -> u64 {
     600 // 10 minutes
+}
+
+// -- Beacon detector (feature 36.5) -----------------------------------------
+
+/// Configuration for the multi-signal C2 beacon detector.
+///
+/// This detector tracks connection intervals per directional flow and uses
+/// standard deviation as a fraction of the mean (σ / μ × 100 %) to identify
+/// low-jitter periodic communication patterns indicative of C2 beaconing.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BeaconDetectorConfig {
+    /// Enable or disable the detector.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Minimum number of observed connections before an alert is evaluated.
+    ///
+    /// Higher values reduce false positives at the cost of longer detection
+    /// latency.  Default: 10.
+    #[serde(default = "default_beacon_min_connections")]
+    pub beacon_min_connections: u32,
+    /// Maximum allowed jitter as a percentage of the mean interval.
+    ///
+    /// Jitter is computed as σ / μ × 100 %.  A value of `10.0` means
+    /// intervals must vary by less than 10 % of the mean to be flagged.
+    /// Stricter than the baseline C2 beacon detector (default: 20 %).
+    ///
+    /// Default: 10.0.
+    #[serde(default = "default_beacon_max_jitter_pct")]
+    pub beacon_max_jitter_pct: f64,
+    /// Observation window in seconds.
+    ///
+    /// Connections older than this value are pruned from the tracking state.
+    /// Also used by [`BeaconDetector::cleanup`] to remove stale flows.
+    ///
+    /// Default: 3600 (1 hour).
+    #[serde(default = "default_beacon_window_seconds")]
+    pub beacon_window_seconds: u64,
+}
+
+impl Default for BeaconDetectorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            beacon_min_connections: default_beacon_min_connections(),
+            beacon_max_jitter_pct: default_beacon_max_jitter_pct(),
+            beacon_window_seconds: default_beacon_window_seconds(),
+        }
+    }
+}
+
+fn default_beacon_min_connections() -> u32 {
+    10
+}
+fn default_beacon_max_jitter_pct() -> f64 {
+    10.0
+}
+fn default_beacon_window_seconds() -> u64 {
+    3600
 }
 
 // -- Transport ---------------------------------------------------------------

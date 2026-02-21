@@ -30,6 +30,7 @@ use tracing_subscriber::EnvFilter;
 use crate::capture::PcapCapture;
 #[cfg(target_os = "linux")]
 use crate::capture::AfPacketCapture;
+use crate::detectors::beacon::BeaconDetector;
 use crate::detectors::c2_beacon::C2BeaconDetector;
 use crate::detectors::data_exfil::DataExfilDetector;
 use crate::detectors::dga::DgaDetector;
@@ -230,6 +231,9 @@ async fn main() -> anyhow::Result<()> {
     // DGA detector is stateless (no per-flow tracking required).
     let dga_detector = DgaDetector::new(&cfg.detectors.dga);
     let mut exfil_detector = DataExfilDetector::new(&cfg.detectors.data_exfil);
+    // Multi-signal beacon detector (feature 36.5): tracks timing + payload
+    // signals with ATT&CK technique annotation (T1071 / T1573).
+    let mut beacon_detector = BeaconDetector::new(&cfg.detectors.beacon);
 
     // --- Main packet processing loop -------------------------------------------
     info!("Entering packet processing loop");
@@ -361,6 +365,25 @@ async fn main() -> anyhow::Result<()> {
                         &src_ip.to_string(),
                         &dst_ip.to_string(),
                         tcp_info.dst_port,
+                    ) {
+                        let event = OcsfNetworkEvent::from_alert(
+                            device_clone.clone(),
+                            src_ip,
+                            tcp_info.src_port,
+                            dst_ip,
+                            tcp_info.dst_port,
+                            "TCP",
+                            &alert,
+                        );
+                        let _ = evt_tx_clone.send(event).await;
+                    }
+
+                    // Multi-signal beacon detection on all TCP flows (T1071 / T1573).
+                    if let Some(alert) = beacon_detector.record_connection(
+                        &src_ip.to_string(),
+                        &dst_ip.to_string(),
+                        tcp_info.dst_port,
+                        tcp_info.payload_len,
                     ) {
                         let event = OcsfNetworkEvent::from_alert(
                             device_clone.clone(),
