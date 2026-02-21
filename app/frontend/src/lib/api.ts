@@ -8,6 +8,7 @@ import type {
   SavedQuery, SavedQueryCreate, SavedQueryUpdate,
   Incident, IncidentDetail, IncidentCreate, IncidentUpdate, IncidentNote, IncidentMetrics,
   CoverageTrend,
+  IOC, IOCCreate, IOCUpdate, IOCStats, IOCBulkImportResult,
 } from '../types/api'
 
 const http = axios.create({
@@ -249,4 +250,38 @@ export const savedQueriesApi = {
 export const coverageApi = {
   trend: (days = 30): Promise<CoverageTrend> =>
     http.get('/coverage/trend', { params: { days } }).then(r => r.data),
+}
+
+// ── Threat Intel ──────────────────────────────────────────────────────────────
+
+export interface IOCListParams {
+  page?: number
+  page_size?: number
+  ioc_type?: string
+  source?: string
+  is_active?: boolean
+  search?: string
+}
+
+export const threatIntelApi = {
+  list: (params: IOCListParams = {}): Promise<PaginatedResponse<IOC>> =>
+    http.get('/threat-intel/iocs', { params }).then(r => r.data),
+
+  get: (id: number): Promise<IOC> =>
+    http.get(`/threat-intel/iocs/${id}`).then(r => r.data),
+
+  stats: (): Promise<IOCStats> =>
+    http.get('/threat-intel/stats').then(r => r.data),
+
+  create: (body: IOCCreate): Promise<IOC> =>
+    http.post('/threat-intel/iocs', body).then(r => r.data),
+
+  bulkImport: (items: IOCCreate[]): Promise<IOCBulkImportResult> =>
+    http.post('/threat-intel/iocs/bulk', items).then(r => r.data),
+
+  update: (id: number, body: IOCUpdate): Promise<IOC> =>
+    http.patch(`/threat-intel/iocs/${id}`, body).then(r => r.data),
+
+  deactivate: (id: number): Promise<IOC> =>
+    http.delete(`/threat-intel/iocs/${id}`).then(r => r.data),
 }

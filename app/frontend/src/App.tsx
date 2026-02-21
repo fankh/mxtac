@@ -9,6 +9,7 @@ import { AdminPage } from './components/features/admin/AdminPage'
 import { HuntPage } from './components/features/hunt/HuntPage'
 import { AssetsPage } from './components/features/assets/AssetsPage'
 import { IncidentsPage } from './components/features/incidents/IncidentsPage'
+import { ThreatIntelPage } from './components/features/intel/ThreatIntelPage'
 import { LoginPage } from './components/features/auth/LoginPage'
 import { ProtectedRoute } from './components/shared/ProtectedRoute'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
@@ -43,7 +44,7 @@ export default function App() {
                     <Route path="/integrations" element={<ConnectorsPage />} />
                     <Route path="/admin"        element={<AdminPage />} />
                     <Route path="/incidents"    element={<IncidentsPage />} />
-                    <Route path="/intel"        element={<Placeholder title="Threat Intel" />} />
+                    <Route path="/intel"        element={<ThreatIntelPage />} />
                     <Route path="/assets"       element={<AssetsPage />} />
                     <Route path="/reports"      element={<Placeholder title="Reports" />} />
                   </Routes>

@@ -352,6 +352,66 @@ export interface CoverageTrend {
   days: number
 }
 
+// ── Threat Intel / IOCs ───────────────────────────────────────────────────────
+
+export type IOCType = 'ip' | 'domain' | 'hash_md5' | 'hash_sha256' | 'url' | 'email'
+
+export interface IOC {
+  id: number
+  ioc_type: IOCType
+  value: string
+  source: string
+  confidence: number
+  severity: SeverityLevel
+  description: string | null
+  tags: string[]
+  first_seen: string
+  last_seen: string
+  expires_at: string | null
+  is_active: boolean
+  hit_count: number
+  last_hit_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface IOCCreate {
+  ioc_type: IOCType
+  value: string
+  source: string
+  confidence?: number
+  severity: SeverityLevel
+  description?: string | null
+  tags?: string[]
+  first_seen: string
+  last_seen: string
+  expires_at?: string | null
+  is_active?: boolean
+}
+
+export interface IOCUpdate {
+  confidence?: number | null
+  severity?: SeverityLevel | null
+  description?: string | null
+  tags?: string[] | null
+  last_seen?: string | null
+  expires_at?: string | null
+  is_active?: boolean | null
+}
+
+export interface IOCStats {
+  total: number
+  by_type: Record<string, number>
+  by_source: Record<string, number>
+  active: number
+  expired: number
+}
+
+export interface IOCBulkImportResult {
+  created: number
+  skipped: number
+}
+
 // ── Audit Logs ────────────────────────────────────────────────────────────────
 
 export interface AuditLogEntry {
