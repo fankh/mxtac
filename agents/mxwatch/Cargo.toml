@@ -38,3 +38,7 @@ anyhow = "1"
 
 # Async trait support
 async-trait = "0.1"
+
+[dev-dependencies]
+# Temporary files for config loading tests
+tempfile = "3"

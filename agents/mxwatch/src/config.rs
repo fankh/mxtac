@@ -305,3 +305,178 @@ impl Config {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    const MINIMAL_TOML: &str = r#"
+[agent]
+name = "test-watch"
+log_level = "debug"
+"#;
+
+    fn write_temp_toml(content: &str) -> (tempfile::NamedTempFile, String) {
+        let mut f = tempfile::NamedTempFile::new().expect("tmp file");
+        f.write_all(content.as_bytes()).expect("write");
+        let path = f.path().to_str().unwrap().to_owned();
+        (f, path)
+    }
+
+    // -----------------------------------------------------------------------
+    // Default values
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_default_config_agent() {
+        let cfg = Config::default_config();
+        assert_eq!(cfg.agent.log_level, "info");
+        assert_eq!(cfg.agent.name, "mxwatch");
+    }
+
+    #[test]
+    fn test_default_capture_values() {
+        let cap = CaptureConfig::default();
+        assert_eq!(cap.interface, "eth0");
+        assert_eq!(cap.snaplen, 65535);
+        assert!(cap.promiscuous);
+        assert_eq!(cap.bpf_filter, "tcp or udp");
+        assert_eq!(cap.buffer_size, 10_000);
+    }
+
+    #[test]
+    fn test_default_transport_values() {
+        let t = TransportConfig::default();
+        assert_eq!(t.endpoint, "http://127.0.0.1:8080/api/v1/ingest/ocsf");
+        assert_eq!(t.batch_size, 100);
+        assert_eq!(t.flush_interval_ms, 5000);
+        assert_eq!(t.retry_attempts, 3);
+        assert!(t.api_key.is_empty());
+    }
+
+    #[test]
+    fn test_default_dns_tunnel_detector() {
+        let d = DnsTunnelDetectorConfig::default();
+        assert!(d.enabled);
+        assert!((d.entropy_threshold - 4.5).abs() < f64::EPSILON);
+        assert_eq!(d.max_label_length, 100);
+    }
+
+    #[test]
+    fn test_default_port_scan_detector() {
+        let d = PortScanDetectorConfig::default();
+        assert!(d.enabled);
+        assert_eq!(d.threshold_ports, 20);
+        assert_eq!(d.window_secs, 60);
+    }
+
+    // -----------------------------------------------------------------------
+    // TOML parsing
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_parse_minimal_toml() {
+        let cfg: Config = toml::from_str(MINIMAL_TOML).expect("parse");
+        assert_eq!(cfg.agent.name, "test-watch");
+        assert_eq!(cfg.agent.log_level, "debug");
+        // Unspecified sections use defaults.
+        assert_eq!(cfg.capture.interface, "eth0");
+        assert_eq!(cfg.transport.batch_size, 100);
+    }
+
+    #[test]
+    fn test_parse_transport_section() {
+        let toml = r#"
+[agent]
+name = "prod-watch"
+
+[transport]
+endpoint          = "https://mxtac.example.com/api/v1/ingest/ocsf"
+api_key           = "tok-secret"
+batch_size        = 250
+flush_interval_ms = 2000
+retry_attempts    = 5
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert_eq!(cfg.transport.endpoint, "https://mxtac.example.com/api/v1/ingest/ocsf");
+        assert_eq!(cfg.transport.api_key, "tok-secret");
+        assert_eq!(cfg.transport.batch_size, 250);
+        assert_eq!(cfg.transport.flush_interval_ms, 2000);
+        assert_eq!(cfg.transport.retry_attempts, 5);
+    }
+
+    #[test]
+    fn test_parse_capture_section() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[capture]
+interface   = "ens3"
+snaplen     = 1514
+promiscuous = false
+bpf_filter  = "tcp port 443"
+buffer_size = 5000
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert_eq!(cfg.capture.interface, "ens3");
+        assert_eq!(cfg.capture.snaplen, 1514);
+        assert!(!cfg.capture.promiscuous);
+        assert_eq!(cfg.capture.bpf_filter, "tcp port 443");
+        assert_eq!(cfg.capture.buffer_size, 5000);
+    }
+
+    #[test]
+    fn test_parse_detectors_section() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[detectors.dns_tunnel]
+enabled           = true
+entropy_threshold = 3.8
+max_label_length  = 80
+
+[detectors.port_scan]
+enabled         = false
+threshold_ports = 10
+window_secs     = 30
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert!(cfg.detectors.dns_tunnel.enabled);
+        assert!((cfg.detectors.dns_tunnel.entropy_threshold - 3.8).abs() < f64::EPSILON);
+        assert_eq!(cfg.detectors.dns_tunnel.max_label_length, 80);
+        assert!(!cfg.detectors.port_scan.enabled);
+        assert_eq!(cfg.detectors.port_scan.threshold_ports, 10);
+        assert_eq!(cfg.detectors.port_scan.window_secs, 30);
+    }
+
+    #[test]
+    fn test_parse_invalid_toml_returns_error() {
+        let result: Result<Config, toml::de::Error> = toml::from_str("not valid toml ][");
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // from_file
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_from_file_reads_agent_section() {
+        let (_f, path) = write_temp_toml(MINIMAL_TOML);
+        let cfg = Config::from_file(&path).expect("from_file");
+        assert_eq!(cfg.agent.name, "test-watch");
+        assert_eq!(cfg.agent.log_level, "debug");
+    }
+
+    #[test]
+    fn test_from_file_nonexistent_returns_io_error() {
+        let result = Config::from_file("/nonexistent/path/mxwatch.toml");
+        assert!(matches!(result, Err(ConfigError::Io(_))));
+    }
+}

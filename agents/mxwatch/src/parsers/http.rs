@@ -93,3 +93,127 @@ pub fn is_suspicious_request(info: &HttpInfo, extra_patterns: &[String]) -> bool
     }
     false
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // parse_http_request
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_parse_valid_get_request() {
+        let raw = b"GET /index.html HTTP/1.1\r\nHost: example.com\r\nUser-Agent: curl/7.88\r\n\r\n";
+        let info = parse_http_request(raw).expect("parse");
+        assert_eq!(info.method, "GET");
+        assert_eq!(info.uri, "/index.html");
+        assert_eq!(info.version, "HTTP/1.1");
+        assert_eq!(info.host.as_deref(), Some("example.com"));
+        assert_eq!(info.user_agent.as_deref(), Some("curl/7.88"));
+        assert!(info.content_length.is_none());
+    }
+
+    #[test]
+    fn test_parse_post_with_content_length() {
+        let raw = b"POST /api/data HTTP/1.1\r\nHost: api.example.com\r\nContent-Length: 42\r\n\r\n";
+        let info = parse_http_request(raw).expect("parse");
+        assert_eq!(info.method, "POST");
+        assert_eq!(info.uri, "/api/data");
+        assert_eq!(info.content_length, Some(42));
+    }
+
+    #[test]
+    fn test_parse_non_http_returns_none() {
+        // SSH banner — not an HTTP request.
+        assert!(parse_http_request(b"SSH-2.0-OpenSSH_8.9\r\n").is_none());
+        // Empty
+        assert!(parse_http_request(b"").is_none());
+        // Binary data
+        assert!(parse_http_request(&[0x00, 0xFF, 0x80]).is_none());
+    }
+
+    #[test]
+    fn test_parse_all_known_methods() {
+        for method in &["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH"] {
+            let raw = format!("{method} / HTTP/1.0\r\n\r\n");
+            let info = parse_http_request(raw.as_bytes()).expect(method);
+            assert_eq!(info.method, *method);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // is_suspicious_request
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_suspicious_directory_traversal() {
+        let info = HttpInfo {
+            method: "GET".into(),
+            uri: "/files/../../etc/passwd".into(),
+            version: "HTTP/1.1".into(),
+            host: None,
+            user_agent: None,
+            content_length: None,
+        };
+        assert!(is_suspicious_request(&info, &[]));
+    }
+
+    #[test]
+    fn test_suspicious_command_injection_semicolon() {
+        let info = HttpInfo {
+            method: "GET".into(),
+            uri: "/search?q=foo;id".into(),
+            version: "HTTP/1.1".into(),
+            host: None,
+            user_agent: None,
+            content_length: None,
+        };
+        assert!(is_suspicious_request(&info, &[]));
+    }
+
+    #[test]
+    fn test_suspicious_sql_union_select() {
+        // The detector matches the literal "UNION SELECT" (space-separated).
+        let info = HttpInfo {
+            method: "GET".into(),
+            uri: "/item?id=1 UNION SELECT NULL,NULL--".into(),
+            version: "HTTP/1.1".into(),
+            host: None,
+            user_agent: None,
+            content_length: None,
+        };
+        assert!(is_suspicious_request(&info, &[]));
+    }
+
+    #[test]
+    fn test_suspicious_custom_pattern() {
+        let info = HttpInfo {
+            method: "GET".into(),
+            uri: "/wp-admin/install.php".into(),
+            version: "HTTP/1.1".into(),
+            host: None,
+            user_agent: None,
+            content_length: None,
+        };
+        let patterns = vec!["wp-admin".to_string()];
+        assert!(is_suspicious_request(&info, &patterns));
+    }
+
+    #[test]
+    fn test_normal_request_not_suspicious() {
+        let info = HttpInfo {
+            method: "GET".into(),
+            uri: "/api/v1/health".into(),
+            version: "HTTP/1.1".into(),
+            host: Some("api.example.com".into()),
+            user_agent: Some("myapp/1.0".into()),
+            content_length: None,
+        };
+        assert!(!is_suspicious_request(&info, &[]));
+    }
+}

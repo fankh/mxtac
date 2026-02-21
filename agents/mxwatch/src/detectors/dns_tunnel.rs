@@ -129,3 +129,161 @@ fn extract_base_domain(name: &str) -> String {
         labels[labels.len() - 2..].join(".")
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::DnsTunnelDetectorConfig;
+    use crate::detectors::AlertSeverity;
+    use crate::parsers::dns::{DnsInfo, DnsQuestion};
+
+    fn make_detector() -> DnsTunnelDetector {
+        DnsTunnelDetector::new(&DnsTunnelDetectorConfig {
+            enabled: true,
+            entropy_threshold: 4.5,
+            max_label_length: 100,
+        })
+    }
+
+    fn make_dns_info(name: &str, qtype: u16) -> DnsInfo {
+        DnsInfo {
+            transaction_id: 0x1234,
+            is_response: false,
+            opcode: 0,
+            rcode: 0,
+            questions: vec![DnsQuestion {
+                name: name.to_string(),
+                qtype,
+                qclass: 1,
+            }],
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Length threshold
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_long_domain_triggers_alert() {
+        let mut det = make_detector();
+        // A domain name > 100 chars should fire immediately.
+        let long_name = format!("{}.example.com", "a".repeat(200));
+        let dns = make_dns_info(&long_name, 1 /* A */);
+        let alert = det.evaluate(&dns);
+        assert!(alert.is_some(), "expected alert for long domain");
+        let alert = alert.unwrap();
+        assert_eq!(alert.detector, "dns_tunnel");
+        assert_eq!(alert.severity, AlertSeverity::High);
+    }
+
+    // -----------------------------------------------------------------------
+    // Entropy threshold
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_high_entropy_subdomain_triggers_alert() {
+        let mut det = make_detector();
+        // A subdomain with 27 unique characters → entropy = log2(27) ≈ 4.75 > 4.5.
+        // Domain names may contain a-z, A-Z, 0-9, so use a diverse mix.
+        let dns = make_dns_info("aBcDeFgHiJkLmNoPqRsTuVwXyZ0.example.com", 1);
+        let alert = det.evaluate(&dns);
+        assert!(alert.is_some(), "expected alert for high-entropy subdomain");
+    }
+
+    #[test]
+    fn test_low_entropy_short_subdomain_no_alert() {
+        let mut det = make_detector();
+        // Short, low-entropy subdomain like "www".
+        let dns = make_dns_info("www.example.com", 1);
+        let alert = det.evaluate(&dns);
+        assert!(alert.is_none(), "unexpected alert for normal domain");
+    }
+
+    // -----------------------------------------------------------------------
+    // Label count
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_excessive_label_count_triggers_alert() {
+        let mut det = make_detector();
+        // 12 labels (dots) — more than 10.
+        let name = "a.b.c.d.e.f.g.h.i.j.k.example.com";
+        let dns = make_dns_info(name, 1);
+        let alert = det.evaluate(&dns);
+        assert!(alert.is_some(), "expected alert for excessive labels");
+        let alert = alert.unwrap();
+        assert_eq!(alert.severity, AlertSeverity::Medium);
+    }
+
+    #[test]
+    fn test_normal_label_count_no_alert() {
+        let mut det = make_detector();
+        // Normal 3-label domain.
+        let dns = make_dns_info("mail.example.com", 1);
+        let alert = det.evaluate(&dns);
+        assert!(alert.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // TXT record (qtype=16)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_txt_record_triggers_low_severity_alert() {
+        let mut det = make_detector();
+        // TXT record queries are suspicious (commonly used for tunneling).
+        let dns = make_dns_info("example.com", 16 /* TXT */);
+        let alert = det.evaluate(&dns);
+        assert!(alert.is_some(), "expected alert for TXT query");
+        let alert = alert.unwrap();
+        assert_eq!(alert.severity, AlertSeverity::Low);
+    }
+
+    // -----------------------------------------------------------------------
+    // Normal traffic — no alerts
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_normal_a_query_no_alert() {
+        let mut det = make_detector();
+        let dns = make_dns_info("api.github.com", 1 /* A */);
+        assert!(det.evaluate(&dns).is_none());
+    }
+
+    #[test]
+    fn test_empty_questions_no_alert() {
+        let mut det = make_detector();
+        let dns = DnsInfo {
+            transaction_id: 1,
+            is_response: false,
+            opcode: 0,
+            rcode: 0,
+            questions: vec![],
+        };
+        assert!(det.evaluate(&dns).is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // extract_base_domain helper
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_extract_base_domain_multi_label() {
+        assert_eq!(extract_base_domain("sub.example.com"), "example.com");
+        assert_eq!(extract_base_domain("a.b.c.example.com"), "example.com");
+    }
+
+    #[test]
+    fn test_extract_base_domain_two_labels() {
+        assert_eq!(extract_base_domain("example.com"), "example.com");
+    }
+
+    #[test]
+    fn test_extract_base_domain_single_label() {
+        assert_eq!(extract_base_domain("localhost"), "localhost");
+    }
+}

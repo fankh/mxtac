@@ -1,0 +1,65 @@
+# MxWatch NDR Agent Configuration
+# Copy this file to mxwatch.toml and adjust settings as needed.
+
+[agent]
+# Human-readable name for this agent instance
+name = "mxwatch-node-01"
+# Logging level: trace, debug, info, warn, error
+log_level = "info"
+
+[capture]
+# Network interface to capture on (e.g. eth0, ens3, lo)
+interface = "eth0"
+# Maximum bytes per packet (65535 = full packet)
+snaplen = 65535
+# Capture all traffic, not just traffic addressed to this host
+promiscuous = true
+# BPF filter applied at the kernel level (empty = capture all)
+bpf_filter = "tcp or udp"
+# Internal packet buffer size (number of packets)
+buffer_size = 10000
+
+[parsers.http]
+enabled = true
+# URIs containing any of these patterns are flagged as suspicious.
+suspicious_patterns = ["../", "' OR ", "UNION SELECT", "DROP TABLE", "/etc/passwd"]
+
+[parsers.dns]
+enabled = true
+# Shannon entropy threshold for subdomain labels (higher = more sensitive)
+entropy_threshold = 4.5
+
+[parsers.tls]
+enabled = true
+
+[parsers.tcp]
+enabled = true
+
+[parsers.udp]
+enabled = true
+
+[detectors.dns_tunnel]
+enabled = true
+# Shannon entropy threshold for DNS tunneling detection
+entropy_threshold = 4.5
+# Maximum domain name length before flagging as suspicious
+max_label_length = 100
+
+[detectors.port_scan]
+enabled = true
+# Number of distinct destination ports per source IP before raising an alert
+threshold_ports = 20
+# Sliding time window in seconds for port scan detection
+window_secs = 60
+
+[transport]
+# MxTac backend ingest endpoint
+endpoint = "http://127.0.0.1:8080/api/v1/ingest/ocsf"
+# Bearer token for authentication (leave empty if not required)
+api_key = ""
+# Maximum events per batch
+batch_size = 100
+# Flush interval in milliseconds (flush even if batch is not full)
+flush_interval_ms = 5000
+# Number of retry attempts on transport failure
+retry_attempts = 3

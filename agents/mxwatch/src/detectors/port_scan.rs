@@ -92,3 +92,111 @@ impl PortScanDetector {
             .retain(|_, state| now.duration_since(state.window_start) < window);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::PortScanDetectorConfig;
+    use crate::detectors::AlertSeverity;
+
+    fn make_detector(threshold_ports: usize, window_secs: u64) -> PortScanDetector {
+        PortScanDetector::new(&PortScanDetectorConfig {
+            enabled: true,
+            threshold_ports,
+            window_secs,
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // record — below threshold
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_no_alert_below_threshold() {
+        let mut det = make_detector(5, 60);
+        // Record 4 distinct ports — one below the threshold.
+        for port in 80..84 {
+            let alert = det.record("192.168.1.1", port);
+            assert!(alert.is_none(), "unexpected alert at port {port}");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // record — at threshold
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_alert_fires_at_threshold() {
+        let mut det = make_detector(3, 60);
+        // First 2 ports: no alert.
+        assert!(det.record("10.0.0.1", 80).is_none());
+        assert!(det.record("10.0.0.1", 443).is_none());
+        // 3rd distinct port crosses the threshold.
+        let alert = det.record("10.0.0.1", 8080);
+        assert!(alert.is_some(), "expected alert at threshold");
+        let alert = alert.unwrap();
+        assert_eq!(alert.detector, "port_scan");
+        assert_eq!(alert.severity, AlertSeverity::High);
+        assert!(alert.description.contains("10.0.0.1"));
+    }
+
+    // -----------------------------------------------------------------------
+    // record — counter resets after alert
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_counter_resets_after_alert() {
+        let mut det = make_detector(3, 60);
+        // Trigger an alert.
+        det.record("10.0.0.2", 1);
+        det.record("10.0.0.2", 2);
+        let _ = det.record("10.0.0.2", 3); // alert fires, counter resets
+
+        // After reset, 2 more ports should NOT trigger another alert.
+        assert!(det.record("10.0.0.2", 4).is_none());
+        assert!(det.record("10.0.0.2", 5).is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // record — different source IPs are independent
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_different_sources_are_independent() {
+        let mut det = make_detector(3, 60);
+        // Each IP contacts 2 ports — below threshold individually.
+        det.record("10.0.0.1", 80);
+        det.record("10.0.0.1", 443);
+        det.record("10.0.0.2", 80);
+        det.record("10.0.0.2", 443);
+
+        // Neither source should have triggered an alert yet.
+        // A 3rd port on one source should trigger only for that source.
+        let alert = det.record("10.0.0.1", 8080);
+        assert!(alert.is_some());
+        let alert = alert.unwrap();
+        assert!(alert.description.contains("10.0.0.1"));
+    }
+
+    // -----------------------------------------------------------------------
+    // record — duplicate ports don't inflate count
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_duplicate_ports_not_counted_twice() {
+        let mut det = make_detector(3, 60);
+        // Record same port multiple times.
+        for _ in 0..10 {
+            assert!(det.record("10.0.0.3", 80).is_none());
+        }
+        // Only 1 distinct port — should not trigger.
+        assert!(det.record("10.0.0.3", 443).is_none()); // 2 distinct
+        // Still below threshold of 3.
+        let alert = det.record("10.0.0.3", 8080); // 3rd distinct → alert
+        assert!(alert.is_some());
+    }
+}

@@ -140,3 +140,99 @@ fn extract_sni_from_client_hello(handshake: &[u8]) -> Option<String> {
 
     None
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // parse_tls_client_hello — minimal record parsing
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_parse_tls_too_short_returns_none() {
+        assert!(parse_tls_client_hello(&[]).is_none());
+        assert!(parse_tls_client_hello(&[0u8; 4]).is_none());
+    }
+
+    #[test]
+    fn test_parse_tls_non_handshake_record() {
+        // content_type = 0x15 (Alert), not a handshake.
+        let data = vec![0x15, 0x03, 0x03, 0x00, 0x02];
+        let info = parse_tls_client_hello(&data).expect("parse");
+        assert_eq!(info.content_type, 0x15);
+        assert!(info.handshake_type.is_none());
+        assert!(info.sni.is_none());
+    }
+
+    #[test]
+    fn test_parse_tls_application_data_record() {
+        // content_type = 0x17 (Application Data)
+        let data = vec![0x17, 0x03, 0x03, 0x00, 0x10];
+        let info = parse_tls_client_hello(&data).expect("parse");
+        assert_eq!(info.content_type, 0x17);
+        assert_eq!(info.version_major, 0x03);
+        assert_eq!(info.version_minor, 0x03);
+        assert!(info.handshake_type.is_none());
+        assert!(info.sni.is_none());
+    }
+
+    #[test]
+    fn test_parse_tls_handshake_non_client_hello() {
+        // content_type = 0x16 (Handshake), handshake_type = 0x02 (ServerHello)
+        let mut data = vec![0u8; 6];
+        data[0] = 0x16; // Handshake
+        data[1] = 0x03; // TLS 1.2
+        data[2] = 0x03;
+        data[4] = 0x00; // record length (not validated deeply)
+        data[5] = 0x02; // ServerHello
+        let info = parse_tls_client_hello(&data).expect("parse");
+        assert_eq!(info.content_type, 0x16);
+        assert_eq!(info.handshake_type, Some(0x02));
+        assert!(info.sni.is_none());
+    }
+
+    #[test]
+    fn test_parse_tls_version_fields() {
+        // TLS 1.0 record (major=3, minor=1)
+        let data = vec![0x15, 0x03, 0x01, 0x00, 0x02];
+        let info = parse_tls_client_hello(&data).expect("parse");
+        assert_eq!(info.version_major, 0x03);
+        assert_eq!(info.version_minor, 0x01);
+    }
+
+    #[test]
+    fn test_parse_tls_client_hello_without_sni_extension() {
+        // ClientHello record that is valid structurally but has no extensions
+        // (session_id=0, cipher_suites=2 bytes, comp=1 byte, no extensions).
+        // This is truncated/incomplete for SNI extraction — sni should be None.
+        let mut data = Vec::new();
+        data.push(0x16); // Handshake
+        data.push(0x03);
+        data.push(0x03); // TLS 1.2
+        data.push(0x00); // record_length hi
+        data.push(0x26); // record_length lo = 38
+
+        // Handshake header: type(1) + length(3) = 4 bytes
+        data.push(0x01); // ClientHello
+        data.push(0x00);
+        data.push(0x00);
+        data.push(0x22); // handshake length = 34
+
+        // client_version(2) + random(32) = 34 bytes
+        data.push(0x03);
+        data.push(0x03);
+        data.extend(vec![0u8; 32]); // random
+
+        // No session_id, cipher suites, etc. (truncated — SNI lookup fails gracefully)
+
+        let info = parse_tls_client_hello(&data).expect("parse");
+        assert_eq!(info.content_type, 0x16);
+        assert_eq!(info.handshake_type, Some(0x01));
+        assert!(info.sni.is_none()); // no extensions → no SNI
+    }
+}
