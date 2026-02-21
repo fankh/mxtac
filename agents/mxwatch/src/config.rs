@@ -367,6 +367,10 @@ pub struct DetectorsConfig {
     pub proto_anomaly: ProtoAnomalyDetectorConfig,
     #[serde(default)]
     pub c2_beacon: C2BeaconDetectorConfig,
+    #[serde(default)]
+    pub dga: DgaDetectorConfig,
+    #[serde(default)]
+    pub data_exfil: DataExfilDetectorConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -479,6 +483,96 @@ fn default_beacon_min_packets() -> u32 {
 }
 fn default_beacon_max_flow_age() -> u64 {
     3600
+}
+
+// -- DGA detector ------------------------------------------------------------
+
+/// Configuration for the Domain Generation Algorithm (DGA) detector.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DgaDetectorConfig {
+    /// Enable or disable DGA detection.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// DGA probability score threshold for a Medium-severity alert (0.0–1.0).
+    #[serde(default = "default_dga_medium_threshold")]
+    pub medium_threshold: f64,
+    /// DGA probability score threshold for a High-severity alert (0.0–1.0).
+    #[serde(default = "default_dga_high_threshold")]
+    pub high_threshold: f64,
+    /// Minimum second-level domain length to analyse; shorter SLDs are skipped.
+    #[serde(default = "default_dga_min_sld_length")]
+    pub min_sld_length: usize,
+}
+
+impl Default for DgaDetectorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            medium_threshold: 0.5,
+            high_threshold: 0.7,
+            min_sld_length: 6,
+        }
+    }
+}
+
+fn default_dga_medium_threshold() -> f64 {
+    0.5
+}
+fn default_dga_high_threshold() -> f64 {
+    0.7
+}
+fn default_dga_min_sld_length() -> usize {
+    6
+}
+
+// -- Data exfiltration detector ----------------------------------------------
+
+/// Configuration for the large outbound transfer (data exfiltration) detector.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DataExfilDetectorConfig {
+    /// Enable or disable data exfiltration detection.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Byte count threshold per flow per window that triggers an alert.
+    ///
+    /// Default: 100 000 000 (100 MiB).  Flows that transfer more than this
+    /// many bytes within `window_secs` receive a Medium-severity alert;
+    /// flows reaching 3× this value receive High; 10× receives Critical.
+    #[serde(default = "default_exfil_threshold_bytes")]
+    pub threshold_bytes: u64,
+    /// Rolling window duration in seconds over which bytes are accumulated.
+    ///
+    /// Default: 300 s (5 minutes).  The window resets after expiry, allowing
+    /// a subsequent burst to trigger a fresh alert.
+    #[serde(default = "default_exfil_window_secs")]
+    pub window_secs: u64,
+    /// Remove flow state after this many seconds of inactivity.
+    ///
+    /// Default: 600 s (10 minutes).  Call [`DataExfilDetector::cleanup`]
+    /// periodically to enforce this limit.
+    #[serde(default = "default_exfil_max_flow_age_secs")]
+    pub max_flow_age_secs: u64,
+}
+
+impl Default for DataExfilDetectorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            threshold_bytes: default_exfil_threshold_bytes(),
+            window_secs: default_exfil_window_secs(),
+            max_flow_age_secs: default_exfil_max_flow_age_secs(),
+        }
+    }
+}
+
+fn default_exfil_threshold_bytes() -> u64 {
+    100_000_000 // 100 MB
+}
+fn default_exfil_window_secs() -> u64 {
+    300 // 5 minutes
+}
+fn default_exfil_max_flow_age_secs() -> u64 {
+    600 // 10 minutes
 }
 
 // -- Transport ---------------------------------------------------------------

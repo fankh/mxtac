@@ -4,6 +4,8 @@
 //! patterns are identified.
 
 pub mod c2_beacon;
+pub mod data_exfil;
+pub mod dga;
 pub mod dns_tunnel;
 pub mod port_scan;
 pub mod proto_anomaly;

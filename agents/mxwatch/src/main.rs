@@ -31,6 +31,8 @@ use crate::capture::PcapCapture;
 #[cfg(target_os = "linux")]
 use crate::capture::AfPacketCapture;
 use crate::detectors::c2_beacon::C2BeaconDetector;
+use crate::detectors::data_exfil::DataExfilDetector;
+use crate::detectors::dga::DgaDetector;
 use crate::detectors::dns_tunnel::DnsTunnelDetector;
 use crate::detectors::port_scan::PortScanDetector;
 use crate::detectors::proto_anomaly::ProtoAnomalyDetector;
@@ -225,6 +227,9 @@ async fn main() -> anyhow::Result<()> {
     let mut scan_detector = PortScanDetector::new(&cfg.detectors.port_scan);
     let proto_detector = ProtoAnomalyDetector::new(&cfg.detectors.proto_anomaly);
     let mut c2_detector = C2BeaconDetector::new(&cfg.detectors.c2_beacon);
+    // DGA detector is stateless (no per-flow tracking required).
+    let dga_detector = DgaDetector::new(&cfg.detectors.dga);
+    let mut exfil_detector = DataExfilDetector::new(&cfg.detectors.data_exfil);
 
     // --- Main packet processing loop -------------------------------------------
     info!("Entering packet processing loop");
@@ -373,6 +378,25 @@ async fn main() -> anyhow::Result<()> {
                     if tcp_info.payload_len > 0 {
                         let payload = tcp::parse_tcp_payload(tcp_data, &tcp_info);
 
+                        // Data exfiltration detection — large outbound transfers (T1048).
+                        if let Some(alert) = exfil_detector.record_bytes(
+                            &src_ip.to_string(),
+                            &dst_ip.to_string(),
+                            tcp_info.dst_port,
+                            tcp_info.payload_len as u64,
+                        ) {
+                            let event = OcsfNetworkEvent::from_alert(
+                                device_clone.clone(),
+                                src_ip,
+                                tcp_info.src_port,
+                                dst_ip,
+                                tcp_info.dst_port,
+                                "TCP",
+                                &alert,
+                            );
+                            let _ = evt_tx_clone.send(event).await;
+                        }
+
                         if let Some(http_info) = http_parser::parse_http(payload) {
                             let suspicious = match http_info.direction {
                                 http_parser::HttpDirection::Request => {
@@ -494,7 +518,22 @@ async fn main() -> anyhow::Result<()> {
                     let udp_payload = udp::extract_payload(udp_data);
                     if udp::is_dns_port(&udp_info) {
                         if let Some(dns_info) = dns::parse_dns(udp_payload) {
+                            // DNS tunneling detection.
                             if let Some(alert) = dns_detector.evaluate(&dns_info) {
+                                let event = OcsfNetworkEvent::from_alert(
+                                    device_clone.clone(),
+                                    src_ip,
+                                    udp_info.src_port,
+                                    dst_ip,
+                                    udp_info.dst_port,
+                                    "DNS",
+                                    &alert,
+                                );
+                                let _ = evt_tx_clone.send(event).await;
+                            }
+
+                            // DGA domain detection (T1568.002).
+                            if let Some(alert) = dga_detector.evaluate(&dns_info) {
                                 let event = OcsfNetworkEvent::from_alert(
                                     device_clone.clone(),
                                     src_ip,
@@ -528,6 +567,25 @@ async fn main() -> anyhow::Result<()> {
                         &src_ip.to_string(),
                         &dst_ip.to_string(),
                         udp_info.dst_port,
+                    ) {
+                        let event = OcsfNetworkEvent::from_alert(
+                            device_clone.clone(),
+                            src_ip,
+                            udp_info.src_port,
+                            dst_ip,
+                            udp_info.dst_port,
+                            "UDP",
+                            &alert,
+                        );
+                        let _ = evt_tx_clone.send(event).await;
+                    }
+
+                    // Data exfiltration detection — large outbound transfers (T1048).
+                    if let Some(alert) = exfil_detector.record_bytes(
+                        &src_ip.to_string(),
+                        &dst_ip.to_string(),
+                        udp_info.dst_port,
+                        udp_info.payload_len as u64,
                     ) {
                         let event = OcsfNetworkEvent::from_alert(
                             device_clone.clone(),
