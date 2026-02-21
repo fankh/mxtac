@@ -8,6 +8,9 @@ pub mod udp;
 pub mod dns;
 pub mod http;
 pub mod tls;
+pub mod smb;
+pub mod ssh;
+pub mod rdp;
 
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
@@ -47,6 +50,9 @@ pub enum FlowDetail {
     Dns(dns::DnsInfo),
     Http(http::HttpInfo),
     Tls(tls::TlsInfo),
+    Smb(smb::SmbInfo),
+    Ssh(ssh::SshInfo),
+    Rdp(rdp::RdpInfo),
     /// No higher-layer parsing was performed.
     None,
 }

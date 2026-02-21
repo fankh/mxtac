@@ -235,6 +235,12 @@ pub struct ParsersConfig {
     pub http: HttpParserConfig,
     #[serde(default)]
     pub tls: TlsParserConfig,
+    #[serde(default)]
+    pub smb: SmbParserConfig,
+    #[serde(default)]
+    pub ssh: SshParserConfig,
+    #[serde(default)]
+    pub rdp: RdpParserConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -301,6 +307,49 @@ pub struct TlsParserConfig {
     pub enabled: bool,
 }
 impl Default for TlsParserConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SmbParserConfig {
+    /// Enable or disable SMB2/CIFS parsing on port 445.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+impl Default for SmbParserConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SshParserConfig {
+    /// Enable or disable SSH banner and binary-packet parsing on port 22.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Software version substrings that trigger a suspicion alert
+    /// (case-insensitive substring match, e.g., `"paramiko"`, `"libssh"`).
+    #[serde(default)]
+    pub software_blocklist: Vec<String>,
+}
+impl Default for SshParserConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            software_blocklist: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RdpParserConfig {
+    /// Enable or disable RDP connection-request parsing on port 3389.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+impl Default for RdpParserConfig {
     fn default() -> Self {
         Self { enabled: true }
     }

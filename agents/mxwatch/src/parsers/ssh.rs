@@ -418,8 +418,7 @@ mod tests {
     #[test]
     fn test_parse_ssh_banner_lf_only_terminator() {
         // Some old servers send LF without CR.
-        let mut data = b"SSH-2.0-Dropbear_2022.83\n".to_vec();
-        let _ = data.len(); // silence unused warning
+        let data = b"SSH-2.0-Dropbear_2022.83\n".to_vec();
         let info = parse_ssh(&data).unwrap();
         let banner = info.banner.unwrap();
         assert_eq!(banner.software_version, "Dropbear_2022.83");

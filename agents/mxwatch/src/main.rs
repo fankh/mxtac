@@ -37,6 +37,9 @@ use crate::detectors::proto_anomaly::ProtoAnomalyDetector;
 use crate::events::ocsf::{OcsfDevice, OcsfNetworkEvent};
 use crate::parsers::dns;
 use crate::parsers::http as http_parser;
+use crate::parsers::rdp as rdp_parser;
+use crate::parsers::smb as smb_parser;
+use crate::parsers::ssh as ssh_parser;
 use crate::parsers::tcp;
 use crate::parsers::tls;
 use crate::parsers::udp;
@@ -229,6 +232,10 @@ async fn main() -> anyhow::Result<()> {
     let evt_tx_clone = evt_tx.clone();
     let device_clone = device.clone();
     let http_patterns = cfg.parsers.http.suspicious_patterns.clone();
+    let smb_enabled = cfg.parsers.smb.enabled;
+    let ssh_enabled = cfg.parsers.ssh.enabled;
+    let ssh_sw_blocklist = cfg.parsers.ssh.software_blocklist.clone();
+    let rdp_enabled = cfg.parsers.rdp.enabled;
 
     let processing_handle = tokio::spawn(async move {
         let mut packet_count: u64 = 0;
@@ -403,6 +410,60 @@ async fn main() -> anyhow::Result<()> {
                                     1, // Informational
                                 );
                                 let _ = evt_tx_clone.send(event).await;
+                            }
+                        }
+
+                        // SMB2/CIFS parsing on port 445.
+                        if smb_enabled && smb_parser::is_smb_port(tcp_info.dst_port) {
+                            if let Some(smb_info) = smb_parser::parse_smb(payload) {
+                                if smb_parser::is_suspicious_smb(&smb_info) {
+                                    let event = OcsfNetworkEvent::traffic(
+                                        device_clone.clone(),
+                                        src_ip,
+                                        tcp_info.src_port,
+                                        dst_ip,
+                                        tcp_info.dst_port,
+                                        "SMB",
+                                        3, // Medium severity
+                                    );
+                                    let _ = evt_tx_clone.send(event).await;
+                                }
+                            }
+                        }
+
+                        // SSH banner and binary-packet parsing on port 22.
+                        if ssh_enabled && ssh_parser::is_ssh_port(tcp_info.dst_port) {
+                            if let Some(ssh_info) = ssh_parser::parse_ssh(payload) {
+                                if ssh_parser::is_suspicious_ssh(&ssh_info, &ssh_sw_blocklist) {
+                                    let event = OcsfNetworkEvent::traffic(
+                                        device_clone.clone(),
+                                        src_ip,
+                                        tcp_info.src_port,
+                                        dst_ip,
+                                        tcp_info.dst_port,
+                                        "SSH",
+                                        3, // Medium severity
+                                    );
+                                    let _ = evt_tx_clone.send(event).await;
+                                }
+                            }
+                        }
+
+                        // RDP connection-request parsing on port 3389.
+                        if rdp_enabled && rdp_parser::is_rdp_port(tcp_info.dst_port) {
+                            if let Some(rdp_info) = rdp_parser::parse_rdp(payload) {
+                                if rdp_parser::is_suspicious_rdp(&rdp_info) {
+                                    let event = OcsfNetworkEvent::traffic(
+                                        device_clone.clone(),
+                                        src_ip,
+                                        tcp_info.src_port,
+                                        dst_ip,
+                                        tcp_info.dst_port,
+                                        "RDP",
+                                        3, // Medium severity
+                                    );
+                                    let _ = evt_tx_clone.send(event).await;
+                                }
                             }
                         }
 
