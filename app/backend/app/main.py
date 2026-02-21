@@ -212,6 +212,7 @@ async def on_startup() -> None:
     app.state.alert_mgr = None
     app.state.alert_file_writer = None
     app.state.alert_webhook_sender = None
+    app.state.alert_email_sender = None
 
     # 0. Auto-migrate when running in SQLite single-binary mode (feature 20.8)
     if settings.sqlite_mode or settings.database_url.startswith("sqlite"):
@@ -354,6 +355,33 @@ async def on_startup() -> None:
         except Exception:
             logger.exception("Alert syslog output start failed")
 
+    # 8.8. Wire alert email output — send high-severity alerts via SMTP
+    if settings.alert_email_output_enabled and settings.alert_email_to:
+        try:
+            from .services.alert_email_output import alert_email_output
+            aem = await alert_email_output(
+                queue,
+                smtp_host=settings.alert_email_smtp_host,
+                smtp_port=settings.alert_email_smtp_port,
+                username=settings.alert_email_smtp_username,
+                password=settings.alert_email_smtp_password,
+                use_tls=settings.alert_email_smtp_use_tls,
+                use_starttls=settings.alert_email_smtp_use_starttls,
+                from_addr=settings.alert_email_from,
+                to_addrs=settings.alert_email_to,
+                min_level=settings.alert_email_min_level,
+            )
+            app.state.alert_email_sender = aem
+            logger.info(
+                "Alert email output started → smtp://%s:%d to=%s min_level=%s",
+                settings.alert_email_smtp_host,
+                settings.alert_email_smtp_port,
+                settings.alert_email_to,
+                settings.alert_email_min_level,
+            )
+        except Exception:
+            logger.exception("Alert email output start failed")
+
     # 9. Start connectors from DB — publish raw events into the pipeline
     try:
         from .connectors.registry import start_connectors_from_db
@@ -431,6 +459,14 @@ async def on_shutdown() -> None:
             await ash.close()
     except Exception:
         logger.exception("AlertSyslogHandler close failed")
+
+    # Close alert email sender (no-op, present for interface symmetry)
+    try:
+        aem = getattr(app.state, "alert_email_sender", None)
+        if aem is not None:
+            await aem.close()
+    except Exception:
+        logger.exception("AlertEmailSender close failed")
 
     # Close OpenSearch client
     try:

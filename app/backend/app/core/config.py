@@ -98,6 +98,22 @@ class Settings(BaseSettings):
     alert_syslog_facility: str = "local0"  # syslog facility (local0–local7 recommended)
     alert_syslog_tag: str = "mxtac-alert"  # syslog application tag (ident)
 
+    # Alert email output — send enriched alerts via SMTP (high-severity only)
+    alert_email_output_enabled: bool = False
+    alert_email_smtp_host: str = "localhost"
+    alert_email_smtp_port: int = 587
+    alert_email_smtp_username: str = ""
+    alert_email_smtp_password: str = Field(
+        default="",
+        repr=False,
+        json_schema_extra={"x-sensitive": True, "format": "password"},
+    )
+    alert_email_smtp_use_tls: bool = False       # implicit TLS (SMTP_SSL, port 465)
+    alert_email_smtp_use_starttls: bool = True   # STARTTLS upgrade (port 587)
+    alert_email_from: str = "mxtac-alerts@localhost"
+    alert_email_to: list[str] = []               # recipient list
+    alert_email_min_level: str = "high"          # minimum severity to email
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 
