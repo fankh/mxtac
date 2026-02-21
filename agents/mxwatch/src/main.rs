@@ -21,6 +21,7 @@ use clap::Parser;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::Packet;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
@@ -268,22 +269,38 @@ async fn main() -> anyhow::Result<()> {
                 None => continue,
             };
 
-            // Only handle IPv4 for now.
-            if eth.get_ethertype() != EtherTypes::Ipv4 {
-                continue;
-            }
-
-            let ipv4 = match Ipv4Packet::new(eth.payload()) {
-                Some(ip) => ip,
-                None => continue,
+            // Parse IP layer — support both IPv4 and IPv6.
+            let (src_ip, dst_ip, next_proto, transport_data) = match eth.get_ethertype() {
+                EtherTypes::Ipv4 => {
+                    let ipv4 = match Ipv4Packet::new(eth.payload()) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    (
+                        IpAddr::V4(ipv4.get_source()),
+                        IpAddr::V4(ipv4.get_destination()),
+                        ipv4.get_next_level_protocol(),
+                        ipv4.payload().to_vec(),
+                    )
+                }
+                EtherTypes::Ipv6 => {
+                    let ipv6 = match Ipv6Packet::new(eth.payload()) {
+                        Some(p) => p,
+                        None => continue,
+                    };
+                    (
+                        IpAddr::V6(ipv6.get_source()),
+                        IpAddr::V6(ipv6.get_destination()),
+                        ipv6.get_next_header(),
+                        ipv6.payload().to_vec(),
+                    )
+                }
+                _ => continue,
             };
 
-            let src_ip = IpAddr::V4(ipv4.get_source());
-            let dst_ip = IpAddr::V4(ipv4.get_destination());
-
-            match ipv4.get_next_level_protocol() {
+            match next_proto {
                 IpNextHeaderProtocols::Tcp => {
-                    let tcp_data = ipv4.payload();
+                    let tcp_data = transport_data.as_slice();
                     let tcp_info = match tcp::parse_tcp(tcp_data) {
                         Some(t) => t,
                         None => continue,
@@ -406,7 +423,7 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 IpNextHeaderProtocols::Udp => {
-                    let udp_data = ipv4.payload();
+                    let udp_data = transport_data.as_slice();
                     let udp_info = match udp::parse_udp(udp_data) {
                         Some(u) => u,
                         None => continue,
