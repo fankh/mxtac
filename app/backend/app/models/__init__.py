@@ -4,6 +4,7 @@ from .asset import Asset
 from .audit_log import AuditLog
 from .base import Base
 from .connector import Connector
+from .coverage_snapshot import CoverageSnapshot
 from .detection import Detection
 from .event import Event
 from .incident import Incident
@@ -13,4 +14,4 @@ from .rule import Rule
 from .saved_query import SavedQuery
 from .user import User
 
-__all__ = ["Agent", "APIKey", "Asset", "AuditLog", "Base", "Connector", "Detection", "Event", "Incident", "IOC", "NotificationChannel", "Rule", "SavedQuery", "User"]
+__all__ = ["Agent", "APIKey", "Asset", "AuditLog", "Base", "Connector", "CoverageSnapshot", "Detection", "Event", "Incident", "IOC", "NotificationChannel", "Rule", "SavedQuery", "User"]

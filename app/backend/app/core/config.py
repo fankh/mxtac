@@ -55,6 +55,15 @@ class Settings(BaseSettings):
     # DATABASE_URL has not been explicitly set to a sqlite:// URL).
     sqlite_path: str = "./mxtac.db"
 
+    # DuckDB embedded event store — no OpenSearch required (feature 20.9)
+    # When True, normalised events are mirrored to a local DuckDB file and
+    # analytics queries (search, aggregate) prefer DuckDB over raw PostgreSQL
+    # scans when OpenSearch is unavailable.  Both sqlite_mode and duckdb_enabled
+    # may be active simultaneously since DuckDB uses a separate file.
+    duckdb_enabled: bool = False
+    # Path for the DuckDB analytics database file.
+    duckdb_path: str = "./mxtac-events.duckdb"
+
     # Valkey (Redis-compatible)
     valkey_url: str = Field(
         default="redis://localhost:6379/0",

@@ -1,15 +1,23 @@
 """ATT&CK Coverage endpoints."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....repositories.coverage_snapshot_repo import CoverageSnapshotRepo
 from ....repositories.rule_repo import RuleRepo
-from ....schemas.overview import CoverageSummary, CoverageGaps, CoverageByDataSource
+from ....schemas.overview import (
+    CoverageByDataSource,
+    CoverageGaps,
+    CoverageSummary,
+    CoverageTrend,
+    CoverageTrendPoint,
+)
 from ....services.mock_data import COVERAGE_SUMMARY
 
 router = APIRouter(prefix="/coverage", tags=["coverage"])
@@ -143,3 +151,47 @@ async def get_coverage_by_datasource(
     """
     data = await RuleRepo.get_coverage_by_datasource(db)
     return CoverageByDataSource(**data)
+
+
+@router.get("/trend", response_model=CoverageTrend)
+async def get_coverage_trend(
+    days: Annotated[int, Query(ge=1, le=365, description="Number of calendar days to include")] = 30,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("detections:read")),
+):
+    """ATT&CK coverage trend — daily snapshots over the last N days.
+
+    Automatically captures today's coverage as a snapshot (upsert) before
+    returning the historical trend, so the chart always includes the latest
+    state without requiring a separate scheduled job.
+
+    Returns points ordered ascending by date (oldest first) so the frontend
+    can render a left-to-right trend line directly.
+
+    - ``days``  query parameter (1–365, default 30)
+    - Points with no stored snapshot are omitted (sparse series).
+    """
+    # Auto-capture today's snapshot from the live rule state
+    summary = await RuleRepo.get_coverage_summary(db)
+    if summary is not None:
+        await CoverageSnapshotRepo.upsert(
+            db,
+            snapshot_date=date.today(),
+            coverage_pct=summary["coverage_pct"],
+            covered_count=summary["covered_count"],
+            total_count=summary["total_count"],
+        )
+
+    snapshots = await CoverageSnapshotRepo.get_trend(db, days=days)
+
+    points = [
+        CoverageTrendPoint(
+            date=s.snapshot_date.isoformat(),
+            coverage_pct=s.coverage_pct,
+            covered_count=s.covered_count,
+            total_count=s.total_count,
+        )
+        for s in snapshots
+    ]
+
+    return CoverageTrend(points=points, days=days)

@@ -112,3 +112,29 @@ class CoverageByDataSource(BaseModel):
     total_covered_count: int
     total_count: int
     total_coverage_pct: float
+
+
+class CoverageTrendPoint(BaseModel):
+    """A single daily data point in the ATT&CK coverage trend.
+
+    date           — ISO-8601 calendar date (YYYY-MM-DD)
+    coverage_pct   — overall coverage percentage for that day (0-100)
+    covered_count  — distinct technique IDs covered by enabled rules
+    total_count    — fixed ATT&CK v14 scope (105)
+    """
+
+    date: str
+    coverage_pct: float
+    covered_count: int
+    total_count: int
+
+
+class CoverageTrend(BaseModel):
+    """Time-series of daily ATT&CK coverage snapshots.
+
+    points  — list of daily snapshots ordered ascending by date (oldest first)
+    days    — number of calendar days requested (window size)
+    """
+
+    points: list[CoverageTrendPoint]
+    days: int

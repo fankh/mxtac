@@ -1,13 +1,15 @@
 """Event search and retrieval endpoints.
 
-Search path (POST /search):
+Search path (POST /search, POST /aggregate):
   1. Use OpenSearch when a live connection is available — enables full-text
      query_string DSL and nested-field filtering.
-  2. Fall back to PostgreSQL (EventRepo) when OpenSearch is unavailable so
-     the platform works without a running OpenSearch cluster.
+  2. Fall back to DuckDB (embedded analytics) when OpenSearch is unavailable
+     and ``duckdb_enabled=True`` — no external service required.
+  3. Fall back to PostgreSQL (EventRepo) when both OpenSearch and DuckDB are
+     unavailable so the platform always works regardless of configuration.
 
-All other endpoints (GET /{id}, POST /aggregate, GET /entity/…) always use
-PostgreSQL as the authoritative store.
+All other endpoints (GET /{id}, GET /entity/…) always use PostgreSQL as the
+authoritative store.
 
 Ingest path (POST /ingest):
   - Accepts batched OCSF events from agents authenticated with X-API-Key.
@@ -33,6 +35,7 @@ from ....models.api_key import APIKey
 from ....models.event import Event
 from ....pipeline.queue import MessageQueue, Topic, get_queue
 from ....repositories.event_repo import EventRepo
+from ....services.duckdb_store import DuckDBEventStore, get_duckdb_dep
 from ....services.opensearch_client import (
     OpenSearchService,
     filter_to_dsl,
@@ -152,13 +155,15 @@ async def search_events(
     body: SearchRequest,
     db: AsyncSession = Depends(get_db),
     os_client: OpenSearchService = Depends(get_opensearch_dep),
+    duckdb_store: DuckDBEventStore = Depends(get_duckdb_dep),
     _: dict = Depends(require_permission("events:search")),
 ):
     """Full-text + filtered event search with time range.
 
-    Delegates to OpenSearch when a live connection is available, enabling
-    query_string DSL and nested OCSF field filtering.  Falls back to
-    PostgreSQL (EventRepo) when OpenSearch is unavailable.
+    Backend priority:
+      1. OpenSearch — when a live connection is available (full-text DSL).
+      2. DuckDB     — embedded analytics when OpenSearch is unavailable.
+      3. PostgreSQL — always available as the authoritative fallback.
     """
     if os_client.is_available:
         # Build OpenSearch DSL filter clauses from structured filters
@@ -187,7 +192,25 @@ async def search_events(
             "backend": "opensearch",
         }
 
-    # Fallback: PostgreSQL
+    # Fallback 1: DuckDB embedded analytics
+    if duckdb_store.is_available:
+        result = await duckdb_store.search_events(
+            query=body.query,
+            filters=body.filters,
+            time_from=body.time_from,
+            time_to=body.time_to,
+            size=body.size,
+            from_=body.from_,
+        )
+        return {
+            "total": result["total"],
+            "items": result["items"],
+            "from_": body.from_,
+            "size":  body.size,
+            "backend": "duckdb",
+        }
+
+    # Fallback 2: PostgreSQL
     items_pg, total = await EventRepo.search(
         db,
         query=body.query,
@@ -211,12 +234,15 @@ async def aggregate_events(
     body: AggregationRequest,
     db: AsyncSession = Depends(get_db),
     os_client: OpenSearchService = Depends(get_opensearch_dep),
+    duckdb_store: DuckDBEventStore = Depends(get_duckdb_dep),
     _: dict = Depends(require_permission("events:search")),
 ):
     """Aggregate events by field (terms) or over time (date_histogram).
 
-    Delegates to OpenSearch when a live connection is available, falling back
-    to PostgreSQL (EventRepo) otherwise.
+    Backend priority:
+      1. OpenSearch — when a live connection is available.
+      2. DuckDB     — embedded analytics when OpenSearch is unavailable.
+      3. PostgreSQL — always available as the authoritative fallback.
 
     - ``agg_type=terms`` — count events grouped by a field value; requires *field*.
     - ``agg_type=date_histogram`` — count events bucketed by time; uses *interval*.
@@ -239,7 +265,26 @@ async def aggregate_events(
             }
         return {"field": body.field, "buckets": buckets, "backend": "opensearch"}
 
-    # Fallback: PostgreSQL
+    # Fallback 1: DuckDB embedded analytics
+    if duckdb_store.is_available:
+        buckets = await duckdb_store.aggregate(
+            body.agg_type,
+            field=body.field,
+            interval=body.interval,
+            time_from=body.time_from,
+            time_to=body.time_to,
+            size=body.size,
+        )
+        if body.agg_type == "date_histogram":
+            return {
+                "agg_type": "date_histogram",
+                "interval": body.interval,
+                "buckets":  buckets,
+                "backend":  "duckdb",
+            }
+        return {"field": body.field, "buckets": buckets, "backend": "duckdb"}
+
+    # Fallback 2: PostgreSQL
     if body.agg_type == "date_histogram":
         buckets = await EventRepo.histogram_by_time(
             db,

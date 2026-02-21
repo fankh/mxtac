@@ -23,6 +23,7 @@ from .core.exceptions import register_exception_handlers
 from .core.logging import configure_logging, get_logger
 from .db.seed import seed_database
 from .pipeline.queue import get_queue, Topic
+from .services.duckdb_store import get_duckdb
 from .services.opensearch_client import get_opensearch
 
 configure_logging()
@@ -213,6 +214,7 @@ async def on_startup() -> None:
     app.state.alert_file_writer = None
     app.state.alert_webhook_sender = None
     app.state.alert_email_sender = None
+    app.state.duckdb_store = None
 
     # 0. Auto-migrate when running in SQLite single-binary mode (feature 20.8)
     if settings.sqlite_mode or settings.database_url.startswith("sqlite"):
@@ -237,6 +239,19 @@ async def on_startup() -> None:
     await os_client.ensure_ilm_policy()
     await os_client.ensure_indices()
     app.state.os_client = os_client
+
+    # 3.1. Connect DuckDB embedded event store (feature 20.9)
+    if settings.duckdb_enabled:
+        duckdb_store = get_duckdb()
+        await duckdb_store.connect()
+        app.state.duckdb_store = duckdb_store
+        logger.info(
+            "DuckDB event store enabled path=%r available=%s",
+            settings.duckdb_path,
+            duckdb_store.is_available,
+        )
+    else:
+        logger.info("DuckDB event store disabled (set DUCKDB_ENABLED=true to enable)")
 
     # 4. Load Sigma rules
     try:
@@ -266,10 +281,14 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("Normalizer pipeline start failed")
 
-    # 5.1. Wire event persister — dual-write to PostgreSQL + OpenSearch
+    # 5.1. Wire event persister — triple-write to PostgreSQL + DuckDB + OpenSearch
     try:
         from .services.event_persister import event_persister
-        await event_persister(queue, app.state.os_client)
+        await event_persister(
+            queue,
+            app.state.os_client,
+            duckdb_store=getattr(app.state, "duckdb_store", None),
+        )
         logger.info("Event persister started")
     except Exception:
         logger.exception("Event persister start failed")
@@ -475,6 +494,14 @@ async def on_shutdown() -> None:
             await os_client.close()
     except Exception:
         logger.exception("OpenSearch close failed")
+
+    # Close DuckDB event store
+    try:
+        duckdb_store = getattr(app.state, "duckdb_store", None)
+        if duckdb_store is not None:
+            await duckdb_store.close()
+    except Exception:
+        logger.exception("DuckDB close failed")
 
     logger.info("MxTac API shutdown complete")
 

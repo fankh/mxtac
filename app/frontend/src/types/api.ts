@@ -338,6 +338,20 @@ export interface IncidentMetrics {
   to_date: string
 }
 
+// ── Coverage Trend ────────────────────────────────────────────────────────────
+
+export interface CoverageTrendPoint {
+  date: string          // ISO-8601 YYYY-MM-DD
+  coverage_pct: number
+  covered_count: number
+  total_count: number
+}
+
+export interface CoverageTrend {
+  points: CoverageTrendPoint[]
+  days: number
+}
+
 // ── Audit Logs ────────────────────────────────────────────────────────────────
 
 export interface AuditLogEntry {

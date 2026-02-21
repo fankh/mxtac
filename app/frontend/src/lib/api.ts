@@ -7,6 +7,7 @@ import type {
   Asset, AssetCreate, AssetStats, BulkAssetResult,
   SavedQuery, SavedQueryCreate, SavedQueryUpdate,
   Incident, IncidentDetail, IncidentCreate, IncidentUpdate, IncidentNote, IncidentMetrics,
+  CoverageTrend,
 } from '../types/api'
 
 const http = axios.create({
@@ -241,4 +242,11 @@ export const savedQueriesApi = {
 
   delete: (id: string): Promise<void> =>
     http.delete(`/hunt/queries/${id}`).then(r => r.data),
+}
+
+// ── Coverage ──────────────────────────────────────────────────────────────────
+
+export const coverageApi = {
+  trend: (days = 30): Promise<CoverageTrend> =>
+    http.get('/coverage/trend', { params: { days } }).then(r => r.data),
 }
