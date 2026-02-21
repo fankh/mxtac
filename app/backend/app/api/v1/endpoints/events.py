@@ -20,10 +20,13 @@ Ingest path (POST /ingest):
 
 from __future__ import annotations
 
-from datetime import datetime
+import csv
+import io
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -394,6 +397,85 @@ async def ingest_events(
         await queue.publish(Topic.NORMALIZED, event)
 
     return {"accepted": n, "status": "queued"}
+
+
+_EXPORT_MAX_ROWS = 10_000
+_EVENT_CSV_COLS = (
+    "id", "time", "class_name", "severity_id",
+    "src_ip", "dst_ip", "hostname", "username", "source", "summary",
+)
+
+
+@router.post("/export")
+async def export_events(
+    body: SearchRequest,
+    db: AsyncSession = Depends(get_db),
+    os_client: OpenSearchService = Depends(get_opensearch_dep),
+    duckdb_store: DuckDBEventStore = Depends(get_duckdb_dep),
+    _: dict = Depends(require_permission("events:search")),
+):
+    """Export event search results as CSV (max 10,000 rows).
+
+    Accepts the same request body as POST /search.
+    Returns a streaming text/csv file with columns:
+    id, time, class_name, severity_id, src_ip, dst_ip, hostname, username, source, summary.
+    """
+    if os_client.is_available:
+        dsl_filters = [
+            clause
+            for f in body.filters
+            if (clause := filter_to_dsl(f.field, f.operator, f.value)) is not None
+        ]
+        resp = await os_client.search_events(
+            query=body.query,
+            filters=dsl_filters or None,
+            time_from=body.time_from,
+            time_to=body.time_to,
+            size=_EXPORT_MAX_ROWS,
+            from_=0,
+        )
+        items: list[dict] = [_os_hit_to_dict(h) for h in resp.get("hits", {}).get("hits", [])]
+
+    elif duckdb_store.is_available:
+        result = await duckdb_store.search_events(
+            query=body.query,
+            filters=body.filters,
+            time_from=body.time_from,
+            time_to=body.time_to,
+            size=_EXPORT_MAX_ROWS,
+            from_=0,
+        )
+        items = result["items"]
+
+    else:
+        items_pg, _ = await EventRepo.search(
+            db,
+            query=body.query,
+            filters=body.filters,
+            time_from=body.time_from,
+            time_to=body.time_to,
+            size=_EXPORT_MAX_ROWS,
+            from_=0,
+        )
+        items = [_event_to_dict(e) for e in items_pg]
+
+    def _iter_csv():
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(_EVENT_CSV_COLS)
+        yield buf.getvalue()
+        for item in items:
+            buf.seek(0)
+            buf.truncate(0)
+            writer.writerow(tuple(str(item.get(col) or "") for col in _EVENT_CSV_COLS))
+            yield buf.getvalue()
+
+    filename = f"events_{date.today().isoformat()}.csv"
+    return StreamingResponse(
+        _iter_csv(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{event_id}")

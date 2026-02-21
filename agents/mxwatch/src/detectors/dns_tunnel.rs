@@ -160,6 +160,7 @@ mod tests {
                 qtype,
                 qclass: 1,
             }],
+            ..Default::default()
         }
     }
 
@@ -259,10 +260,8 @@ mod tests {
         let mut det = make_detector();
         let dns = DnsInfo {
             transaction_id: 1,
-            is_response: false,
-            opcode: 0,
-            rcode: 0,
             questions: vec![],
+            ..Default::default()
         };
         assert!(det.evaluate(&dns).is_none());
     }

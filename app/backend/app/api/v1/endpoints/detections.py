@@ -1,7 +1,11 @@
-from fastapi import APIRouter, Query, HTTPException, Path, Depends
+import csv
+import io
+from datetime import date
 from typing import Literal
 from math import ceil
 
+from fastapi import APIRouter, Query, HTTPException, Path, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
@@ -78,6 +82,70 @@ async def list_detections(
             total=total,
             total_pages=max(1, ceil(total / page_size)),
         ),
+    )
+
+
+_EXPORT_MAX_ROWS = 10_000
+_DETECTION_CSV_COLS = ("id", "name", "severity", "tactic", "technique_id", "host", "status", "score", "time")
+
+
+@router.get("/export")
+async def export_detections(
+    severity: list[SeverityLevel] | None = Query(None),
+    status: list[DetectionStatus] | None = Query(None),
+    tactic: str | None = Query(None, max_length=100),
+    host: str | None = Query(None, max_length=255),
+    search: str | None = Query(None, max_length=255),
+    sort: SortField = Query("time"),
+    order: Literal["asc", "desc"] = Query("desc"),
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("detections:read")),
+):
+    """Export filtered detections as CSV (max 10,000 rows).
+
+    Accepts the same filter parameters as GET /detections.
+    Returns a streaming text/csv file with columns:
+    id, name, severity, tactic, technique_id, host, status, score, time.
+    """
+    items, _ = await DetectionRepo.list(
+        db,
+        page=1,
+        page_size=_EXPORT_MAX_ROWS,
+        severity=severity,
+        status=status,
+        tactic=tactic,
+        host=host,
+        search=search,
+        sort=sort,
+        order=order,
+    )
+
+    def _iter_csv():
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(_DETECTION_CSV_COLS)
+        yield buf.getvalue()
+        for d in items:
+            buf.seek(0)
+            buf.truncate(0)
+            writer.writerow((
+                d.id,
+                d.name,
+                d.severity,
+                d.tactic,
+                d.technique_id,
+                d.host,
+                d.status,
+                d.score,
+                d.time.isoformat() if hasattr(d.time, "isoformat") else d.time,
+            ))
+            yield buf.getvalue()
+
+    filename = f"detections_{date.today().isoformat()}.csv"
+    return StreamingResponse(
+        _iter_csv(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
