@@ -26,6 +26,7 @@ use tracing_subscriber::EnvFilter;
 use crate::capture::PcapCapture;
 #[cfg(target_os = "linux")]
 use crate::capture::AfPacketCapture;
+use crate::detectors::c2_beacon::C2BeaconDetector;
 use crate::detectors::dns_tunnel::DnsTunnelDetector;
 use crate::detectors::port_scan::PortScanDetector;
 use crate::detectors::proto_anomaly::ProtoAnomalyDetector;
@@ -160,6 +161,7 @@ async fn main() -> anyhow::Result<()> {
     let mut dns_detector = DnsTunnelDetector::new(&cfg.detectors.dns_tunnel);
     let mut scan_detector = PortScanDetector::new(&cfg.detectors.port_scan);
     let proto_detector = ProtoAnomalyDetector::new(&cfg.detectors.proto_anomaly);
+    let mut c2_detector = C2BeaconDetector::new(&cfg.detectors.c2_beacon);
 
     // --- Main packet processing loop -------------------------------------------
     info!("Entering packet processing loop");
@@ -233,6 +235,24 @@ async fn main() -> anyhow::Result<()> {
                             );
                             let _ = evt_tx_clone.send(event).await;
                         }
+                    }
+
+                    // C2 beacon detection on all TCP flows.
+                    if let Some(alert) = c2_detector.record_packet(
+                        &src_ip.to_string(),
+                        &dst_ip.to_string(),
+                        tcp_info.dst_port,
+                    ) {
+                        let event = OcsfNetworkEvent::from_alert(
+                            device_clone.clone(),
+                            src_ip,
+                            tcp_info.src_port,
+                            dst_ip,
+                            tcp_info.dst_port,
+                            "TCP",
+                            &alert,
+                        );
+                        let _ = evt_tx_clone.send(event).await;
                     }
 
                     // Try HTTP / TLS parsing on packets that carry payload data.
@@ -323,6 +343,24 @@ async fn main() -> anyhow::Result<()> {
 
                     // Protocol anomaly detection on UDP payloads.
                     if let Some(alert) = proto_detector.check_payload(udp_payload, udp_info.dst_port) {
+                        let event = OcsfNetworkEvent::from_alert(
+                            device_clone.clone(),
+                            src_ip,
+                            udp_info.src_port,
+                            dst_ip,
+                            udp_info.dst_port,
+                            "UDP",
+                            &alert,
+                        );
+                        let _ = evt_tx_clone.send(event).await;
+                    }
+
+                    // C2 beacon detection on all UDP flows.
+                    if let Some(alert) = c2_detector.record_packet(
+                        &src_ip.to_string(),
+                        &dst_ip.to_string(),
+                        udp_info.dst_port,
+                    ) {
                         let event = OcsfNetworkEvent::from_alert(
                             device_clone.clone(),
                             src_ip,

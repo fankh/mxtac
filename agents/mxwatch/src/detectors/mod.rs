@@ -3,6 +3,7 @@
 //! Detectors analyze parsed flow data and raise alerts when suspicious
 //! patterns are identified.
 
+pub mod c2_beacon;
 pub mod dns_tunnel;
 pub mod port_scan;
 pub mod proto_anomaly;

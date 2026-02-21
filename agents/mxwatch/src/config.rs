@@ -312,6 +312,8 @@ pub struct DetectorsConfig {
     pub port_scan: PortScanDetectorConfig,
     #[serde(default)]
     pub proto_anomaly: ProtoAnomalyDetectorConfig,
+    #[serde(default)]
+    pub c2_beacon: C2BeaconDetectorConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -372,6 +374,58 @@ impl Default for ProtoAnomalyDetectorConfig {
     fn default() -> Self {
         Self { enabled: true }
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct C2BeaconDetectorConfig {
+    /// Enable or disable the detector.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Expected interval between beacon callbacks, in seconds.
+    ///
+    /// Used to set the debounce window that suppresses burst packets within a
+    /// single connection from being counted as separate beacon events.
+    #[serde(default = "default_beacon_interval_secs")]
+    pub beacon_interval_secs: f64,
+    /// Allowed timing jitter as a percentage of the beacon interval.
+    ///
+    /// This value is used both as the debounce threshold
+    /// (`min_gap = interval × (1 − jitter/100)`) and as the coefficient-of-
+    /// variation limit for the periodicity check.  A value of `20.0` means
+    /// ±20 % jitter is tolerated.
+    #[serde(default = "default_beacon_jitter_pct")]
+    pub jitter_pct: f64,
+    /// Minimum number of debounced samples before an alert is considered.
+    #[serde(default = "default_beacon_min_packets")]
+    pub min_packets_for_alert: u32,
+    /// Remove flow state after this many seconds of inactivity.
+    #[serde(default = "default_beacon_max_flow_age")]
+    pub max_flow_age_secs: u64,
+}
+
+impl Default for C2BeaconDetectorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            beacon_interval_secs: 60.0,
+            jitter_pct: 20.0,
+            min_packets_for_alert: 5,
+            max_flow_age_secs: 3600,
+        }
+    }
+}
+
+fn default_beacon_interval_secs() -> f64 {
+    60.0
+}
+fn default_beacon_jitter_pct() -> f64 {
+    20.0
+}
+fn default_beacon_min_packets() -> u32 {
+    5
+}
+fn default_beacon_max_flow_age() -> u64 {
+    3600
 }
 
 // -- Transport ---------------------------------------------------------------
@@ -703,6 +757,66 @@ timeout_ms = 2000
 "#;
         let cfg: Config = toml::from_str(toml).expect("parse");
         assert!(cfg.capture.pcap.read_file.is_none());
+    }
+
+    #[test]
+    fn test_default_c2_beacon_detector() {
+        let d = C2BeaconDetectorConfig::default();
+        assert!(d.enabled);
+        assert!((d.beacon_interval_secs - 60.0).abs() < f64::EPSILON);
+        assert!((d.jitter_pct - 20.0).abs() < f64::EPSILON);
+        assert_eq!(d.min_packets_for_alert, 5);
+        assert_eq!(d.max_flow_age_secs, 3600);
+    }
+
+    #[test]
+    fn test_parse_c2_beacon_section() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[detectors.c2_beacon]
+enabled               = true
+beacon_interval_secs  = 30.0
+jitter_pct            = 15.0
+min_packets_for_alert = 8
+max_flow_age_secs     = 7200
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        let d = &cfg.detectors.c2_beacon;
+        assert!(d.enabled);
+        assert!((d.beacon_interval_secs - 30.0).abs() < f64::EPSILON);
+        assert!((d.jitter_pct - 15.0).abs() < f64::EPSILON);
+        assert_eq!(d.min_packets_for_alert, 8);
+        assert_eq!(d.max_flow_age_secs, 7200);
+    }
+
+    #[test]
+    fn test_c2_beacon_defaults_when_section_omitted() {
+        let toml = r#"
+[agent]
+name = "w"
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        let d = &cfg.detectors.c2_beacon;
+        assert!(d.enabled);
+        assert!((d.beacon_interval_secs - 60.0).abs() < f64::EPSILON);
+        assert!((d.jitter_pct - 20.0).abs() < f64::EPSILON);
+        assert_eq!(d.min_packets_for_alert, 5);
+        assert_eq!(d.max_flow_age_secs, 3600);
+    }
+
+    #[test]
+    fn test_c2_beacon_disabled_via_toml() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[detectors.c2_beacon]
+enabled = false
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert!(!cfg.detectors.c2_beacon.enabled);
     }
 
     #[test]
