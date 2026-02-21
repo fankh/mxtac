@@ -1197,7 +1197,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = "==3.13.3" },
-    { name = "aiosqlite", specifier = ">=0.20.0" },
+    { name = "aiosqlite", specifier = "==0.22.1" },
     { name = "alembic", specifier = "==1.14.0" },
     { name = "asyncpg", specifier = "==0.30.0" },
     { name = "fastapi", specifier = "==0.115.5" },
@@ -1207,7 +1207,7 @@ requires-dist = [
     { name = "opensearch-py", extras = ["async"], specifier = "==3.1.0" },
     { name = "passlib", extras = ["bcrypt"], specifier = "==1.7.4" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = "==2.10.0" },
-    { name = "prometheus-client", specifier = ">=0.21.0" },
+    { name = "prometheus-client", specifier = "==0.24.1" },
     { name = "prometheus-fastapi-instrumentator", specifier = "==7.1.0" },
     { name = "pydantic", extras = ["email"], specifier = "==2.10.3" },
     { name = "pydantic-settings", specifier = "==2.6.1" },
