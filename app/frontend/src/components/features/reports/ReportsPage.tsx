@@ -1,549 +1,738 @@
-import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import {
-  AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts'
-import { overviewApi, coverageApi, incidentsApi } from '../../../lib/api'
-import { chartColors } from '../../../lib/themeVars'
-import { useUIStore } from '../../../stores/uiStore'
+import { useState, useCallback } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { reportsApi } from '../../../lib/api'
 import { TopBar } from '../../layout/TopBar'
-import type { SeverityLevel } from '../../../types/api'
+import type {
+  Report,
+  ReportTemplate,
+  ReportFormat,
+  ReportSchedule,
+} from '../../../types/api'
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-type ReportTab = 'coverage' | 'alerts' | 'incidents'
-type TimeRange = '7d' | '30d' | '90d'
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function fmtDuration(seconds: number | null): string {
-  if (seconds === null) return '—'
-  const m = Math.floor(seconds / 60)
-  const h = Math.floor(m / 60)
-  if (h > 0) return `${h}h ${m % 60}m`
-  return `${m}m`
+const TEMPLATE_LABELS: Record<ReportTemplate, string> = {
+  executive_summary:  'Executive Summary',
+  detection_report:   'Detection Report',
+  incident_report:    'Incident Report',
+  coverage_report:    'Coverage Report',
+  compliance_summary: 'Compliance Summary',
 }
 
-function fmtPct(n: number): string {
-  return `${n.toFixed(1)}%`
+const TEMPLATES: ReportTemplate[] = [
+  'executive_summary',
+  'detection_report',
+  'incident_report',
+  'coverage_report',
+  'compliance_summary',
+]
+
+const CRON_PRESETS: { label: string; value: string }[] = [
+  { label: 'Daily at midnight',  value: '0 0 * * *'   },
+  { label: 'Weekly (Monday)',    value: '0 0 * * 1'   },
+  { label: 'Monthly (1st)',      value: '0 0 1 * *'   },
+  { label: 'Every 6 hours',      value: '0 */6 * * *' },
+  { label: 'Custom…',            value: 'custom'       },
+]
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day:   'numeric',
+    year:  'numeric',
+  })
 }
 
-function formatDate(isoDate: string): string {
-  const d = new Date(isoDate + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+function fmtDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-US', {
+    month:  'short',
+    day:    'numeric',
+    hour:   '2-digit',
+    minute: '2-digit',
+  })
 }
 
-function daysBack(range: TimeRange): number {
-  return range === '7d' ? 7 : range === '30d' ? 30 : 90
+function humanCron(expr: string): string {
+  const preset = CRON_PRESETS.find(p => p.value === expr)
+  if (preset && preset.value !== 'custom') return preset.label
+  const parts = expr.split(' ')
+  if (parts.length !== 5) return expr
+  const [min, hour, day, , weekday] = parts
+  if (weekday !== '*') return `Weekly on day ${weekday}`
+  if (day     !== '*') return `Monthly on day ${day}`
+  if (hour    !== '*') return `Daily at ${hour}:${min === '0' ? '00' : min}`
+  return expr
 }
 
-function fromDate(range: TimeRange): string {
-  return new Date(Date.now() - daysBack(range) * 86_400_000).toISOString().slice(0, 10)
-}
+// ── Status badge ──────────────────────────────────────────────────────────────
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
-
-function SeverityBadge({ severity }: { severity: string }) {
-  const cls =
-    severity === 'critical' ? 'bg-crit-bg text-crit-text' :
-    severity === 'high'     ? 'bg-high-bg text-high-text' :
-    severity === 'medium'   ? 'bg-med-bg text-med-text'   :
-                              'bg-low-bg text-low-text'
+function StatusBadge({ status }: { status: Report['status'] }) {
+  const styles: Record<Report['status'], string> = {
+    generating: 'bg-med-bg text-med-text',
+    ready:      'bg-low-bg text-low-text',
+    failed:     'bg-crit-bg text-crit-text',
+  }
   return (
-    <span className={`text-[10px] px-1.5 py-[2px] rounded-[3px] font-medium ${cls}`}>
-      {severity}
+    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-[2px] rounded-[3px] font-medium ${styles[status]}`}>
+      {status === 'generating' && (
+        <span
+          style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}
+          aria-hidden="true"
+        >
+          ⟳
+        </span>
+      )}
+      {status === 'ready'      && '✓ '}
+      {status === 'failed'     && '✕ '}
+      {status}
     </span>
   )
 }
 
-// ── Stats cards ────────────────────────────────────────────────────────────────
+// ── Generate Report modal ─────────────────────────────────────────────────────
 
-function StatsCards({
-  coveragePct, mttdMinutes, mttrSeconds, openIncidents,
-}: {
-  coveragePct:   number
-  mttdMinutes:   number
-  mttrSeconds:   number | null
-  openIncidents: number
-}) {
-  return (
-    <div className="grid grid-cols-4 gap-3 mb-4">
-      {[
-        { label: 'ATT&CK Coverage',      value: fmtPct(coveragePct),        sub: 'techniques covered'       },
-        { label: 'Mean Time to Detect',  value: `${mttdMinutes}m`,          sub: 'avg detection latency'    },
-        { label: 'Mean Time to Resolve', value: fmtDuration(mttrSeconds),   sub: 'avg incident resolution'  },
-        { label: 'Open Incidents',       value: openIncidents.toString(),    sub: 'requiring attention'      },
-      ].map(({ label, value, sub }) => (
-        <div key={label} className="bg-surface rounded-md shadow-card px-4 py-3">
-          <p className="text-[10px] text-text-muted uppercase font-medium">{label}</p>
-          <p className="text-[22px] font-semibold text-text-primary leading-tight mt-0.5">{value}</p>
-          <p className="text-[10px] text-text-muted mt-0.5">{sub}</p>
-        </div>
-      ))}
-    </div>
-  )
+interface GenerateModalProps {
+  onClose:     () => void
+  onGenerated: (id: string) => void
 }
 
-// ── Coverage report ────────────────────────────────────────────────────────────
+function GenerateModal({ onClose, onGenerated }: GenerateModalProps) {
+  const qc      = useQueryClient()
+  const today   = new Date().toISOString().slice(0, 10)
+  const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
 
-function CoverageReport({ range }: { range: TimeRange }) {
-  const days  = daysBack(range)
-  const theme = useUIStore((s) => s.theme)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const c = useMemo(() => chartColors(), [theme])
+  const [template, setTemplate] = useState<ReportTemplate>('executive_summary')
+  const [fromDate, setFromDate] = useState(monthAgo)
+  const [toDate,   setToDate]   = useState(today)
+  const [format,   setFormat]   = useState<ReportFormat>('json')
+  const [error,    setError]    = useState<string | null>(null)
 
-  const { data: trend, isLoading, isError } = useQuery({
-    queryKey: ['reports-coverage-trend', days],
-    queryFn:  () => coverageApi.trend(days),
+  const mutation = useMutation({
+    mutationFn: () =>
+      reportsApi.generate({
+        template_type: template,
+        from_date:     `${fromDate}T00:00:00Z`,
+        to_date:       `${toDate}T23:59:59Z`,
+        format,
+      }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['reports'] })
+      onGenerated(res.report_id)
+      onClose()
+    },
+    onError: (err: Error) => {
+      setError(err.message || 'Failed to start report generation')
+    },
   })
-
-  const chartData = (trend?.points ?? []).map((p) => ({
-    date:         formatDate(p.date),
-    coverage_pct: p.coverage_pct,
-    covered:      p.covered_count,
-    total:        p.total_count,
-  }))
-
-  const latest = chartData[chartData.length - 1]
-  const first  = chartData[0]
-  const delta  = latest && first ? latest.coverage_pct - first.coverage_pct : null
 
   return (
-    <div className="space-y-4">
-      {/* Trend chart */}
-      <div className="bg-surface rounded-md shadow-card">
-        <div className="px-4 py-3 border-b border-border">
-          <h3 className="text-[12px] font-semibold text-text-primary">ATT&amp;CK Coverage Trend</h3>
-          <p className="text-[11px] text-text-muted">Daily coverage percentage snapshots</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" data-testid="generate-modal">
+      <div className="bg-surface border border-border rounded-lg shadow-panel w-[400px] max-w-[calc(100vw-2rem)]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h2 className="text-[13px] font-semibold text-text-primary">Generate Report</h2>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-lg leading-none" aria-label="Close">×</button>
         </div>
-        <div className="px-4 py-4">
-          {isLoading && (
-            <div className="flex items-center justify-center h-[180px] text-text-muted text-sm">Loading…</div>
-          )}
-          {isError && (
-            <div className="flex items-center justify-center h-[180px] text-crit-text text-sm">
-              Failed to load coverage data.
-            </div>
-          )}
-          {!isLoading && !isError && chartData.length === 0 && (
-            <div className="flex items-center justify-center h-[180px] text-text-muted text-sm">
-              No snapshots yet — coverage will be recorded daily.
-            </div>
-          )}
-          {!isLoading && !isError && chartData.length > 0 && (
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={chartData} margin={{ top: 8, right: 0, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="rpt-grad-cov" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%"   stopColor={c.primary} stopOpacity={0.25} />
-                    <stop offset="100%" stopColor={c.primary} stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 0" stroke={c.chartGrid} vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 10, fill: c.textMuted }}
-                  axisLine={false}
-                  tickLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  domain={[0, 100]}
-                  tick={{ fontSize: 9, fill: c.textFaint }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => `${v}%`}
-                />
-                <Tooltip
-                  contentStyle={{ fontSize: 11, border: `1px solid ${c.border}`, borderRadius: 6, backgroundColor: c.surface }}
-                  labelStyle={{ color: c.textPrimary, fontWeight: 600 }}
-                  formatter={(value: number, name: string) => {
-                    if (name === 'coverage_pct') return [`${value}%`, 'Coverage']
-                    if (name === 'covered')      return [value, 'Techniques covered']
-                    return [value, name]
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="coverage_pct"
-                  fill="url(#rpt-grad-cov)"
-                  stroke={c.primary}
-                  strokeWidth={1.5}
-                  dot={false}
-                  name="coverage_pct"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
 
-      {/* Summary */}
-      {latest && (
-        <div className="bg-surface rounded-md shadow-card px-4 py-4">
-          <h3 className="text-[12px] font-semibold text-text-primary mb-3">Coverage Summary</h3>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <p className="text-[10px] text-text-muted uppercase font-medium">Current Coverage</p>
-              <p className="text-[20px] font-semibold text-text-primary">{fmtPct(latest.coverage_pct)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-text-muted uppercase font-medium">Techniques Covered</p>
-              <p className="text-[20px] font-semibold text-text-primary">{latest.covered} / {latest.total}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-text-muted uppercase font-medium">Trend ({range})</p>
-              <p className={`text-[20px] font-semibold ${delta !== null && delta >= 0 ? 'text-low-text' : 'text-crit-text'}`}>
-                {delta !== null ? `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%` : '—'}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Alert trends report ────────────────────────────────────────────────────────
-
-function AlertTrendsReport({ range }: { range: TimeRange }) {
-  const theme = useUIStore((s) => s.theme)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const c = useMemo(() => chartColors(), [theme])
-
-  const { data: timeline, isLoading: tlLoading } = useQuery({
-    queryKey: ['reports-timeline', range],
-    queryFn:  () => overviewApi.timeline(range),
-  })
-
-  const { data: tactics, isLoading: tacLoading } = useQuery({
-    queryKey: ['reports-tactics', range],
-    queryFn:  () => overviewApi.tactics(range),
-  })
-
-  const tlData = (timeline ?? []).map((p) => ({
-    date:     formatDate(p.date),
-    total:    p.total,
-    critical: p.critical,
-    high:     p.high,
-    medium:   p.medium,
-  }))
-
-  const tacData = (tactics ?? []).slice(0, 8).map((t) => ({
-    tactic: t.tactic.length > 18 ? t.tactic.slice(0, 18) + '…' : t.tactic,
-    count:  t.count,
-    trend:  t.trend_pct,
-  }))
-
-  return (
-    <div className="space-y-4">
-      {/* Detection timeline */}
-      <div className="bg-surface rounded-md shadow-card">
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+        {/* Body */}
+        <div className="px-4 py-4 space-y-4">
+          {/* Template */}
           <div>
-            <h3 className="text-[12px] font-semibold text-text-primary">Detection Timeline</h3>
-            <p className="text-[11px] text-text-muted">Alert volume by severity over time</p>
+            <label className="block text-[10px] font-medium text-text-muted uppercase mb-1">Template</label>
+            <select
+              value={template}
+              onChange={e => setTemplate(e.target.value as ReportTemplate)}
+              className="w-full h-[30px] px-2 text-[12px] bg-page border border-border rounded text-text-primary focus:border-blue focus:outline-none"
+            >
+              {TEMPLATES.map(t => (
+                <option key={t} value={t}>{TEMPLATE_LABELS[t]}</option>
+              ))}
+            </select>
           </div>
-          <div className="flex items-center gap-3 text-[10px] text-text-muted">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded bg-crit-text inline-block" />Critical
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded bg-border inline-block" />Total
-            </span>
-          </div>
-        </div>
-        <div className="px-4 py-4">
-          {tlLoading && (
-            <div className="flex items-center justify-center h-[180px] text-text-muted text-sm">Loading…</div>
-          )}
-          {!tlLoading && tlData.length === 0 && (
-            <div className="flex items-center justify-center h-[180px] text-text-muted text-sm">
-              No alert data for this period.
-            </div>
-          )}
-          {!tlLoading && tlData.length > 0 && (
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={tlData} margin={{ top: 8, right: 0, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="rpt-grad-total" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%"   stopColor={c.border}   stopOpacity={0.8}  />
-                    <stop offset="100%" stopColor={c.border}   stopOpacity={0.1}  />
-                  </linearGradient>
-                  <linearGradient id="rpt-grad-crit" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%"   stopColor={c.critText} stopOpacity={0.15} />
-                    <stop offset="100%" stopColor={c.critText} stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 0" stroke={c.chartGrid} vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 10, fill: c.textMuted }}
-                  axisLine={false}
-                  tickLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis tick={{ fontSize: 9, fill: c.textFaint }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ fontSize: 11, border: `1px solid ${c.border}`, borderRadius: 6, backgroundColor: c.surface }}
-                  labelStyle={{ color: c.textPrimary, fontWeight: 600 }}
-                />
-                <Area type="monotone" dataKey="total"    fill="url(#rpt-grad-total)" stroke={c.textFaint} strokeWidth={1.5} dot={false} name="Total"    />
-                <Area type="monotone" dataKey="critical" fill="url(#rpt-grad-crit)"  stroke={c.critText}  strokeWidth={1.5} dot={false} name="Critical" />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
 
-      {/* Top tactics */}
-      <div className="bg-surface rounded-md shadow-card">
-        <div className="px-4 py-3 border-b border-border">
-          <h3 className="text-[12px] font-semibold text-text-primary">Top ATT&amp;CK Tactics</h3>
-          <p className="text-[11px] text-text-muted">Most detected tactics by alert count</p>
-        </div>
-        <div className="px-4 py-4">
-          {tacLoading && (
-            <div className="flex items-center justify-center h-[160px] text-text-muted text-sm">Loading…</div>
-          )}
-          {!tacLoading && tacData.length === 0 && (
-            <div className="flex items-center justify-center h-[160px] text-text-muted text-sm">
-              No tactics data for this period.
+          {/* Date range */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-medium text-text-muted uppercase mb-1">From</label>
+              <input
+                type="date"
+                value={fromDate}
+                max={toDate}
+                onChange={e => setFromDate(e.target.value)}
+                className="w-full h-[30px] px-2 text-[12px] bg-page border border-border rounded text-text-primary focus:border-blue focus:outline-none"
+              />
             </div>
+            <div>
+              <label className="block text-[10px] font-medium text-text-muted uppercase mb-1">To</label>
+              <input
+                type="date"
+                value={toDate}
+                min={fromDate}
+                onChange={e => setToDate(e.target.value)}
+                className="w-full h-[30px] px-2 text-[12px] bg-page border border-border rounded text-text-primary focus:border-blue focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Format */}
+          <div>
+            <label className="block text-[10px] font-medium text-text-muted uppercase mb-1">Format</label>
+            <div className="flex items-center gap-2">
+              {(['json', 'csv'] as ReportFormat[]).map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFormat(f)}
+                  className={`h-[28px] px-4 text-[11px] rounded border transition-colors font-medium ${
+                    format === f
+                      ? 'border-blue text-blue bg-blue/10'
+                      : 'border-border text-text-muted hover:text-text-primary'
+                  }`}
+                >
+                  {f.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-[11px] text-crit-text" role="alert">{error}</p>
           )}
-          {!tacLoading && tacData.length > 0 && (
-            <ResponsiveContainer width="100%" height={Math.max(160, tacData.length * 24)}>
-              <BarChart
-                data={tacData}
-                layout="vertical"
-                margin={{ top: 4, right: 16, left: 0, bottom: 4 }}
-              >
-                <CartesianGrid strokeDasharray="3 0" stroke={c.chartGrid} horizontal={false} />
-                <XAxis
-                  type="number"
-                  tick={{ fontSize: 9, fill: c.textFaint }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="tactic"
-                  tick={{ fontSize: 10, fill: c.textMuted }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={110}
-                />
-                <Tooltip
-                  contentStyle={{ fontSize: 11, border: `1px solid ${c.border}`, borderRadius: 6, backgroundColor: c.surface }}
-                  labelStyle={{ color: c.textPrimary, fontWeight: 600 }}
-                />
-                <Bar dataKey="count" fill={c.primary} radius={[0, 3, 3, 0]} name="Alerts" />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-[28px] px-3 text-[11px] border border-border rounded text-text-secondary hover:bg-page"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+            className="h-[28px] px-4 text-[11px] bg-blue text-white rounded font-medium disabled:opacity-50"
+          >
+            {mutation.isPending ? 'Generating…' : 'Generate'}
+          </button>
         </div>
       </div>
     </div>
   )
 }
 
-// ── Incidents report ───────────────────────────────────────────────────────────
+// ── Create Schedule modal ─────────────────────────────────────────────────────
 
-function IncidentsReport({ range }: { range: TimeRange }) {
-  const today = new Date().toISOString().slice(0, 10)
-  const from  = fromDate(range)
+interface CreateScheduleModalProps {
+  onClose: () => void
+}
 
-  const { data: metrics, isLoading } = useQuery({
-    queryKey: ['reports-incident-metrics', from, today],
-    queryFn:  () => incidentsApi.metrics(from, today),
+function CreateScheduleModal({ onClose }: CreateScheduleModalProps) {
+  const qc = useQueryClient()
+
+  const [name,       setName]       = useState('')
+  const [template,   setTemplate]   = useState<ReportTemplate>('executive_summary')
+  const [format,     setFormat]     = useState<ReportFormat>('json')
+  const [preset,     setPreset]     = useState(CRON_PRESETS[0].value)
+  const [customCron, setCustomCron] = useState('')
+  const [error,      setError]      = useState<string | null>(null)
+
+  const cronExpr = preset === 'custom' ? customCron : preset
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      reportsApi.createSchedule({
+        name:            name.trim(),
+        template_type:   template,
+        format,
+        cron_expression: cronExpr,
+        enabled:         true,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['report-schedules'] })
+      onClose()
+    },
+    onError: (err: Error) => {
+      setError(err.message || 'Failed to create schedule')
+    },
   })
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-40 text-text-muted text-sm">Loading…</div>
-  }
-  if (!metrics) {
-    return <div className="flex items-center justify-center h-40 text-text-muted text-sm">No incident data available.</div>
-  }
-
-  const severities: SeverityLevel[] = ['critical', 'high', 'medium', 'low']
-  const bySeverity = metrics.incidents_by_severity ?? {}
-  const sevTotal   = Object.values(bySeverity).reduce((s, v) => s + (v as number), 0)
-
-  const barCls: Record<SeverityLevel, string> = {
-    critical: 'bg-crit-text',
-    high:     'bg-high-text',
-    medium:   'bg-med-text',
-    low:      'bg-low-text',
-  }
+  const canSubmit = name.trim().length > 0 && cronExpr.trim().length > 0 && !mutation.isPending
 
   return (
-    <div className="space-y-4">
-      {/* MTTR / MTTD */}
-      <div className="bg-surface rounded-md shadow-card px-4 py-4">
-        <h3 className="text-[12px] font-semibold text-text-primary mb-3">Response Metrics</h3>
-        <div className="grid grid-cols-4 gap-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" data-testid="schedule-modal">
+      <div className="bg-surface border border-border rounded-lg shadow-panel w-[440px] max-w-[calc(100vw-2rem)]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h2 className="text-[13px] font-semibold text-text-primary">Create Schedule</h2>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-lg leading-none" aria-label="Close">×</button>
+        </div>
+
+        {/* Body */}
+        <div className="px-4 py-4 space-y-4">
+          {/* Name */}
           <div>
-            <p className="text-[10px] text-text-muted uppercase font-medium">Mean Time to Detect</p>
-            <p className="text-[20px] font-semibold text-text-primary">{fmtDuration(metrics.mttd_seconds)}</p>
-            <p className="text-[10px] text-text-muted">avg per incident</p>
+            <label className="block text-[10px] font-medium text-text-muted uppercase mb-1">Schedule Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. Weekly executive summary"
+              className="w-full h-[30px] px-2 text-[12px] bg-page border border-border rounded text-text-primary focus:border-blue focus:outline-none"
+            />
           </div>
+
+          {/* Template */}
           <div>
-            <p className="text-[10px] text-text-muted uppercase font-medium">Mean Time to Resolve</p>
-            <p className="text-[20px] font-semibold text-text-primary">{fmtDuration(metrics.mttr_seconds)}</p>
-            <p className="text-[10px] text-text-muted">avg per incident</p>
+            <label className="block text-[10px] font-medium text-text-muted uppercase mb-1">Template</label>
+            <select
+              value={template}
+              onChange={e => setTemplate(e.target.value as ReportTemplate)}
+              className="w-full h-[30px] px-2 text-[12px] bg-page border border-border rounded text-text-primary focus:border-blue focus:outline-none"
+            >
+              {TEMPLATES.map(t => (
+                <option key={t} value={t}>{TEMPLATE_LABELS[t]}</option>
+              ))}
+            </select>
           </div>
+
+          {/* Format */}
           <div>
-            <p className="text-[10px] text-text-muted uppercase font-medium">Incidents this Week</p>
-            <p className="text-[20px] font-semibold text-text-primary">{metrics.incidents_this_week}</p>
-            <p className="text-[10px] text-text-muted">past 7 days</p>
+            <label className="block text-[10px] font-medium text-text-muted uppercase mb-1">Format</label>
+            <div className="flex items-center gap-2">
+              {(['json', 'csv'] as ReportFormat[]).map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFormat(f)}
+                  className={`h-[28px] px-4 text-[11px] rounded border transition-colors font-medium ${
+                    format === f
+                      ? 'border-blue text-blue bg-blue/10'
+                      : 'border-border text-text-muted hover:text-text-primary'
+                  }`}
+                >
+                  {f.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Cron builder */}
           <div>
-            <p className="text-[10px] text-text-muted uppercase font-medium">Incidents this Month</p>
-            <p className="text-[20px] font-semibold text-text-primary">{metrics.incidents_this_month}</p>
-            <p className="text-[10px] text-text-muted">past 30 days</p>
+            <label className="block text-[10px] font-medium text-text-muted uppercase mb-1">Schedule</label>
+            <select
+              value={preset}
+              onChange={e => setPreset(e.target.value)}
+              className="w-full h-[30px] px-2 text-[12px] bg-page border border-border rounded text-text-primary focus:border-blue focus:outline-none mb-2"
+            >
+              {CRON_PRESETS.map(p => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+            {preset === 'custom' ? (
+              <input
+                type="text"
+                value={customCron}
+                onChange={e => setCustomCron(e.target.value)}
+                placeholder="0 0 * * 1"
+                aria-label="Cron expression"
+                className="w-full h-[30px] px-2 text-[12px] font-mono bg-page border border-border rounded text-text-primary focus:border-blue focus:outline-none"
+              />
+            ) : (
+              <p className="text-[10px] text-text-muted font-mono">{cronExpr}</p>
+            )}
           </div>
+
+          {error && (
+            <p className="text-[11px] text-crit-text" role="alert">{error}</p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-[28px] px-3 text-[11px] border border-border rounded text-text-secondary hover:bg-page"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => mutation.mutate()}
+            disabled={!canSubmit}
+            className="h-[28px] px-4 text-[11px] bg-blue text-white rounded font-medium disabled:opacity-50"
+          >
+            {mutation.isPending ? 'Creating…' : 'Create Schedule'}
+          </button>
         </div>
       </div>
+    </div>
+  )
+}
 
-      {/* Severity breakdown */}
+// ── Generated Reports tab ─────────────────────────────────────────────────────
+
+interface GeneratedTabProps {
+  onOpenGenerate: () => void
+}
+
+function GeneratedTab({ onOpenGenerate }: GeneratedTabProps) {
+  const qc = useQueryClient()
+  const [page,         setPage]         = useState(1)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['reports', page],
+    queryFn:  () => reportsApi.list({ page, page_size: 20 }),
+    refetchInterval: (query) => {
+      const items = query.state.data?.items
+      return items?.some((r: Report) => r.status === 'generating') ? 3000 : false
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => reportsApi.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reports'] }),
+  })
+
+  const handleDownload = useCallback(async (report: Report) => {
+    if (report.status !== 'ready') return
+    setDownloadingId(report.id)
+    try {
+      const { blob, filename } = await reportsApi.download(report.id)
+      const url = URL.createObjectURL(blob)
+      const a   = document.createElement('a')
+      a.href     = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      // Download error is non-fatal — button will re-enable
+    } finally {
+      setDownloadingId(null)
+    }
+  }, [])
+
+  const reports    = data?.items ?? []
+  const totalPages = data?.pagination.total_pages ?? 0
+
+  return (
+    <div>
+      {/* Action row */}
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[11px] text-text-muted">
+          {data ? `${data.pagination.total} report${data.pagination.total !== 1 ? 's' : ''}` : ''}
+        </p>
+        <button
+          type="button"
+          onClick={onOpenGenerate}
+          className="h-[28px] px-3 text-[11px] bg-blue text-white rounded font-medium"
+        >
+          + Generate Report
+        </button>
+      </div>
+
+      {/* Table */}
       <div className="bg-surface rounded-md shadow-card overflow-hidden">
-        <div className="px-4 py-3 border-b border-border">
-          <h3 className="text-[12px] font-semibold text-text-primary">Incidents by Severity</h3>
-          <p className="text-[11px] text-text-muted">{from} — {today}</p>
-        </div>
-
-        <div className="grid grid-cols-[100px_1fr_60px] gap-2 px-4 py-2 border-b border-section">
-          {['Severity', 'Volume', 'Count'].map(h => (
+        {/* Column headers */}
+        <div className="grid grid-cols-[1fr_110px_90px_60px_80px] gap-3 px-4 py-2 border-b border-section bg-page">
+          {['Template', 'Created', 'Status', 'Format', 'Actions'].map(h => (
             <span key={h} className="text-[10px] font-medium text-text-muted uppercase">{h}</span>
           ))}
         </div>
 
-        {severities.map((sev) => {
-          const count = (bySeverity[sev] as number) ?? 0
-          const pct   = sevTotal > 0 ? (count / sevTotal) * 100 : 0
-          return (
-            <div
-              key={sev}
-              className="grid grid-cols-[100px_1fr_60px] gap-2 px-4 py-[7px] border-b border-section items-center"
-            >
-              <SeverityBadge severity={sev} />
-              <div className="w-full h-1.5 bg-section rounded-full overflow-hidden">
-                <div className={`h-full rounded-full ${barCls[sev]}`} style={{ width: `${pct}%` }} />
-              </div>
-              <span className="text-[11px] text-text-primary font-medium">{count}</span>
-            </div>
-          )
-        })}
-
-        {/* Status breakdown */}
-        <div className="px-4 py-3">
-          <p className="text-[10px] text-text-muted uppercase font-medium mb-2">By Status</p>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(metrics.total_incidents ?? {}).map(([status, count]) => (
-              <div
-                key={status}
-                className="flex items-center gap-1.5 bg-page border border-border rounded px-2 py-1"
-              >
-                <span className="text-[10px] text-text-muted capitalize">{status.replace('_', ' ')}</span>
-                <span className="text-[11px] font-semibold text-text-primary">{count as number}</span>
-              </div>
-            ))}
+        {isLoading && (
+          <div className="flex items-center justify-center py-12 text-text-muted text-sm">
+            Loading…
           </div>
-        </div>
+        )}
+        {isError && (
+          <div className="flex items-center justify-center py-12 text-crit-text text-sm">
+            Failed to load reports.
+          </div>
+        )}
+        {!isLoading && !isError && reports.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 text-text-muted">
+            <p className="text-sm">No reports generated yet</p>
+            <p className="text-[11px] mt-1">Click "Generate Report" to create your first report</p>
+          </div>
+        )}
+
+        {!isLoading && !isError && reports.map(report => (
+          <div
+            key={report.id}
+            className="grid grid-cols-[1fr_110px_90px_60px_80px] gap-3 px-4 py-[9px] border-b border-section items-center hover:bg-page/50 transition-colors"
+          >
+            {/* Template */}
+            <div>
+              <p className="text-[12px] font-medium text-text-primary">{TEMPLATE_LABELS[report.template_type]}</p>
+              <p className="text-[10px] text-text-muted">{report.created_by}</p>
+            </div>
+
+            {/* Created */}
+            <span className="text-[11px] text-text-secondary">
+              {fmtDate(report.created_at)}
+            </span>
+
+            {/* Status */}
+            <StatusBadge status={report.status} />
+
+            {/* Format */}
+            <span className="text-[11px] text-text-secondary uppercase">{report.format}</span>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                title="Download"
+                aria-label="Download report"
+                disabled={report.status !== 'ready' || downloadingId === report.id}
+                onClick={() => handleDownload(report)}
+                className={`text-[11px] px-2 py-[2px] rounded border transition-colors ${
+                  report.status === 'ready'
+                    ? 'border-border text-text-secondary hover:border-blue hover:text-blue'
+                    : 'border-transparent text-text-muted opacity-40 cursor-not-allowed'
+                }`}
+              >
+                {downloadingId === report.id ? '…' : '↓'}
+              </button>
+              <button
+                type="button"
+                title="Delete report"
+                aria-label="Delete report"
+                onClick={() => deleteMutation.mutate(report.id)}
+                disabled={deleteMutation.isPending}
+                className="text-[11px] px-2 py-[2px] rounded border border-transparent text-text-muted hover:border-crit-text hover:text-crit-text transition-colors"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-2 border-t border-border">
+            <span className="text-[10px] text-text-muted">
+              Page {page} of {totalPages} · {data?.pagination.total ?? 0} total
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="h-[24px] px-2 text-[10px] border border-border rounded disabled:opacity-40 hover:bg-page"
+              >
+                ‹ Prev
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="h-[24px] px-2 text-[10px] border border-border rounded disabled:opacity-40 hover:bg-page"
+              >
+                Next ›
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-// ── Main page ──────────────────────────────────────────────────────────────────
+// ── Scheduled Reports tab ─────────────────────────────────────────────────────
+
+interface ScheduledTabProps {
+  onOpenCreate: () => void
+}
+
+function ScheduledTab({ onOpenCreate }: ScheduledTabProps) {
+  const qc = useQueryClient()
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['report-schedules'],
+    queryFn:  () => reportsApi.listSchedules(),
+    retry: false,
+  })
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      reportsApi.updateSchedule(id, { enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['report-schedules'] }),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => reportsApi.deleteSchedule(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['report-schedules'] }),
+  })
+
+  const schedules = data?.items ?? []
+
+  return (
+    <div>
+      {/* Action row */}
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[11px] text-text-muted">
+          {data ? `${schedules.length} schedule${schedules.length !== 1 ? 's' : ''}` : ''}
+        </p>
+        <button
+          type="button"
+          onClick={onOpenCreate}
+          className="h-[28px] px-3 text-[11px] bg-blue text-white rounded font-medium"
+        >
+          + Create Schedule
+        </button>
+      </div>
+
+      {/* Table */}
+      <div className="bg-surface rounded-md shadow-card overflow-hidden">
+        {/* Column headers */}
+        <div className="grid grid-cols-[1fr_140px_170px_60px_130px_130px_40px] gap-3 px-4 py-2 border-b border-section bg-page">
+          {['Name', 'Template', 'Schedule', 'On', 'Last Run', 'Next Run', ''].map((h, i) => (
+            <span key={i} className="text-[10px] font-medium text-text-muted uppercase">{h}</span>
+          ))}
+        </div>
+
+        {isLoading && (
+          <div className="flex items-center justify-center py-12 text-text-muted text-sm">
+            Loading…
+          </div>
+        )}
+        {isError && (
+          <div className="flex items-center justify-center py-12 text-text-muted text-sm">
+            Scheduled reports are not available.
+          </div>
+        )}
+        {!isLoading && !isError && schedules.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-12 text-text-muted">
+            <p className="text-sm">No scheduled reports</p>
+            <p className="text-[11px] mt-1">Click "Create Schedule" to automate report generation</p>
+          </div>
+        )}
+
+        {!isLoading && !isError && schedules.map((schedule: ReportSchedule) => (
+          <div
+            key={schedule.id}
+            className="grid grid-cols-[1fr_140px_170px_60px_130px_130px_40px] gap-3 px-4 py-[9px] border-b border-section items-center hover:bg-page/50 transition-colors"
+          >
+            {/* Name */}
+            <div>
+              <p className="text-[12px] font-medium text-text-primary">{schedule.name}</p>
+              <p className="text-[10px] text-text-muted uppercase">{schedule.format}</p>
+            </div>
+
+            {/* Template */}
+            <span className="text-[11px] text-text-secondary">{TEMPLATE_LABELS[schedule.template_type]}</span>
+
+            {/* Schedule */}
+            <div>
+              <p className="text-[11px] text-text-secondary">{humanCron(schedule.cron_expression)}</p>
+              <p className="text-[10px] text-text-muted font-mono">{schedule.cron_expression}</p>
+            </div>
+
+            {/* Enabled toggle */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={schedule.enabled}
+              aria-label={schedule.enabled ? 'Disable schedule' : 'Enable schedule'}
+              onClick={() => toggleMutation.mutate({ id: schedule.id, enabled: !schedule.enabled })}
+              className={`relative w-8 h-4 rounded-full transition-colors focus:outline-none ${
+                schedule.enabled ? 'bg-low-text' : 'bg-border'
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${
+                schedule.enabled ? 'translate-x-4' : ''
+              }`} />
+            </button>
+
+            {/* Last run */}
+            <span className="text-[11px] text-text-muted">
+              {schedule.last_run_at ? fmtDateTime(schedule.last_run_at) : '—'}
+            </span>
+
+            {/* Next run */}
+            <span className="text-[11px] text-text-muted">
+              {schedule.next_run_at ? fmtDateTime(schedule.next_run_at) : '—'}
+            </span>
+
+            {/* Delete */}
+            <button
+              type="button"
+              title="Delete schedule"
+              aria-label="Delete schedule"
+              onClick={() => deleteMutation.mutate(schedule.id)}
+              disabled={deleteMutation.isPending}
+              className="text-[11px] px-1 py-[2px] rounded border border-transparent text-text-muted hover:border-crit-text hover:text-crit-text transition-colors"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+type Tab = 'generated' | 'scheduled'
 
 export function ReportsPage() {
-  const [tab,   setTab]   = useState<ReportTab>('coverage')
-  const [range, setRange] = useState<TimeRange>('30d')
-
-  const { data: kpis } = useQuery({
-    queryKey: ['reports-kpis', range],
-    queryFn:  () => overviewApi.kpis(range),
-  })
-
-  const { data: incMetrics } = useQuery({
-    queryKey: ['reports-inc-metrics-kpi'],
-    queryFn:  () => incidentsApi.metrics(),
-  })
-
-  const tabs: { id: ReportTab; label: string }[] = [
-    { id: 'coverage',  label: 'ATT\u0026CK Coverage' },
-    { id: 'alerts',    label: 'Alert Trends'         },
-    { id: 'incidents', label: 'Incidents'             },
-  ]
+  const [tab,              setTab]              = useState<Tab>('generated')
+  const [showGenerateModal, setShowGenerateModal] = useState(false)
+  const [showScheduleModal, setShowScheduleModal] = useState(false)
 
   return (
     <>
       <TopBar crumb="Reports" />
       <div className="pt-[46px] px-5 pb-6">
-
-        {/* Stats */}
-        <StatsCards
-          coveragePct={kpis?.attack_coverage_pct ?? 0}
-          mttdMinutes={kpis?.mttd_minutes ?? 0}
-          mttrSeconds={incMetrics?.mttr_seconds ?? null}
-          openIncidents={incMetrics?.open_incidents_count ?? 0}
-        />
-
-        {/* Controls */}
-        <div className="flex items-center gap-3 mb-4">
-          {/* Report tabs */}
-          <div className="flex items-center gap-1 bg-section rounded-md p-1">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`h-[26px] px-3 text-[11px] font-medium rounded transition-colors ${
-                  tab === t.id
-                    ? 'bg-surface text-text-primary shadow-card'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Time range */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-text-muted">Range:</span>
-            {(['7d', '30d', '90d'] as TimeRange[]).map((r) => (
-              <button
-                key={r}
-                onClick={() => setRange(r)}
-                className={`text-[10px] px-2 py-[2px] rounded transition-colors ${
-                  r === range
-                    ? 'bg-blue/20 text-blue font-semibold'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
-
-          {/* Export placeholder */}
-          <div className="ml-auto">
+        {/* Tab bar */}
+        <div className="flex items-center gap-1 bg-section rounded-md p-1 mb-5 w-fit">
+          {([
+            { id: 'generated' as const, label: 'Generated Reports'  },
+            { id: 'scheduled' as const, label: 'Scheduled Reports'  },
+          ] as { id: Tab; label: string }[]).map(t => (
             <button
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-text-secondary hover:bg-page whitespace-nowrap"
-              title="Export — coming soon"
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`h-[26px] px-3 text-[11px] font-medium rounded transition-colors ${
+                tab === t.id
+                  ? 'bg-surface text-text-primary shadow-card'
+                  : 'text-text-muted hover:text-text-primary'
+              }`}
             >
-              Export PDF
+              {t.label}
             </button>
-          </div>
+          ))}
         </div>
 
         {/* Tab content */}
-        {tab === 'coverage'  && <CoverageReport      range={range} />}
-        {tab === 'alerts'    && <AlertTrendsReport   range={range} />}
-        {tab === 'incidents' && <IncidentsReport     range={range} />}
+        {tab === 'generated' && (
+          <GeneratedTab onOpenGenerate={() => setShowGenerateModal(true)} />
+        )}
+        {tab === 'scheduled' && (
+          <ScheduledTab onOpenCreate={() => setShowScheduleModal(true)} />
+        )}
       </div>
+
+      {/* Modals */}
+      {showGenerateModal && (
+        <GenerateModal
+          onClose={() => setShowGenerateModal(false)}
+          onGenerated={() => { /* polling handles updates */ }}
+        />
+      )}
+      {showScheduleModal && (
+        <CreateScheduleModal onClose={() => setShowScheduleModal(false)} />
+      )}
     </>
   )
 }

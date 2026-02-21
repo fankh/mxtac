@@ -9,6 +9,8 @@ import type {
   Incident, IncidentDetail, IncidentCreate, IncidentUpdate, IncidentNote, IncidentMetrics,
   CoverageTrend,
   IOC, IOCCreate, IOCUpdate, IOCStats, IOCBulkImportResult,
+  Report, ReportGenerateRequest, ReportGenerateResponse,
+  ReportSchedule, ReportScheduleCreate, ReportScheduleUpdate,
 } from '../types/api'
 
 const http = axios.create({
@@ -284,4 +286,49 @@ export const threatIntelApi = {
 
   deactivate: (id: number): Promise<IOC> =>
     http.delete(`/threat-intel/iocs/${id}`).then(r => r.data),
+}
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+
+export interface ReportListParams {
+  page?: number
+  page_size?: number
+  template_type?: string
+  status?: string
+}
+
+export const reportsApi = {
+  list: (params: ReportListParams = {}): Promise<PaginatedResponse<Report>> =>
+    http.get('/reports', { params }).then(r => r.data),
+
+  get: (id: string): Promise<Report> =>
+    http.get(`/reports/${id}`).then(r => r.data),
+
+  generate: (body: ReportGenerateRequest): Promise<ReportGenerateResponse> =>
+    http.post('/reports/generate', body).then(r => r.data),
+
+  download: (id: string): Promise<{ blob: Blob; filename: string }> =>
+    http.get(`/reports/${id}/download`, { responseType: 'blob' }).then(r => ({
+      blob: r.data as Blob,
+      filename:
+        (r.headers['content-disposition'] as string | undefined)
+          ?.match(/filename="(.+?)"/)?.[1] ??
+        `report_${id.slice(0, 8)}.json`,
+    })),
+
+  delete: (id: string): Promise<void> =>
+    http.delete(`/reports/${id}`).then(r => r.data),
+
+  // Scheduled reports (backend feature — gracefully handled if unavailable)
+  listSchedules: (): Promise<PaginatedResponse<ReportSchedule>> =>
+    http.get('/reports/schedules').then(r => r.data),
+
+  createSchedule: (body: ReportScheduleCreate): Promise<ReportSchedule> =>
+    http.post('/reports/schedules', body).then(r => r.data),
+
+  updateSchedule: (id: string, body: ReportScheduleUpdate): Promise<ReportSchedule> =>
+    http.patch(`/reports/schedules/${id}`, body).then(r => r.data),
+
+  deleteSchedule: (id: string): Promise<void> =>
+    http.delete(`/reports/schedules/${id}`).then(r => r.data),
 }

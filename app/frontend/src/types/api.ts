@@ -413,6 +413,74 @@ export interface IOCBulkImportResult {
   skipped: number
 }
 
+// ── Reports ───────────────────────────────────────────────────────────────────
+
+export type ReportStatus = 'generating' | 'ready' | 'failed'
+export type ReportFormat = 'json' | 'csv'
+export type ReportTemplate =
+  | 'executive_summary'
+  | 'detection_report'
+  | 'incident_report'
+  | 'coverage_report'
+  | 'compliance_summary'
+
+export interface Report {
+  id: string
+  template_type: ReportTemplate
+  status: ReportStatus
+  format: ReportFormat
+  created_by: string
+  created_at: string
+  updated_at: string
+  /** Only present on detail endpoint (GET /reports/{id}), not the list */
+  params_json?: {
+    from_date: string
+    to_date: string
+    [key: string]: unknown
+  }
+  error?: string | null
+}
+
+export interface ReportGenerateRequest {
+  template_type: ReportTemplate
+  from_date: string   // ISO datetime string, e.g. "2025-01-01T00:00:00Z"
+  to_date: string     // ISO datetime string
+  format?: ReportFormat
+  extra_params?: Record<string, unknown> | null
+}
+
+export interface ReportGenerateResponse {
+  report_id: string
+  status: 'generating'
+}
+
+export interface ReportSchedule {
+  id: string
+  name: string
+  template_type: ReportTemplate
+  format: ReportFormat
+  cron_expression: string
+  enabled: boolean
+  last_run_at: string | null
+  next_run_at: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface ReportScheduleCreate {
+  name: string
+  template_type: ReportTemplate
+  format: ReportFormat
+  cron_expression: string
+  enabled?: boolean
+}
+
+export interface ReportScheduleUpdate {
+  name?: string
+  enabled?: boolean
+  cron_expression?: string
+}
+
 // ── Audit Logs ────────────────────────────────────────────────────────────────
 
 export interface AuditLogEntry {
