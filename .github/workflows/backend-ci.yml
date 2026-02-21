@@ -84,3 +84,83 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac_test
           SECRET_KEY: ci-test-secret-key-not-for-production
           ENVIRONMENT: test
+
+  migrate:
+    name: Migration Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: mxtac
+          POSTGRES_PASSWORD: mxtac
+          POSTGRES_DB: mxtac_migrate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            app/backend/requirements.txt
+            app/backend/pyproject.toml
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Verify migration chain (no branches or gaps)
+        run: |
+          head_count=$(alembic heads 2>&1 | grep -c "(head)" || true)
+          if [ "$head_count" -ne 1 ]; then
+            echo "ERROR: Expected exactly 1 migration head, found ${head_count}. Possible branch or gap."
+            alembic heads
+            exit 1
+          fi
+          echo "OK: single migration head detected"
+          alembic history --verbose
+        env:
+          DATABASE_URL: postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac_migrate
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          ENVIRONMENT: test
+
+      - name: Upgrade to head
+        run: alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac_migrate
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          ENVIRONMENT: test
+
+      - name: Downgrade to base (rollback verification)
+        run: alembic downgrade base
+        env:
+          DATABASE_URL: postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac_migrate
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          ENVIRONMENT: test
+
+      - name: Upgrade to head again (idempotency check)
+        run: alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac_migrate
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          ENVIRONMENT: test
+
+      - name: Check for pending auto-generated migrations
+        run: alembic check
+        env:
+          DATABASE_URL: postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac_migrate
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          ENVIRONMENT: test
