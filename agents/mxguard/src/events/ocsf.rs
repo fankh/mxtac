@@ -160,6 +160,13 @@ pub struct OcsfEvent {
     /// Human-readable severity (e.g. "Informational", "High").
     pub severity: String,
     pub device: OcsfDevice,
+    /// MITRE ATT&CK technique IDs applicable to this event (e.g. `["T1059", "T1059.004"]`).
+    ///
+    /// Populated by the ATT&CK tagger in `crate::attack`.  The field is omitted from
+    /// JSON output when empty so that existing serialization round-trip tests are
+    /// unaffected.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attack_techniques: Vec<String>,
     /// Class-specific payload flattened into the top-level JSON object.
     ///
     /// The `_payload_type` discriminator is an internal MxGuard field used
@@ -296,6 +303,7 @@ impl OcsfEvent {
             severity_id: severity.id(),
             severity: severity.as_str().into(),
             device,
+            attack_techniques: vec![],
             payload: OcsfPayload::ProcessActivity(data),
         }
     }
@@ -332,6 +340,7 @@ impl OcsfEvent {
             severity_id: severity.id(),
             severity: severity.as_str().into(),
             device,
+            attack_techniques: vec![],
             payload: OcsfPayload::FileActivity(data),
         }
     }
@@ -368,6 +377,7 @@ impl OcsfEvent {
             severity_id: severity.id(),
             severity: severity.as_str().into(),
             device,
+            attack_techniques: vec![],
             payload: OcsfPayload::NetworkActivity(data),
         }
     }
@@ -405,8 +415,19 @@ impl OcsfEvent {
             severity_id: severity.id(),
             severity: severity.as_str().into(),
             device,
+            attack_techniques: vec![],
             payload: OcsfPayload::AuthenticationActivity(data),
         }
+    }
+
+    /// Attach ATT&CK technique IDs to the event (builder pattern).
+    ///
+    /// Technique IDs are sorted and deduplicated by the tagger; this method
+    /// stores them verbatim.  An empty `Vec` is a no-op in terms of JSON
+    /// output (the field is skipped when empty).
+    pub fn with_attack_techniques(mut self, techniques: Vec<String>) -> Self {
+        self.attack_techniques = techniques;
+        self
     }
 }
 

@@ -114,13 +114,15 @@ impl Collector for ProcessCollector {
                     None => continue,
                 };
 
+                let techniques = crate::attack::tag_process_event(&proc_data);
                 let event = OcsfEvent::process_activity(
                     self.device.clone(),
                     "Launch",
                     1, // activity_id 1 = Launch
                     OcsfSeverity::Informational,
                     proc_data,
-                );
+                )
+                .with_attack_techniques(techniques);
 
                 if tx.send(event).await.is_err() {
                     debug!("Event channel closed, stopping process collector");

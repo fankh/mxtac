@@ -97,14 +97,15 @@ impl Collector for NetworkCollector {
                 }
 
                 let severity = classify_connection_severity(conn);
-
+                let techniques = crate::attack::tag_network_event(conn);
                 let event = OcsfEvent::network_activity(
                     self.device.clone(),
                     "Connect",
                     1,
                     severity,
                     conn.clone(),
-                );
+                )
+                .with_attack_techniques(techniques);
 
                 if tx.send(event).await.is_err() {
                     debug!("Event channel closed, stopping network collector");

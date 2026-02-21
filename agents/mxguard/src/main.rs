@@ -4,6 +4,7 @@
 //! them to OCSF events, and ships them to the MxTac ingest API.
 
 mod agent;
+mod attack;
 mod collectors;
 mod config;
 mod events;

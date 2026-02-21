@@ -126,6 +126,7 @@ impl Collector for AuthCollector {
                             if let Some(data) = parse_auth_line(trimmed) {
                                 let severity = classify_auth_severity(&data);
                                 let (activity, activity_id) = auth_activity(&data);
+                                let techniques = crate::attack::tag_auth_event(&data);
                                 debug!(
                                     user = %data.user,
                                     status = %data.status,
@@ -138,7 +139,8 @@ impl Collector for AuthCollector {
                                     activity_id,
                                     severity,
                                     data,
-                                ));
+                                )
+                                .with_attack_techniques(techniques));
                             }
                         }
                         Err(e) => {

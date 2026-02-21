@@ -252,13 +252,15 @@ impl Collector for FileCollector {
                         hash,
                     };
 
+                    let techniques = crate::attack::tag_file_event(&data);
                     let ocsf_event = OcsfEvent::file_activity(
                         self.device.clone(),
                         action,
                         activity_id,
                         severity,
                         data,
-                    );
+                    )
+                    .with_attack_techniques(techniques);
 
                     if tx.send(ocsf_event).await.is_err() {
                         debug!("Event channel closed, stopping file collector");
