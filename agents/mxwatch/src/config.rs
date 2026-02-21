@@ -31,6 +31,8 @@ pub struct Config {
     pub detectors: DetectorsConfig,
     #[serde(default)]
     pub transport: TransportConfig,
+    #[serde(default)]
+    pub resources: ResourceLimitsConfig,
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +474,64 @@ fn default_retry_attempts() -> u32 {
     3
 }
 
+// -- Resource limits ---------------------------------------------------------
+
+/// Resource consumption limits for the MxWatch process.
+///
+/// When `enabled` is true, a background task samples CPU usage and RSS every
+/// `check_interval_ms` milliseconds and emits warnings when either limit is
+/// exceeded.  The packet-processing loop also reads the latest snapshot and
+/// applies backpressure (brief sleep) to stay within the thresholds.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResourceLimitsConfig {
+    /// Enable resource monitoring and enforcement.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Maximum CPU usage as a percentage of one logical core (e.g. `5.0` = 5 %).
+    ///
+    /// When the measured CPU% exceeds this value the packet-processing loop
+    /// inserts a short adaptive sleep to reduce throughput.
+    #[serde(default = "default_max_cpu_pct")]
+    pub max_cpu_pct: f64,
+
+    /// Maximum Resident Set Size in mebibytes (e.g. `120` = 120 MiB).
+    ///
+    /// When RSS exceeds this value the monitor emits a warning and the
+    /// packet-processing loop skips processing cycles to allow memory pressure
+    /// to subside.
+    #[serde(default = "default_max_ram_mb")]
+    pub max_ram_mb: u64,
+
+    /// Sampling interval in milliseconds.
+    ///
+    /// Lower values give more responsive throttling at the cost of slightly
+    /// more overhead from `/proc` reads.
+    #[serde(default = "default_check_interval_ms")]
+    pub check_interval_ms: u64,
+}
+
+impl Default for ResourceLimitsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_cpu_pct: default_max_cpu_pct(),
+            max_ram_mb: default_max_ram_mb(),
+            check_interval_ms: default_check_interval_ms(),
+        }
+    }
+}
+
+fn default_max_cpu_pct() -> f64 {
+    5.0
+}
+fn default_max_ram_mb() -> u64 {
+    120
+}
+fn default_check_interval_ms() -> u64 {
+    1_000
+}
+
 // ---------------------------------------------------------------------------
 // Loading
 // ---------------------------------------------------------------------------
@@ -493,6 +553,7 @@ impl Config {
             parsers: ParsersConfig::default(),
             detectors: DetectorsConfig::default(),
             transport: TransportConfig::default(),
+            resources: ResourceLimitsConfig::default(),
         }
     }
 }
@@ -841,5 +902,90 @@ enabled = false
     fn test_from_file_nonexistent_returns_io_error() {
         let result = Config::from_file("/nonexistent/path/mxwatch.toml");
         assert!(matches!(result, Err(ConfigError::Io(_))));
+    }
+
+    // -----------------------------------------------------------------------
+    // ResourceLimitsConfig
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_default_resource_limits() {
+        let r = ResourceLimitsConfig::default();
+        assert!(r.enabled);
+        assert!((r.max_cpu_pct - 5.0).abs() < f64::EPSILON);
+        assert_eq!(r.max_ram_mb, 120);
+        assert_eq!(r.check_interval_ms, 1_000);
+    }
+
+    #[test]
+    fn test_resource_limits_section_omitted_uses_defaults() {
+        let toml = r#"
+[agent]
+name = "w"
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert!(cfg.resources.enabled);
+        assert!((cfg.resources.max_cpu_pct - 5.0).abs() < f64::EPSILON);
+        assert_eq!(cfg.resources.max_ram_mb, 120);
+        assert_eq!(cfg.resources.check_interval_ms, 1_000);
+    }
+
+    #[test]
+    fn test_parse_resource_limits_section() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[resources]
+enabled           = true
+max_cpu_pct       = 3.0
+max_ram_mb        = 80
+check_interval_ms = 500
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert!(cfg.resources.enabled);
+        assert!((cfg.resources.max_cpu_pct - 3.0).abs() < f64::EPSILON);
+        assert_eq!(cfg.resources.max_ram_mb, 80);
+        assert_eq!(cfg.resources.check_interval_ms, 500);
+    }
+
+    #[test]
+    fn test_resource_limits_disabled_via_toml() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[resources]
+enabled = false
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert!(!cfg.resources.enabled);
+        // Other fields fall back to defaults.
+        assert!((cfg.resources.max_cpu_pct - 5.0).abs() < f64::EPSILON);
+        assert_eq!(cfg.resources.max_ram_mb, 120);
+    }
+
+    #[test]
+    fn test_resource_limits_custom_cpu_only() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[resources]
+max_cpu_pct = 2.5
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert!((cfg.resources.max_cpu_pct - 2.5).abs() < f64::EPSILON);
+        // Other fields fall back to defaults.
+        assert_eq!(cfg.resources.max_ram_mb, 120);
+        assert!(cfg.resources.enabled);
+    }
+
+    #[test]
+    fn test_default_config_includes_resource_limits() {
+        let cfg = Config::default_config();
+        assert!(cfg.resources.enabled);
+        assert!((cfg.resources.max_cpu_pct - 5.0).abs() < f64::EPSILON);
+        assert_eq!(cfg.resources.max_ram_mb, 120);
     }
 }

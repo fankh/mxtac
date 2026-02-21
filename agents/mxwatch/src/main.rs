@@ -9,6 +9,7 @@ mod config;
 mod detectors;
 mod events;
 mod parsers;
+mod resource;
 mod transport;
 
 use std::net::IpAddr;
@@ -20,7 +21,7 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::Packet;
 use tokio::sync::mpsc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 use crate::capture::PcapCapture;
@@ -36,6 +37,7 @@ use crate::parsers::http as http_parser;
 use crate::parsers::tcp;
 use crate::parsers::tls;
 use crate::parsers::udp;
+use crate::resource::ResourceMonitor;
 use crate::transport::HttpTransport;
 
 /// MxWatch NDR agent.
@@ -78,6 +80,17 @@ async fn main() -> anyhow::Result<()> {
     info!("MxWatch v{} starting", env!("CARGO_PKG_VERSION"));
 
     let device = OcsfDevice::from_current_host();
+
+    // --- Resource monitor -------------------------------------------------------
+    // Samples CPU% and RSS every `check_interval_ms`; shares metrics with the
+    // packet-processing loop via a lock-free Arc<ResourceSnapshot>.
+    let (resource_monitor, resource_snapshot) =
+        ResourceMonitor::new(cfg.resources.clone());
+    let resource_cfg = cfg.resources.clone();
+
+    tokio::spawn(async move {
+        resource_monitor.run().await;
+    });
 
     // --- Packet capture channel ------------------------------------------------
     let (pkt_tx, mut pkt_rx) = mpsc::channel::<capture::RawPacket>(10_000);
@@ -171,7 +184,38 @@ async fn main() -> anyhow::Result<()> {
     let http_patterns = cfg.parsers.http.suspicious_patterns.clone();
 
     let processing_handle = tokio::spawn(async move {
+        let mut packet_count: u64 = 0;
+
         while let Some(raw) = pkt_rx.recv().await {
+            packet_count += 1;
+
+            // ── Resource limits check (every 100 packets) ──────────────────
+            // Reads the latest snapshot published by the background monitor.
+            // Applies a short adaptive sleep when CPU or RAM limits are
+            // exceeded to reduce throughput and prevent runaway resource use.
+            if resource_cfg.enabled && packet_count % 100 == 0 {
+                let cpu_pct = resource_snapshot.cpu_pct();
+                let rss_mb  = resource_snapshot.rss_mb();
+
+                if rss_mb > resource_cfg.max_ram_mb {
+                    // RAM over limit: pause for 50 ms to allow GC pressure to
+                    // subside before processing the next batch.
+                    warn!(
+                        rss_mb,
+                        limit_mb = resource_cfg.max_ram_mb,
+                        "resource: RAM backpressure — pausing packet processing"
+                    );
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                } else if cpu_pct > resource_cfg.max_cpu_pct {
+                    // CPU over limit: sleep proportionally to the overage so
+                    // that the effective processing rate decreases toward the
+                    // target.  Sleep is clamped to [1, 100] ms.
+                    let overage_ratio = cpu_pct / resource_cfg.max_cpu_pct - 1.0;
+                    let sleep_ms = ((overage_ratio * 20.0) as u64).clamp(1, 100);
+                    tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
+                }
+            }
+            // ──────────────────────────────────────────────────────────────
             // Parse Ethernet frame.
             let eth = match EthernetPacket::new(&raw.data) {
                 Some(e) => e,
