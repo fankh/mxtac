@@ -1,7 +1,7 @@
 import logging
 import re
 
-from pydantic import Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,16 @@ _DSN_PASSWORD_RE = re.compile(r"(://[^:@]*:)([^@]+)(@)")
 def redact_dsn(dsn: str) -> str:
     """Replace the password portion of a DSN URL with '***'."""
     return _DSN_PASSWORD_RE.sub(r"\1***\3", dsn)
+
+
+class ThreatIntelFeedConfig(BaseModel):
+    """Configuration for a single STIX/TAXII 2.1 threat intelligence feed."""
+
+    name: str
+    taxii_url: str
+    collection_id: str
+    api_key: str = Field(default="", repr=False)
+    poll_interval: int = 21600  # seconds; default: 6 hours
 
 
 class Settings(BaseSettings):
@@ -122,6 +132,11 @@ class Settings(BaseSettings):
     alert_email_from: str = "mxtac-alerts@localhost"
     alert_email_to: list[str] = []               # recipient list
     alert_email_min_level: str = "high"          # minimum severity to email
+
+    # Threat intelligence feeds — STIX/TAXII 2.1 (feature 29.5)
+    # Set via THREAT_INTEL_FEEDS env var as a JSON array, e.g.:
+    #   [{"name":"AlienVault","taxii_url":"https://...","collection_id":"...","api_key":"..."}]
+    threat_intel_feeds: list[ThreatIntelFeedConfig] = []
 
     # Rate limiting
     rate_limit_per_minute: int = 300

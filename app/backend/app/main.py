@@ -425,6 +425,24 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("Agent status monitor start failed")
 
+    # 12. Start STIX/TAXII feed pollers — poll configured threat intel feeds (feature 29.5)
+    if settings.threat_intel_feeds:
+        try:
+            from .services.stix_feed import stix_feed_poller
+            asyncio.create_task(
+                stix_feed_poller(settings.threat_intel_feeds),
+                name="stix-feed-poller",
+            )
+            logger.info(
+                "STIX feed poller started: %d feed(s)", len(settings.threat_intel_feeds)
+            )
+        except Exception:
+            logger.exception("STIX feed poller start failed")
+    else:
+        logger.info(
+            "STIX feed poller: no feeds configured (set THREAT_INTEL_FEEDS to enable)"
+        )
+
     logger.info("MxTac API startup complete")
 
 
