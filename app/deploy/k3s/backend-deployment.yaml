@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/part-of: mxtac
     app.kubernetes.io/component: api
 spec:
-  replicas: 3
+  replicas: 2
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate

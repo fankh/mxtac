@@ -371,7 +371,7 @@
 | 19.7 | Docker Swarm stack manifest | `[ ]` | `[ ]` | P1 | Task 3.3 |
 | 19.8 | k3s / Kubernetes manifests | `[ ]` | `[ ]` | P1 | Task 3.3 |
 | 19.9 | HAProxy config — `/ready` health check | `[ ]` | `[ ]` | P1 | Task 3.3 |
-| 19.10 | HorizontalPodAutoscaler — CPU 70%, min 2 / max 8 | `[ ]` | `[ ]` | P2 | Task 3.3 |
+| 19.10 | HorizontalPodAutoscaler — CPU 70%, min 2 / max 8 | `[x]` | `[ ]` | P2 | Task 3.3 |
 | 19.11 | Stateless API — no in-process session state | `[ ]` | `[ ]` | P1 | Verify all endpoints |
 | 19.12 | Rolling update — zero downtime deploy | `[ ]` | `[ ]` | P1 | Kubernetes rolling |
 
