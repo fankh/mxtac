@@ -117,7 +117,7 @@ impl Agent {
         });
 
         // --- Spawn transport (batched sender) ------------------------------------
-        let transport = HttpTransport::new(&self.config.transport)?;
+        let transport = HttpTransport::new(&self.config.transport, &self.config.agent.agent_id)?;
         let batch_size = self.config.transport.batch_size;
         let flush_interval = Duration::from_millis(self.config.transport.flush_interval_ms);
 

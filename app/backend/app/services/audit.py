@@ -1,7 +1,7 @@
 """
 Audit Logger — structured audit trail stored in OpenSearch.
 
-Index: mxtac-audit
+Index: mxtac-audit-{YYYY.MM}  (monthly rollover, 3-year ISM retention)
 
 Every admin/security-relevant action is recorded with:
   - actor (who)
@@ -10,6 +10,15 @@ Every admin/security-relevant action is recorded with:
   - details (free-form context)
   - request metadata (IP, user-agent, method, path)
   - timestamp
+
+The audit index rolls over monthly so that each calendar month lives in its
+own index.  The ``mxtac-3year-audit-retention`` ISM policy (feature 21.14)
+automatically deletes indices after 1 095 days (3 years), satisfying
+regulatory retention requirements without manual housekeeping.
+
+The index template is registered by ``OpenSearchService.ensure_indices()``
+at application startup, so the first document written to a new monthly index
+inherits the correct field mappings and ISM policy automatically.
 """
 
 from __future__ import annotations
@@ -22,17 +31,16 @@ from fastapi import Request
 
 from ..core.config import settings
 from ..core.logging import get_logger
+from .opensearch_client import AUDIT_INDEX_TEMPLATE, _monthly_index
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
 
-AUDIT_INDEX = "mxtac-audit"
-
 
 class AuditLogger:
-    """Writes audit log entries to OpenSearch."""
+    """Writes audit log entries to OpenSearch (monthly-rollover indices)."""
 
     def __init__(self) -> None:
         self._client = None
@@ -57,39 +65,6 @@ class AuditLogger:
         except Exception as exc:
             logger.warning("AuditLogger OpenSearch connection failed: %s", exc)
 
-    async def _ensure_index(self) -> None:
-        """Create the audit index with proper mappings if it does not exist."""
-        if self._client is None:
-            return
-        try:
-            exists = await self._client.indices.exists(index=AUDIT_INDEX)
-            if not exists:
-                mapping = {
-                    "settings": {
-                        "number_of_shards": 1,
-                        "number_of_replicas": 1,
-                    },
-                    "mappings": {
-                        "properties": {
-                            "id":            {"type": "keyword"},
-                            "timestamp":     {"type": "date"},
-                            "actor":         {"type": "keyword"},
-                            "action":        {"type": "keyword"},
-                            "resource_type": {"type": "keyword"},
-                            "resource_id":   {"type": "keyword"},
-                            "details":       {"type": "object", "enabled": True},
-                            "request_ip":    {"type": "ip"},
-                            "request_method": {"type": "keyword"},
-                            "request_path":  {"type": "keyword"},
-                            "user_agent":    {"type": "text"},
-                        }
-                    },
-                }
-                await self._client.indices.create(index=AUDIT_INDEX, body=mapping)
-                logger.info("Created audit index: %s", AUDIT_INDEX)
-        except Exception as exc:
-            logger.warning("AuditLogger ensure_index failed: %s", exc)
-
     async def log(
         self,
         actor: str,
@@ -106,7 +81,10 @@ class AuditLogger:
         Dual-write strategy:
           - If *session* is provided the entry is written to the ``audit_logs``
             PostgreSQL/SQLite table (always available, no external dependency).
-          - The entry is also written to OpenSearch when the client is reachable.
+          - The entry is also written to the current monthly OpenSearch audit
+            index (``mxtac-audit-YYYY.MM``) when the client is reachable.
+            Index creation and field mappings are handled automatically by the
+            ``mxtac-audit-template`` registered at startup.
 
         Args:
             actor: Identity of the user performing the action (e.g. email).
@@ -161,7 +139,8 @@ class AuditLogger:
         # ── OpenSearch write (secondary, best-effort) ────────────────────────
         await self._ensure_client()
         if self._client is not None:
-            await self._ensure_index()
+            # Monthly rollover index — template + ISM policy applied automatically
+            idx = _monthly_index(AUDIT_INDEX_TEMPLATE)
             doc: dict[str, Any] = {
                 "id":            doc_id,
                 "timestamp":     datetime.now(timezone.utc).isoformat(),
@@ -177,14 +156,14 @@ class AuditLogger:
             }
             try:
                 resp = await self._client.index(
-                    index=AUDIT_INDEX,
+                    index=idx,
                     id=doc_id,
                     body=doc,
                     refresh="true",
                 )
                 logger.info(
-                    "Audit(opensearch): actor=%s action=%s resource=%s/%s",
-                    actor, action, resource_type, resource_id,
+                    "Audit(opensearch): actor=%s action=%s resource=%s/%s index=%s",
+                    actor, action, resource_type, resource_id, idx,
                 )
                 return resp.get("_id") or doc_id
             except Exception as exc:
@@ -209,6 +188,9 @@ class AuditLogger:
     ) -> dict[str, Any]:
         """
         Query audit log entries with optional filters.
+
+        Searches across all monthly audit indices (``mxtac-audit-*``) so that
+        queries spanning multiple months or years work transparently.
 
         Returns:
             Dict with 'total' and 'items' keys.
@@ -238,7 +220,8 @@ class AuditLogger:
         }
 
         try:
-            resp = await self._client.search(index=AUDIT_INDEX, body=body)
+            # Wildcard pattern covers all monthly audit indices
+            resp = await self._client.search(index=f"{AUDIT_INDEX_TEMPLATE}-*", body=body)
             hits = resp.get("hits", {})
             return {
                 "total": hits.get("total", {}).get("value", 0),

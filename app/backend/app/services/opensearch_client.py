@@ -4,6 +4,7 @@ OpenSearch event storage service.
 Index naming:
   mxtac-events-{YYYY.MM.DD}   — OCSF-normalized events (daily rollover)
   mxtac-alerts-{YYYY.MM.DD}   — enriched alerts
+  mxtac-audit-{YYYY.MM}       — audit log entries (monthly rollover, 3-year retention)
   mxtac-rules                 — Sigma rules (single index)
 
 Uses opensearch-py (async client).
@@ -22,11 +23,16 @@ logger = get_logger(__name__)
 # Index templates
 EVENTS_INDEX_TEMPLATE = "mxtac-events"
 ALERTS_INDEX_TEMPLATE = "mxtac-alerts"
+AUDIT_INDEX_TEMPLATE = "mxtac-audit"
 RULES_INDEX = "mxtac-rules"
 
-# ILM / ISM policy
+# ILM / ISM policy — events & alerts (90-day)
 ILM_POLICY_NAME = "mxtac-90day-retention"
 ILM_RETENTION_DAYS = 90
+
+# ILM / ISM policy — audit logs (3-year / 1095-day, feature 21.14)
+AUDIT_ILM_POLICY_NAME = "mxtac-3year-audit-retention"
+AUDIT_ILM_RETENTION_DAYS = 1095  # 365 × 3
 
 # ---------------------------------------------------------------------------
 # Index mapping constants — feature 12.10
@@ -191,6 +197,23 @@ ALERTS_MAPPING: dict[str, Any] = {
     }
 }
 
+#: Mapping body for mxtac-audit-* indices (audit log entries, feature 21.14).
+AUDIT_MAPPING: dict[str, Any] = {
+    "properties": {
+        "id":             {"type": "keyword"},
+        "timestamp":      {"type": "date"},
+        "actor":          {"type": "keyword"},
+        "action":         {"type": "keyword"},
+        "resource_type":  {"type": "keyword"},
+        "resource_id":    {"type": "keyword"},
+        "details":        {"type": "object", "enabled": True},
+        "request_ip":     {"type": "ip"},
+        "request_method": {"type": "keyword"},
+        "request_path":   {"type": "keyword"},
+        "user_agent":     {"type": "text"},
+    }
+}
+
 #: Mapping body for the mxtac-rules static index (Sigma detection rules).
 RULES_MAPPING: dict[str, Any] = {
     "properties": {
@@ -266,6 +289,16 @@ def filter_to_dsl(field: str, operator: str, value: Any) -> dict | None:
 
 def _daily_index(base: str) -> str:
     return f"{base}-{datetime.now(timezone.utc).strftime('%Y.%m.%d')}"
+
+
+def _monthly_index(base: str) -> str:
+    """Return a monthly-rollover index name ``{base}-YYYY.MM`` (UTC).
+
+    Used for audit indices which roll over monthly rather than daily.
+    With a 3-year retention policy this caps the total number of audit
+    indices at 36, compared to 1 095 if daily rollover were used.
+    """
+    return f"{base}-{datetime.now(timezone.utc).strftime('%Y.%m')}"
 
 
 class OpenSearchService:
@@ -554,6 +587,26 @@ class OpenSearchService:
         except Exception as exc:
             logger.warning("ensure_indices: alerts template failed: %s", exc)
 
+        # ── mxtac-audit-* index template (feature 21.14: 3-year retention) ──────
+        try:
+            await self._client.indices.put_index_template(
+                name="mxtac-audit-template",
+                body={
+                    "index_patterns": [f"{AUDIT_INDEX_TEMPLATE}-*"],
+                    "template": {
+                        "settings": {
+                            "number_of_shards": 1,
+                            "number_of_replicas": 1,
+                            "plugins.index_state_management.policy_id": AUDIT_ILM_POLICY_NAME,
+                        },
+                        "mappings": AUDIT_MAPPING,
+                    },
+                },
+            )
+            logger.info("Applied index template: mxtac-audit-template")
+        except Exception as exc:
+            logger.warning("ensure_indices: audit template failed: %s", exc)
+
         # ── mxtac-rules (single static index) ─────────────────────────────────
         try:
             exists = await self._client.indices.exists(index=RULES_INDEX)
@@ -647,6 +700,81 @@ class OpenSearchService:
             )
         except Exception as exc:
             logger.warning("ensure_ilm_policy: ISM policy creation failed: %s", exc)
+
+    async def ensure_audit_ilm_policy(self) -> None:
+        """Create or update the ISM policy that enforces 3-year audit log retention.
+
+        Creates an OpenSearch ISM (Index State Management) policy named
+        ``mxtac-3year-audit-retention`` that automatically deletes
+        ``mxtac-audit-*`` monthly indices after 1 095 days (3 years).
+
+        This satisfies regulatory retention requirements (SOC 2, HIPAA, etc.)
+        that mandate a minimum 3-year audit trail — while keeping the number
+        of live audit indices bounded at 36 (one per calendar month).
+
+        Policy state machine:
+        - ``ingest`` — initial state; transitions to ``delete`` once the
+          index reaches ``AUDIT_ILM_RETENTION_DAYS`` days old.
+        - ``delete`` — removes the index.
+
+        The ``ism_template`` section auto-attaches the policy to every new
+        ``mxtac-audit-YYYY.MM`` index so no per-index configuration is needed.
+
+        This operation is idempotent — a PUT on an existing policy updates it.
+        If the ISM plugin is unavailable the failure is logged at WARNING level
+        and startup continues normally.
+        """
+        if self._client is None:
+            return
+
+        policy_body = {
+            "policy": {
+                "description": (
+                    f"Delete MxTac audit indices after {AUDIT_ILM_RETENTION_DAYS} days"
+                    f" ({AUDIT_ILM_RETENTION_DAYS // 365} years)."
+                ),
+                "default_state": "ingest",
+                "states": [
+                    {
+                        "name": "ingest",
+                        "actions": [],
+                        "transitions": [
+                            {
+                                "state_name": "delete",
+                                "conditions": {
+                                    "min_index_age": f"{AUDIT_ILM_RETENTION_DAYS}d"
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "name": "delete",
+                        "actions": [{"delete": {}}],
+                        "transitions": [],
+                    },
+                ],
+                "ism_template": [
+                    {
+                        "index_patterns": [f"{AUDIT_INDEX_TEMPLATE}-*"],
+                        "priority": 200,
+                    }
+                ],
+            }
+        }
+
+        try:
+            await self._client.transport.perform_request(
+                "PUT",
+                f"/_plugins/_ism/policies/{AUDIT_ILM_POLICY_NAME}",
+                body=policy_body,
+            )
+            logger.info(
+                "Applied ISM policy: %s (retention=%dd)",
+                AUDIT_ILM_POLICY_NAME,
+                AUDIT_ILM_RETENTION_DAYS,
+            )
+        except Exception as exc:
+            logger.warning("ensure_audit_ilm_policy: ISM policy creation failed: %s", exc)
 
     async def close(self) -> None:
         if self._client:

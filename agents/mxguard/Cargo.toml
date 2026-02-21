@@ -53,3 +53,5 @@ uuid = { version = "1", features = ["v4"] }
 [dev-dependencies]
 # UID lookup in process collector tests
 libc = "0.2"
+# HTTP mock server for transport integration tests
+wiremock = "0.6"

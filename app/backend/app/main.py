@@ -233,10 +233,11 @@ async def on_startup() -> None:
     await queue.start()
     app.state.queue = queue
 
-    # 3. Connect OpenSearch, apply ILM policy, and create index templates
+    # 3. Connect OpenSearch, apply ILM policies, and create index templates
     os_client = get_opensearch()
     await os_client.connect()
-    await os_client.ensure_ilm_policy()
+    await os_client.ensure_ilm_policy()        # 90-day retention for events/alerts
+    await os_client.ensure_audit_ilm_policy()  # 3-year retention for audit logs (feature 21.14)
     await os_client.ensure_indices()
     app.state.os_client = os_client
 
