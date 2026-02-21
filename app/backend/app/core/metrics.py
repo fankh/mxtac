@@ -132,3 +132,13 @@ opensearch_events_per_day = Gauge(
     "Number of events stored in each daily OpenSearch index",
     ["date"],  # ISO date string e.g. "2024-01-15"
 )
+
+# ---------------------------------------------------------------------------
+# Data retention — feature 38.4
+# ---------------------------------------------------------------------------
+
+retention_deleted = Counter(
+    "mxtac_retention_deleted_total",
+    "Total records hard-deleted by the data retention background task",
+    ["type"],  # "detection", "incident", "ioc"
+)

@@ -594,6 +594,14 @@ async def on_startup() -> None:
     asyncio.create_task(_daily_snapshot_task(), name="daily-snapshot-task")
     logger.info("Daily OpenSearch snapshot task started (fires at next UTC midnight)")
 
+    # 15. Start data retention cleanup task — hard-deletes aged PostgreSQL records (feature 38.4)
+    try:
+        from .services.retention import data_retention_task
+        asyncio.create_task(data_retention_task(), name="data-retention-task")
+        logger.info("Data retention task started (fires daily at 02:00 UTC)")
+    except Exception:
+        logger.exception("Data retention task start failed")
+
     logger.info("MxTac API startup complete")
 
 

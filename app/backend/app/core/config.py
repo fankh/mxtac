@@ -165,6 +165,15 @@ class Settings(BaseSettings):
     # Number of days to retain snapshots; older ones are auto-deleted by the daily task.
     opensearch_snapshot_retention_days: int = 30
 
+    # PostgreSQL data retention — feature 38.4
+    # Controls how long records are kept in PostgreSQL before hard deletion.
+    # OpenSearch ILM (feature 38.2) handles event/alert index cleanup independently.
+    retention_events_days: int = 90      # informational — OpenSearch ILM controls events
+    retention_alerts_days: int = 365     # detections deleted after this many days
+    retention_incidents_days: int = 730  # resolved/closed incidents deleted after 2 years
+    retention_audit_days: int = 1095     # informational — OpenSearch ISM controls audit (3 years)
+    retention_iocs_days: int = 180       # expired IOCs hard-deleted after 180 days
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 

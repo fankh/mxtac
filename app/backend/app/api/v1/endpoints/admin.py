@@ -6,12 +6,15 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any
 
 from ....core.config import settings
+from ....core.database import get_db
 from ....core.security import get_current_user
 from ....services.audit import get_audit_logger
 from ....services.opensearch_client import get_opensearch_dep
+from ....services.retention import get_retention_storage_stats
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -71,6 +74,28 @@ class RestoreSnapshotResponse(BaseModel):
     snapshot: str
     repo: str
     status: str
+
+
+class RetentionPolicy(BaseModel):
+    retention_events_days: int
+    retention_alerts_days: int
+    retention_incidents_days: int
+    retention_audit_days: int
+    retention_iocs_days: int
+
+
+class RetentionStorageStats(BaseModel):
+    detections_total: int
+    incidents_total: int
+    iocs_total: int
+    detections_eligible_for_deletion: int
+    incidents_eligible_for_deletion: int
+    iocs_eligible_for_deletion: int
+
+
+class RetentionResponse(BaseModel):
+    policy: RetentionPolicy
+    storage: RetentionStorageStats
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -216,4 +241,39 @@ async def restore_snapshot(
         snapshot=name,
         repo=_SNAPSHOT_REPO_NAME,
         status="initiated",
+    )
+
+
+# ── Retention endpoint — feature 38.4 ────────────────────────────────────────
+
+
+@router.get("/retention", response_model=RetentionResponse)
+async def get_retention(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RetentionResponse:
+    """
+    Return current data retention policy and PostgreSQL storage usage.
+
+    The ``policy`` block shows the configured retention periods for each data
+    type.  The ``storage`` block shows total row counts and how many records
+    are currently eligible for deletion by the next cleanup run.
+
+    Requires admin role.
+    """
+    _require_admin(current_user)
+
+    policy = RetentionPolicy(
+        retention_events_days=settings.retention_events_days,
+        retention_alerts_days=settings.retention_alerts_days,
+        retention_incidents_days=settings.retention_incidents_days,
+        retention_audit_days=settings.retention_audit_days,
+        retention_iocs_days=settings.retention_iocs_days,
+    )
+
+    stats = await get_retention_storage_stats(db)
+
+    return RetentionResponse(
+        policy=policy,
+        storage=RetentionStorageStats(**stats),
     )
