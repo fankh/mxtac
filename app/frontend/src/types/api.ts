@@ -106,6 +106,19 @@ export interface DetectionUpdate {
   priority?: string
 }
 
+export interface BulkDetectionRequest {
+  ids: string[]
+  action: 'update'
+  data: {
+    status?: DetectionStatus
+    assigned_to?: string
+  }
+}
+
+export interface BulkDetectionResult {
+  updated: number
+}
+
 // ── Events ────────────────────────────────────────────────────────────────────
 
 export interface EventFilter {

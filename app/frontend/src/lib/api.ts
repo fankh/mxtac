@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type {
   KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus,
-  Detection, PaginatedResponse, DetectionUpdate,
+  Detection, PaginatedResponse, DetectionUpdate, BulkDetectionRequest, BulkDetectionResult,
   SearchRequest, SearchResponse, AggregationRequest, AggregationResponse, EntityTimeline,
   AuditLogEntry,
   Asset, AssetCreate, AssetStats, BulkAssetResult,
@@ -110,6 +110,9 @@ export const detectionsApi = {
 
   update: (id: string, body: DetectionUpdate): Promise<Detection> =>
     http.patch(`/detections/${id}`, body).then(r => r.data),
+
+  bulk: (body: BulkDetectionRequest): Promise<BulkDetectionResult> =>
+    http.post('/detections/bulk', body).then(r => r.data),
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
