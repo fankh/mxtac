@@ -405,6 +405,7 @@ export interface IOCStats {
   by_source: Record<string, number>
   active: number
   expired: number
+  total_hits: number
 }
 
 export interface IOCBulkImportResult {

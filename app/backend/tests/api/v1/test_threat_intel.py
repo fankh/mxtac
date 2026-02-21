@@ -365,6 +365,7 @@ _STATS = {
     "by_source": {"manual": 40, "opencti": 60},
     "active": 90,
     "expired": 10,
+    "total_hits": 250,
 }
 
 
@@ -389,7 +390,7 @@ async def test_stats_fields(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_stats_empty_db(client: AsyncClient) -> None:
-    empty = {"total": 0, "by_type": {}, "by_source": {}, "active": 0, "expired": 0}
+    empty = {"total": 0, "by_type": {}, "by_source": {}, "active": 0, "expired": 0, "total_hits": 0}
     with patch(f"{MOCK_REPO}.stats", new=AsyncMock(return_value=empty)):
         resp = await client.get(f"{BASE}/stats", headers=_token_headers("hunter"))
     assert resp.status_code == 200

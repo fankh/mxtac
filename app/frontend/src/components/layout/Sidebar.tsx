@@ -14,6 +14,7 @@ const NAV = [
   { to: '/incidents',    icon: '\uD83D\uDD14', label: 'Incidents' },
   { to: '/intel',        icon: '\uD83C\uDF10', label: 'Threat Intel' },
   { to: '/assets',       icon: '\uD83D\uDCBB', label: 'Assets' },
+  { to: '/reports',      icon: '\uD83D\uDCCB', label: 'Reports'      },
   { to: '/integrations', icon: '\u21C4',       label: 'Integrations' },
   { to: '/admin',        icon: '\u2699',       label: 'Admin' },
 ]

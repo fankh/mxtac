@@ -107,3 +107,4 @@ class IOCStats(BaseModel):
     by_source: dict[str, int]
     active: int
     expired: int
+    total_hits: int

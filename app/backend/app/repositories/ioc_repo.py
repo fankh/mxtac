@@ -193,7 +193,7 @@ class IOCRepo:
 
     @staticmethod
     async def stats(session: AsyncSession) -> dict:
-        """Return aggregate statistics: total, by_type, by_source, active, expired counts."""
+        """Return aggregate statistics: total, by_type, by_source, active, expired, total_hits counts."""
         total = await session.scalar(select(func.count()).select_from(IOC)) or 0
 
         type_rows = await session.execute(
@@ -210,10 +210,15 @@ class IOCRepo:
             select(func.count()).select_from(IOC).where(IOC.is_active.is_(True))
         ) or 0
 
+        total_hits = await session.scalar(
+            select(func.sum(IOC.hit_count)).select_from(IOC)
+        ) or 0
+
         return {
             "total": total,
             "by_type": by_type,
             "by_source": by_source,
             "active": active,
             "expired": total - active,
+            "total_hits": total_hits,
         }
