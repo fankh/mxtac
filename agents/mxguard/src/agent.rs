@@ -10,6 +10,7 @@ use tracing::{error, info};
 use crate::collectors::process::ProcessCollector;
 use crate::collectors::file::FileCollector;
 use crate::collectors::network::NetworkCollector;
+use crate::collectors::auth::AuthCollector;
 use crate::collectors::Collector;
 use crate::config::Config;
 use crate::events::ocsf::OcsfDevice;
@@ -80,6 +81,20 @@ impl Agent {
             collector_handles.push(tokio::spawn(async move {
                 if let Err(e) = collector.run(tx, rx).await {
                     error!("Network collector error: {e}");
+                }
+            }));
+        }
+
+        if self.config.collectors.auth.enabled {
+            let collector = AuthCollector::new(
+                &self.config.collectors.auth,
+                self.device.clone(),
+            );
+            let tx = event_tx.clone();
+            let rx = shutdown_rx.clone();
+            collector_handles.push(tokio::spawn(async move {
+                if let Err(e) = collector.run(tx, rx).await {
+                    error!("Auth collector error: {e}");
                 }
             }));
         }

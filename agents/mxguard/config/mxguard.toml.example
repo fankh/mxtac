@@ -26,6 +26,14 @@ enabled = true
 # How often to scan /proc/net/tcp for connections (milliseconds)
 scan_interval_ms = 5000
 
+[collectors.auth]
+enabled = true
+# Log files to tail for authentication events.
+# Debian/Ubuntu: /var/log/auth.log — RHEL/CentOS/Fedora: /var/log/secure
+log_paths = ["/var/log/auth.log", "/var/log/secure"]
+# How often to poll log files for new lines (milliseconds)
+poll_interval_ms = 2000
+
 [transport]
 # MxTac backend ingest endpoint
 endpoint = "http://127.0.0.1:8080/api/v1/ingest/ocsf"

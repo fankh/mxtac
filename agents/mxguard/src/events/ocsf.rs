@@ -4,6 +4,7 @@
 //!   - Process Activity (class_uid 1007)
 //!   - File System Activity (class_uid 1001)
 //!   - Network Activity (class_uid 4001)
+//!   - Authentication Activity (class_uid 3002)
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -128,6 +129,8 @@ pub enum OcsfPayload {
     FileActivity(FileActivityData),
     #[serde(rename = "network_activity")]
     NetworkActivity(NetworkActivityData),
+    #[serde(rename = "authentication_activity")]
+    AuthenticationActivity(AuthenticationActivityData),
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +177,32 @@ pub struct NetworkActivityData {
     pub protocol: String,
     pub state: String,
     pub pid: Option<u32>,
+}
+
+// ---------------------------------------------------------------------------
+// Authentication Activity (3002)
+// ---------------------------------------------------------------------------
+
+/// Data payload for OCSF Authentication Activity events (class_uid 3002).
+///
+/// Populated by parsing `/var/log/auth.log` or `/var/log/secure` log lines.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthenticationActivityData {
+    /// Authenticated (or attempted) username.
+    pub user: String,
+    /// Source IP address extracted from the log line (may be absent for local auth).
+    pub source_ip: Option<String>,
+    /// Source TCP port extracted from the log line.
+    pub source_port: Option<u16>,
+    /// Authentication mechanism: `"password"`, `"publickey"`, `"sudo"`, `"su"`,
+    /// `"pam"`, `"session"`, or `"unknown"`.
+    pub auth_method: String,
+    /// `"Success"` or `"Failure"`.
+    pub status: String,
+    /// High-level outcome used to derive the OCSF activity: `"Logon"` or `"Logoff"`.
+    pub outcome: String,
+    /// Service that generated the log line (e.g. `"sshd"`, `"sudo"`, `"su"`).
+    pub service: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -244,6 +273,30 @@ impl OcsfEvent {
             severity: severity.as_str().into(),
             device,
             payload: OcsfPayload::NetworkActivity(data),
+        }
+    }
+
+    /// Create a new Authentication Activity event (class_uid 3002, category 3 — IAM).
+    ///
+    /// `activity` is typically `"Logon"` (activity_id 1) or `"Logoff"` (activity_id 2).
+    pub fn authentication_activity(
+        device: OcsfDevice,
+        activity: &str,
+        activity_id: u32,
+        severity: OcsfSeverity,
+        data: AuthenticationActivityData,
+    ) -> Self {
+        Self {
+            metadata: OcsfMetadata::default(),
+            time: Utc::now(),
+            class_uid: 3002,
+            category_uid: 3,
+            activity: activity.into(),
+            activity_id,
+            severity_id: severity.id(),
+            severity: severity.as_str().into(),
+            device,
+            payload: OcsfPayload::AuthenticationActivity(data),
         }
     }
 }

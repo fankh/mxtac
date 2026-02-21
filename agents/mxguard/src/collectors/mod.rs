@@ -7,6 +7,7 @@
 pub mod process;
 pub mod file;
 pub mod network;
+pub mod auth;
 
 use crate::events::OcsfEvent;
 use async_trait::async_trait;

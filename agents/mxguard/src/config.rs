@@ -67,6 +67,8 @@ pub struct CollectorsConfig {
     pub file: FileCollectorConfig,
     #[serde(default)]
     pub network: NetworkCollectorConfig,
+    #[serde(default)]
+    pub auth: AuthCollectorConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -119,6 +121,28 @@ impl Default for NetworkCollectorConfig {
         Self {
             enabled: true,
             scan_interval_ms: 5000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuthCollectorConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Log files to tail. Defaults to Debian/Ubuntu and RHEL/CentOS paths.
+    #[serde(default = "default_auth_log_paths")]
+    pub log_paths: Vec<String>,
+    /// How often to poll log files for new lines (milliseconds).
+    #[serde(default = "default_auth_poll_interval")]
+    pub poll_interval_ms: u64,
+}
+
+impl Default for AuthCollectorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            log_paths: default_auth_log_paths(),
+            poll_interval_ms: default_auth_poll_interval(),
         }
     }
 }
@@ -197,6 +221,14 @@ fn default_retry_attempts() -> u32 {
 }
 fn default_health_addr() -> String {
     "0.0.0.0:9001".into()
+}
+fn default_auth_log_paths() -> Vec<String> {
+    // Debian/Ubuntu: /var/log/auth.log
+    // RHEL/CentOS/Fedora: /var/log/secure
+    vec!["/var/log/auth.log".into(), "/var/log/secure".into()]
+}
+fn default_auth_poll_interval() -> u64 {
+    2000
 }
 
 // ---------------------------------------------------------------------------
