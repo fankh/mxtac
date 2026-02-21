@@ -200,6 +200,63 @@ describe('uiStore', () => {
   })
 
   // ---------------------------------------------------------------------------
+  // localStorage persistence (Zustand persist middleware)
+  // ---------------------------------------------------------------------------
+  describe('localStorage persistence', () => {
+    beforeEach(() => {
+      localStorage.clear()
+      useUIStore.setState({
+        theme: 'light',
+        sidebarCollapsed: false,
+        notifications: [],
+        globalError: null,
+      })
+    })
+
+    afterEach(() => {
+      localStorage.clear()
+    })
+
+    it('persists theme to localStorage under the "mxtac-ui" key', () => {
+      useUIStore.getState().setTheme('dark')
+      const raw = localStorage.getItem('mxtac-ui')
+      expect(raw).not.toBeNull()
+      expect(JSON.parse(raw!)?.state?.theme).toBe('dark')
+    })
+
+    it('persists sidebarCollapsed to localStorage', () => {
+      useUIStore.getState().toggleSidebar() // false → true
+      const stored = JSON.parse(localStorage.getItem('mxtac-ui') || '{}')
+      expect(stored?.state?.sidebarCollapsed).toBe(true)
+    })
+
+    it('only stores theme and sidebarCollapsed (partialize)', () => {
+      useUIStore.getState().setGlobalError('err')
+      const stored = JSON.parse(localStorage.getItem('mxtac-ui') || '{}')
+      expect(stored?.state).toHaveProperty('theme')
+      expect(stored?.state).toHaveProperty('sidebarCollapsed')
+      expect(stored?.state?.globalError).toBeUndefined()
+      expect(stored?.state?.notifications).toBeUndefined()
+    })
+
+    it('updates localStorage when theme changes again', () => {
+      useUIStore.getState().setTheme('matrix')
+      expect(JSON.parse(localStorage.getItem('mxtac-ui') || '{}')?.state?.theme).toBe('matrix')
+
+      useUIStore.getState().setTheme('light')
+      expect(JSON.parse(localStorage.getItem('mxtac-ui') || '{}')?.state?.theme).toBe('light')
+    })
+
+    it('persists all three themes correctly', () => {
+      ;(['light', 'dark', 'matrix'] as const).forEach((theme) => {
+        useUIStore.getState().setTheme(theme)
+        const stored = JSON.parse(localStorage.getItem('mxtac-ui') || '{}')
+        expect(stored?.state?.theme).toBe(theme)
+      })
+    })
+  })
+
+  // ---------------------------------------------------------------------------
   // globalError
   // ---------------------------------------------------------------------------
   describe('globalError', () => {
