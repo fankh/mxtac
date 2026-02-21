@@ -1116,12 +1116,12 @@ async def test_entity_timeline_custom_time_from(
 
 
 @pytest.mark.asyncio
-async def test_entity_timeline_unknown_entity_type_defaults_to_hostname(
+async def test_entity_timeline_unknown_entity_type_returns_422(
     client: AsyncClient,
     hunter_headers: dict,
     db_session: AsyncSession,
 ) -> None:
-    """Unknown entity_type falls back to hostname search without error."""
+    """Unknown entity_type is rejected with 422 (input validation hardening — MXTAC-33.3)."""
     await _seed(
         db_session,
         {"hostname": "fallback-host"},
@@ -1131,10 +1131,7 @@ async def test_entity_timeline_unknown_entity_type_defaults_to_hostname(
         f"{BASE_URL}/entity/unknowntype/fallback-host",
         headers=hunter_headers,
     )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["total"] == 1
-    assert data["events"][0]["hostname"] == "fallback-host"
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio

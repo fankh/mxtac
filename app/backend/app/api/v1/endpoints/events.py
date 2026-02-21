@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -263,15 +263,23 @@ async def aggregate_events(
     return {"field": body.field, "buckets": buckets}
 
 
+_ALLOWED_ENTITY_TYPES = frozenset({"ip", "host", "user", "hash"})
+
+
 @router.get("/entity/{entity_type}/{entity_value}")
 async def entity_timeline(
-    entity_type: str,
-    entity_value: str,
-    time_from: str = "now-7d",
+    entity_type: str = Path(..., max_length=20),
+    entity_value: str = Path(..., max_length=512),
+    time_from: str = Query("now-7d", max_length=50),
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("events:search")),
 ):
     """Return all events involving a specific entity (IP, host, user, hash)."""
+    if entity_type not in _ALLOWED_ENTITY_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid entity_type {entity_type!r}. Allowed: {sorted(_ALLOWED_ENTITY_TYPES)}",
+        )
     events, total = await EventRepo.entity_events(
         db,
         entity_type=entity_type,

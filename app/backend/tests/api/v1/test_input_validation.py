@@ -753,3 +753,167 @@ async def test_ioc_create_invalid_md5_returns_422(client: AsyncClient, engineer_
         headers=engineer_headers,
     )
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# DetectionUpdate / BulkStatusUpdate validation
+# ---------------------------------------------------------------------------
+
+from app.schemas.detection import DetectionUpdate, BulkStatusUpdate
+
+
+class TestDetectionUpdateValidation:
+    def test_assigned_to_too_long_raises(self):
+        with pytest.raises(ValidationError):
+            DetectionUpdate(assigned_to="x" * 256)
+
+    def test_priority_too_long_raises(self):
+        with pytest.raises(ValidationError):
+            DetectionUpdate(priority="x" * 21)
+
+    def test_valid_assigned_to(self):
+        update = DetectionUpdate(assigned_to="J. Smith")
+        assert update.assigned_to == "J. Smith"
+
+    def test_valid_priority(self):
+        update = DetectionUpdate(priority="P1 Urgent")
+        assert update.priority == "P1 Urgent"
+
+    def test_none_fields_pass(self):
+        update = DetectionUpdate()
+        assert update.assigned_to is None
+        assert update.priority is None
+
+
+class TestBulkStatusUpdateValidation:
+    def test_too_many_ids_raises(self):
+        with pytest.raises(ValidationError):
+            BulkStatusUpdate(ids=["id"] * 501, status="resolved")
+
+    def test_empty_ids_raises(self):
+        with pytest.raises(ValidationError):
+            BulkStatusUpdate(ids=[], status="resolved")
+
+    def test_valid_bulk(self):
+        bulk = BulkStatusUpdate(ids=["id1", "id2"], status="resolved")
+        assert len(bulk.ids) == 2
+
+
+# ---------------------------------------------------------------------------
+# AssetCreate hostname validation
+# ---------------------------------------------------------------------------
+
+
+class TestAssetCreateHostnameValidation:
+    def test_valid_simple_hostname(self):
+        asset = AssetCreate(hostname="server01", asset_type="server")
+        assert asset.hostname == "server01"
+
+    def test_valid_fqdn(self):
+        asset = AssetCreate(hostname="srv01.example.com", asset_type="server")
+        assert asset.hostname == "srv01.example.com"
+
+    def test_invalid_hostname_leading_hyphen_raises(self):
+        with pytest.raises(ValidationError):
+            AssetCreate(hostname="-invalid-host", asset_type="server")
+
+    def test_invalid_hostname_too_long_raises(self):
+        with pytest.raises(ValidationError):
+            AssetCreate(hostname="a" * 254, asset_type="server")
+
+
+# ---------------------------------------------------------------------------
+# Events entity timeline — entity_type whitelist
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_entity_timeline_invalid_type_returns_422(
+    client: AsyncClient, hunter_headers: dict
+):
+    """GET /events/entity/{entity_type}/{entity_value} with unknown entity_type → 422."""
+    resp = await client.get(
+        "/api/v1/events/entity/unknown_type/10.0.0.1",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_entity_timeline_valid_type_returns_200_or_200(
+    client: AsyncClient, hunter_headers: dict
+):
+    """GET /events/entity/ip/{value} with known entity_type is accepted (returns 200)."""
+    resp = await client.get(
+        "/api/v1/events/entity/ip/10.0.0.1",
+        headers=hunter_headers,
+    )
+    # Valid type — should not return 422; DB will return empty results → 200
+    assert resp.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_detection_assigned_to_too_long_returns_422(
+    client: AsyncClient, analyst_headers: dict
+):
+    """PATCH /detections/{id} with assigned_to > 255 chars → 422."""
+    from unittest.mock import AsyncMock, patch
+
+    with patch(
+        "app.api.v1.endpoints.detections.DetectionRepo.update",
+        new=AsyncMock(return_value=None),
+    ):
+        resp = await client.patch(
+            "/api/v1/detections/DET-2026-00001",
+            headers=analyst_headers,
+            json={"assigned_to": "x" * 256},
+        )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_detection_priority_too_long_returns_422(
+    client: AsyncClient, analyst_headers: dict
+):
+    """PATCH /detections/{id} with priority > 20 chars → 422."""
+    from unittest.mock import AsyncMock, patch
+
+    with patch(
+        "app.api.v1.endpoints.detections.DetectionRepo.update",
+        new=AsyncMock(return_value=None),
+    ):
+        resp = await client.patch(
+            "/api/v1/detections/DET-2026-00001",
+            headers=analyst_headers,
+            json={"priority": "P" * 21},
+        )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_bulk_update_too_many_ids_returns_422(
+    client: AsyncClient, analyst_headers: dict
+):
+    """POST /detections/bulk with > 500 IDs → 422."""
+    resp = await client.post(
+        "/api/v1/detections/bulk",
+        headers=analyst_headers,
+        json={"ids": ["id"] * 501, "status": "resolved"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_create_asset_invalid_hostname_returns_422(
+    client: AsyncClient, engineer_headers: dict
+):
+    """AssetCreate with RFC-invalid hostname (leading hyphen) → 422."""
+    resp = await client.post(
+        "/api/v1/assets",
+        json={
+            "hostname": "-invalid-hostname",
+            "asset_type": "server",
+        },
+        headers=engineer_headers,
+    )
+    assert resp.status_code == 422

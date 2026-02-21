@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from ..core.validators import validate_ip_address
+from ..core.validators import validate_hostname, validate_ip_address
 
 AssetType = Literal["server", "workstation", "network", "cloud", "container"]
 OsFamily = Literal["linux", "windows", "macos", "other"]
@@ -33,6 +33,11 @@ class AssetCreate(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=50)
     is_active: bool = True
     agent_id: str | None = Field(default=None, max_length=255)
+
+    @field_validator("hostname")
+    @classmethod
+    def validate_hostname_format(cls, v: str) -> str:
+        return validate_hostname(v)
 
     @field_validator("ip_addresses")
     @classmethod

@@ -35,12 +35,12 @@ class Detection(BaseModel):
 
 class DetectionUpdate(BaseModel):
     status: DetectionStatus | None = None
-    assigned_to: str | None = None
-    priority: str | None = None
+    assigned_to: str | None = Field(default=None, max_length=255)
+    priority: str | None = Field(default=None, max_length=20)
 
 
 class BulkStatusUpdate(BaseModel):
-    ids: list[str] = Field(..., min_length=1)
+    ids: list[str] = Field(..., min_length=1, max_length=500)
     status: DetectionStatus
 
 
