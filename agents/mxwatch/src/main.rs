@@ -237,8 +237,16 @@ async fn main() -> anyhow::Result<()> {
                     if tcp_info.payload_len > 0 {
                         let payload = tcp::parse_tcp_payload(tcp_data, &tcp_info);
 
-                        if let Some(http_info) = http_parser::parse_http_request(payload) {
-                            if http_parser::is_suspicious_request(&http_info, &http_patterns) {
+                        if let Some(http_info) = http_parser::parse_http(payload) {
+                            let suspicious = match http_info.direction {
+                                http_parser::HttpDirection::Request => {
+                                    http_parser::is_suspicious_request(&http_info, &http_patterns)
+                                }
+                                http_parser::HttpDirection::Response => {
+                                    http_parser::is_suspicious_response(&http_info)
+                                }
+                            };
+                            if suspicious {
                                 let event = OcsfNetworkEvent::traffic(
                                     device_clone.clone(),
                                     src_ip,
