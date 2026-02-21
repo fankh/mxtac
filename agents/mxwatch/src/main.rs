@@ -195,7 +195,7 @@ async fn main() -> anyhow::Result<()> {
                         None => continue,
                     };
 
-                    // Port scan detection on SYN packets.
+                    // Port scan detection on SYN packets (SYN scan).
                     if tcp::is_syn_only(&tcp_info) {
                         if let Some(alert) = scan_detector.record(
                             &src_ip.to_string(),
@@ -214,10 +214,28 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
 
-                    // Try HTTP parsing on common ports.
+                    // Stealth scan detection: XMAS and NULL scan techniques.
+                    if tcp::is_xmas_scan(&tcp_info) || tcp::is_null_scan(&tcp_info) {
+                        if let Some(alert) = scan_detector.record(
+                            &src_ip.to_string(),
+                            tcp_info.dst_port,
+                        ) {
+                            let event = OcsfNetworkEvent::from_alert(
+                                device_clone.clone(),
+                                src_ip,
+                                tcp_info.src_port,
+                                dst_ip,
+                                tcp_info.dst_port,
+                                "TCP",
+                                &alert,
+                            );
+                            let _ = evt_tx_clone.send(event).await;
+                        }
+                    }
+
+                    // Try HTTP / TLS parsing on packets that carry payload data.
                     if tcp_info.payload_len > 0 {
-                        let payload_start = (tcp_data.len() - tcp_info.payload_len).min(tcp_data.len());
-                        let payload = &tcp_data[payload_start..];
+                        let payload = tcp::parse_tcp_payload(tcp_data, &tcp_info);
 
                         if let Some(http_info) = http_parser::parse_http_request(payload) {
                             if http_parser::is_suspicious_request(&http_info, &http_patterns) {
@@ -260,10 +278,9 @@ async fn main() -> anyhow::Result<()> {
                         None => continue,
                     };
 
-                    // DNS parsing on port 53.
-                    if udp_info.src_port == 53 || udp_info.dst_port == 53 {
-                        let payload_start = 8.min(udp_data.len()); // UDP header = 8 bytes
-                        let payload = &udp_data[payload_start..];
+                    // DNS parsing on port 53 (DNS) and 5353 (mDNS).
+                    if udp::is_dns_port(&udp_info) {
+                        let payload = udp::extract_payload(udp_data);
 
                         if let Some(dns_info) = dns::parse_dns(payload) {
                             if let Some(alert) = dns_detector.evaluate(&dns_info) {
