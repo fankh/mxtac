@@ -11,6 +11,7 @@ import type {
   IOC, IOCCreate, IOCUpdate, IOCStats, IOCBulkImportResult,
   Report, ReportGenerateRequest, ReportGenerateResponse,
   ReportSchedule, ReportScheduleCreate, ReportScheduleUpdate,
+  HuntSuggestionsResponse,
 } from '../types/api'
 
 const http = axios.create({
@@ -134,6 +135,13 @@ export const eventsApi = {
 
   get: (id: string): Promise<import('../types/api').EventItem> =>
     http.get(`/events/${id}`).then(r => r.data),
+}
+
+// ── Hunting ───────────────────────────────────────────────────────────────────
+
+export const huntingApi = {
+  suggestions: (hours = 24, limit = 10): Promise<HuntSuggestionsResponse> =>
+    http.get('/hunting/suggestions', { params: { hours, limit } }).then(r => r.data),
 }
 
 // ── Audit Logs ────────────────────────────────────────────────────────────────

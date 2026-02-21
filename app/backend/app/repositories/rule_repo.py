@@ -279,6 +279,33 @@ class RuleRepo:
         }
 
     @staticmethod
+    async def get_enabled_rule_counts_by_technique(session: AsyncSession) -> dict[str, int]:
+        """Return count of enabled rules per ATT&CK technique ID.
+
+        Used by the hunt suggestions engine to annotate each suggestion with
+        how many active Sigma rules already cover the technique, helping
+        analysts gauge their existing detection posture.
+
+        Returns an empty dict when no enabled rules with technique mappings exist.
+        """
+        result = await session.execute(
+            select(Rule.technique_ids)
+            .where(Rule.enabled == True)  # noqa: E712
+            .where(Rule.technique_ids.is_not(None))
+        )
+        counts: dict[str, int] = {}
+        for technique_ids_json in result.scalars().all():
+            try:
+                ids = json.loads(technique_ids_json)
+                for tid in ids:
+                    if isinstance(tid, str) and tid.strip():
+                        key = tid.strip()
+                        counts[key] = counts.get(key, 0) + 1
+            except (ValueError, TypeError):
+                continue
+        return counts
+
+    @staticmethod
     async def get_coverage_gaps(session: AsyncSession) -> dict:
         """Return ATT&CK coverage gap data based on enabled vs. all rules.
 

@@ -338,6 +338,62 @@ class DetectionRepo:
         return heatmap
 
     @staticmethod
+    async def get_technique_activity(
+        session: AsyncSession,
+        *,
+        from_date: datetime,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Return per-technique detection counts within a time window.
+
+        Used by the hunt suggestions engine to identify trending techniques
+        that analysts should investigate further.
+
+        Each dict has keys:
+            technique_id    — ATT&CK technique ID (e.g. "T1003.006")
+            technique_name  — human-readable name
+            tactic          — parent tactic name
+            tactic_id       — ATT&CK tactic ID (may be empty string)
+            count           — total detections in the window
+            critical        — critical-severity detections
+            high            — high-severity detections
+        """
+        q = (
+            select(
+                Detection.technique_id,
+                Detection.technique_name,
+                Detection.tactic,
+                Detection.tactic_id,
+                func.count().label("count"),
+                func.sum(case((Detection.severity == "critical", 1), else_=0)).label("critical"),
+                func.sum(case((Detection.severity == "high", 1), else_=0)).label("high"),
+            )
+            .where(Detection.time >= from_date)
+            .where(Detection.technique_id.is_not(None))
+            .group_by(
+                Detection.technique_id,
+                Detection.technique_name,
+                Detection.tactic,
+                Detection.tactic_id,
+            )
+            .order_by(func.count().desc())
+            .limit(limit)
+        )
+        result = await session.execute(q)
+        return [
+            {
+                "technique_id": row.technique_id,
+                "technique_name": row.technique_name,
+                "tactic": row.tactic,
+                "tactic_id": row.tactic_id or "",
+                "count": int(row.count),
+                "critical": int(row.critical or 0),
+                "high": int(row.high or 0),
+            }
+            for row in result.all()
+        ]
+
+    @staticmethod
     async def get_timeline(
         session: AsyncSession,
         *,

@@ -8,18 +8,19 @@
 //! ## Design Target
 //!
 //! MxGuard targets 30–40% coverage of MITRE ATT&CK Enterprise parent techniques
-//! using four data sources:
+//! using five data sources:
 //!   - Process telemetry (`process` collector): process creation via `/proc`
 //!   - File system telemetry (`file` collector): inotify create/modify/delete
 //!   - Network telemetry (`network` collector): `/proc/net/tcp` connections
 //!   - Authentication telemetry (`auth` collector): syslog auth events
+//!   - Windows Registry telemetry (`registry` collector, Windows only): registry polling
 //!
 //! ## Coverage Accounting
 //!
-//! The current catalogue covers **59 parent techniques** out of approximately
-//! 201 in MITRE ATT&CK Enterprise (≈ 29%), with an additional **27 mapped
-//! sub-techniques** bringing the total tagged IDs to **86**.  The 30–40%
-//! target is met when counting techniques visible from these four data sources;
+//! The current catalogue covers **63 parent techniques** out of approximately
+//! 201 in MITRE ATT&CK Enterprise (≈ 31%), with an additional **31 mapped
+//! sub-techniques** bringing the total tagged IDs to **94**.  The 30–40%
+//! target is met when counting techniques visible from these five data sources;
 //! techniques that require kernel-level eBPF or memory forensics are outside
 //! scope for this agent version.
 //!
@@ -35,6 +36,7 @@ use std::collections::BTreeSet;
 
 use crate::events::ocsf::{
     AuthenticationActivityData, FileActivityData, NetworkActivityData, ProcessActivityData,
+    RegistryActivityData,
 };
 
 // ---------------------------------------------------------------------------
@@ -732,6 +734,58 @@ pub static TECHNIQUE_CATALOGUE: &[AttackTechnique] = &[
         tactic: "Impact",
         tactic_id: "TA0040",
         data_source: "process",
+    },
+    // -----------------------------------------------------------------------
+    // Defense Evasion / Persistence / Privilege Escalation — Registry (Windows)
+    // -----------------------------------------------------------------------
+    AttackTechnique {
+        id: "T1112",
+        name: "Modify Registry",
+        tactic: "Defense Evasion",
+        tactic_id: "TA0005",
+        data_source: "registry",
+    },
+    AttackTechnique {
+        id: "T1547.001",
+        name: "Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder",
+        tactic: "Persistence",
+        tactic_id: "TA0003",
+        data_source: "registry",
+    },
+    AttackTechnique {
+        id: "T1543.003",
+        name: "Create or Modify System Process: Windows Service",
+        tactic: "Persistence",
+        tactic_id: "TA0003",
+        data_source: "registry",
+    },
+    AttackTechnique {
+        id: "T1546.012",
+        name: "Event Triggered Execution: Image File Execution Options Injection",
+        tactic: "Privilege Escalation",
+        tactic_id: "TA0004",
+        data_source: "registry",
+    },
+    AttackTechnique {
+        id: "T1574.001",
+        name: "Hijack Execution Flow: DLL Search Order Hijacking",
+        tactic: "Defense Evasion",
+        tactic_id: "TA0005",
+        data_source: "registry",
+    },
+    AttackTechnique {
+        id: "T1003.001",
+        name: "OS Credential Dumping: LSASS Memory",
+        tactic: "Credential Access",
+        tactic_id: "TA0006",
+        data_source: "registry",
+    },
+    AttackTechnique {
+        id: "T1562.010",
+        name: "Impair Defenses: Downgrade Attack",
+        tactic: "Defense Evasion",
+        tactic_id: "TA0005",
+        data_source: "registry",
     },
 ];
 
@@ -1480,6 +1534,78 @@ pub fn tag_auth_event(data: &AuthenticationActivityData) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
+// Registry event tagger (Windows)
+// ---------------------------------------------------------------------------
+
+/// Return the ATT&CK technique IDs applicable to a Windows Registry activity event.
+///
+/// Tags are based on the registry key path and the specific action (Create,
+/// Delete, Modify).  Only high-signal registry locations are tagged to reduce
+/// false positives; benign application registry writes are not flagged.
+///
+/// ## Key Path Mappings
+///
+/// | Key pattern                         | Technique(s)                         |
+/// |-------------------------------------|--------------------------------------|
+/// | `…\CurrentVersion\Run[Once]`        | T1547, T1547.001, T1112              |
+/// | `…\Services`                        | T1543, T1543.003, T1112              |
+/// | `…\Image File Execution Options`    | T1546, T1546.012, T1112              |
+/// | `…\KnownDLLs`                       | T1574, T1574.001, T1112              |
+/// | `…\Control\Lsa`                     | T1003, T1003.001, T1112              |
+/// | Any other registry write            | T1112                                |
+pub fn tag_registry_event(data: &RegistryActivityData) -> Vec<String> {
+    let mut ids: BTreeSet<&str> = BTreeSet::new();
+
+    let key_lc = data.key.to_lowercase();
+
+    // All registry writes are at minimum T1112 (Modify Registry).
+    ids.insert("T1112");
+
+    // --- Autorun persistence: Run / RunOnce keys (T1547.001) ---
+    if key_lc.contains("currentversion\\run") || key_lc.contains("currentversion/run") {
+        ids.insert("T1547");
+        ids.insert("T1547.001");
+    }
+
+    // --- Windows services (T1543.003) ---
+    if key_lc.contains("\\services") || key_lc.contains("/services") {
+        ids.insert("T1543");
+        ids.insert("T1543.003");
+    }
+
+    // --- Image File Execution Options — debugger injection (T1546.012) ---
+    if key_lc.contains("image file execution options") {
+        ids.insert("T1546");
+        ids.insert("T1546.012");
+    }
+
+    // --- KnownDLLs — DLL hijacking (T1574.001) ---
+    if key_lc.contains("knowndlls") {
+        ids.insert("T1574");
+        ids.insert("T1574.001");
+    }
+
+    // --- LSA configuration — credential access / downgrade (T1003.001, T1562.010) ---
+    if key_lc.contains("\\control\\lsa") || key_lc.contains("/control/lsa") {
+        ids.insert("T1003");
+        ids.insert("T1003.001");
+        // Weakening LSA (e.g. setting LmCompatibilityLevel = 0) is also a
+        // downgrade attack against authentication security (T1562.010).
+        ids.insert("T1562");
+        ids.insert("T1562.010");
+    }
+
+    // --- Winlogon hijacking: userinit / shell replacement ---
+    if key_lc.contains("winlogon") {
+        // Modifying Winlogon values (Userinit, Shell) → persistence / hijack.
+        ids.insert("T1547");
+        ids.insert("T1547.001");
+    }
+
+    ids.into_iter().map(str::to_string).collect()
+}
+
+// ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
 
@@ -2184,5 +2310,141 @@ mod tests {
         let unique: std::collections::HashSet<&str> =
             t.iter().map(|s| s.as_str()).collect();
         assert_eq!(t.len(), unique.len(), "no duplicate technique IDs");
+    }
+
+    // -----------------------------------------------------------------------
+    // Registry event tagger
+    // -----------------------------------------------------------------------
+
+    fn reg(key: &str) -> RegistryActivityData {
+        RegistryActivityData {
+            key: key.into(),
+            value_name: Some("TestValue".into()),
+            value_type: Some("REG_SZ".into()),
+            value_data: Some("test_data".into()),
+            old_value_data: None,
+        }
+    }
+
+    #[test]
+    fn tag_run_key_as_autorun_persistence() {
+        let t = tag_registry_event(&reg(
+            r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+        ));
+        assert!(has(&t, "T1547"), "Expected T1547");
+        assert!(has(&t, "T1547.001"), "Expected T1547.001 (Registry Run Keys)");
+        assert!(has(&t, "T1112"), "Expected T1112 (Modify Registry)");
+    }
+
+    #[test]
+    fn tag_runonce_key_as_autorun_persistence() {
+        let t = tag_registry_event(&reg(
+            r"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce",
+        ));
+        assert!(has(&t, "T1547.001"), "Expected T1547.001");
+    }
+
+    #[test]
+    fn tag_services_key_as_windows_service() {
+        let t = tag_registry_event(&reg(
+            r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services",
+        ));
+        assert!(has(&t, "T1543"), "Expected T1543");
+        assert!(has(&t, "T1543.003"), "Expected T1543.003 (Windows Service)");
+        assert!(has(&t, "T1112"), "Expected T1112");
+    }
+
+    #[test]
+    fn tag_ifeo_key_as_debugger_injection() {
+        let t = tag_registry_event(&reg(
+            r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options",
+        ));
+        assert!(has(&t, "T1546"), "Expected T1546");
+        assert!(has(&t, "T1546.012"), "Expected T1546.012 (IFEO Injection)");
+    }
+
+    #[test]
+    fn tag_knowndlls_as_dll_hijacking() {
+        let t = tag_registry_event(&reg(
+            r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs",
+        ));
+        assert!(has(&t, "T1574"), "Expected T1574");
+        assert!(has(&t, "T1574.001"), "Expected T1574.001 (DLL Search Order Hijacking)");
+    }
+
+    #[test]
+    fn tag_lsa_key_as_credential_access_and_downgrade() {
+        let t = tag_registry_event(&reg(
+            r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa",
+        ));
+        assert!(has(&t, "T1003"), "Expected T1003 (OS Credential Dumping)");
+        assert!(has(&t, "T1003.001"), "Expected T1003.001 (LSASS Memory)");
+        assert!(has(&t, "T1562"), "Expected T1562 (Impair Defenses)");
+        assert!(has(&t, "T1562.010"), "Expected T1562.010 (Downgrade Attack)");
+    }
+
+    #[test]
+    fn tag_winlogon_as_autorun_persistence() {
+        let t = tag_registry_event(&reg(
+            r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon",
+        ));
+        assert!(has(&t, "T1547"), "Expected T1547");
+        assert!(has(&t, "T1547.001"), "Expected T1547.001");
+    }
+
+    #[test]
+    fn tag_arbitrary_registry_write_as_t1112() {
+        let t = tag_registry_event(&reg(
+            r"HKEY_LOCAL_MACHINE\SOFTWARE\SomeApp\Settings",
+        ));
+        assert!(has(&t, "T1112"), "Expected T1112 for any registry write");
+        // Should NOT produce high-value technique tags for arbitrary keys.
+        assert!(!has(&t, "T1547.001"), "T1547.001 should not fire for arbitrary keys");
+        assert!(!has(&t, "T1543.003"), "T1543.003 should not fire for arbitrary keys");
+    }
+
+    #[test]
+    fn registry_tagger_returns_sorted_ids() {
+        let t = tag_registry_event(&reg(
+            r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+        ));
+        let sorted: Vec<String> = {
+            let mut v = t.clone();
+            v.sort();
+            v
+        };
+        assert_eq!(t, sorted, "technique IDs must be sorted");
+    }
+
+    #[test]
+    fn registry_tagger_returns_no_duplicate_ids() {
+        let t = tag_registry_event(&reg(
+            r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa",
+        ));
+        let unique: std::collections::HashSet<&str> =
+            t.iter().map(|s| s.as_str()).collect();
+        assert_eq!(t.len(), unique.len(), "no duplicate technique IDs");
+    }
+
+    // -----------------------------------------------------------------------
+    // Coverage catalogue — registry techniques included
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn catalogue_includes_t1112_modify_registry() {
+        let ids: Vec<&str> = TECHNIQUE_CATALOGUE.iter().map(|t| t.id).collect();
+        assert!(ids.contains(&"T1112"), "catalogue must include T1112 (Modify Registry)");
+    }
+
+    #[test]
+    fn catalogue_includes_t1547_001_run_keys() {
+        let ids: Vec<&str> = TECHNIQUE_CATALOGUE.iter().map(|t| t.id).collect();
+        assert!(ids.contains(&"T1547.001"), "catalogue must include T1547.001");
+    }
+
+    #[test]
+    fn catalogue_includes_t1543_003_windows_service() {
+        let ids: Vec<&str> = TECHNIQUE_CATALOGUE.iter().map(|t| t.id).collect();
+        assert!(ids.contains(&"T1543.003"), "catalogue must include T1543.003");
     }
 }

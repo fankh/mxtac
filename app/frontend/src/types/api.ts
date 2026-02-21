@@ -509,3 +509,29 @@ export interface AuditLogEntry {
   request_path: string | null
   user_agent: string | null
 }
+
+// ── Hunting Suggestions ───────────────────────────────────────────────────────
+
+export interface SuggestedQuery {
+  label: string
+  query: string
+  time_from: string
+}
+
+export interface HuntSuggestion {
+  technique_id: string
+  technique_name: string
+  tactic: string
+  tactic_id: string
+  reason: string
+  priority: 'high' | 'medium' | 'low'
+  detection_count: number
+  rule_count: number
+  suggested_queries: SuggestedQuery[]
+}
+
+export interface HuntSuggestionsResponse {
+  suggestions: HuntSuggestion[]
+  generated_at: string
+  window_hours: number
+}

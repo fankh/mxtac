@@ -3,9 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { eventsApi, savedQueriesApi } from '../../../lib/api'
+import { eventsApi, savedQueriesApi, huntingApi } from '../../../lib/api'
 import type {
   EventFilter, EventItem, SearchRequest, AggregationBucket, SavedQuery,
+  HuntSuggestion, SuggestedQuery,
 } from '../../../types/api'
 import { TopBar } from '../../layout/TopBar'
 import { chartColors } from '../../../lib/themeVars'
@@ -431,6 +432,113 @@ function EntityPanel({
   )
 }
 
+// ── ATT&CK Hunting Suggestions Panel ──────────────────────────────────────────
+
+const PRIORITY_STYLES: Record<string, string> = {
+  high:   'bg-crit-bg text-crit-text border-crit-border',
+  medium: 'bg-orange-50 text-orange-600 border-orange-200',
+  low:    'bg-surface text-text-muted border-border',
+}
+
+function HuntingSuggestionsPanel({
+  onLoadQuery,
+  onClose,
+}: {
+  onLoadQuery: (query: string, timeFrom: string) => void
+  onClose: () => void
+}) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['hunt-suggestions'],
+    queryFn: () => huntingApi.suggestions(24, 10),
+    staleTime: 60_000,
+  })
+
+  const suggestions: HuntSuggestion[] = data?.suggestions ?? []
+
+  return (
+    <div className="fixed inset-y-0 right-0 w-[400px] bg-surface border-l border-border shadow-panel z-40 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <div>
+          <span className="text-[12px] font-semibold text-text-primary">ATT&CK Hunting Suggestions</span>
+          {data && (
+            <span className="ml-2 text-[10px] text-text-muted">
+              last {data.window_hours}h · {suggestions.length} suggestion{suggestions.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={onClose}
+          className="text-text-muted hover:text-text-primary text-lg leading-none"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+        {isLoading && (
+          <div className="flex items-center justify-center h-24 text-text-muted text-sm">
+            Analyzing detections…
+          </div>
+        )}
+        {isError && (
+          <div className="flex items-center justify-center h-24 text-crit-text text-sm">
+            Failed to load suggestions.
+          </div>
+        )}
+        {!isLoading && !isError && suggestions.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-32 text-center">
+            <p className="text-[12px] text-text-muted">No suggestions available.</p>
+            <p className="text-[11px] text-text-muted mt-1">Ingest some events and detections to generate ATT&CK-guided hunt ideas.</p>
+          </div>
+        )}
+        {!isLoading && !isError && suggestions.map((s: HuntSuggestion) => (
+          <div
+            key={s.technique_id}
+            className="rounded-md border border-border bg-page p-3"
+          >
+            {/* Header row */}
+            <div className="flex items-start justify-between gap-2 mb-1.5">
+              <div className="min-w-0">
+                <span className="text-[12px] font-semibold text-text-primary font-mono">{s.technique_id}</span>
+                <span className="ml-1.5 text-[11px] text-text-secondary">{s.technique_name}</span>
+              </div>
+              <span className={`shrink-0 text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded border ${PRIORITY_STYLES[s.priority] ?? PRIORITY_STYLES.low}`}>
+                {s.priority}
+              </span>
+            </div>
+
+            {/* Tactic + stats */}
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] text-text-muted">{s.tactic}</span>
+              {s.detection_count > 0 && (
+                <span className="text-[10px] text-text-muted">· {s.detection_count} detection{s.detection_count !== 1 ? 's' : ''}</span>
+              )}
+              <span className="text-[10px] text-text-muted">· {s.rule_count} rule{s.rule_count !== 1 ? 's' : ''}</span>
+            </div>
+
+            {/* Reason */}
+            <p className="text-[10px] text-text-muted leading-relaxed mb-2">{s.reason}</p>
+
+            {/* Suggested queries */}
+            <div className="flex flex-wrap gap-1">
+              {s.suggested_queries.map((q: SuggestedQuery) => (
+                <button
+                  key={q.label}
+                  onClick={() => onLoadQuery(q.query, q.time_from)}
+                  className="h-[22px] px-2 text-[10px] border border-border rounded-md text-blue hover:bg-blue-faint transition-colors bg-surface"
+                  title={`Query: ${q.query} | Time: ${q.time_from}`}
+                >
+                  {q.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── HuntPage ──────────────────────────────────────────────────────────────────
 
 export function HuntPage() {
@@ -447,8 +555,9 @@ export function HuntPage() {
   const [selected, setSelected]     = useState<EventItem | null>(null)
   const [entityView, setEntityView] = useState<{ type: string; value: string } | null>(null)
   const [showDsl, setShowDsl]       = useState(false)
-  const [showSaveDialog, setShowSaveDialog]       = useState(false)
-  const [showSavedPanel, setShowSavedPanel]       = useState(false)
+  const [showSaveDialog, setShowSaveDialog]           = useState(false)
+  const [showSavedPanel, setShowSavedPanel]           = useState(false)
+  const [showSuggestionsPanel, setShowSuggestionsPanel] = useState(false)
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -564,6 +673,25 @@ export function HuntPage() {
       })),
       time_from: sq.time_from,
       time_to: sq.time_to,
+      size: PAGE_SIZE,
+      from_: 0,
+    }
+    setPage(0)
+    setSubmitted(req)
+    setEntityView(null)
+    setSelected(null)
+  }
+
+  function loadSuggestedQuery(suggestedQuery: string, timeFrom: string) {
+    setQuery(suggestedQuery)
+    setTimeRange(timeFrom)
+    setLocalFilters([])
+    setShowSuggestionsPanel(false)
+    const req: SearchRequest = {
+      query: suggestedQuery || undefined,
+      filters: [],
+      time_from: timeFrom,
+      time_to: 'now',
       size: PAGE_SIZE,
       from_: 0,
     }
@@ -695,7 +823,7 @@ export function HuntPage() {
           )}
 
           <button
-            onClick={() => { setShowSavedPanel(!showSavedPanel); setSelected(null); setEntityView(null) }}
+            onClick={() => { setShowSavedPanel(!showSavedPanel); setSelected(null); setEntityView(null); setShowSuggestionsPanel(false) }}
             className={`h-[26px] px-3 text-[11px] border rounded-md transition-colors ${
               showSavedPanel
                 ? 'border-blue text-blue bg-blue-faint'
@@ -703,6 +831,17 @@ export function HuntPage() {
             }`}
           >
             Saved
+          </button>
+
+          <button
+            onClick={() => { setShowSuggestionsPanel(!showSuggestionsPanel); setSelected(null); setEntityView(null); setShowSavedPanel(false) }}
+            className={`h-[26px] px-3 text-[11px] border rounded-md transition-colors ${
+              showSuggestionsPanel
+                ? 'border-blue text-blue bg-blue-faint'
+                : 'border-border text-text-secondary hover:border-blue hover:text-blue bg-surface'
+            }`}
+          >
+            ATT&amp;CK Suggestions
           </button>
 
           {submitted && (
@@ -917,6 +1056,14 @@ export function HuntPage() {
         <SavedQueriesPanel
           onLoad={loadSavedQuery}
           onClose={() => setShowSavedPanel(false)}
+        />
+      )}
+
+      {/* ── Slide-out: ATT&CK hunting suggestions ── */}
+      {showSuggestionsPanel && (
+        <HuntingSuggestionsPanel
+          onLoadQuery={loadSuggestedQuery}
+          onClose={() => setShowSuggestionsPanel(false)}
         />
       )}
 

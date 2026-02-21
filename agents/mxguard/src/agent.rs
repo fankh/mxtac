@@ -12,6 +12,8 @@ use crate::collectors::process::ProcessCollector;
 use crate::collectors::file::FileCollector;
 use crate::collectors::network::NetworkCollector;
 use crate::collectors::auth::AuthCollector;
+#[cfg(target_os = "windows")]
+use crate::collectors::registry::RegistryCollector;
 use crate::collectors::Collector;
 use crate::config::Config;
 use crate::events::ocsf::OcsfDevice;
@@ -97,6 +99,22 @@ impl Agent {
             collector_handles.push(tokio::spawn(async move {
                 if let Err(e) = collector.run(tx, rx).await {
                     error!("Auth collector error: {e}");
+                }
+            }));
+        }
+
+        // Registry collector — Windows only.
+        #[cfg(target_os = "windows")]
+        if self.config.collectors.registry.enabled {
+            let collector = RegistryCollector::new(
+                &self.config.collectors.registry,
+                self.device.clone(),
+            );
+            let tx = event_tx.clone();
+            let rx = shutdown_rx.clone();
+            collector_handles.push(tokio::spawn(async move {
+                if let Err(e) = collector.run(tx, rx).await {
+                    error!("Registry collector error: {e}");
                 }
             }));
         }

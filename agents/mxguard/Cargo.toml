@@ -50,6 +50,10 @@ async-trait = "0.1"
 # UUID generation (used for OCSF metadata.uid)
 uuid = { version = "1", features = ["v4"] }
 
+# Windows Registry access (Windows only)
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
 [dev-dependencies]
 # UID lookup in process collector tests
 libc = "0.2"

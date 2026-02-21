@@ -8,6 +8,9 @@ pub mod process;
 pub mod file;
 pub mod network;
 pub mod auth;
+/// Windows Registry monitoring (Windows only).
+#[cfg(target_os = "windows")]
+pub mod registry;
 
 use crate::events::OcsfEvent;
 use async_trait::async_trait;

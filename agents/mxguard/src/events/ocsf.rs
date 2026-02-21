@@ -176,7 +176,7 @@ pub struct OcsfEvent {
     pub payload: OcsfPayload,
 }
 
-/// Class-specific payload variants for the four supported OCSF event classes.
+/// Class-specific payload variants for the supported OCSF event classes.
 ///
 /// The `_payload_type` tag is an internal discriminator that does not appear
 /// in the OCSF schema; it allows MxGuard to round-trip events through JSON
@@ -192,6 +192,8 @@ pub enum OcsfPayload {
     NetworkActivity(NetworkActivityData),
     #[serde(rename = "authentication_activity")]
     AuthenticationActivity(AuthenticationActivityData),
+    #[serde(rename = "registry_activity")]
+    RegistryActivity(RegistryActivityData),
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +266,37 @@ pub struct AuthenticationActivityData {
     pub outcome: String,
     /// Service that generated the log line (e.g. `"sshd"`, `"sudo"`, `"su"`).
     pub service: String,
+}
+
+// ---------------------------------------------------------------------------
+// Registry Key Activity (201004) — Windows extension
+// ---------------------------------------------------------------------------
+
+/// Data payload for OCSF Windows Registry Key Activity events (class_uid 201004).
+///
+/// Populated by polling the Windows registry for changes to monitored keys.
+/// Only generated on Windows (`#[cfg(target_os = "windows")]`).
+///
+/// ## OCSF Activity IDs
+/// - 1: Create — a new registry key or value was created
+/// - 2: Delete — a registry key or value was deleted
+/// - 3: Modify — a registry value's data was changed
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegistryActivityData {
+    /// Full registry key path, e.g.
+    /// `"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"`.
+    pub key: String,
+    /// Registry value name that changed, or `None` for key-level events (key
+    /// created / deleted when no specific value is involved).
+    pub value_name: Option<String>,
+    /// Windows registry value type, e.g. `"REG_SZ"`, `"REG_DWORD"`, `"REG_BINARY"`.
+    /// `None` when the value was deleted and the type cannot be determined.
+    pub value_type: Option<String>,
+    /// String representation of the current (or new) registry value data.
+    /// `None` when the value was deleted.
+    pub value_data: Option<String>,
+    /// Previous value data before modification, populated only for Modify events.
+    pub old_value_data: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -417,6 +450,48 @@ impl OcsfEvent {
             device,
             attack_techniques: vec![],
             payload: OcsfPayload::AuthenticationActivity(data),
+        }
+    }
+
+    /// Create a new Windows Registry Key Activity event (class_uid 201004, category 1).
+    ///
+    /// This is a Windows-specific OCSF extension class. Activity IDs:
+    /// - 1 = Create (new key or value)
+    /// - 2 = Delete (key or value removed)
+    /// - 3 = Modify (value data changed)
+    ///
+    /// Sets `type_uid = 201004 * 100 + activity_id` and derives `class_name`,
+    /// `category_name`, and `type_name` automatically.
+    pub fn registry_activity(
+        device: OcsfDevice,
+        activity: &str,
+        activity_id: u32,
+        severity: OcsfSeverity,
+        data: RegistryActivityData,
+    ) -> Self {
+        let class_uid: u32 = 201004;
+        let class_name = "Windows Registry Key Activity".to_string();
+        let category_uid: u32 = 1;
+        let category_name = "System Activity".to_string();
+        let type_uid = class_uid * 100 + activity_id;
+        let type_name = format!("{class_name}: {activity}");
+
+        Self {
+            metadata: OcsfMetadata::default(),
+            time: Utc::now(),
+            class_uid,
+            class_name,
+            category_uid,
+            category_name,
+            type_uid,
+            type_name,
+            activity: activity.into(),
+            activity_id,
+            severity_id: severity.id(),
+            severity: severity.as_str().into(),
+            device,
+            attack_techniques: vec![],
+            payload: OcsfPayload::RegistryActivity(data),
         }
     }
 
@@ -1047,5 +1122,208 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(v["source_ip"].is_null());
         assert!(v["source_port"].is_null());
+    }
+
+    // -----------------------------------------------------------------------
+    // Registry Key Activity (201004) tests
+    // -----------------------------------------------------------------------
+
+    fn registry_event_create() -> OcsfEvent {
+        OcsfEvent::registry_activity(
+            test_device(),
+            "Create",
+            1,
+            OcsfSeverity::High,
+            RegistryActivityData {
+                key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"
+                    .into(),
+                value_name: Some("Malware".into()),
+                value_type: Some("REG_SZ".into()),
+                value_data: Some("C:\\Windows\\Temp\\malware.exe".into()),
+                old_value_data: None,
+            },
+        )
+    }
+
+    fn registry_event_modify() -> OcsfEvent {
+        OcsfEvent::registry_activity(
+            test_device(),
+            "Modify",
+            3,
+            OcsfSeverity::Medium,
+            RegistryActivityData {
+                key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters"
+                    .into(),
+                value_name: Some("EnableDeadGWDetect".into()),
+                value_type: Some("REG_DWORD".into()),
+                value_data: Some("0".into()),
+                old_value_data: Some("1".into()),
+            },
+        )
+    }
+
+    fn registry_event_delete() -> OcsfEvent {
+        OcsfEvent::registry_activity(
+            test_device(),
+            "Delete",
+            2,
+            OcsfSeverity::High,
+            RegistryActivityData {
+                key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"
+                    .into(),
+                value_name: Some("SecuritySoftware".into()),
+                value_type: None,
+                value_data: None,
+                old_value_data: None,
+            },
+        )
+    }
+
+    #[test]
+    fn registry_activity_type_uid_create_is_20100401() {
+        let ev = registry_event_create();
+        // class_uid=201004, activity_id=1 → type_uid = 201004*100 + 1 = 20100401
+        assert_eq!(ev.type_uid, 20100401);
+    }
+
+    #[test]
+    fn registry_activity_type_uid_delete_is_20100402() {
+        let ev = registry_event_delete();
+        // class_uid=201004, activity_id=2 → type_uid = 201004*100 + 2 = 20100402
+        assert_eq!(ev.type_uid, 20100402);
+    }
+
+    #[test]
+    fn registry_activity_type_uid_modify_is_20100403() {
+        let ev = registry_event_modify();
+        // class_uid=201004, activity_id=3 → type_uid = 201004*100 + 3 = 20100403
+        assert_eq!(ev.type_uid, 20100403);
+    }
+
+    #[test]
+    fn registry_activity_class_uid_is_201004() {
+        let ev = registry_event_create();
+        assert_eq!(ev.class_uid, 201004);
+    }
+
+    #[test]
+    fn registry_activity_class_name_is_correct() {
+        let ev = registry_event_create();
+        assert_eq!(ev.class_name, "Windows Registry Key Activity");
+    }
+
+    #[test]
+    fn registry_activity_category_is_system_activity() {
+        let ev = registry_event_create();
+        assert_eq!(ev.category_uid, 1);
+        assert_eq!(ev.category_name, "System Activity");
+    }
+
+    #[test]
+    fn registry_activity_type_name_is_composed() {
+        let ev = registry_event_create();
+        assert_eq!(ev.type_name, "Windows Registry Key Activity: Create");
+    }
+
+    #[test]
+    fn registry_activity_modify_type_name() {
+        let ev = registry_event_modify();
+        assert_eq!(ev.type_name, "Windows Registry Key Activity: Modify");
+    }
+
+    #[test]
+    fn registry_activity_has_required_ocsf_fields() {
+        let ev = registry_event_create();
+        assert!(!ev.metadata.uid.is_empty(), "metadata.uid must be set");
+        assert_eq!(ev.metadata.version, "1.1.0");
+        assert!(ev.time <= Utc::now(), "time must be in the past");
+        assert!(ev.metadata.log_time <= Utc::now());
+    }
+
+    #[test]
+    fn registry_activity_metadata_uid_is_uuid_v4() {
+        let ev = registry_event_create();
+        let parsed = uuid::Uuid::parse_str(&ev.metadata.uid)
+            .expect("metadata.uid must be a valid UUID");
+        assert_eq!(parsed.get_version_num(), 4, "must be UUID v4");
+    }
+
+    #[test]
+    fn registry_activity_create_payload_fields() {
+        let ev = registry_event_create();
+        if let OcsfPayload::RegistryActivity(data) = &ev.payload {
+            assert!(data.key.contains("CurrentVersion\\Run"));
+            assert_eq!(data.value_name.as_deref(), Some("Malware"));
+            assert_eq!(data.value_type.as_deref(), Some("REG_SZ"));
+            assert_eq!(
+                data.value_data.as_deref(),
+                Some("C:\\Windows\\Temp\\malware.exe")
+            );
+            assert!(data.old_value_data.is_none());
+        } else {
+            panic!("Expected RegistryActivity payload");
+        }
+    }
+
+    #[test]
+    fn registry_activity_modify_has_old_value_data() {
+        let ev = registry_event_modify();
+        if let OcsfPayload::RegistryActivity(data) = &ev.payload {
+            assert_eq!(data.old_value_data.as_deref(), Some("1"));
+            assert_eq!(data.value_data.as_deref(), Some("0"));
+        } else {
+            panic!("Expected RegistryActivity payload");
+        }
+    }
+
+    #[test]
+    fn registry_activity_delete_has_no_value_data() {
+        let ev = registry_event_delete();
+        if let OcsfPayload::RegistryActivity(data) = &ev.payload {
+            assert!(data.value_type.is_none());
+            assert!(data.value_data.is_none());
+            assert_eq!(data.value_name.as_deref(), Some("SecuritySoftware"));
+        } else {
+            panic!("Expected RegistryActivity payload");
+        }
+    }
+
+    #[test]
+    fn registry_activity_serializes_and_deserializes() {
+        let ev = registry_event_create();
+        let json = serde_json::to_string(&ev).expect("serialize");
+        let ev2: OcsfEvent = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(ev2.class_uid, 201004);
+        assert_eq!(ev2.activity, "Create");
+        if let OcsfPayload::RegistryActivity(data) = &ev2.payload {
+            assert!(data.key.contains("CurrentVersion\\Run"));
+        } else {
+            panic!("Expected RegistryActivity payload after round-trip");
+        }
+    }
+
+    #[test]
+    fn registry_activity_key_field_in_json() {
+        let ev = registry_event_create();
+        let json = serde_json::to_string(&ev).expect("serialize");
+        let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert!(v["key"].is_string(), "key field must be present in JSON");
+        assert!(
+            v["key"].as_str().unwrap().contains("Run"),
+            "key field must contain registry path"
+        );
+    }
+
+    #[test]
+    fn registry_activity_severity_high_for_create() {
+        let ev = registry_event_create();
+        assert_eq!(ev.severity_id, 4);
+        assert_eq!(ev.severity, "High");
+    }
+
+    #[test]
+    fn registry_activity_attack_techniques_attached() {
+        let ev = registry_event_create().with_attack_techniques(vec!["T1112".into()]);
+        assert_eq!(ev.attack_techniques, vec!["T1112"]);
     }
 }

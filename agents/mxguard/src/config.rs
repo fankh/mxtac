@@ -25,6 +25,8 @@
 //! | `MXGUARD_NETWORK_SCAN_INTERVAL_MS`    | `collectors.network.scan_interval_ms`   |
 //! | `MXGUARD_AUTH_ENABLED`                | `collectors.auth.enabled`               |
 //! | `MXGUARD_AUTH_POLL_INTERVAL_MS`       | `collectors.auth.poll_interval_ms`      |
+//! | `MXGUARD_REGISTRY_ENABLED`            | `collectors.registry.enabled`           |
+//! | `MXGUARD_REGISTRY_POLL_INTERVAL_MS`   | `collectors.registry.poll_interval_ms`  |
 //! | `MXGUARD_RESOURCE_ENABLED`            | `resource_limits.enabled`               |
 //! | `MXGUARD_RESOURCE_CPU_LIMIT`          | `resource_limits.cpu_limit_percent`     |
 //! | `MXGUARD_RESOURCE_RAM_LIMIT_MB`       | `resource_limits.ram_limit_mb`          |
@@ -101,6 +103,9 @@ pub struct CollectorsConfig {
     pub network: NetworkCollectorConfig,
     #[serde(default)]
     pub auth: AuthCollectorConfig,
+    /// Windows Registry monitoring (Windows only; disabled by default on other platforms).
+    #[serde(default)]
+    pub registry: RegistryCollectorConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -175,6 +180,49 @@ impl Default for AuthCollectorConfig {
             enabled: true,
             log_paths: default_auth_log_paths(),
             poll_interval_ms: default_auth_poll_interval(),
+        }
+    }
+}
+
+/// Windows Registry key monitoring configuration.
+///
+/// The registry collector polls a list of registry keys at `poll_interval_ms`
+/// intervals, detects value additions, deletions, and modifications, and emits
+/// OCSF Registry Key Activity events (class_uid 201004).
+///
+/// **Windows only** — this collector does nothing on Linux or macOS even if
+/// enabled.  Set `enabled = false` in the TOML configuration when running on
+/// non-Windows hosts to suppress log warnings.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RegistryCollectorConfig {
+    /// Enable the Windows Registry collector (default: false).
+    ///
+    /// Defaults to `false` so that Linux / macOS agents do not emit
+    /// spurious warnings about a collector that cannot run.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Registry key paths to monitor.
+    ///
+    /// Paths must use Windows registry hive prefixes:
+    /// `HKEY_LOCAL_MACHINE`, `HKEY_CURRENT_USER`, `HKEY_USERS`, etc.
+    /// (short forms `HKLM`, `HKCU` are also accepted by the collector).
+    ///
+    /// Defaults to a curated set of security-relevant keys covering
+    /// autorun persistence, services, LSA configuration, and IFEO.
+    #[serde(default = "default_registry_watch_keys")]
+    pub watch_keys: Vec<String>,
+    /// How often to poll each registry key for changes (milliseconds).
+    /// Default: 5000 ms.
+    #[serde(default = "default_registry_poll_interval")]
+    pub poll_interval_ms: u64,
+}
+
+impl Default for RegistryCollectorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            watch_keys: default_registry_watch_keys(),
+            poll_interval_ms: default_registry_poll_interval(),
         }
     }
 }
@@ -295,6 +343,26 @@ fn default_auth_log_paths() -> Vec<String> {
 }
 fn default_auth_poll_interval() -> u64 {
     2000
+}
+fn default_registry_poll_interval() -> u64 {
+    5000
+}
+fn default_registry_watch_keys() -> Vec<String> {
+    vec![
+        // Autorun persistence (T1547.001)
+        r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run".into(),
+        r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce".into(),
+        r"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Run".into(),
+        r"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce".into(),
+        // Windows services (T1543.003)
+        r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services".into(),
+        // LSA / authentication configuration (T1003.001)
+        r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa".into(),
+        // Image File Execution Options — debugger injection (T1546.012)
+        r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options".into(),
+        // Known DLLs — DLL hijacking (T1574.001)
+        r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs".into(),
+    ]
 }
 fn default_cpu_limit() -> f64 {
     1.0
@@ -464,6 +532,18 @@ impl Config {
             self.collectors.auth.poll_interval_ms =
                 v.trim().parse::<u64>().map_err(|e| ConfigError::EnvParse {
                     var: "MXGUARD_AUTH_POLL_INTERVAL_MS",
+                    reason: e.to_string(),
+                })?;
+        }
+
+        // -- Collectors: registry (Windows only) -----------------------------
+        if let Some(v) = get_env("MXGUARD_REGISTRY_ENABLED") {
+            self.collectors.registry.enabled = parse_bool("MXGUARD_REGISTRY_ENABLED", &v)?;
+        }
+        if let Some(v) = get_env("MXGUARD_REGISTRY_POLL_INTERVAL_MS") {
+            self.collectors.registry.poll_interval_ms =
+                v.trim().parse::<u64>().map_err(|e| ConfigError::EnvParse {
+                    var: "MXGUARD_REGISTRY_POLL_INTERVAL_MS",
                     reason: e.to_string(),
                 })?;
         }
@@ -966,6 +1046,80 @@ retry_attempts = 5
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("MXGUARD_RESOURCE_RAM_LIMIT_MB"), "msg={msg}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Registry collector config
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_registry_collector_defaults() {
+        let cfg = default_with_env(&[]).expect("default");
+        // Registry collector defaults to disabled (Windows-only feature).
+        assert!(!cfg.collectors.registry.enabled);
+        assert_eq!(cfg.collectors.registry.poll_interval_ms, 5000);
+        // Default watch keys should include common persistence locations.
+        let keys = &cfg.collectors.registry.watch_keys;
+        assert!(!keys.is_empty(), "default watch_keys must be non-empty");
+        assert!(
+            keys.iter().any(|k| k.contains("CurrentVersion\\Run")),
+            "default keys must include autorun key"
+        );
+        assert!(
+            keys.iter().any(|k| k.contains("Services")),
+            "default keys must include services key"
+        );
+    }
+
+    #[test]
+    fn test_env_registry_enabled_true() {
+        let cfg =
+            default_with_env(&[("MXGUARD_REGISTRY_ENABLED", "true")]).expect("default");
+        assert!(cfg.collectors.registry.enabled);
+    }
+
+    #[test]
+    fn test_env_registry_enabled_false() {
+        let cfg =
+            default_with_env(&[("MXGUARD_REGISTRY_ENABLED", "false")]).expect("default");
+        assert!(!cfg.collectors.registry.enabled);
+    }
+
+    #[test]
+    fn test_env_registry_poll_interval() {
+        let cfg =
+            default_with_env(&[("MXGUARD_REGISTRY_POLL_INTERVAL_MS", "2000")]).expect("default");
+        assert_eq!(cfg.collectors.registry.poll_interval_ms, 2000);
+    }
+
+    #[test]
+    fn test_env_registry_poll_interval_invalid() {
+        let result =
+            default_with_env(&[("MXGUARD_REGISTRY_POLL_INTERVAL_MS", "not-a-number")]);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("MXGUARD_REGISTRY_POLL_INTERVAL_MS"), "msg={msg}");
+    }
+
+    #[test]
+    fn test_registry_config_from_toml() {
+        let toml = r#"
+[agent]
+name = "test"
+
+[collectors.registry]
+enabled = true
+poll_interval_ms = 3000
+watch_keys = [
+    "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+    "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+]
+"#;
+        let cfg = config_with_env(toml, &[]).expect("load");
+        assert!(cfg.collectors.registry.enabled);
+        assert_eq!(cfg.collectors.registry.poll_interval_ms, 3000);
+        assert_eq!(cfg.collectors.registry.watch_keys.len(), 2);
+        assert!(cfg.collectors.registry.watch_keys[0].contains("LOCAL_MACHINE"));
     }
 
     #[test]
