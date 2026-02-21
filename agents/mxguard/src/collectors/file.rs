@@ -1,9 +1,9 @@
 //! File integrity monitoring collector using Linux inotify.
 //!
-//! Watches configured directories for create / modify / delete events and emits
-//! OCSF File System Activity (class_uid 1001) events.  SHA-256 hashes are
-//! computed for created and modified files so that downstream consumers can
-//! verify file integrity.
+//! Watches configured directories for create / modify / delete / rename /
+//! attribute-change events and emits OCSF File System Activity (class_uid 1001)
+//! events.  SHA-256 hashes are computed for created and modified files so that
+//! downstream consumers can verify file integrity.
 //!
 //! # Design
 //! * Uses `inotify.into_event_stream()` for a fully async, non-blocking event
@@ -11,9 +11,15 @@
 //! * Integrates with tokio's `select!` so the collector shuts down cleanly when
 //!   the watch channel signals shutdown.
 //! * Files larger than [`MAX_HASH_SIZE`] are not hashed to bound I/O cost.
+//! * New subdirectories are automatically watched when they are created inside
+//!   an already-watched directory.
+//! * Events are rate-limited to [`RATE_LIMIT_PER_FILE`] events per second per
+//!   file path to suppress noise from editors and build tools that write the
+//!   same file many times in rapid succession.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use inotify::{EventMask, Inotify, WatchDescriptor, WatchMask};
@@ -28,6 +34,10 @@ use crate::events::ocsf::{FileActivityData, OcsfDevice, OcsfEvent, OcsfSeverity}
 
 /// Files larger than this will not be SHA-256 hashed (16 MiB).
 const MAX_HASH_SIZE: u64 = 16 * 1024 * 1024;
+
+/// Minimum interval between events for the same file path.
+/// Enforces a maximum of 100 events per second per file.
+const RATE_LIMIT_PER_FILE: Duration = Duration::from_millis(10);
 
 // ---------------------------------------------------------------------------
 // FileCollector
@@ -102,6 +112,31 @@ impl FileCollector {
         let result = hasher.finalize();
         Some(result.iter().map(|b| format!("{b:02x}")).collect())
     }
+
+    /// Map an inotify `EventMask` to an OCSF `(activity_name, activity_id)` pair.
+    ///
+    /// OCSF File System Activity activity IDs (class_uid 1001):
+    /// - 1 = Create
+    /// - 2 = Delete
+    /// - 4 = Modify
+    /// - 5 = Rename
+    /// - 7 = Set Attributes
+    /// - 99 = Other (unmapped)
+    fn event_to_action(mask: EventMask) -> (&'static str, u32) {
+        if mask.contains(EventMask::CREATE) {
+            ("Create", 1)
+        } else if mask.contains(EventMask::DELETE) {
+            ("Delete", 2)
+        } else if mask.contains(EventMask::MODIFY) {
+            ("Modify", 4)
+        } else if mask.contains(EventMask::MOVED_TO) || mask.contains(EventMask::MOVED_FROM) {
+            ("Rename", 5)
+        } else if mask.contains(EventMask::ATTRIB) {
+            ("Set Attributes", 7)
+        } else {
+            ("Other", 99)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +168,13 @@ impl Collector for FileCollector {
             | WatchMask::MODIFY
             | WatchMask::DELETE
             | WatchMask::MOVED_TO
-            | WatchMask::MOVED_FROM;
+            | WatchMask::MOVED_FROM
+            | WatchMask::ATTRIB;
+
+        // Save the Watches handle *before* consuming inotify via into_event_stream.
+        // Both Watches and EventStream share an Arc<OwnedFd> internally, so adding
+        // watches via this handle after into_event_stream is safe.
+        let mut watches = inotify.watches();
 
         for dir in &self.config.watch_paths {
             let path = Path::new(dir);
@@ -141,7 +182,7 @@ impl Collector for FileCollector {
                 warn!("Watch path does not exist, skipping: {dir}");
                 continue;
             }
-            match inotify.watches().add(path, mask) {
+            match watches.add(path, mask) {
                 Ok(wd) => {
                     wd_map.insert(wd, path.to_path_buf());
                     debug!("Watching directory: {dir}");
@@ -160,6 +201,10 @@ impl Collector for FileCollector {
         // Convert inotify into a fully async event stream (sets O_NONBLOCK internally).
         let buffer = vec![0u8; 4096];
         let mut stream = inotify.into_event_stream(buffer)?;
+
+        // Rate-limit state: tracks the last event timestamp per file path.
+        // Enforces at most 100 events/second per distinct path.
+        let mut last_event: HashMap<String, Instant> = HashMap::new();
 
         loop {
             tokio::select! {
@@ -184,8 +229,31 @@ impl Collector for FileCollector {
                         }
                     };
 
-                    // Skip subdirectory events; we only monitor files inside watched dirs.
+                    // Directory events: add a watch for newly created subdirectories;
+                    // skip all other directory notifications (we only emit file events).
                     if event.mask.contains(EventMask::ISDIR) {
+                        if event.mask.contains(EventMask::CREATE) {
+                            if let Some(ref dir_name) = event.name {
+                                if let Some(base) = wd_map.get(&event.wd).cloned() {
+                                    let new_dir = base.join(dir_name.to_string_lossy().as_ref());
+                                    match watches.add(&new_dir, mask) {
+                                        Ok(wd) => {
+                                            wd_map.insert(wd, new_dir.clone());
+                                            debug!(
+                                                "Added inotify watch for new directory: {}",
+                                                new_dir.display()
+                                            );
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                "Failed to add watch for new directory {}: {e}",
+                                                new_dir.display()
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         continue;
                     }
 
@@ -211,26 +279,24 @@ impl Collector for FileCollector {
                     let full_path = base.join(&file_name);
                     let path_str = full_path.to_string_lossy().into_owned();
 
-                    let (action, activity_id) =
-                        if event.mask.contains(EventMask::CREATE)
-                            || event.mask.contains(EventMask::MOVED_TO)
-                        {
-                            ("Create", 1u32)
-                        } else if event.mask.contains(EventMask::MODIFY) {
-                            ("Update", 2u32)
-                        } else if event.mask.contains(EventMask::DELETE)
-                            || event.mask.contains(EventMask::MOVED_FROM)
-                        {
-                            ("Delete", 3u32)
-                        } else {
-                            ("Other", 99u32)
-                        };
+                    // Rate limiting: suppress events that arrive faster than
+                    // RATE_LIMIT_PER_FILE (i.e. more than 100/sec) for the same path.
+                    let now = Instant::now();
+                    if let Some(&last) = last_event.get(&path_str) {
+                        if now.duration_since(last) < RATE_LIMIT_PER_FILE {
+                            debug!("Rate limiting event for {path_str}");
+                            continue;
+                        }
+                    }
+                    last_event.insert(path_str.clone(), now);
 
-                    // File metadata is not available for deleted files.
+                    let (action, activity_id) = Self::event_to_action(event.mask);
+
+                    // File metadata is not available for deleted/renamed-away files.
                     let size = std::fs::metadata(&full_path).ok().map(|m| m.len());
 
                     // Compute SHA-256 for new/modified files (file integrity monitoring).
-                    let hash = if action == "Create" || action == "Update" {
+                    let hash = if action == "Create" || action == "Modify" {
                         Self::compute_hash(&full_path)
                     } else {
                         None
@@ -430,6 +496,73 @@ mod tests {
         assert_eq!(c.classify_severity("/var/log/syslog"), OcsfSeverity::Low);
     }
 
+    // ── event_to_action ──────────────────────────────────────────────────────
+
+    #[test]
+    fn event_to_action_create_returns_id_1() {
+        let (action, id) = FileCollector::event_to_action(EventMask::CREATE);
+        assert_eq!(action, "Create");
+        assert_eq!(id, 1);
+    }
+
+    #[test]
+    fn event_to_action_delete_returns_id_2() {
+        let (action, id) = FileCollector::event_to_action(EventMask::DELETE);
+        assert_eq!(action, "Delete");
+        assert_eq!(id, 2);
+    }
+
+    #[test]
+    fn event_to_action_modify_returns_id_4() {
+        let (action, id) = FileCollector::event_to_action(EventMask::MODIFY);
+        assert_eq!(action, "Modify");
+        assert_eq!(id, 4);
+    }
+
+    #[test]
+    fn event_to_action_moved_to_returns_id_5() {
+        let (action, id) = FileCollector::event_to_action(EventMask::MOVED_TO);
+        assert_eq!(action, "Rename");
+        assert_eq!(id, 5);
+    }
+
+    #[test]
+    fn event_to_action_moved_from_returns_id_5() {
+        let (action, id) = FileCollector::event_to_action(EventMask::MOVED_FROM);
+        assert_eq!(action, "Rename");
+        assert_eq!(id, 5);
+    }
+
+    #[test]
+    fn event_to_action_attrib_returns_id_7() {
+        let (action, id) = FileCollector::event_to_action(EventMask::ATTRIB);
+        assert_eq!(action, "Set Attributes");
+        assert_eq!(id, 7);
+    }
+
+    #[test]
+    fn event_to_action_unknown_mask_returns_other() {
+        // ACCESS is not in our watch mask but let's verify the fallback
+        let (action, id) = FileCollector::event_to_action(EventMask::ACCESS);
+        assert_eq!(action, "Other");
+        assert_eq!(id, 99);
+    }
+
+    #[test]
+    fn event_to_action_create_priority_over_modify() {
+        // When multiple flags are set, CREATE takes precedence
+        let (action, id) = FileCollector::event_to_action(EventMask::CREATE | EventMask::MODIFY);
+        assert_eq!(action, "Create");
+        assert_eq!(id, 1);
+    }
+
+    #[test]
+    fn event_to_action_delete_priority_over_attrib() {
+        let (action, id) = FileCollector::event_to_action(EventMask::DELETE | EventMask::ATTRIB);
+        assert_eq!(action, "Delete");
+        assert_eq!(id, 2);
+    }
+
     // ── compute_hash ─────────────────────────────────────────────────────────
 
     #[test]
@@ -513,5 +646,231 @@ mod tests {
         let _ = std::fs::remove_file(&path_b);
 
         assert_eq!(hash_a, hash_b, "identical content must produce the same hash");
+    }
+
+    // ── integration: real inotify events ─────────────────────────────────────
+
+    /// Extract the file path from an OcsfEvent's FileActivity payload.
+    fn event_file_path(ev: &crate::events::ocsf::OcsfEvent) -> &str {
+        match &ev.payload {
+            crate::events::ocsf::OcsfPayload::FileActivity(d) => d.path.as_str(),
+            _ => "",
+        }
+    }
+
+    /// Verify that the collector emits correct OCSF events for real file
+    /// operations (create, modify, delete, rename) on a watched directory.
+    #[tokio::test]
+    async fn integration_file_events_create_modify_delete_rename() {
+        use tempfile::TempDir;
+        use tokio::sync::watch;
+
+        let tmp = TempDir::new().expect("create temp dir");
+        let watch_dir = tmp.path().to_str().unwrap().to_string();
+
+        let config = FileCollectorConfig {
+            enabled: true,
+            watch_paths: vec![watch_dir.clone()],
+            exclude_patterns: vec![],
+        };
+        let device = OcsfDevice {
+            hostname: "test-host".into(),
+            ip: "127.0.0.1".into(),
+            os_name: "Linux".into(),
+            os_version: "6.0".into(),
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let collector = FileCollector::new(&config, device);
+
+        // Run collector in background.
+        let handle = tokio::spawn(async move { collector.run(tx, shutdown_rx).await });
+
+        // Give inotify a moment to initialise.
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        let test_file = tmp.path().join("test_fim.txt");
+
+        // --- Create ---
+        std::fs::write(&test_file, b"initial").expect("create file");
+
+        let ev = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("timeout waiting for create event")
+            .expect("channel closed");
+
+        assert_eq!(ev.activity, "Create", "create event activity");
+        assert_eq!(ev.activity_id, 1, "create activity_id must be 1");
+        assert!(
+            event_file_path(&ev).ends_with("test_fim.txt"),
+            "path should end with test_fim.txt, got: {}",
+            event_file_path(&ev)
+        );
+
+        // --- Modify ---
+        std::fs::write(&test_file, b"modified").expect("modify file");
+
+        let ev = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("timeout waiting for modify event")
+            .expect("channel closed");
+
+        assert_eq!(ev.activity, "Modify", "modify event activity");
+        assert_eq!(ev.activity_id, 4, "modify activity_id must be 4");
+
+        // --- Rename (MOVED_FROM) ---
+        let renamed = tmp.path().join("renamed_fim.txt");
+        std::fs::rename(&test_file, &renamed).expect("rename file");
+
+        // Expect a MOVED_FROM (Rename) event for the source path.
+        let ev = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("timeout waiting for rename event")
+            .expect("channel closed");
+
+        assert_eq!(ev.activity, "Rename", "rename event activity");
+        assert_eq!(ev.activity_id, 5, "rename activity_id must be 5");
+
+        // --- Delete ---
+        std::fs::remove_file(&renamed).expect("delete file");
+
+        let ev = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("timeout waiting for delete event")
+            .expect("channel closed");
+
+        assert_eq!(ev.activity, "Delete", "delete event activity");
+        assert_eq!(ev.activity_id, 2, "delete activity_id must be 2");
+
+        // Shutdown the collector.
+        shutdown_tx.send(true).expect("send shutdown");
+        handle
+            .await
+            .expect("collector task panicked")
+            .expect("collector error");
+    }
+
+    /// Verify that the collector watches newly created subdirectories
+    /// and emits events for files created inside them.
+    #[tokio::test]
+    async fn integration_new_subdirectory_gets_watched() {
+        use tempfile::TempDir;
+        use tokio::sync::watch;
+
+        let tmp = TempDir::new().expect("create temp dir");
+        let watch_dir = tmp.path().to_str().unwrap().to_string();
+
+        let config = FileCollectorConfig {
+            enabled: true,
+            watch_paths: vec![watch_dir.clone()],
+            exclude_patterns: vec![],
+        };
+        let device = OcsfDevice {
+            hostname: "test-host".into(),
+            ip: "127.0.0.1".into(),
+            os_name: "Linux".into(),
+            os_version: "6.0".into(),
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let collector = FileCollector::new(&config, device);
+        let handle = tokio::spawn(async move { collector.run(tx, shutdown_rx).await });
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Create a subdirectory — no event emitted for the directory itself.
+        let subdir = tmp.path().join("subdir");
+        std::fs::create_dir(&subdir).expect("create subdir");
+
+        // Give the collector time to register the new directory watch.
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Create a file inside the newly-created subdirectory.
+        let subfile = subdir.join("subfile.txt");
+        std::fs::write(&subfile, b"hello").expect("create file in subdir");
+
+        let ev = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("timeout waiting for subdir file event")
+            .expect("channel closed");
+
+        assert_eq!(ev.activity, "Create");
+        assert_eq!(ev.activity_id, 1);
+        assert!(
+            event_file_path(&ev).ends_with("subfile.txt"),
+            "path should end with subfile.txt, got: {}",
+            event_file_path(&ev)
+        );
+
+        shutdown_tx.send(true).expect("send shutdown");
+        handle
+            .await
+            .expect("collector task panicked")
+            .expect("collector error");
+    }
+
+    /// Verify that the exclude pattern filters suppress events for matching files.
+    #[tokio::test]
+    async fn integration_excluded_files_produce_no_events() {
+        use tempfile::TempDir;
+        use tokio::sync::watch;
+
+        let tmp = TempDir::new().expect("create temp dir");
+        let watch_dir = tmp.path().to_str().unwrap().to_string();
+
+        let config = FileCollectorConfig {
+            enabled: true,
+            watch_paths: vec![watch_dir.clone()],
+            exclude_patterns: vec!["*.log".to_string()],
+        };
+        let device = OcsfDevice {
+            hostname: "test-host".into(),
+            ip: "127.0.0.1".into(),
+            os_name: "Linux".into(),
+            os_version: "6.0".into(),
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let collector = FileCollector::new(&config, device);
+        let handle = tokio::spawn(async move { collector.run(tx, shutdown_rx).await });
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Create an excluded file — should produce NO event.
+        let log_file = tmp.path().join("app.log");
+        std::fs::write(&log_file, b"log line").expect("create excluded file");
+
+        // Create a non-excluded file — SHOULD produce an event.
+        let txt_file = tmp.path().join("data.txt");
+        std::fs::write(&txt_file, b"data").expect("create included file");
+
+        // Wait for and check only the non-excluded event.
+        let ev = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("timeout waiting for non-excluded event")
+            .expect("channel closed");
+
+        // The event must be for data.txt, not app.log.
+        let path = event_file_path(&ev);
+        assert!(
+            path.ends_with("data.txt"),
+            "Expected event for data.txt, got: {path}"
+        );
+        assert!(
+            !path.ends_with("app.log"),
+            "Excluded .log file should not produce events"
+        );
+
+        shutdown_tx.send(true).expect("send shutdown");
+        handle
+            .await
+            .expect("collector task panicked")
+            .expect("collector error");
     }
 }

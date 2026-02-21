@@ -1,6 +1,7 @@
 services:
   # ─── Backend API ─────────────────────────────────────────────────────────────
   backend:
+    image: ${BACKEND_IMAGE:-mxtac-backend:latest}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -33,6 +34,7 @@ services:
 
   # ─── Frontend (pre-built static files served by nginx) ───────────────────────
   frontend:
+    image: ${FRONTEND_IMAGE:-mxtac-frontend:latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
