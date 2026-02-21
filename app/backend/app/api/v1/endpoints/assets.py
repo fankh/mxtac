@@ -1,6 +1,6 @@
 from math import ceil
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from sqlalchemy import cast, func, select, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,7 @@ from ....schemas.asset import (
     AssetCreate,
     AssetResponse,
     AssetStats,
+    AssetType,
     AssetUpdate,
     BulkAssetResult,
 )
@@ -81,7 +82,7 @@ async def _list_asset_incidents(
 async def list_assets(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
-    asset_type: str | None = Query(None),
+    asset_type: AssetType | None = Query(None),
     criticality: int | None = Query(None, ge=1, le=5),
     is_active: bool | None = Query(None),
     search: str | None = Query(None, max_length=255),
@@ -128,12 +129,20 @@ async def get_stats(
 # ---------------------------------------------------------------------------
 
 
+_MAX_BULK_ASSETS = 1000
+
+
 @router.post("/bulk", response_model=BulkAssetResult)
 async def bulk_import_assets(
     body: list[AssetCreate],
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("assets:write")),
 ):
+    if len(body) > _MAX_BULK_ASSETS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Bulk import limited to {_MAX_BULK_ASSETS} items per request",
+        )
     created = 0
     skipped = 0
     for asset_data in body:

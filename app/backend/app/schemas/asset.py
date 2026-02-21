@@ -24,7 +24,7 @@ class AssetCreate(BaseModel):
     hostname: str = Field(..., max_length=255)
     ip_addresses: list[str] = []
     os: str | None = Field(default=None, max_length=255)
-    os_family: str | None = Field(default=None, max_length=32)
+    os_family: OsFamily | None = None
     asset_type: AssetType
     criticality: int = Field(default=3, ge=1, le=5)
     owner: str | None = Field(default=None, max_length=255)
@@ -51,7 +51,7 @@ class AssetCreate(BaseModel):
 class AssetUpdate(BaseModel):
     ip_addresses: list[str] | None = None
     os: str | None = Field(default=None, max_length=255)
-    os_family: str | None = Field(default=None, max_length=32)
+    os_family: OsFamily | None = None
     asset_type: AssetType | None = None
     criticality: int | None = Field(default=None, ge=1, le=5)
     owner: str | None = Field(default=None, max_length=255)

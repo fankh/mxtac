@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, HTTPException, Path, Depends
+from fastapi import APIRouter, Query, HTTPException, Path, Depends, status
 from math import ceil
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +8,7 @@ from ....core.rbac import require_permission
 from ....repositories.ioc_repo import IOCRepo
 from ....schemas.ioc import (
     IOCCreate,
+    IOCType,
     IOCUpdate,
     IOCResponse,
     IOCLookupRequest,
@@ -17,6 +18,8 @@ from ....schemas.ioc import (
 from ....schemas.common import PaginatedResponse, Pagination
 
 router = APIRouter(prefix="/threat-intel", tags=["threat-intel"])
+
+_MAX_BULK_IOCS = 1000
 
 
 def _ioc_to_schema(ioc) -> dict:
@@ -44,7 +47,7 @@ def _ioc_to_schema(ioc) -> dict:
 async def list_iocs(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
-    ioc_type: str | None = Query(None),
+    ioc_type: IOCType | None = Query(None),
     source: str | None = Query(None),
     is_active: bool | None = Query(None),
     search: str | None = Query(None, max_length=255),
@@ -109,6 +112,11 @@ async def bulk_import_iocs(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("threat_intel:write")),
 ):
+    if len(body) > _MAX_BULK_IOCS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Bulk import limited to {_MAX_BULK_IOCS} items per request",
+        )
     items = [ioc.model_dump() for ioc in body]
     created, skipped = await IOCRepo.bulk_create(db, items)
     return BulkImportResult(created=created, skipped=skipped)

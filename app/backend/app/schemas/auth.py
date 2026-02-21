@@ -71,4 +71,11 @@ class MeResponse(BaseModel):
 
 
 class MfaDisableRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=20)
+
+    @field_validator("user_id")
+    @classmethod
+    def validate_user_id(cls, v: str) -> str:
+        if not v.isdigit() or int(v) < 1:
+            raise ValueError("user_id must be a positive integer")
+        return v

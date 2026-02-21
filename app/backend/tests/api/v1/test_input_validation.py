@@ -104,7 +104,7 @@ class TestValidateHostname:
 # Pydantic schema validators
 # ---------------------------------------------------------------------------
 
-from app.schemas.auth import LoginRequest, MfaVerifyRequest, MfaVerifyLoginRequest
+from app.schemas.auth import LoginRequest, MfaVerifyRequest, MfaVerifyLoginRequest, MfaDisableRequest
 
 
 class TestLoginRequestValidation:
@@ -149,6 +149,33 @@ class TestMfaVerifyLoginRequestValidation:
             MfaVerifyLoginRequest(mfa_token="x" * 513, code="123456")
 
 
+class TestMfaDisableRequestValidation:
+    def test_valid_user_id(self):
+        req = MfaDisableRequest(user_id="42")
+        assert req.user_id == "42"
+
+    def test_non_numeric_raises(self):
+        with pytest.raises(ValidationError, match="positive integer"):
+            MfaDisableRequest(user_id="abc")
+
+    def test_zero_raises(self):
+        with pytest.raises(ValidationError, match="positive integer"):
+            MfaDisableRequest(user_id="0")
+
+    def test_negative_raises(self):
+        with pytest.raises(ValidationError, match="positive integer"):
+            MfaDisableRequest(user_id="-1")
+
+    def test_uuid_format_raises(self):
+        # UUIDs are 36 chars (> max_length=20) and non-numeric — rejected either way
+        with pytest.raises(ValidationError):
+            MfaDisableRequest(user_id="550e8400-e29b-41d4-a716-446655440000")
+
+    def test_empty_raises(self):
+        with pytest.raises(ValidationError):
+            MfaDisableRequest(user_id="")
+
+
 from app.schemas.asset import AssetCreate, AssetUpdate
 
 
@@ -184,6 +211,18 @@ class TestAssetCreateValidation:
                 asset_type="server",
                 tags=["tag"] * 51,
             )
+
+    def test_valid_os_family(self):
+        asset = AssetCreate(hostname="server01", asset_type="server", os_family="linux")
+        assert asset.os_family == "linux"
+
+    def test_invalid_os_family_raises(self):
+        with pytest.raises(ValidationError):
+            AssetCreate(hostname="server01", asset_type="server", os_family="unknown_os")
+
+    def test_none_os_family_passes(self):
+        asset = AssetCreate(hostname="server01", asset_type="server", os_family=None)
+        assert asset.os_family is None
 
 
 class TestAssetUpdateValidation:
@@ -228,35 +267,118 @@ class TestIncidentCreateValidation:
                 detection_ids=["det-id"] * 501,
             )
 
+    def test_valid_assigned_to_email(self):
+        inc = IncidentCreate(
+            title="Incident",
+            severity="high",
+            assigned_to="analyst@mxtac.local",
+        )
+        assert inc.assigned_to == "analyst@mxtac.local"
+
+    def test_invalid_assigned_to_email_raises(self):
+        with pytest.raises(ValidationError, match="valid email"):
+            IncidentCreate(
+                title="Incident",
+                severity="high",
+                assigned_to="not-an-email",
+            )
+
+    def test_none_assigned_to_passes(self):
+        inc = IncidentCreate(title="Incident", severity="high", assigned_to=None)
+        assert inc.assigned_to is None
+
+
+class TestIncidentUpdateValidation:
+    def test_invalid_assigned_to_email_raises(self):
+        with pytest.raises(ValidationError, match="valid email"):
+            IncidentUpdate(assigned_to="not-an-email")
+
 
 from app.schemas.ioc import IOCCreate
 from datetime import datetime, timezone
 
 
 class TestIOCCreateValidation:
+    def _base(self, **kwargs):
+        defaults = dict(
+            ioc_type="ip",
+            value="10.0.0.1",
+            source="test",
+            severity="high",
+            first_seen=datetime.now(timezone.utc),
+            last_seen=datetime.now(timezone.utc),
+        )
+        defaults.update(kwargs)
+        return IOCCreate(**defaults)
+
     def test_description_too_long_raises(self):
         with pytest.raises(ValidationError):
-            IOCCreate(
-                ioc_type="ip",
-                value="10.0.0.1",
-                source="test",
-                severity="high",
-                description="x" * 2001,
-                first_seen=datetime.now(timezone.utc),
-                last_seen=datetime.now(timezone.utc),
-            )
+            self._base(description="x" * 2001)
 
     def test_too_many_tags_raises(self):
         with pytest.raises(ValidationError):
-            IOCCreate(
-                ioc_type="ip",
-                value="10.0.0.1",
-                source="test",
-                severity="high",
-                tags=["tag"] * 51,
-                first_seen=datetime.now(timezone.utc),
-                last_seen=datetime.now(timezone.utc),
-            )
+            self._base(tags=["tag"] * 51)
+
+    # --- Type-specific value validation ---
+
+    def test_valid_ip(self):
+        ioc = self._base(ioc_type="ip", value="192.168.1.1")
+        assert ioc.value == "192.168.1.1"
+
+    def test_valid_ipv6(self):
+        ioc = self._base(ioc_type="ip", value="::1")
+        assert ioc.value == "::1"
+
+    def test_invalid_ip_raises(self):
+        with pytest.raises(ValidationError, match="Invalid IP"):
+            self._base(ioc_type="ip", value="not-an-ip")
+
+    def test_valid_domain(self):
+        ioc = self._base(ioc_type="domain", value="example.com")
+        assert ioc.value == "example.com"
+
+    def test_invalid_domain_raises(self):
+        with pytest.raises(ValidationError):
+            self._base(ioc_type="domain", value="-invalid-domain")
+
+    def test_valid_md5(self):
+        ioc = self._base(ioc_type="hash_md5", value="d41d8cd98f00b204e9800998ecf8427e")
+        assert ioc.ioc_type == "hash_md5"
+
+    def test_invalid_md5_raises(self):
+        with pytest.raises(ValidationError, match="MD5"):
+            self._base(ioc_type="hash_md5", value="tooshort")
+
+    def test_invalid_md5_nonhex_raises(self):
+        with pytest.raises(ValidationError, match="MD5"):
+            self._base(ioc_type="hash_md5", value="z" * 32)
+
+    def test_valid_sha256(self):
+        ioc = self._base(
+            ioc_type="hash_sha256",
+            value="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        )
+        assert ioc.ioc_type == "hash_sha256"
+
+    def test_invalid_sha256_raises(self):
+        with pytest.raises(ValidationError, match="SHA-256"):
+            self._base(ioc_type="hash_sha256", value="abc123")
+
+    def test_valid_url(self):
+        ioc = self._base(ioc_type="url", value="https://malicious.example.com/path")
+        assert ioc.value.startswith("https://")
+
+    def test_url_without_scheme_raises(self):
+        with pytest.raises(ValidationError, match="http"):
+            self._base(ioc_type="url", value="malicious.example.com")
+
+    def test_valid_email_ioc(self):
+        ioc = self._base(ioc_type="email", value="attacker@evil.com")
+        assert ioc.ioc_type == "email"
+
+    def test_invalid_email_ioc_raises(self):
+        with pytest.raises(ValidationError, match="Invalid email"):
+            self._base(ioc_type="email", value="not-an-email")
 
 
 # ---------------------------------------------------------------------------
@@ -543,5 +665,91 @@ async def test_aggregation_invalid_interval_returns_422(client: AsyncClient, hun
         "/api/v1/events/aggregate",
         json={"agg_type": "date_histogram", "interval": "99x"},
         headers=hunter_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_asset_invalid_os_family_returns_422(client: AsyncClient, engineer_headers: dict):
+    """AssetCreate with invalid os_family must return 422."""
+    resp = await client.post(
+        "/api/v1/assets",
+        json={
+            "hostname": "server-osfam-test",
+            "asset_type": "server",
+            "os_family": "unknown_os",
+        },
+        headers=engineer_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_asset_list_invalid_asset_type_returns_422(client: AsyncClient, analyst_headers: dict):
+    """GET /assets with invalid asset_type query param must return 422."""
+    resp = await client.get(
+        "/api/v1/assets?asset_type=invalid_type",
+        headers=analyst_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_ioc_list_invalid_ioc_type_returns_422(client: AsyncClient, hunter_headers: dict):
+    """GET /threat-intel/iocs with invalid ioc_type query param must return 422."""
+    resp = await client.get(
+        "/api/v1/threat-intel/iocs?ioc_type=invalid_type",
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_incident_invalid_assigned_to_returns_422(client: AsyncClient, analyst_headers: dict):
+    """IncidentCreate with non-email assigned_to must return 422."""
+    resp = await client.post(
+        "/api/v1/incidents",
+        json={
+            "title": "Test Incident",
+            "severity": "high",
+            "assigned_to": "not-an-email",
+        },
+        headers=analyst_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_ioc_create_invalid_ip_value_returns_422(client: AsyncClient, engineer_headers: dict):
+    """IOCCreate with ioc_type='ip' but non-IP value must return 422."""
+    resp = await client.post(
+        "/api/v1/threat-intel/iocs",
+        json={
+            "ioc_type": "ip",
+            "value": "not-an-ip",
+            "source": "test",
+            "severity": "high",
+            "first_seen": "2024-01-01T00:00:00Z",
+            "last_seen": "2024-01-01T00:00:00Z",
+        },
+        headers=engineer_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_ioc_create_invalid_md5_returns_422(client: AsyncClient, engineer_headers: dict):
+    """IOCCreate with ioc_type='hash_md5' but invalid hash must return 422."""
+    resp = await client.post(
+        "/api/v1/threat-intel/iocs",
+        json={
+            "ioc_type": "hash_md5",
+            "value": "tooshort",
+            "source": "test",
+            "severity": "medium",
+            "first_seen": "2024-01-01T00:00:00Z",
+            "last_seen": "2024-01-01T00:00:00Z",
+        },
+        headers=engineer_headers,
     )
     assert resp.status_code == 422

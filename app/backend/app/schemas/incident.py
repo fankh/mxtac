@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .detection import Detection as DetectionSchema
+
+# Reuse same regex as auth.py — RFC 6762 compatible, allows .local domains
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", re.IGNORECASE)
 
 SeverityLevel = Literal["critical", "high", "medium", "low"]
 IncidentStatus = Literal["new", "investigating", "contained", "resolved", "closed"]
@@ -21,6 +25,13 @@ class IncidentCreate(BaseModel):
     detection_ids: list[str] = Field(default_factory=list, max_length=500)
     assigned_to: str | None = Field(default=None, max_length=254)
 
+    @field_validator("assigned_to")
+    @classmethod
+    def validate_assigned_to_email(cls, v: str | None) -> str | None:
+        if v is not None and not _EMAIL_RE.match(v):
+            raise ValueError("assigned_to must be a valid email address")
+        return v
+
 
 class IncidentUpdate(BaseModel):
     """Partial update schema — only provided fields are changed."""
@@ -32,6 +43,13 @@ class IncidentUpdate(BaseModel):
     priority: int | None = None
     assigned_to: str | None = Field(default=None, max_length=254)
     detection_ids: list[str] | None = Field(default=None, max_length=500)
+
+    @field_validator("assigned_to")
+    @classmethod
+    def validate_assigned_to_email(cls, v: str | None) -> str | None:
+        if v is not None and not _EMAIL_RE.match(v):
+            raise ValueError("assigned_to must be a valid email address")
+        return v
 
 
 class NoteCreate(BaseModel):
