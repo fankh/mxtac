@@ -13,8 +13,9 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// OCSF severity levels.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum OcsfSeverity {
+    #[default]
     Informational = 1,
     Low = 2,
     Medium = 3,
@@ -35,12 +36,6 @@ impl OcsfSeverity {
 
     pub fn id(&self) -> u8 {
         *self as u8
-    }
-}
-
-impl Default for OcsfSeverity {
-    fn default() -> Self {
-        Self::Informational
     }
 }
 
