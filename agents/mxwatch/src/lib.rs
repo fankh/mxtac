@@ -8,6 +8,7 @@ pub mod capture;
 pub mod config;
 pub mod detectors;
 pub mod events;
+pub mod health;
 pub mod parsers;
 pub mod resource;
 pub mod transport;

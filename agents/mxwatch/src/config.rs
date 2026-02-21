@@ -33,6 +33,8 @@ pub struct Config {
     pub transport: TransportConfig,
     #[serde(default)]
     pub resources: ResourceLimitsConfig,
+    #[serde(default)]
+    pub health: HealthConfig,
 }
 
 // ---------------------------------------------------------------------------
@@ -474,6 +476,26 @@ fn default_retry_attempts() -> u32 {
     3
 }
 
+// -- Health ------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct HealthConfig {
+    #[serde(default = "default_health_addr")]
+    pub listen_addr: String,
+}
+
+impl Default for HealthConfig {
+    fn default() -> Self {
+        Self {
+            listen_addr: default_health_addr(),
+        }
+    }
+}
+
+fn default_health_addr() -> String {
+    "0.0.0.0:9002".into()
+}
+
 // -- Resource limits ---------------------------------------------------------
 
 /// Resource consumption limits for the MxWatch process.
@@ -554,6 +576,7 @@ impl Config {
             detectors: DetectorsConfig::default(),
             transport: TransportConfig::default(),
             resources: ResourceLimitsConfig::default(),
+            health: HealthConfig::default(),
         }
     }
 }
@@ -987,5 +1010,58 @@ max_cpu_pct = 2.5
         assert!(cfg.resources.enabled);
         assert!((cfg.resources.max_cpu_pct - 5.0).abs() < f64::EPSILON);
         assert_eq!(cfg.resources.max_ram_mb, 120);
+    }
+
+    // -----------------------------------------------------------------------
+    // HealthConfig
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_default_health_listen_addr_uses_port_9002() {
+        let h = HealthConfig::default();
+        assert!(
+            h.listen_addr.ends_with(":9002"),
+            "default listen_addr should end with :9002, got: {}",
+            h.listen_addr
+        );
+    }
+
+    #[test]
+    fn test_default_health_listen_addr_binds_all_interfaces() {
+        let h = HealthConfig::default();
+        assert!(
+            h.listen_addr.starts_with("0.0.0.0:"),
+            "default listen_addr should bind all interfaces (0.0.0.0), got: {}",
+            h.listen_addr
+        );
+    }
+
+    #[test]
+    fn test_default_config_includes_health() {
+        let cfg = Config::default_config();
+        assert_eq!(cfg.health.listen_addr, "0.0.0.0:9002");
+    }
+
+    #[test]
+    fn test_parse_health_section() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[health]
+listen_addr = "127.0.0.1:9099"
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert_eq!(cfg.health.listen_addr, "127.0.0.1:9099");
+    }
+
+    #[test]
+    fn test_health_defaults_when_section_omitted() {
+        let toml = r#"
+[agent]
+name = "w"
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert_eq!(cfg.health.listen_addr, "0.0.0.0:9002");
     }
 }

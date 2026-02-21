@@ -8,12 +8,14 @@ mod capture;
 mod config;
 mod detectors;
 mod events;
+mod health;
 mod parsers;
 mod resource;
 mod transport;
 
 use std::net::IpAddr;
-use std::time::Duration;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
@@ -53,6 +55,14 @@ struct Cli {
     log_level: Option<String>,
 }
 
+/// Return the current time as Unix seconds.
+fn now_unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -81,6 +91,26 @@ async fn main() -> anyhow::Result<()> {
 
     let device = OcsfDevice::from_current_host();
 
+    // --- Health state ----------------------------------------------------------
+    // Create shared atomic handles used by capture and transport tasks to
+    // update the health readiness signals without blocking.
+    let health_state = health::HealthState::new(
+        cfg.agent.name.clone(),
+        env!("CARGO_PKG_VERSION").to_string(),
+    );
+    let capture_running = health_state.capture_running.clone();
+    let transport_connected = health_state.transport_connected.clone();
+    let last_event_sent_secs = health_state.last_event_sent_secs.clone();
+
+    // --- Health server ---------------------------------------------------------
+    let (health_shutdown_tx, health_shutdown_rx) = tokio::sync::watch::channel(false);
+    let health_cfg = cfg.health.clone();
+    let health_handle = tokio::spawn(async move {
+        if let Err(e) = health::serve_health(&health_cfg, health_state, health_shutdown_rx).await {
+            error!("Health server error: {e}");
+        }
+    });
+
     // --- Resource monitor -------------------------------------------------------
     // Samples CPU% and RSS every `check_interval_ms`; shares metrics with the
     // packet-processing loop via a lock-free Arc<ResourceSnapshot>.
@@ -97,6 +127,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Start capture in a blocking thread.
     // On Linux, prefer AF_PACKET + MMAP when `use_afpacket = true`.
+    capture_running.store(true, Ordering::Relaxed);
+
     #[cfg(target_os = "linux")]
     let capture_handle = if cfg.capture.use_afpacket {
         info!("Using AF_PACKET MMAP zero-copy capture backend");
@@ -144,8 +176,15 @@ async fn main() -> anyhow::Result<()> {
                         Some(event) => {
                             batch.push(event);
                             if batch.len() >= batch_size {
-                                if let Err(e) = transport.send_batch(&batch).await {
-                                    error!("Transport error: {e}");
+                                match transport.send_batch(&batch).await {
+                                    Ok(()) => {
+                                        transport_connected.store(true, Ordering::Relaxed);
+                                        last_event_sent_secs.store(now_unix_secs(), Ordering::Relaxed);
+                                    }
+                                    Err(e) => {
+                                        error!("Transport error: {e}");
+                                        transport_connected.store(false, Ordering::Relaxed);
+                                    }
                                 }
                                 batch.clear();
                             }
@@ -160,8 +199,15 @@ async fn main() -> anyhow::Result<()> {
                 }
                 _ = flush_timer.tick() => {
                     if !batch.is_empty() {
-                        if let Err(e) = transport.send_batch(&batch).await {
-                            error!("Transport flush error: {e}");
+                        match transport.send_batch(&batch).await {
+                            Ok(()) => {
+                                transport_connected.store(true, Ordering::Relaxed);
+                                last_event_sent_secs.store(now_unix_secs(), Ordering::Relaxed);
+                            }
+                            Err(e) => {
+                                error!("Transport flush error: {e}");
+                                transport_connected.store(false, Ordering::Relaxed);
+                            }
                         }
                         batch.clear();
                     }
@@ -429,6 +475,9 @@ async fn main() -> anyhow::Result<()> {
     tokio::signal::ctrl_c().await?;
     info!("Shutdown signal received");
 
+    // Signal health server to stop.
+    let _ = health_shutdown_tx.send(true);
+
     // Drop the event sender to close the transport channel.
     drop(evt_tx);
 
@@ -438,6 +487,7 @@ async fn main() -> anyhow::Result<()> {
     // Wait for processing and transport to drain.
     let _ = tokio::time::timeout(Duration::from_secs(5), processing_handle).await;
     let _ = tokio::time::timeout(Duration::from_secs(3), transport_handle).await;
+    let _ = tokio::time::timeout(Duration::from_secs(2), health_handle).await;
 
     info!("MxWatch agent stopped");
     Ok(())
