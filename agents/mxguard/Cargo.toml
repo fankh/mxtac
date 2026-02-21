@@ -47,6 +47,9 @@ anyhow = "1"
 # Async trait support
 async-trait = "0.1"
 
+# UUID generation (used for OCSF metadata.uid)
+uuid = { version = "1", features = ["v4"] }
+
 [dev-dependencies]
 # UID lookup in process collector tests
 libc = "0.2"
