@@ -770,6 +770,7 @@ dependencies = [
  "chrono",
  "clap",
  "inotify",
+ "libc",
  "reqwest",
  "serde",
  "serde_json",

@@ -40,3 +40,7 @@ anyhow = "1"
 
 # Async trait support
 async-trait = "0.1"
+
+[dev-dependencies]
+# UID lookup in process collector tests
+libc = "0.2"

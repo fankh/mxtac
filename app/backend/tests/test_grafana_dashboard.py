@@ -51,7 +51,7 @@ import yaml
 # Path helpers
 # ---------------------------------------------------------------------------
 
-_REPO_ROOT = Path(__file__).resolve().parents[4]  # .../mitre-attack/mxtac
+_REPO_ROOT = Path(__file__).resolve().parents[3]  # .../mitre-attack/mxtac
 _MONITORING = _REPO_ROOT / "app" / "deploy" / "monitoring"
 _DASHBOARD_JSON = _MONITORING / "grafana" / "dashboards" / "mxtac-overview.json"
 _PROV_DASHBOARDS = _MONITORING / "grafana" / "provisioning" / "dashboards" / "mxtac.yml"

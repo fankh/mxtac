@@ -140,7 +140,12 @@ pub struct ProcessActivityData {
     pub ppid: u32,
     pub name: String,
     pub cmd_line: String,
+    /// Resolved path to the executable binary (from `/proc/{pid}/exe`).
+    pub exe_path: Option<String>,
+    /// Working directory of the process (from `/proc/{pid}/cwd`).
+    pub cwd: Option<String>,
     pub uid: u32,
+    pub gid: u32,
     pub user: String,
 }
 

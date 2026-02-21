@@ -456,7 +456,7 @@
 | # | Feature | Impl | Test | Priority | Notes |
 |---|---------|:----:|:----:|----------|-------|
 | 24.1 | Rust project skeleton (`Cargo.toml` + `src/`) | `[ ]` | `[ ]` | P2 | Task 5.1 |
-| 24.2 | Process creation monitoring (`/proc` polling) | `[ ]` | `[ ]` | P2 | |
+| 24.2 | Process creation monitoring (`/proc` polling) | `[x]` | `[x]` | P2 | |
 | 24.3 | File integrity monitoring (`inotify` / `kqueue`) | `[ ]` | `[ ]` | P2 | |
 | 24.4 | Network connection tracking (`/proc/net/tcp`) | `[ ]` | `[ ]` | P2 | |
 | 24.5 | Authentication monitoring (`/var/log/auth.log`) | `[ ]` | `[ ]` | P2 | |
