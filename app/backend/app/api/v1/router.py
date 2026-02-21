@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .endpoints import admin, agents, assets, audit_logs, auth, connectors, coverage, detections, events, incidents, overview, reports, rules, saved_queries, threat_intel, users, websocket
+from .endpoints import admin, agents, assets, audit_logs, auth, compliance, connectors, coverage, detections, events, incidents, overview, reports, rules, saved_queries, threat_intel, users, websocket
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
@@ -19,3 +19,4 @@ api_router.include_router(assets.router)
 api_router.include_router(audit_logs.router)
 api_router.include_router(agents.router)
 api_router.include_router(reports.router)
+api_router.include_router(compliance.router)

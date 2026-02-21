@@ -18,6 +18,7 @@ from ..models.incident import Incident
 from ..repositories.detection_repo import DetectionRepo
 from ..repositories.incident_repo import IncidentRepo
 from ..repositories.rule_repo import RuleRepo
+from .compliance_mapper import ComplianceMapper
 
 # ---------------------------------------------------------------------------
 # Static compliance framework mappings (tactic → control IDs)
@@ -397,6 +398,12 @@ class ReportEngine:
 
         Optional param:
             framework (str) — "nist" | "pci_dss" | "both" (default: "both")
+
+        Output includes both:
+          - Detection-count based mapping (nist_800_53, pci_dss) — how many
+            detections occurred per control, derived from tactic counts.
+          - Technique-coverage matrix (technique_coverage) — which controls are
+            covered by active Sigma rules, derived from ComplianceMapper.
         """
         framework = params.get("framework", "both")
         if framework not in ("nist", "pci_dss", "both"):
@@ -404,7 +411,19 @@ class ReportEngine:
                 f"Invalid framework {framework!r}. Valid: nist, pci_dss, both"
             )
 
-        tactic_counts_raw, coverage = await asyncio.gather(
+        # Build coroutines for technique-level coverage (ComplianceMapper)
+        mapper = ComplianceMapper(self._session)
+        if framework == "nist":
+            mapper_coros = [mapper.get_compliance_status("nist")]
+        elif framework == "pci_dss":
+            mapper_coros = [mapper.get_compliance_status("pci-dss")]
+        else:  # both
+            mapper_coros = [
+                mapper.get_compliance_status("nist"),
+                mapper.get_compliance_status("pci-dss"),
+            ]
+
+        results = await asyncio.gather(
             DetectionRepo.get_tactics(
                 self._session,
                 from_date=from_date,
@@ -412,7 +431,12 @@ class ReportEngine:
                 prev_from_date=prev_from_date,
             ),
             DetectionRepo.get_coverage_summary(self._session),
+            *mapper_coros,
         )
+
+        tactic_counts_raw = results[0]
+        coverage = results[1]
+        mapper_results = results[2:]
 
         tactic_counts = {row["tactic"]: row["count"] for row in tactic_counts_raw}
 
@@ -427,6 +451,17 @@ class ReportEngine:
             else None
         )
 
+        # Technique-coverage matrix from ComplianceMapper
+        if framework == "nist":
+            technique_coverage = {"nist": mapper_results[0]}
+        elif framework == "pci_dss":
+            technique_coverage = {"pci_dss": mapper_results[0]}
+        else:
+            technique_coverage = {
+                "nist": mapper_results[0],
+                "pci_dss": mapper_results[1],
+            }
+
         return {
             "template": "compliance_summary",
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -438,6 +473,7 @@ class ReportEngine:
             "coverage_context": coverage,
             "nist_800_53": nist_controls,
             "pci_dss": pci_controls,
+            "technique_coverage": technique_coverage,
         }
 
 
