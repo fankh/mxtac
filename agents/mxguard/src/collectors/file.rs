@@ -709,6 +709,19 @@ mod tests {
             event_file_path(&ev)
         );
 
+        // Wait past the rate-limit window (RATE_LIMIT_PER_FILE = 10ms).
+        // The initial fs::write may generate IN_CREATE + IN_MODIFY in rapid succession;
+        // we need the rate limit window to expire before triggering the next operation.
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Drain any additional events (e.g. IN_MODIFY from the initial write).
+        while let Ok(Some(_)) = tokio::time::timeout(
+            tokio::time::Duration::from_millis(20),
+            rx.recv(),
+        )
+        .await
+        {}
+
         // --- Modify ---
         std::fs::write(&test_file, b"modified").expect("modify file");
 
@@ -719,6 +732,15 @@ mod tests {
 
         assert_eq!(ev.activity, "Modify", "modify event activity");
         assert_eq!(ev.activity_id, 4, "modify activity_id must be 4");
+
+        // Wait past the rate-limit window before rename.
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        while let Ok(Some(_)) = tokio::time::timeout(
+            tokio::time::Duration::from_millis(20),
+            rx.recv(),
+        )
+        .await
+        {}
 
         // --- Rename (MOVED_FROM) ---
         let renamed = tmp.path().join("renamed_fim.txt");
@@ -732,6 +754,16 @@ mod tests {
 
         assert_eq!(ev.activity, "Rename", "rename event activity");
         assert_eq!(ev.activity_id, 5, "rename activity_id must be 5");
+
+        // Wait past the rate-limit window before delete, and drain the
+        // MOVED_TO event (for the destination path) emitted by the rename.
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        while let Ok(Some(_)) = tokio::time::timeout(
+            tokio::time::Duration::from_millis(20),
+            rx.recv(),
+        )
+        .await
+        {}
 
         // --- Delete ---
         std::fs::remove_file(&renamed).expect("delete file");
