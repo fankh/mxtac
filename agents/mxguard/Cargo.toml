@@ -21,6 +21,12 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # File monitoring (Linux inotify)
 inotify = "0.11"
 
+# Async stream utilities (for inotify event stream)
+tokio-stream = "0.1"
+
+# File integrity monitoring - SHA-256 hashing
+sha2 = "0.10"
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 
