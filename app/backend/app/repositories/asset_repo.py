@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import cast, func, select, String, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.validators import escape_like
 from ..models.asset import Asset
 
 _DEFAULT_CRITICALITY = 3  # fallback when no asset is found
@@ -35,12 +36,12 @@ class AssetRepo:
         if is_active is not None:
             q = q.where(Asset.is_active == is_active)
         if search is not None:
-            pattern = f"%{search}%"
+            pattern = f"%{escape_like(search)}%"
             q = q.where(
-                Asset.hostname.ilike(pattern)
-                | Asset.owner.ilike(pattern)
-                | Asset.department.ilike(pattern)
-                | Asset.os.ilike(pattern)
+                Asset.hostname.ilike(pattern, escape="\\")
+                | Asset.owner.ilike(pattern, escape="\\")
+                | Asset.department.ilike(pattern, escape="\\")
+                | Asset.os.ilike(pattern, escape="\\")
             )
 
         count_q = select(func.count()).select_from(q.subquery())

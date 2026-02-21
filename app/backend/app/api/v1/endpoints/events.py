@@ -19,10 +19,10 @@ Ingest path (POST /ingest):
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.api_key_auth import get_api_key
@@ -52,33 +52,57 @@ _RATE_WINDOW_SECS  = 60       # window duration in seconds
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
+# Known safe event filter fields — must match _FIELD_MAP keys in event_repo.py
+_ALLOWED_FILTER_FIELDS = frozenset({
+    "severity_id", "class_name", "class_uid",
+    "src_ip", "dst_ip", "hostname", "username", "process_hash", "source",
+    # OpenSearch nested aliases
+    "src_endpoint.ip", "dst_endpoint.ip", "dst_endpoint.hostname",
+    "actor_user.name", "process.hash_sha256",
+})
+
+EventOperator = Literal["eq", "ne", "gt", "lt", "gte", "lte", "contains"]
+
+AggType = Literal["terms", "date_histogram"]
+
+AggInterval = Literal["1m", "minute", "1h", "hour", "1d", "24h", "day", "1w", "week", "1M", "month"]
+
 
 class IngestRequest(BaseModel):
     events: Annotated[list[dict[str, Any]], Field(min_length=1, max_length=1000)]
 
 
 class EventFilter(BaseModel):
-    field: str
-    operator: str  # eq, ne, gt, lt, gte, lte, contains
+    field: str = Field(..., max_length=128)
+    operator: EventOperator
     value: Any
+
+    @field_validator("field")
+    @classmethod
+    def validate_field(cls, v: str) -> str:
+        if v not in _ALLOWED_FILTER_FIELDS:
+            raise ValueError(
+                f"Unknown filter field {v!r}. Allowed fields: {sorted(_ALLOWED_FILTER_FIELDS)}"
+            )
+        return v
 
 
 class SearchRequest(BaseModel):
-    query: str | None = None
-    filters: list[EventFilter] = []
-    time_from: str = "now-7d"
-    time_to: str = "now"
-    size: int = 100
-    from_: int = 0
+    query: str | None = Field(default=None, max_length=2048)
+    filters: list[EventFilter] = Field(default_factory=list, max_length=50)
+    time_from: str = Field(default="now-7d", max_length=50)
+    time_to: str = Field(default="now", max_length=50)
+    size: int = Field(default=100, ge=1, le=1000)
+    from_: int = Field(default=0, ge=0, le=100000)
 
 
 class AggregationRequest(BaseModel):
-    field: str | None = None   # required for terms; unused for date_histogram
-    agg_type: str = "terms"    # terms | date_histogram
-    interval: str = "1h"       # bucket interval for date_histogram (1m, 1h, 1d, 1w, 1M)
-    size: int = 10
-    time_from: str = "now-7d"
-    time_to: str = "now"
+    field: str | None = Field(default=None, max_length=128)
+    agg_type: AggType = "terms"
+    interval: AggInterval = "1h"
+    size: int = Field(default=10, ge=1, le=1000)
+    time_from: str = Field(default="now-7d", max_length=50)
+    time_to: str = Field(default="now", max_length=50)
 
 
 # ── Serialization ─────────────────────────────────────────────────────────────
@@ -197,12 +221,6 @@ async def aggregate_events(
     - ``agg_type=terms`` — count events grouped by a field value; requires *field*.
     - ``agg_type=date_histogram`` — count events bucketed by time; uses *interval*.
     """
-    if body.agg_type not in ("terms", "date_histogram"):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Unsupported agg_type: {body.agg_type!r}. Supported: terms, date_histogram",
-        )
-
     if os_client.is_available:
         buckets = await os_client.aggregate(
             body.agg_type,

@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.validators import escape_like
 from ..models.event import Event
 
 
@@ -97,7 +98,7 @@ def _apply_event_filter(q, field: str, operator: str, value: Any):
     if operator == "ne":
         return q.where(col != value)
     if operator == "contains":
-        return q.where(col.ilike(f"%{value}%"))
+        return q.where(col.ilike(f"%{escape_like(str(value))}%", escape="\\"))
     if operator == "gt":
         return q.where(col > value)
     if operator == "lt":
@@ -132,14 +133,14 @@ class EventRepo:
 
         # Full-text search across summary, class_name, hostname, username
         if query:
-            pattern = f"%{query}%"
+            pattern = f"%{escape_like(query)}%"
             q = q.where(
-                Event.summary.ilike(pattern)
-                | Event.class_name.ilike(pattern)
-                | Event.hostname.ilike(pattern)
-                | Event.username.ilike(pattern)
-                | Event.src_ip.ilike(pattern)
-                | Event.dst_ip.ilike(pattern)
+                Event.summary.ilike(pattern, escape="\\")
+                | Event.class_name.ilike(pattern, escape="\\")
+                | Event.hostname.ilike(pattern, escape="\\")
+                | Event.username.ilike(pattern, escape="\\")
+                | Event.src_ip.ilike(pattern, escape="\\")
+                | Event.dst_ip.ilike(pattern, escape="\\")
             )
 
         # Apply structured filters

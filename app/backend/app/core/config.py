@@ -1,12 +1,23 @@
 import logging
+import re
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
 
 _DEV_SECRET = "dev-secret-change-in-production"
 _DEFAULT_PG_URL = "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"
+
+# Regex that matches a password token inside a DSN URL, e.g.:
+#   postgresql+asyncpg://user:PASSWORD@host/db
+#   redis://:PASSWORD@host:port/0
+_DSN_PASSWORD_RE = re.compile(r"(://[^:@]*:)([^@]+)(@)")
+
+
+def redact_dsn(dsn: str) -> str:
+    """Replace the password portion of a DSN URL with '***'."""
+    return _DSN_PASSWORD_RE.sub(r"\1***\3", dsn)
 
 
 class Settings(BaseSettings):
@@ -15,13 +26,25 @@ class Settings(BaseSettings):
     debug: bool = True
     api_prefix: str = "/api/v1"
 
-    # Auth
-    secret_key: str = "dev-secret-change-in-production"
+    # Auth — secret_key is excluded from repr so it never appears in log output
+    secret_key: str = Field(
+        default="dev-secret-change-in-production",
+        repr=False,
+        json_schema_extra={"x-sensitive": True, "format": "password"},
+    )
+    # Bump this integer to invalidate all currently-issued JWTs (e.g. after a
+    # secret rotation).  Every token stores this version in the "kvr" claim;
+    # verification rejects tokens whose kvr does not match the current value.
+    jwt_key_version: int = 1
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
 
-    # Database
-    database_url: str = _DEFAULT_PG_URL
+    # Database — excluded from repr to prevent password leakage in logs
+    database_url: str = Field(
+        default=_DEFAULT_PG_URL,
+        repr=False,
+        json_schema_extra={"x-sensitive": True},
+    )
 
     # SQLite single-binary mode — no external DB required (feature 20.8)
     # When True and DATABASE_URL is not explicitly overridden, the app uses a
@@ -32,15 +55,12 @@ class Settings(BaseSettings):
     # DATABASE_URL has not been explicitly set to a sqlite:// URL).
     sqlite_path: str = "./mxtac.db"
 
-    @model_validator(mode="after")
-    def _apply_sqlite_mode(self) -> "Settings":
-        """Auto-configure SQLite URL when sqlite_mode is enabled."""
-        if self.sqlite_mode and not self.database_url.startswith("sqlite"):
-            self.database_url = f"sqlite+aiosqlite:///{self.sqlite_path}"
-        return self
-
     # Valkey (Redis-compatible)
-    valkey_url: str = "redis://localhost:6379/0"
+    valkey_url: str = Field(
+        default="redis://localhost:6379/0",
+        repr=False,
+        json_schema_extra={"x-sensitive": True},
+    )
 
     # Queue
     queue_backend: str = "memory"  # "memory" | "redis" | "kafka"
@@ -51,7 +71,11 @@ class Settings(BaseSettings):
     opensearch_host: str = "localhost"
     opensearch_port: int = 9200
     opensearch_username: str = ""
-    opensearch_password: str = ""
+    opensearch_password: str = Field(
+        default="",
+        repr=False,
+        json_schema_extra={"x-sensitive": True, "format": "password"},
+    )
     opensearch_use_ssl: bool = False
 
     # Alert file output (JSON Lines)
@@ -72,6 +96,24 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
+    @model_validator(mode="after")
+    def _post_init(self) -> "Settings":
+        """Enforce production security requirements and auto-configure SQLite mode."""
+        # Refuse to start in production when the secret key is the dev default.
+        # This prevents silent exposure of a well-known key in real deployments.
+        if not self.debug and self.secret_key == _DEV_SECRET:
+            raise ValueError(
+                "FATAL: SECRET_KEY is set to the development default. "
+                "Set a strong, unique SECRET_KEY via the SECRET_KEY environment "
+                "variable before running in production (DEBUG=False)."
+            )
+
+        # Auto-configure SQLite URL when sqlite_mode is enabled.
+        if self.sqlite_mode and not self.database_url.startswith("sqlite"):
+            self.database_url = f"sqlite+aiosqlite:///{self.sqlite_path}"
+
+        return self
+
     @property
     def opensearch_url(self) -> str:
         scheme = "https" if self.opensearch_use_ssl else "http"
@@ -82,9 +124,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-if settings.secret_key == _DEV_SECRET and not settings.debug:
-    logger.warning(
-        "SECURITY WARNING: SECRET_KEY is set to the development default. "
-        "Set a strong, unique SECRET_KEY in production via the SECRET_KEY environment variable."
-    )

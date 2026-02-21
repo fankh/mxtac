@@ -52,11 +52,11 @@ def _require_admin(user: dict) -> None:
 async def get_audit_log(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(50, ge=1, le=500, description="Items per page"),
-    actor: str | None = Query(None, description="Filter by actor email"),
-    action: str | None = Query(None, description="Filter by action verb"),
-    resource_type: str | None = Query(None, description="Filter by resource type"),
-    time_from: str = Query("now-7d", description="Start time (OpenSearch date math)"),
-    time_to: str = Query("now", description="End time (OpenSearch date math)"),
+    actor: str | None = Query(None, max_length=254, description="Filter by actor email"),
+    action: str | None = Query(None, max_length=100, description="Filter by action verb"),
+    resource_type: str | None = Query(None, max_length=100, description="Filter by resource type"),
+    time_from: str = Query("now-7d", max_length=50, description="Start time (OpenSearch date math)"),
+    time_to: str = Query("now", max_length=50, description="End time (OpenSearch date math)"),
     current_user: dict = Depends(get_current_user),
 ) -> AuditLogResponse:
     """

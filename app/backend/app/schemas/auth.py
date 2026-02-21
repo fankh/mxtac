@@ -1,6 +1,8 @@
 import re
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
+
+from ..core.validators import EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH
 
 # Accepts any user@domain.tld format — including RFC 6762 .local names used
 # by internal service accounts (e.g. analyst@mxtac.local).
@@ -8,8 +10,8 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", re.IGNORECASE)
 
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(..., max_length=EMAIL_MAX_LENGTH)
+    password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
 
     @field_validator("email")
     @classmethod
@@ -41,7 +43,8 @@ class MfaSetupResponse(BaseModel):
 
 
 class MfaVerifyRequest(BaseModel):
-    code: str
+    # TOTP codes are 6 digits; backup codes up to 16 alphanumeric chars
+    code: str = Field(..., min_length=6, max_length=16, pattern=r"^[A-Za-z0-9]+$")
 
 
 class MfaVerifyResponse(BaseModel):
@@ -55,8 +58,8 @@ class MfaLoginResponse(BaseModel):
 
 
 class MfaVerifyLoginRequest(BaseModel):
-    mfa_token: str
-    code: str
+    mfa_token: str = Field(..., max_length=512)
+    code: str = Field(..., min_length=6, max_length=16, pattern=r"^[A-Za-z0-9]+$")
 
 
 # Feature 32.3 — MFA management

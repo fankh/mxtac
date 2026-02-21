@@ -9,6 +9,9 @@ vi.mock('../../lib/api', () => ({
     list: vi.fn(),
     get:  vi.fn(),
   },
+  authApi: {
+    mfaDisable: vi.fn(),
+  },
 }))
 
 vi.mock('../../components/layout/TopBar', () => ({
@@ -21,15 +24,16 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AdminPage } from '../../components/features/admin/AdminPage'
-import { apiClient, auditLogsApi } from '../../lib/api'
+import { apiClient, auditLogsApi, authApi } from '../../lib/api'
 
 // ---------------------------------------------------------------------------
 // Typed references to the mocked APIs
 // ---------------------------------------------------------------------------
 
-const mockGet   = apiClient.get   as ReturnType<typeof vi.fn>
-const mockPatch = apiClient.patch as ReturnType<typeof vi.fn>
-const mockAudit = auditLogsApi.list as ReturnType<typeof vi.fn>
+const mockGet        = apiClient.get       as ReturnType<typeof vi.fn>
+const mockPatch      = apiClient.patch     as ReturnType<typeof vi.fn>
+const mockAudit      = auditLogsApi.list   as ReturnType<typeof vi.fn>
+const mockMfaDisable = authApi.mfaDisable  as ReturnType<typeof vi.fn>
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -785,6 +789,108 @@ describe('AdminPage', () => {
       mockGet.mockResolvedValue({ data: [] })
       renderPage()
       await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1))
+    })
+  })
+
+  // =========================================================================
+  // MFA column — display
+  // =========================================================================
+  describe('MFA column', () => {
+    it('renders the "MFA" column header', async () => {
+      mockGet.mockResolvedValue({ data: [] })
+      renderPage()
+      await waitFor(() => expect(screen.getByText('MFA')).toBeInTheDocument())
+    })
+
+    it('shows "On" badge for users with MFA enabled', async () => {
+      mockGet.mockResolvedValue({ data: [makeUser({ mfa_enabled: true })] })
+      renderPage()
+      await waitFor(() => expect(screen.getByText('On')).toBeInTheDocument())
+    })
+
+    it('shows "—" for users with MFA disabled', async () => {
+      mockGet.mockResolvedValue({ data: [makeUser({ mfa_enabled: false })] })
+      renderPage()
+      await waitFor(() => expect(screen.getByText('—')).toBeInTheDocument())
+    })
+
+    it('does not show "On" badge when MFA is disabled', async () => {
+      mockGet.mockResolvedValue({ data: [makeUser({ mfa_enabled: false })] })
+      renderPage()
+      await waitFor(() => expect(screen.queryByText('On')).not.toBeInTheDocument())
+    })
+  })
+
+  // =========================================================================
+  // MFA disable button — rendering
+  // =========================================================================
+  describe('MFA disable button — rendering', () => {
+    it('renders the "MFA↓" button for users with MFA enabled', async () => {
+      mockGet.mockResolvedValue({ data: [makeUser({ mfa_enabled: true })] })
+      renderPage()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'MFA↓' })).toBeInTheDocument())
+    })
+
+    it('does not render "MFA↓" button for users with MFA disabled', async () => {
+      mockGet.mockResolvedValue({ data: [makeUser({ mfa_enabled: false })] })
+      renderPage()
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'MFA↓' })).not.toBeInTheDocument())
+    })
+  })
+
+  // =========================================================================
+  // MFA disable mutation
+  // =========================================================================
+  describe('MFA disable mutation', () => {
+    beforeEach(() => {
+      mockMfaDisable.mockResolvedValue({ message: 'MFA disabled' })
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+    })
+
+    it('calls authApi.mfaDisable with the user id when confirmed', async () => {
+      mockGet.mockResolvedValue({ data: [makeUser({ id: 'user-mfa', mfa_enabled: true })] })
+      renderPage()
+
+      const btn = await screen.findByRole('button', { name: 'MFA↓' })
+      fireEvent.click(btn)
+
+      await waitFor(() => {
+        expect(mockMfaDisable).toHaveBeenCalledWith('user-mfa')
+      })
+    })
+
+    it('does not call authApi.mfaDisable when the confirm dialog is cancelled', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      mockGet.mockResolvedValue({ data: [makeUser({ id: 'user-mfa', mfa_enabled: true })] })
+      renderPage()
+
+      const btn = await screen.findByRole('button', { name: 'MFA↓' })
+      fireEvent.click(btn)
+
+      expect(mockMfaDisable).not.toHaveBeenCalled()
+    })
+
+    it('shows the user email in the confirm dialog message', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      mockGet.mockResolvedValue({ data: [makeUser({ id: 'u1', email: 'alice@mxtac.local', mfa_enabled: true })] })
+      renderPage()
+
+      const btn = await screen.findByRole('button', { name: 'MFA↓' })
+      fireEvent.click(btn)
+
+      expect(confirmSpy).toHaveBeenCalledWith('Disable MFA for alice@mxtac.local?')
+    })
+
+    it('invalidates the users query after successful MFA disable (triggers refetch)', async () => {
+      mockGet
+        .mockResolvedValueOnce({ data: [makeUser({ id: 'u1', mfa_enabled: true })] })
+        .mockResolvedValue({ data: [makeUser({ id: 'u1', mfa_enabled: false })] })
+
+      renderPage()
+      const btn = await screen.findByRole('button', { name: 'MFA↓' })
+      fireEvent.click(btn)
+
+      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2))
     })
   })
 })

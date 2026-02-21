@@ -66,6 +66,8 @@ def _make_token(
     payload: dict = {
         "sub": sub,
         "exp": datetime.utcnow() + timedelta(hours=1),
+        # Include the current key version so decode_token accepts this token.
+        "kvr": settings.jwt_key_version,
     }
     if include_role:
         payload["role"] = role
@@ -78,6 +80,7 @@ def _make_token_without_sub() -> str:
         "role": "analyst",
         "exp": datetime.utcnow() + timedelta(hours=1),
         "jti": "test-jti-no-sub",
+        "kvr": settings.jwt_key_version,
     }
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
@@ -88,6 +91,7 @@ def _make_expired_token() -> str:
         "sub": "user@mxtac.local",
         "role": "analyst",
         "exp": datetime.utcnow() - timedelta(seconds=1),
+        "kvr": settings.jwt_key_version,
     }
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
@@ -98,6 +102,7 @@ def _make_wrong_secret_token() -> str:
         "sub": "user@mxtac.local",
         "role": "analyst",
         "exp": datetime.utcnow() + timedelta(hours=1),
+        "kvr": settings.jwt_key_version,
     }
     return jwt.encode(payload, "completely-wrong-secret-key", algorithm=ALGORITHM)
 
@@ -544,5 +549,96 @@ class TestProtectedEndpointRequiresAuth:
 
     async def test_expired_token_via_http_returns_401(self, client) -> None:
         token = _make_expired_token()
+        resp = await client.get(PROTECTED_URL, headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# JWT key version (kvr claim) — feature 33.4
+# ---------------------------------------------------------------------------
+
+
+class TestJwtKeyVersion:
+    """decode_token rejects tokens whose kvr claim doesn't match settings.jwt_key_version."""
+
+    def test_token_includes_kvr_claim(self) -> None:
+        """create_access_token embeds the current jwt_key_version as 'kvr'."""
+        token = create_access_token({"sub": "user@mxtac.local"})
+        payload = _decode(token)
+        assert "kvr" in payload
+        assert payload["kvr"] == settings.jwt_key_version
+
+    def test_token_with_correct_kvr_is_accepted(self) -> None:
+        """A token carrying the current key version passes decode_token."""
+        token = create_access_token({"sub": "user@mxtac.local", "role": "analyst"})
+        payload = decode_token(token)
+        assert payload["sub"] == "user@mxtac.local"
+
+    def test_token_with_old_kvr_raises_401(self) -> None:
+        """A token whose kvr is behind the current version is rejected."""
+        old_version = settings.jwt_key_version - 1
+        payload = {
+            "sub": "user@mxtac.local",
+            "role": "analyst",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "jti": "test-old-kvr",
+            "kvr": old_version,
+        }
+        token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+        with pytest.raises(HTTPException) as exc_info:
+            decode_token(token)
+        assert exc_info.value.status_code == 401
+
+    def test_token_without_kvr_raises_401(self) -> None:
+        """A token with no kvr claim (pre-rotation) is rejected after a key rotation."""
+        payload = {
+            "sub": "user@mxtac.local",
+            "role": "analyst",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "jti": "test-no-kvr",
+            # deliberately no "kvr" key
+        }
+        token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+        with pytest.raises(HTTPException) as exc_info:
+            decode_token(token)
+        assert exc_info.value.status_code == 401
+
+    def test_token_with_future_kvr_raises_401(self) -> None:
+        """A token whose kvr is ahead of the current version is also rejected."""
+        future_version = settings.jwt_key_version + 99
+        payload = {
+            "sub": "user@mxtac.local",
+            "role": "analyst",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "jti": "test-future-kvr",
+            "kvr": future_version,
+        }
+        token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+        with pytest.raises(HTTPException) as exc_info:
+            decode_token(token)
+        assert exc_info.value.status_code == 401
+
+    def test_kvr_mismatch_detail(self) -> None:
+        """kvr mismatch returns the same generic 401 detail as other token errors."""
+        payload = {
+            "sub": "user@mxtac.local",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "kvr": settings.jwt_key_version + 1,
+        }
+        token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+        with pytest.raises(HTTPException) as exc_info:
+            decode_token(token)
+        assert exc_info.value.detail == "Invalid or expired token"
+
+    async def test_old_kvr_via_http_returns_401(self, client) -> None:
+        """HTTP request with an outdated kvr in the token returns 401."""
+        payload = {
+            "sub": "user@mxtac.local",
+            "role": "analyst",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "jti": "test-old-kvr-http",
+            "kvr": settings.jwt_key_version - 1,
+        }
+        token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
         resp = await client.get(PROTECTED_URL, headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 401

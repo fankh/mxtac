@@ -344,7 +344,17 @@ class OpenSearchService:
 
         must_clauses = []
         if query:
-            must_clauses.append({"query_string": {"query": query}})
+            # Use simple_query_string instead of query_string to prevent Lucene
+            # injection attacks (field boosting bypass, regex patterns, etc.).
+            # simple_query_string supports +/-/|/"" operators but not field:value
+            # or _source:* overrides, making it safe for user-supplied input.
+            must_clauses.append({
+                "simple_query_string": {
+                    "query": query,
+                    "fields": ["summary", "class_name", "hostname", "username"],
+                    "default_operator": "AND",
+                }
+            })
         if filters:
             must_clauses.extend(filters)
 

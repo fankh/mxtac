@@ -1,17 +1,21 @@
 import asyncio
+import os
+import re
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import text
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from .api.v1.router import api_router
 from .core import metrics as _metrics  # noqa: F401 — registers all mxtac_ metrics
 from .core.access_log import AccessLogMiddleware
-from .core.config import settings
+from .core.config import settings, redact_dsn, _DEV_SECRET, _DEFAULT_PG_URL
 from .core.rate_limit import RateLimitMiddleware
 from .core.security_headers import SecurityHeadersMiddleware
 from .core.database import AsyncSessionLocal
@@ -23,6 +27,97 @@ from .services.opensearch_client import get_opensearch
 
 configure_logging()
 logger = get_logger(__name__)
+
+
+# ── Startup security validation ────────────────────────────────────────────────
+
+# Production environment indicators — any of these env vars being set suggests
+# the process is running in a non-development environment.
+_PRODUCTION_INDICATORS = (
+    "KUBERNETES_SERVICE_HOST",  # Kubernetes pod
+    "DYNO",                     # Heroku
+    "AWS_EXECUTION_ENV",        # AWS Lambda / ECS
+    "GOOGLE_CLOUD_PROJECT",     # GCP
+    "WEBSITE_INSTANCE_ID",      # Azure App Service
+)
+
+
+def _check_startup_config() -> None:
+    """Log WARNING-level messages for insecure configuration at startup.
+
+    This supplements the hard-fail in Settings._post_init (which refuses to
+    start when DEBUG=False + default SECRET_KEY).  Here we emit softer warnings
+    for configurations that are risky but not immediately fatal.
+    """
+    # Warn when DEBUG is True but we appear to be in a production environment.
+    if settings.debug:
+        detected = [k for k in _PRODUCTION_INDICATORS if os.environ.get(k)]
+        if detected:
+            logger.warning(
+                "SECURITY WARNING: DEBUG=True detected in a likely production "
+                "environment (indicators: %s). Set DEBUG=False before deploying.",
+                ", ".join(detected),
+            )
+
+    # Warn if the database URL still uses the default dev credentials.
+    if settings.database_url == _DEFAULT_PG_URL:
+        logger.warning(
+            "SECURITY WARNING: DATABASE_URL is set to the development default "
+            "(mxtac:mxtac@localhost). Use strong, unique credentials in production."
+        )
+
+    # Warn if OpenSearch password is empty while a non-localhost host is configured.
+    if not settings.opensearch_password and settings.opensearch_host not in ("localhost", "127.0.0.1"):
+        logger.warning(
+            "SECURITY WARNING: opensearch_password is empty but opensearch_host "
+            "is set to %r. Configure authentication for remote OpenSearch.",
+            settings.opensearch_host,
+        )
+
+
+# ── /ready helper: sanitise service error strings ─────────────────────────────
+
+# Redact passwords embedded in DSN-style connection strings that might appear
+# in exception messages (e.g. asyncpg includes the DSN in connection errors).
+_DSN_PASSWORD_RE = re.compile(r"(://[^:@]*:)([^@]+)(@)")
+
+
+def _sanitize_check_error(msg: str) -> str:
+    """Strip credentials from service error strings before including in /ready."""
+    return _DSN_PASSWORD_RE.sub(r"\1***\3", msg)
+
+
+# ── Body size limit middleware ─────────────────────────────────────────────────
+
+_MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject requests whose Content-Length exceeds *max_bytes* with HTTP 413.
+
+    Relies on the Content-Length header sent by compliant HTTP clients.
+    Field-level max_length constraints on Pydantic models provide an
+    additional defence layer for chunked transfers without Content-Length.
+    """
+
+    def __init__(self, app, max_bytes: int = _MAX_BODY_SIZE) -> None:
+        super().__init__(app)
+        self.max_bytes = max_bytes
+
+    async def dispatch(self, request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                size = int(content_length)
+            except ValueError:
+                size = 0
+            if size > self.max_bytes:
+                return Response(
+                    status_code=413,
+                    content='{"detail": "Request body too large. Maximum allowed size is 10 MB."}',
+                    media_type="application/json",
+                )
+        return await call_next(request)
 
 
 async def _rule_reload_subscriber() -> None:
@@ -82,6 +177,9 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 # Request access log — method, path, status, latency (feature 21.11)
 app.add_middleware(AccessLogMiddleware)
 
+# Body size limit — reject oversized requests early (feature 33.3)
+app.add_middleware(ContentSizeLimitMiddleware)
+
 # Rate limiting — per-IP, per-endpoint-group (feature 33.1)
 # Added before CORSMiddleware so 429 responses still carry CORS headers.
 app.add_middleware(RateLimitMiddleware)
@@ -105,6 +203,9 @@ app.include_router(api_router, prefix=settings.api_prefix)
 @app.on_event("startup")
 async def on_startup() -> None:
     logger.info("MxTac API starting — version=%s debug=%s", settings.version, settings.debug)
+
+    # Emit warnings for insecure-but-non-fatal configuration choices.
+    _check_startup_config()
 
     # Pre-initialise state so the shutdown handler always has valid references
     app.state.connectors = {}
@@ -339,7 +440,7 @@ async def readiness() -> JSONResponse:
     except asyncio.TimeoutError:
         checks["db"] = "error: timeout"
     except Exception as e:
-        checks["db"] = f"error: {e}"
+        checks["db"] = _sanitize_check_error(f"error: {e}")
 
     # Check Valkey
     async def _check_valkey() -> None:
@@ -356,7 +457,7 @@ async def readiness() -> JSONResponse:
     except asyncio.TimeoutError:
         checks["valkey"] = "error: timeout"
     except Exception as e:
-        checks["valkey"] = f"error: {e}"
+        checks["valkey"] = _sanitize_check_error(f"error: {e}")
 
     # Check OpenSearch
     async def _check_opensearch() -> None:
@@ -379,7 +480,7 @@ async def readiness() -> JSONResponse:
     except asyncio.TimeoutError:
         checks["opensearch"] = "error: timeout"
     except Exception as e:
-        checks["opensearch"] = f"error: {e}"
+        checks["opensearch"] = _sanitize_check_error(f"error: {e}")
 
     # In SQLite/single-binary mode only the DB check is required; external
     # services (Valkey, OpenSearch) are optional and their failures are

@@ -15,8 +15,8 @@ class IOCCreate(BaseModel):
     source: str = Field(..., max_length=64)
     confidence: int = Field(default=50, ge=0, le=100)
     severity: SeverityLevel
-    description: str | None = None
-    tags: list[str] = []
+    description: str | None = Field(default=None, max_length=2000)
+    tags: list[str] = Field(default_factory=list, max_length=50)
     first_seen: datetime
     last_seen: datetime
     expires_at: datetime | None = None
@@ -26,8 +26,8 @@ class IOCCreate(BaseModel):
 class IOCUpdate(BaseModel):
     confidence: int | None = Field(default=None, ge=0, le=100)
     severity: SeverityLevel | None = None
-    description: str | None = None
-    tags: list[str] | None = None
+    description: str | None = Field(default=None, max_length=2000)
+    tags: list[str] | None = Field(default=None, max_length=50)
     last_seen: datetime | None = None
     expires_at: datetime | None = None
     is_active: bool | None = None

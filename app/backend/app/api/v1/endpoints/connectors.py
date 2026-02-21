@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....connectors.registry import build_connector
@@ -23,7 +23,7 @@ CONNECTOR_TYPES = ["wazuh", "zeek", "suricata", "prowler", "opencti", "velocirap
 
 
 class ConnectorCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=255)
     connector_type: str
     config: dict[str, Any]
     enabled: bool = True

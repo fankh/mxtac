@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
@@ -20,14 +20,17 @@ router = APIRouter(prefix="/rules", tags=["rules"])
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
+_MAX_YAML_BYTES = 1_000_000   # 1 MB per single rule
+
+
 class RuleCreate(BaseModel):
-    title: str
-    content: str          # YAML text
+    title: str = Field(..., min_length=1, max_length=500)
+    content: str = Field(..., max_length=_MAX_YAML_BYTES)   # YAML text
     enabled: bool = True
 
 class RuleUpdate(BaseModel):
     enabled: bool | None = None
-    content: str | None = None
+    content: str | None = Field(default=None, max_length=_MAX_YAML_BYTES)
 
 class RuleResponse(BaseModel):
     id: str
@@ -50,7 +53,7 @@ class RuleDetailResponse(RuleResponse):
     created_by: str | None = None
 
 class RuleTestRequest(BaseModel):
-    content: str          # YAML to test
+    content: str = Field(..., max_length=_MAX_YAML_BYTES)   # YAML to test
     sample_event: dict    # event to test against
 
 class RuleEventTestRequest(BaseModel):
@@ -61,8 +64,11 @@ class RuleTestResponse(BaseModel):
     matched: bool
     errors: list[str]
 
+_MAX_IMPORT_YAML_BYTES = 10_000_000   # 10 MB for bulk import
+
+
 class RuleImportRequest(BaseModel):
-    yaml_content: str     # single or multi-doc YAML
+    yaml_content: str = Field(..., max_length=_MAX_IMPORT_YAML_BYTES)   # single or multi-doc YAML
 
 # ── Sigma engine (compilation + testing only, not for storage) ────────────────
 

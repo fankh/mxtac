@@ -65,9 +65,18 @@ export function LoginPage() {
                   id="mfa-code"
                   type="text"
                   autoComplete="one-time-code"
+                  autoFocus
                   required
                   value={mfaCode}
-                  onChange={e => { setMfaCode(e.target.value); if (error) clearError() }}
+                  onChange={e => {
+                    const val = e.target.value
+                    setMfaCode(val)
+                    if (error) clearError()
+                    // Auto-advance: submit when the full code is entered (TOTP only)
+                    if (!useBackup && val.length === 6) {
+                      submitMfa(val)
+                    }
+                  }}
                   className="border border-border rounded-md px-3 py-2 text-sm text-text-primary bg-page
                              focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue placeholder:text-text-muted
                              tracking-widest text-center"

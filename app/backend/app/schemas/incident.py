@@ -16,22 +16,22 @@ NoteType = Literal["comment", "status_change", "evidence"]
 
 class IncidentCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     severity: SeverityLevel
-    detection_ids: list[str] = Field(default_factory=list)
-    assigned_to: str | None = None
+    detection_ids: list[str] = Field(default_factory=list, max_length=500)
+    assigned_to: str | None = Field(default=None, max_length=254)
 
 
 class IncidentUpdate(BaseModel):
     """Partial update schema — only provided fields are changed."""
 
     title: str | None = Field(None, min_length=1, max_length=500)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=10000)
     severity: SeverityLevel | None = None
     status: IncidentStatus | None = None
     priority: int | None = None
-    assigned_to: str | None = None
-    detection_ids: list[str] | None = None
+    assigned_to: str | None = Field(default=None, max_length=254)
+    detection_ids: list[str] | None = Field(default=None, max_length=500)
 
 
 class NoteCreate(BaseModel):

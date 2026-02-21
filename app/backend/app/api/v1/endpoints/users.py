@@ -2,28 +2,40 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
 from ....core.security import hash_password
+from ....core.validators import EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 ROLES = ["viewer", "analyst", "hunter", "engineer", "admin"]
 
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", re.IGNORECASE)
+
 
 class UserCreate(BaseModel):
-    email: str
-    full_name: str | None = None
+    email: str = Field(..., max_length=EMAIL_MAX_LENGTH)
+    full_name: str | None = Field(default=None, max_length=255)
     role: str = "analyst"
-    password: str
+    password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email_format(cls, v: str) -> str:
+        if not _EMAIL_RE.match(v):
+            raise ValueError("value is not a valid email address")
+        return v
 
 
 class UserUpdate(BaseModel):
-    full_name: str | None = None
+    full_name: str | None = Field(default=None, max_length=255)
     role: str | None = None
     is_active: bool | None = None
 

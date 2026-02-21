@@ -8,6 +8,7 @@ from math import ceil
 from sqlalchemy import case, func, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.validators import escape_like
 from ..models.detection import Detection
 
 # ---------------------------------------------------------------------------
@@ -61,16 +62,16 @@ class DetectionRepo:
         if status:
             q = q.where(Detection.status.in_(status))
         if tactic:
-            q = q.where(Detection.tactic.ilike(f"%{tactic}%"))
+            q = q.where(Detection.tactic.ilike(f"%{escape_like(tactic)}%", escape="\\"))
         if host:
-            q = q.where(Detection.host.ilike(f"%{host}%"))
+            q = q.where(Detection.host.ilike(f"%{escape_like(host)}%", escape="\\"))
         if search:
-            pattern = f"%{search}%"
+            pattern = f"%{escape_like(search)}%"
             q = q.where(
-                Detection.name.ilike(pattern)
-                | Detection.description.ilike(pattern)
-                | Detection.technique_id.ilike(pattern)
-                | Detection.host.ilike(pattern)
+                Detection.name.ilike(pattern, escape="\\")
+                | Detection.description.ilike(pattern, escape="\\")
+                | Detection.technique_id.ilike(pattern, escape="\\")
+                | Detection.host.ilike(pattern, escape="\\")
             )
 
         # Count

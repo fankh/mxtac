@@ -84,7 +84,7 @@ async def list_assets(
     asset_type: str | None = Query(None),
     criticality: int | None = Query(None, ge=1, le=5),
     is_active: bool | None = Query(None),
-    search: str | None = Query(None),
+    search: str | None = Query(None, max_length=255),
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("assets:read")),
 ):

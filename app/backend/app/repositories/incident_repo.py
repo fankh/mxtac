@@ -8,6 +8,7 @@ from typing import Literal
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.validators import escape_like
 from ..models.incident import Incident
 
 # Severity order: critical first (1) → low last (4)
@@ -55,11 +56,11 @@ class IncidentRepo:
         if assigned_to:
             q = q.where(Incident.assigned_to == assigned_to)
         if search:
-            pattern = f"%{search}%"
+            pattern = f"%{escape_like(search)}%"
             q = q.where(
                 or_(
-                    Incident.title.ilike(pattern),
-                    Incident.description.ilike(pattern),
+                    Incident.title.ilike(pattern, escape="\\"),
+                    Incident.description.ilike(pattern, escape="\\"),
                 )
             )
 

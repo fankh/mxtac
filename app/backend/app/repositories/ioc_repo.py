@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.validators import escape_like
 from ..models.ioc import IOC
 
 
@@ -33,8 +34,11 @@ class IOCRepo:
         if is_active is not None:
             q = q.where(IOC.is_active == is_active)
         if search is not None:
-            pattern = f"%{search}%"
-            q = q.where(IOC.value.ilike(pattern) | IOC.description.ilike(pattern))
+            pattern = f"%{escape_like(search)}%"
+            q = q.where(
+                IOC.value.ilike(pattern, escape="\\")
+                | IOC.description.ilike(pattern, escape="\\")
+            )
 
         # Count total matching rows before pagination
         count_q = select(func.count()).select_from(q.subquery())

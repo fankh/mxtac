@@ -343,4 +343,56 @@ describe('LoginPage', () => {
       expect(cancelMfa).toHaveBeenCalled()
     })
   })
+
+  // ---------------------------------------------------------------------------
+  // MFA step — auto-focus
+  // ---------------------------------------------------------------------------
+  describe('MFA step — auto-focus', () => {
+    it('the MFA code input receives focus when rendered', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
+      renderLoginPage()
+      // React's autoFocus calls element.focus() — jsdom tracks this as document.activeElement
+      expect(screen.getByLabelText('Authentication code')).toHaveFocus()
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // MFA step — auto-advance (auto-submit on full TOTP code)
+  // ---------------------------------------------------------------------------
+  describe('MFA step — auto-advance', () => {
+    it('calls submitMfa automatically when 6 digits are typed in TOTP mode', async () => {
+      const submitMfa = vi.fn().mockResolvedValue(undefined)
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, submitMfa }))
+      renderLoginPage()
+
+      fireEvent.change(screen.getByLabelText('Authentication code'), { target: { value: '123456' } })
+
+      await waitFor(() => {
+        expect(submitMfa).toHaveBeenCalledWith('123456')
+      })
+    })
+
+    it('does not auto-submit in backup code mode (requires explicit submit)', async () => {
+      const submitMfa = vi.fn().mockResolvedValue(undefined)
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, submitMfa }))
+      renderLoginPage()
+
+      // Switch to backup code mode first
+      fireEvent.click(screen.getByText('Use a backup code'))
+      // Type an 8-char backup code — should NOT auto-submit
+      fireEvent.change(screen.getByLabelText('Backup code'), { target: { value: 'AB12CD34' } })
+
+      expect(submitMfa).not.toHaveBeenCalled()
+    })
+
+    it('does not auto-submit when fewer than 6 digits are entered', async () => {
+      const submitMfa = vi.fn()
+      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, submitMfa }))
+      renderLoginPage()
+
+      fireEvent.change(screen.getByLabelText('Authentication code'), { target: { value: '12345' } })
+
+      expect(submitMfa).not.toHaveBeenCalled()
+    })
+  })
 })

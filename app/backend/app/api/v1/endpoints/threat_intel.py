@@ -47,7 +47,7 @@ async def list_iocs(
     ioc_type: str | None = Query(None),
     source: str | None = Query(None),
     is_active: bool | None = Query(None),
-    search: str | None = Query(None),
+    search: str | None = Query(None, max_length=255),
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("threat_intel:read")),
 ):
