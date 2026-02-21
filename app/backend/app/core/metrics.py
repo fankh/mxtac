@@ -30,6 +30,10 @@ Metrics exposed at GET /metrics (Prometheus text format):
   WebSocket
   ─────────
   mxtac_websocket_connections              Gauge    — active WebSocket connections
+
+  Threat intelligence
+  ───────────────────
+  mxtac_iocs_expired_total                 Counter  — IOCs deactivated by expiry task
 """
 
 from prometheus_client import Counter, Gauge, Histogram
@@ -102,4 +106,13 @@ connectors_active = Gauge(
 websocket_connections = Gauge(
     "mxtac_websocket_connections",
     "Number of active WebSocket connections to the real-time alert stream",
+)
+
+# ---------------------------------------------------------------------------
+# Threat intelligence
+# ---------------------------------------------------------------------------
+
+iocs_expired = Counter(
+    "mxtac_iocs_expired_total",
+    "Total IOCs deactivated by the IOC expiry background task (expires_at + stale-hit)",
 )

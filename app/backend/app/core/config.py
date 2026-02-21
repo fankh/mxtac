@@ -138,6 +138,11 @@ class Settings(BaseSettings):
     #   [{"name":"AlienVault","taxii_url":"https://...","collection_id":"...","api_key":"..."}]
     threat_intel_feeds: list[ThreatIntelFeedConfig] = []
 
+    # IOC expiry — feature 29.8
+    # Number of days without a hit before an IOC is auto-deactivated.
+    # Set to 0 to disable stale-hit expiry (only expires_at-based expiry runs).
+    ioc_no_hit_expiry_days: int = 90
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 

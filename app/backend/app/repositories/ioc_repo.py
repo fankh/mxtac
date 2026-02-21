@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -185,6 +185,44 @@ class IOCRepo:
                 .where(IOC.expires_at.is_not(None))
                 .where(IOC.expires_at <= now)
                 .where(IOC.is_active.is_(True))
+                .values(is_active=False)
+            )
+            await session.flush()
+
+        return count
+
+    @staticmethod
+    async def expire_stale(session: AsyncSession, days: int) -> int:
+        """Set is_active=False on active IOCs with no hits in the past *days* days.
+
+        An IOC is considered stale when COALESCE(last_hit_at, created_at) is older
+        than *days* days.  This captures both IOCs that were never matched
+        (last_hit_at IS NULL, created long ago) and IOCs whose last match has
+        aged out.
+
+        Returns the number of IOCs deactivated.
+        """
+        if days <= 0:
+            return 0
+
+        threshold = datetime.now(timezone.utc) - timedelta(days=days)
+        stale_ref = func.coalesce(IOC.last_hit_at, IOC.created_at)
+
+        count = (
+            await session.scalar(
+                select(func.count())
+                .select_from(IOC)
+                .where(IOC.is_active.is_(True))
+                .where(stale_ref < threshold)
+            )
+            or 0
+        )
+
+        if count:
+            await session.execute(
+                sa_update(IOC)
+                .where(IOC.is_active.is_(True))
+                .where(stale_ref < threshold)
                 .values(is_active=False)
             )
             await session.flush()

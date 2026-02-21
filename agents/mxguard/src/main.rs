@@ -30,7 +30,7 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // Load configuration.
+    // Load configuration (TOML file first, then MXGUARD_* env var overrides).
     let cfg = if std::path::Path::new(&cli.config).exists() {
         config::Config::from_file(&cli.config)?
     } else {
@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
             "Config file not found at {}, using defaults",
             cli.config
         );
-        config::Config::default_config()
+        config::Config::default_config()?
     };
 
     // Initialise tracing / logging.
