@@ -45,14 +45,15 @@ describe('Sidebar', () => {
       { label: 'Incidents',       href: '/incidents' },
       { label: 'Threat Intel',    href: '/intel' },
       { label: 'Assets',          href: '/assets' },
+      { label: 'Reports',         href: '/reports' },
       { label: 'Integrations',    href: '/integrations' },
       { label: 'Admin',           href: '/admin' },
     ]
 
-    it('renders exactly 10 nav links', () => {
+    it('renders exactly 11 nav links', () => {
       renderSidebar()
       const nav = screen.getByRole('navigation')
-      expect(nav.querySelectorAll('a')).toHaveLength(10)
+      expect(nav.querySelectorAll('a')).toHaveLength(11)
     })
 
     NAV_ITEMS.forEach(({ label, href }) => {
