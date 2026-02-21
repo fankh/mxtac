@@ -15,6 +15,7 @@ interface UIState {
   sidebarCollapsed: boolean
   notifications: Notification[]
   globalError: string | null
+  showShortcutsModal: boolean
 
   setTheme: (t: Theme) => void
   toggleTheme: () => void
@@ -22,6 +23,8 @@ interface UIState {
   addNotification: (n: Omit<Notification, 'id'>) => void
   removeNotification: (id: string) => void
   setGlobalError: (msg: string | null) => void
+  openShortcutsModal: () => void
+  closeShortcutsModal: () => void
 }
 
 let _notifId = 0
@@ -44,6 +47,7 @@ export const useUIStore = create<UIState>()(
       sidebarCollapsed: false,
       notifications: [],
       globalError: null,
+      showShortcutsModal: false,
 
       setTheme: (theme) => {
         applyTheme(theme)
@@ -73,6 +77,9 @@ export const useUIStore = create<UIState>()(
         set((s) => ({ notifications: s.notifications.filter((x) => x.id !== id) })),
 
       setGlobalError: (msg) => set({ globalError: msg }),
+
+      openShortcutsModal: () => set({ showShortcutsModal: true }),
+      closeShortcutsModal: () => set({ showShortcutsModal: false }),
     }),
     {
       name: 'mxtac-ui',

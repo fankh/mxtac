@@ -19,6 +19,7 @@ describe('Sidebar', () => {
       sidebarCollapsed: false,
       notifications: [],
       globalError: null,
+      showShortcutsModal: false,
     })
   })
 
@@ -196,9 +197,15 @@ describe('Sidebar', () => {
   // Bottom controls
   // ---------------------------------------------------------------------------
   describe('Bottom controls', () => {
-    it('renders the Help button', () => {
+    it('renders the Keyboard Shortcuts button', () => {
       renderSidebar()
-      expect(screen.getByTitle('Help')).toBeInTheDocument()
+      expect(screen.getByTitle('Keyboard Shortcuts')).toBeInTheDocument()
+    })
+
+    it('clicking Keyboard Shortcuts button opens the modal', () => {
+      renderSidebar()
+      fireEvent.click(screen.getByTitle('Keyboard Shortcuts'))
+      expect(useUIStore.getState().showShortcutsModal).toBe(true)
     })
 
     it('renders the Settings button', () => {

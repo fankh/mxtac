@@ -1,6 +1,8 @@
 import asyncio
+import glob as _glob
 import os
 import re
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -86,6 +88,37 @@ _DSN_PASSWORD_RE = re.compile(r"(://[^:@]*:)([^@]+)(@)")
 def _sanitize_check_error(msg: str) -> str:
     """Strip credentials from service error strings before including in /ready."""
     return _DSN_PASSWORD_RE.sub(r"\1***\3", msg)
+
+
+# ── Backup status check ────────────────────────────────────────────────────────
+
+def _check_backup_status() -> str:
+    """Return a status string describing the most recent database backup.
+
+    Returns:
+        "ok"                       — a backup exists and is within the stale window
+        "warn: no backups found"   — backup_dir exists but contains no .sql.gz files
+        "warn: backup directory not found" — backup_dir does not exist
+        "warn: last backup Xh ago (threshold: Yh)" — most recent backup is stale
+    """
+    backup_dir = settings.backup_dir
+    if not backup_dir or not os.path.isdir(backup_dir):
+        return "warn: backup directory not found"
+
+    pattern = os.path.join(backup_dir, "mxtac_backup_*.sql.gz")
+    files = _glob.glob(pattern)
+    if not files:
+        return "warn: no backups found"
+
+    # Most recent backup by mtime
+    latest = max(files, key=os.path.getmtime)
+    age_hours = (time.time() - os.path.getmtime(latest)) / 3600
+    if age_hours > settings.backup_stale_hours:
+        return (
+            f"warn: last backup {age_hours:.0f}h ago "
+            f"(threshold: {settings.backup_stale_hours}h)"
+        )
+    return "ok"
 
 
 # ── Body size limit middleware ─────────────────────────────────────────────────
@@ -611,13 +644,25 @@ async def readiness() -> JSONResponse:
     except Exception as e:
         checks["opensearch"] = _sanitize_check_error(f"error: {e}")
 
+    # Check backup status — informational only, does NOT affect 200/503 outcome.
+    # A "warn:" value here means no recent backup exists, but the service is
+    # still serving requests so we do not degrade the readiness signal.
+    try:
+        checks["backup"] = _check_backup_status()
+    except Exception as e:
+        checks["backup"] = f"warn: {e}"
+
+    # Determine overall readiness from required service checks only.
+    # The "backup" key is excluded because it is advisory, not critical.
+    _required = {k: v for k, v in checks.items() if k != "backup"}
+
     # In SQLite/single-binary mode only the DB check is required; external
     # services (Valkey, OpenSearch) are optional and their failures are
     # informational only.
     if _sqlite:
-        all_ok = checks.get("db") == "ok"
+        all_ok = _required.get("db") == "ok"
     else:
-        all_ok = all(v == "ok" for v in checks.values())
+        all_ok = all(v == "ok" for v in _required.values())
 
     return JSONResponse(
         status_code=200 if all_ok else 503,

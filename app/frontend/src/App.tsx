@@ -15,7 +15,40 @@ import { LoginPage } from './components/features/auth/LoginPage'
 import { ProtectedRoute } from './components/shared/ProtectedRoute'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { NotificationToast } from './components/shared/NotificationToast'
+import { KeyboardShortcutsModal } from './components/shared/KeyboardShortcutsModal'
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { useUIStore } from './stores/uiStore'
 
+/** Inner layout rendered inside ProtectedRoute — hooks requiring router context live here. */
+function MainLayout() {
+  useKeyboardShortcuts()
+  const showShortcutsModal = useUIStore(s => s.showShortcutsModal)
+
+  return (
+    <div className="flex min-h-screen bg-page">
+      <Sidebar />
+      <main className="ml-[52px] flex-1 min-h-screen">
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/"             element={<OverviewPage />} />
+            <Route path="/detections"   element={<DetectionsPage />} />
+            <Route path="/hunt"         element={<HuntPage />} />
+            <Route path="/attack"       element={<CoveragePage />} />
+            <Route path="/rules"        element={<RulesPage />} />
+            <Route path="/integrations" element={<ConnectorsPage />} />
+            <Route path="/admin"        element={<AdminPage />} />
+            <Route path="/incidents"    element={<IncidentsPage />} />
+            <Route path="/intel"        element={<ThreatIntelPage />} />
+            <Route path="/assets"       element={<AssetsPage />} />
+            <Route path="/reports"      element={<ReportsPage />} />
+          </Routes>
+        </ErrorBoundary>
+      </main>
+      <NotificationToast />
+      {showShortcutsModal && <KeyboardShortcutsModal />}
+    </div>
+  )
+}
 
 export default function App() {
   return (
@@ -25,27 +58,7 @@ export default function App() {
         path="/*"
         element={
           <ProtectedRoute>
-            <div className="flex min-h-screen bg-page">
-              <Sidebar />
-              <main className="ml-[52px] flex-1 min-h-screen">
-                <ErrorBoundary>
-                  <Routes>
-                    <Route path="/"             element={<OverviewPage />} />
-                    <Route path="/detections"   element={<DetectionsPage />} />
-                    <Route path="/hunt"         element={<HuntPage />} />
-                    <Route path="/attack"       element={<CoveragePage />} />
-                    <Route path="/rules"        element={<RulesPage />} />
-                    <Route path="/integrations" element={<ConnectorsPage />} />
-                    <Route path="/admin"        element={<AdminPage />} />
-                    <Route path="/incidents"    element={<IncidentsPage />} />
-                    <Route path="/intel"        element={<ThreatIntelPage />} />
-                    <Route path="/assets"       element={<AssetsPage />} />
-                    <Route path="/reports"      element={<ReportsPage />} />
-                  </Routes>
-                </ErrorBoundary>
-              </main>
-              <NotificationToast />
-            </div>
+            <MainLayout />
           </ProtectedRoute>
         }
       />

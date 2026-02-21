@@ -143,6 +143,13 @@ class Settings(BaseSettings):
     # Set to 0 to disable stale-hit expiry (only expires_at-based expiry runs).
     ioc_no_hit_expiry_days: int = 90
 
+    # Database backup status — feature 38.1
+    # Directory where backup-db.sh writes .sql.gz files.  The /ready endpoint
+    # checks this directory and emits a warning when no backup has been created
+    # within backup_stale_hours.  The warning does NOT cause a 503.
+    backup_dir: str = "./backups"
+    backup_stale_hours: int = 48
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 

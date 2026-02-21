@@ -26,7 +26,7 @@ const THEMES: { value: Theme; icon: string; label: string }[] = [
 ]
 
 export function Sidebar() {
-  const { theme, setTheme } = useUIStore()
+  const { theme, setTheme, openShortcutsModal } = useUIStore()
   const user = useAuthStore(s => s.user)
   const unreadCount = useDetectionStore(s => s.unreadCount)
   const clearUnread = useDetectionStore(s => s.clearUnread)
@@ -129,7 +129,13 @@ export function Sidebar() {
           )}
         </div>
 
-        <button className="text-text-muted hover:text-text-secondary text-base" title="Help">?</button>
+        <button
+          className="text-text-muted hover:text-text-secondary text-base"
+          title="Keyboard Shortcuts"
+          onClick={openShortcutsModal}
+        >
+          ?
+        </button>
         <button
           className="text-text-muted hover:text-text-secondary text-base"
           title="Settings"

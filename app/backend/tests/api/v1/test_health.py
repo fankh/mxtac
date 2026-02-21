@@ -15,7 +15,7 @@ Coverage:
   /ready (feature 19.9 — HAProxy health check):
   - Returns status field ("ready" or "degraded") and checks dict
   - Status code 200 when all services healthy, 503 when any degraded
-  - Each service check key is present (db, valkey, opensearch)
+  - Each service check key is present (db, valkey, opensearch, backup)
   - No authentication required
   - Content-Type is application/json
   - Status code matches the status field value
@@ -34,6 +34,14 @@ Coverage:
   - In sqlite_mode, OpenSearch failure does not cause 503
   - In sqlite_mode, db failure still causes 503
   - All three service checks are still reported in the checks dict
+
+  /ready — backup status check (feature 38.1):
+  - Backup check key is always present in checks dict
+  - Backup "warn:..." value does NOT cause 503
+  - When no backup directory exists, reports "warn: backup directory not found"
+  - When backup directory is empty, reports "warn: no backups found"
+  - When a fresh backup exists, reports "ok"
+  - When backup is older than threshold, reports "warn: last backup Xh ago"
 """
 
 from __future__ import annotations
@@ -237,6 +245,7 @@ async def test_ready_has_checks_dict(client: AsyncClient) -> None:
     assert "db" in checks
     assert "valkey" in checks
     assert "opensearch" in checks
+    assert "backup" in checks
 
 
 @pytest.mark.asyncio
@@ -641,5 +650,155 @@ async def test_ready_sqlite_url_without_sqlite_mode_flag_also_uses_optional_chec
         resp = await client.get(READY_URL)
 
     # DB is ok → 200 even without Valkey/OpenSearch when URL is sqlite://
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ready"
+
+
+# ---------------------------------------------------------------------------
+# /ready — backup status check (feature 38.1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ready_has_backup_check_key(client: AsyncClient) -> None:
+    """/ready always includes a 'backup' key in the checks dict."""
+    resp = await client.get(READY_URL)
+    assert "backup" in resp.json()["checks"]
+
+
+@pytest.mark.asyncio
+async def test_ready_backup_check_value_is_string(client: AsyncClient) -> None:
+    """The 'backup' check value is always a string."""
+    resp = await client.get(READY_URL)
+    assert isinstance(resp.json()["checks"]["backup"], str)
+
+
+@pytest.mark.asyncio
+async def test_ready_backup_warn_does_not_cause_503(client: AsyncClient) -> None:
+    """A backup 'warn:...' value does not cause /ready to return 503."""
+    db_factory = _mock_db_factory()
+    vk_client = _mock_valkey_client()
+
+    # Force backup check to return a warning (no backup dir)
+    with patch("app.main.AsyncSessionLocal", db_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch("app.main._check_backup_status", return_value="warn: no backups found"), \
+         _patch_opensearch():
+        resp = await client.get(READY_URL)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ready"
+    assert data["checks"]["backup"] == "warn: no backups found"
+
+
+@pytest.mark.asyncio
+async def test_ready_backup_ok_when_recent_backup_exists(
+    client: AsyncClient,
+    tmp_path,
+) -> None:
+    """Backup check returns 'ok' when a fresh .sql.gz file is in backup_dir."""
+    import time as _time
+
+    # Create a backup file with a very recent mtime
+    backup_file = tmp_path / "mxtac_backup_2026-02-21_02-00.sql.gz"
+    backup_file.write_bytes(b"fake")
+
+    db_factory = _mock_db_factory()
+    vk_client = _mock_valkey_client()
+
+    with patch("app.main.AsyncSessionLocal", db_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "backup_dir", str(tmp_path)), \
+         patch.object(settings, "backup_stale_hours", 48), \
+         _patch_opensearch():
+        resp = await client.get(READY_URL)
+
+    assert resp.json()["checks"]["backup"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_ready_backup_warn_when_no_backup_dir(client: AsyncClient) -> None:
+    """Backup check warns when backup_dir does not exist."""
+    db_factory = _mock_db_factory()
+    vk_client = _mock_valkey_client()
+
+    with patch("app.main.AsyncSessionLocal", db_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "backup_dir", "/nonexistent/path/that/does/not/exist"), \
+         _patch_opensearch():
+        resp = await client.get(READY_URL)
+
+    backup_val = resp.json()["checks"]["backup"]
+    assert backup_val.startswith("warn:")
+    # Still 200 because backup is informational only
+    assert resp.status_code in (200, 503)  # depends on db/valkey/opensearch mocks
+
+
+@pytest.mark.asyncio
+async def test_ready_backup_warn_when_no_backups_in_dir(
+    client: AsyncClient,
+    tmp_path,
+) -> None:
+    """Backup check warns when backup_dir exists but contains no .sql.gz files."""
+    db_factory = _mock_db_factory()
+    vk_client = _mock_valkey_client()
+
+    with patch("app.main.AsyncSessionLocal", db_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "backup_dir", str(tmp_path)), \
+         _patch_opensearch():
+        resp = await client.get(READY_URL)
+
+    assert resp.json()["checks"]["backup"] == "warn: no backups found"
+
+
+@pytest.mark.asyncio
+async def test_ready_backup_warn_when_backup_is_stale(
+    client: AsyncClient,
+    tmp_path,
+) -> None:
+    """Backup check warns when the most recent backup is older than backup_stale_hours."""
+    import os as _os
+    import time as _time
+
+    # Create a backup file and set its mtime to 72 hours ago
+    backup_file = tmp_path / "mxtac_backup_2026-02-18_02-00.sql.gz"
+    backup_file.write_bytes(b"fake")
+    stale_mtime = _time.time() - (72 * 3600)  # 72 hours ago
+    _os.utime(backup_file, (stale_mtime, stale_mtime))
+
+    db_factory = _mock_db_factory()
+    vk_client = _mock_valkey_client()
+
+    with patch("app.main.AsyncSessionLocal", db_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch.object(settings, "backup_dir", str(tmp_path)), \
+         patch.object(settings, "backup_stale_hours", 48), \
+         _patch_opensearch():
+        resp = await client.get(READY_URL)
+
+    backup_val = resp.json()["checks"]["backup"]
+    assert backup_val.startswith("warn: last backup")
+    assert "72h" in backup_val or "71h" in backup_val  # allow small float rounding
+    assert "threshold: 48h" in backup_val
+
+
+@pytest.mark.asyncio
+async def test_ready_backup_warn_does_not_degrade_all_services_ok(
+    client: AsyncClient,
+) -> None:
+    """All services healthy + backup warning → status='ready', HTTP 200."""
+    db_factory = _mock_db_factory()
+    vk_client = _mock_valkey_client()
+
+    with patch("app.main.AsyncSessionLocal", db_factory), \
+         patch("valkey.asyncio.from_url", return_value=vk_client), \
+         patch("app.main._check_backup_status", return_value="warn: no backups found"), \
+         patch.object(settings, "sqlite_mode", False), \
+         patch.object(settings, "database_url", "postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac"), \
+         _patch_opensearch():
+        resp = await client.get(READY_URL)
+
     assert resp.status_code == 200
     assert resp.json()["status"] == "ready"
