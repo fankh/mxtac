@@ -46,3 +46,5 @@ libc = "0.2"
 [dev-dependencies]
 # Temporary files for config loading tests
 tempfile = "3"
+# Mock HTTP server for transport integration tests
+wiremock = "0.6"
