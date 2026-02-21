@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { TopBar } from '../../components/layout/TopBar'
 import { useAlertStream } from '../../hooks/useAlertStream'
 import type { ConnectionState } from '../../hooks/useAlertStream'
+import { useUIStore } from '../../stores/uiStore'
 
 // ---------------------------------------------------------------------------
 // Mock useAlertStream so TopBar renders without a real WebSocket connection
@@ -28,6 +29,8 @@ describe('TopBar', () => {
   beforeEach(() => {
     // Default to "connected" state unless overridden per-test
     mockUseAlertStream.mockReturnValue('connected')
+    // Default to dark theme so the toggle button shows "Switch to light mode"
+    useUIStore.setState({ theme: 'dark' })
   })
 
   // -------------------------------------------------------------------------
@@ -305,6 +308,67 @@ describe('TopBar', () => {
     it('renders only one Notifications button', () => {
       const { container } = renderTopBar('Dashboard')
       expect(container.querySelectorAll('[title="Notifications"]')).toHaveLength(1)
+    })
+
+    it('renders all required elements including theme toggle', () => {
+      renderTopBar('Detections')
+      expect(screen.getByTitle('Refresh')).toBeInTheDocument()
+      expect(screen.getByTitle('Notifications')).toBeInTheDocument()
+      expect(screen.getByTitle(/Switch to (light|dark) mode/)).toBeInTheDocument()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Theme toggle
+  // -------------------------------------------------------------------------
+  describe('Theme toggle', () => {
+    it('renders the theme toggle button', () => {
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle(/Switch to (light|dark) mode/)).toBeInTheDocument()
+    })
+
+    it('shows "Switch to light mode" when dark theme is active', () => {
+      useUIStore.setState({ theme: 'dark' })
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle('Switch to light mode')).toBeInTheDocument()
+    })
+
+    it('shows "Switch to dark mode" when light theme is active', () => {
+      useUIStore.setState({ theme: 'light' })
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle('Switch to dark mode')).toBeInTheDocument()
+    })
+
+    it('theme toggle button is a <button> element', () => {
+      renderTopBar('Dashboard')
+      expect(screen.getByTitle(/Switch to (light|dark) mode/).tagName).toBe('BUTTON')
+    })
+
+    it('clicking the toggle button switches from dark to light', () => {
+      useUIStore.setState({ theme: 'dark' })
+      renderTopBar('Dashboard')
+      fireEvent.click(screen.getByTitle('Switch to light mode'))
+      expect(useUIStore.getState().theme).toBe('light')
+    })
+
+    it('clicking the toggle button switches from light to dark', () => {
+      useUIStore.setState({ theme: 'light' })
+      renderTopBar('Dashboard')
+      fireEvent.click(screen.getByTitle('Switch to dark mode'))
+      expect(useUIStore.getState().theme).toBe('dark')
+    })
+
+    it('clicking the toggle applies data-theme to documentElement', () => {
+      useUIStore.setState({ theme: 'dark' })
+      renderTopBar('Dashboard')
+      fireEvent.click(screen.getByTitle('Switch to light mode'))
+      expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+    })
+
+    it('renders only one theme toggle button', () => {
+      const { container } = renderTopBar('Dashboard')
+      const matches = container.querySelectorAll('[title="Switch to light mode"], [title="Switch to dark mode"]')
+      expect(matches).toHaveLength(1)
     })
   })
 })

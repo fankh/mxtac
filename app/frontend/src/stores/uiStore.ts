@@ -17,6 +17,7 @@ interface UIState {
   globalError: string | null
 
   setTheme: (t: Theme) => void
+  toggleTheme: () => void
   toggleSidebar: () => void
   addNotification: (n: Omit<Notification, 'id'>) => void
   removeNotification: (id: string) => void
@@ -29,10 +30,17 @@ function applyTheme(theme: Theme) {
   document.documentElement.setAttribute('data-theme', theme)
 }
 
+function getSystemTheme(): 'light' | 'dark' {
+  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches) {
+    return 'light'
+  }
+  return 'dark'
+}
+
 export const useUIStore = create<UIState>()(
   persist(
-    (set) => ({
-      theme: 'light',
+    (set, get) => ({
+      theme: getSystemTheme(),
       sidebarCollapsed: false,
       notifications: [],
       globalError: null,
@@ -40,6 +48,13 @@ export const useUIStore = create<UIState>()(
       setTheme: (theme) => {
         applyTheme(theme)
         set({ theme })
+      },
+
+      toggleTheme: () => {
+        const current = get().theme
+        const next: Theme = current === 'dark' ? 'light' : 'dark'
+        applyTheme(next)
+        set({ theme: next })
       },
 
       toggleSidebar: () =>

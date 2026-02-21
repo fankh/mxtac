@@ -15,7 +15,7 @@ describe('uiStore', () => {
   // Initial state
   // ---------------------------------------------------------------------------
   describe('default state', () => {
-    it('theme defaults to "light"', () => {
+    it('theme is "light" after explicit reset', () => {
       expect(useUIStore.getState().theme).toBe('light')
     })
 
@@ -61,6 +61,57 @@ describe('uiStore', () => {
       useUIStore.getState().setTheme('dark')
       useUIStore.getState().setTheme('light')
       expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // toggleTheme
+  // ---------------------------------------------------------------------------
+  describe('toggleTheme', () => {
+    it('toggles from light to dark', () => {
+      useUIStore.setState({ theme: 'light' })
+      useUIStore.getState().toggleTheme()
+      expect(useUIStore.getState().theme).toBe('dark')
+    })
+
+    it('toggles from dark to light', () => {
+      useUIStore.setState({ theme: 'dark' })
+      useUIStore.getState().toggleTheme()
+      expect(useUIStore.getState().theme).toBe('light')
+    })
+
+    it('matrix theme toggles to dark', () => {
+      useUIStore.setState({ theme: 'matrix' })
+      useUIStore.getState().toggleTheme()
+      expect(useUIStore.getState().theme).toBe('dark')
+    })
+
+    it('applies data-theme attribute when toggled', () => {
+      useUIStore.setState({ theme: 'light' })
+      useUIStore.getState().toggleTheme()
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    })
+
+    it('two consecutive toggles return to original light state', () => {
+      useUIStore.setState({ theme: 'light' })
+      useUIStore.getState().toggleTheme()
+      useUIStore.getState().toggleTheme()
+      expect(useUIStore.getState().theme).toBe('light')
+    })
+
+    it('two consecutive toggles return to original dark state', () => {
+      useUIStore.setState({ theme: 'dark' })
+      useUIStore.getState().toggleTheme()
+      useUIStore.getState().toggleTheme()
+      expect(useUIStore.getState().theme).toBe('dark')
+    })
+
+    it('persists toggled theme to localStorage', () => {
+      useUIStore.setState({ theme: 'light' })
+      useUIStore.getState().toggleTheme()
+      const raw = localStorage.getItem('mxtac-ui')
+      expect(raw).not.toBeNull()
+      expect(JSON.parse(raw!)?.state?.theme).toBe('dark')
     })
   })
 

@@ -8,10 +8,11 @@ import './index.css'
 // Apply persisted theme before first paint to avoid flash
 try {
   const stored = JSON.parse(localStorage.getItem('mxtac-ui') || '{}')
-  const theme = stored?.state?.theme || 'light'
+  const savedTheme = stored?.state?.theme
+  const theme = savedTheme || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
   document.documentElement.setAttribute('data-theme', theme)
 } catch {
-  document.documentElement.setAttribute('data-theme', 'light')
+  document.documentElement.setAttribute('data-theme', 'dark')
 }
 
 const queryClient = new QueryClient({
