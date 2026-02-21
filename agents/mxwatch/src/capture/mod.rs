@@ -1,10 +1,18 @@
 //! Packet capture module.
 //!
-//! Provides the `PacketCapture` trait and a libpcap-based implementation.
+//! Provides two capture backends:
+//! * [`PcapCapture`] — libpcap (cross-platform, default)
+//! * [`AfPacketCapture`] — AF_PACKET + MMAP zero-copy ring buffer (Linux only)
 
 pub mod pcap_capture;
 
 pub use pcap_capture::PcapCapture;
+
+#[cfg(target_os = "linux")]
+pub mod afpacket_capture;
+
+#[cfg(target_os = "linux")]
+pub use afpacket_capture::AfPacketCapture;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

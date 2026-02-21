@@ -1,8 +1,8 @@
 //! MxWatch -- Network Detection & Response agent for the MxTac platform.
 //!
-//! Captures network traffic via libpcap, parses protocols (TCP, UDP, DNS,
-//! HTTP, TLS), runs detection engines (DNS tunneling, port scanning), and
-//! ships OCSF events to the MxTac ingest API.
+//! Captures network traffic (libpcap or AF_PACKET + MMAP on Linux), parses
+//! protocols (TCP, UDP, DNS, HTTP, TLS), runs detection engines (DNS
+//! tunneling, port scanning), and ships OCSF events to the MxTac ingest API.
 
 mod capture;
 mod config;
@@ -24,6 +24,8 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 use crate::capture::PcapCapture;
+#[cfg(target_os = "linux")]
+use crate::capture::AfPacketCapture;
 use crate::detectors::dns_tunnel::DnsTunnelDetector;
 use crate::detectors::port_scan::PortScanDetector;
 use crate::events::ocsf::{OcsfDevice, OcsfNetworkEvent};
@@ -78,13 +80,35 @@ async fn main() -> anyhow::Result<()> {
     // --- Packet capture channel ------------------------------------------------
     let (pkt_tx, mut pkt_rx) = mpsc::channel::<capture::RawPacket>(10_000);
 
-    // Start pcap in a blocking thread.
-    let pcap = PcapCapture::new(&cfg.capture);
-    let capture_handle = tokio::task::spawn_blocking(move || {
-        if let Err(e) = pcap.run_blocking(pkt_tx) {
-            error!("Packet capture error: {e}");
-        }
-    });
+    // Start capture in a blocking thread.
+    // On Linux, prefer AF_PACKET + MMAP when `use_afpacket = true`.
+    #[cfg(target_os = "linux")]
+    let capture_handle = if cfg.capture.use_afpacket {
+        info!("Using AF_PACKET MMAP zero-copy capture backend");
+        let cap = AfPacketCapture::new(&cfg.capture);
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = cap.run_blocking(pkt_tx) {
+                error!("AF_PACKET capture error: {e}");
+            }
+        })
+    } else {
+        let pcap = PcapCapture::new(&cfg.capture);
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = pcap.run_blocking(pkt_tx) {
+                error!("Packet capture error: {e}");
+            }
+        })
+    };
+
+    #[cfg(not(target_os = "linux"))]
+    let capture_handle = {
+        let pcap = PcapCapture::new(&cfg.capture);
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = pcap.run_blocking(pkt_tx) {
+                error!("Packet capture error: {e}");
+            }
+        })
+    };
 
     // --- Event channel to transport --------------------------------------------
     let (evt_tx, mut evt_rx) = mpsc::channel::<OcsfNetworkEvent>(10_000);

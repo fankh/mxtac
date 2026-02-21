@@ -39,6 +39,10 @@ anyhow = "1"
 # Async trait support
 async-trait = "0.1"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Raw Linux syscall wrappers for AF_PACKET + MMAP zero-copy capture
+libc = "0.2"
+
 [dev-dependencies]
 # Temporary files for config loading tests
 tempfile = "3"

@@ -66,6 +66,12 @@ pub struct CaptureConfig {
     pub bpf_filter: String,
     #[serde(default = "default_buffer_size")]
     pub buffer_size: i32,
+    /// Use AF_PACKET + MMAP zero-copy capture instead of libpcap (Linux only).
+    #[serde(default)]
+    pub use_afpacket: bool,
+    /// AF_PACKET ring-buffer tuning (only used when `use_afpacket = true`).
+    #[serde(default)]
+    pub afpacket: AfPacketConfig,
 }
 
 impl Default for CaptureConfig {
@@ -76,6 +82,8 @@ impl Default for CaptureConfig {
             promiscuous: true,
             bpf_filter: default_bpf_filter(),
             buffer_size: default_buffer_size(),
+            use_afpacket: false,
+            afpacket: AfPacketConfig::default(),
         }
     }
 }
@@ -91,6 +99,68 @@ fn default_bpf_filter() -> String {
 }
 fn default_buffer_size() -> i32 {
     10_000
+}
+
+// -- AF_PACKET ring-buffer config --------------------------------------------
+
+/// Tuning parameters for the `TPACKET_V3` MMAP ring buffer.
+///
+/// Sensible defaults work for most deployments; adjust only when profiling
+/// shows packet loss at the capture layer.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AfPacketConfig {
+    /// Size of each ring-buffer block in bytes.
+    ///
+    /// Must be a power of two and at least one system page size (4 096 bytes).
+    /// Larger blocks reduce the number of kernel hand-offs per second.
+    #[serde(default = "default_afpacket_block_size")]
+    pub block_size: usize,
+
+    /// Number of blocks in the ring buffer.
+    ///
+    /// Total ring memory = `block_size × block_count`.  More blocks provide a
+    /// larger burst buffer at the cost of higher memory usage.
+    #[serde(default = "default_afpacket_block_count")]
+    pub block_count: usize,
+
+    /// Maximum expected frame size in bytes (used to compute `tp_frame_nr`).
+    ///
+    /// Set to at least `TPACKET_ALIGN(sizeof(tpacket3_hdr)) + snaplen`
+    /// (≈ 48 + your MTU).  The default of 2 048 bytes handles standard
+    /// Ethernet frames.
+    #[serde(default = "default_afpacket_frame_size")]
+    pub frame_size: usize,
+
+    /// Block retire timeout in milliseconds (`tp_retire_blk_tov`).
+    ///
+    /// When non-zero, the kernel flushes a partially filled block after this
+    /// many milliseconds, bounding capture latency at low packet rates.
+    #[serde(default = "default_afpacket_retire_tov")]
+    pub block_retire_tov_ms: u32,
+}
+
+impl Default for AfPacketConfig {
+    fn default() -> Self {
+        Self {
+            block_size: default_afpacket_block_size(),
+            block_count: default_afpacket_block_count(),
+            frame_size: default_afpacket_frame_size(),
+            block_retire_tov_ms: default_afpacket_retire_tov(),
+        }
+    }
+}
+
+fn default_afpacket_block_size() -> usize {
+    1 << 20 // 1 MiB — power-of-two, fits 512 standard Ethernet frames
+}
+fn default_afpacket_block_count() -> usize {
+    64 // 64 MiB total ring buffer
+}
+fn default_afpacket_frame_size() -> usize {
+    2048 // covers standard MTU (1500) + tpacket3_hdr (48) + headroom
+}
+fn default_afpacket_retire_tov() -> u32 {
+    60 // retire partial blocks after 60 ms
 }
 
 // -- Parsers -----------------------------------------------------------------
@@ -347,6 +417,18 @@ log_level = "debug"
         assert!(cap.promiscuous);
         assert_eq!(cap.bpf_filter, "tcp or udp");
         assert_eq!(cap.buffer_size, 10_000);
+        assert!(!cap.use_afpacket);
+    }
+
+    #[test]
+    fn test_default_afpacket_config() {
+        let af = AfPacketConfig::default();
+        assert_eq!(af.block_size, 1 << 20);
+        assert_eq!(af.block_count, 64);
+        assert_eq!(af.frame_size, 2048);
+        assert_eq!(af.block_retire_tov_ms, 60);
+        // block_size must be a power of two
+        assert!(af.block_size.is_power_of_two());
     }
 
     #[test]
@@ -429,6 +511,49 @@ buffer_size = 5000
         assert!(!cfg.capture.promiscuous);
         assert_eq!(cfg.capture.bpf_filter, "tcp port 443");
         assert_eq!(cfg.capture.buffer_size, 5000);
+        // use_afpacket defaults to false when not specified
+        assert!(!cfg.capture.use_afpacket);
+    }
+
+    #[test]
+    fn test_parse_afpacket_section() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[capture]
+use_afpacket = true
+
+[capture.afpacket]
+block_size           = 2097152
+block_count          = 32
+frame_size           = 4096
+block_retire_tov_ms  = 100
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert!(cfg.capture.use_afpacket);
+        assert_eq!(cfg.capture.afpacket.block_size, 2097152);
+        assert_eq!(cfg.capture.afpacket.block_count, 32);
+        assert_eq!(cfg.capture.afpacket.frame_size, 4096);
+        assert_eq!(cfg.capture.afpacket.block_retire_tov_ms, 100);
+    }
+
+    #[test]
+    fn test_afpacket_defaults_when_section_omitted() {
+        let toml = r#"
+[agent]
+name = "w"
+
+[capture]
+use_afpacket = true
+"#;
+        let cfg: Config = toml::from_str(toml).expect("parse");
+        assert!(cfg.capture.use_afpacket);
+        // afpacket sub-section should fall back to defaults
+        assert_eq!(cfg.capture.afpacket.block_size, 1 << 20);
+        assert_eq!(cfg.capture.afpacket.block_count, 64);
+        assert_eq!(cfg.capture.afpacket.frame_size, 2048);
+        assert_eq!(cfg.capture.afpacket.block_retire_tov_ms, 60);
     }
 
     #[test]
