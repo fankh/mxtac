@@ -5,7 +5,8 @@ import { StatsBar } from "@/components/StatsBar";
 import { TaskTable } from "@/components/TaskTable";
 import { useApi } from "@/hooks/useApi";
 import { useSSE } from "@/hooks/useSSE";
-import { getStats, getTasks } from "@/lib/api";
+import { getSchedulerSettings, getStats, getTasks } from "@/lib/api";
+import type { SchedulerSettings } from "@/lib/api";
 import type { Stats, TaskListResponse } from "@/lib/types";
 
 export default function DashboardPage() {
@@ -14,6 +15,11 @@ export default function DashboardPage() {
     phase?: string;
     search?: string;
   }>({});
+
+  const { data: settingsData } = useApi<SchedulerSettings>(
+    () => getSchedulerSettings(),
+    []
+  );
 
   const {
     data: stats,
@@ -78,6 +84,7 @@ export default function DashboardPage() {
             tasks={taskData?.tasks || []}
             total={taskData?.total || 0}
             phases={phases}
+            githubRepoUrl={settingsData?.github_repo_url}
             onFilter={setFilters}
           />
         )}

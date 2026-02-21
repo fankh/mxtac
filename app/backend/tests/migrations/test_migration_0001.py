@@ -571,7 +571,12 @@ class TestUserOrmModel:
         assert table.name == "users"
 
     def test_has_all_expected_columns(self, table) -> None:
-        expected = {"id", "email", "hashed_password", "full_name", "role", "is_active", "created_at", "updated_at"}
+        expected = {
+            "id", "email", "hashed_password", "full_name", "role", "is_active",
+            "created_at", "updated_at",
+            # MFA fields added in feature 32.1
+            "mfa_secret", "mfa_enabled", "mfa_backup_codes",
+        }
         actual = {c.name for c in table.columns}
         assert expected == actual
 

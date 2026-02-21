@@ -4,6 +4,7 @@ import { use, useCallback } from "react";
 import Link from "next/link";
 import { RunTimeline } from "@/components/RunTimeline";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TestBadge } from "@/components/TestBadge";
 import { TaskActions } from "@/components/TaskActions";
 import { useApi } from "@/hooks/useApi";
 import { useSSE } from "@/hooks/useSSE";
@@ -140,6 +141,28 @@ export default function TaskDetailPage({
           </pre>
         </div>
       </div>
+
+      {/* Test Results */}
+      {task.test_status && (
+        <div className="mt-6">
+          <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            <div className="flex items-center gap-3 mb-3">
+              <h2 className="text-lg font-semibold text-white">Test Results</h2>
+              <TestBadge status={task.test_status} />
+            </div>
+            {task.test_output && (
+              <details open={task.test_status === "failed"}>
+                <summary className="text-sm text-gray-400 cursor-pointer hover:text-gray-300 mb-2">
+                  Test Output
+                </summary>
+                <pre className="text-xs text-gray-300 whitespace-pre-wrap bg-gray-900 p-3 rounded max-h-96 overflow-y-auto">
+                  {task.test_output}
+                </pre>
+              </details>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Run History */}
       <div className="mt-6">

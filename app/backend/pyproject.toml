@@ -4,27 +4,51 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mxtac-backend"
-version = "2.0.0"
+dynamic = ["version"]
 description = "MxTac Security Operations Platform — Backend API"
 requires-python = ">=3.12"
 dependencies = [
+    # ── Web Framework ──────────────────────────────────────────────────────────
     "fastapi==0.115.5",
     "uvicorn[standard]==0.32.1",
-    "pydantic==2.10.3",
+
+    # ── Pydantic / Settings ────────────────────────────────────────────────────
+    "pydantic[email]==2.10.3",
     "pydantic-settings==2.6.1",
+
+    # ── Auth ───────────────────────────────────────────────────────────────────
+    # KNOWN VULNERABILITY: python-jose has PYSEC-2024-232, PYSEC-2024-233
+    # Tracked in SECURITY.md — migration to PyJWT is the remediation path.
     "python-jose[cryptography]==3.3.0",
     "passlib[bcrypt]==1.7.4",
-    "pyotp>=2.9.0",
+    "pyotp==2.9.0",
+
+    # ── Database ───────────────────────────────────────────────────────────────
     "sqlalchemy[asyncio]==2.0.36",
     "asyncpg==0.30.0",
     "aiosqlite>=0.20.0",
     "alembic==1.14.0",
+
+    # ── HTTP Client ────────────────────────────────────────────────────────────
     "httpx==0.28.1",
-    "valkey>=6.1.1",
-    "opensearch-py[async]>=2.7.0",
-    "prometheus-fastapi-instrumentator>=7.1.0",
+    "aiohttp==3.13.3",
+
+    # ── YAML / Sigma ───────────────────────────────────────────────────────────
+    "pyyaml==6.0.3",
+
+    # ── Message Queue ──────────────────────────────────────────────────────────
+    "valkey==6.1.1",
+
+    # ── Search / Analytics ─────────────────────────────────────────────────────
+    "opensearch-py[async]==3.1.0",
+
+    # ── Metrics ────────────────────────────────────────────────────────────────
+    "prometheus-fastapi-instrumentator==7.1.0",
     "prometheus-client>=0.21.0",
 ]
+
+[tool.setuptools.dynamic]
+version = {attr = "app.__version__"}
 
 [project.optional-dependencies]
 dev = [
@@ -55,4 +79,3 @@ ignore = ["E501"]
 python_version = "3.12"
 strict = true
 ignore_missing_imports = true
-

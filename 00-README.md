@@ -12,6 +12,12 @@
 | [INTEGRATION-GUIDE.md](./INTEGRATION-GUIDE.md) | Guide for integrating OSS security tools |
 | [ROADMAP.md](./ROADMAP.md) | Development phases and milestones |
 
+## Development Tools
+
+| Component | Description |
+|-----------|-------------|
+| [agent-scheduler/](./agent-scheduler/README.md) | AI-driven task scheduler — runs Claude Code autonomously to implement MxTac features (FastAPI + Next.js + SQLite) |
+
 ## Quick Overview
 
 ### What is MxTac?

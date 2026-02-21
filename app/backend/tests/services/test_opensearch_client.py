@@ -154,8 +154,8 @@ async def test_search_events_delegates_to_client() -> None:
     body = call_kwargs.kwargs.get("body") or call_kwargs.args[0]
     must_clauses = body["query"]["bool"]["must"]
 
-    # query_string clause for free-text query
-    assert any("query_string" in c for c in must_clauses)
+    # simple_query_string clause for free-text query (injection-safe, feature 33.3)
+    assert any("simple_query_string" in c for c in must_clauses)
     # structured filter clause
     assert {"term": {"severity_id": 4}} in must_clauses
     # time range clause always added
@@ -1226,7 +1226,7 @@ def _get_search_body(mock_client: MagicMock) -> dict:
 
 @pytest.mark.asyncio
 async def test_search_events_query_string_value_matches_input() -> None:
-    """The query_string clause carries the exact query text passed in."""
+    """The simple_query_string clause carries the exact query text passed in."""
     svc = OpenSearchService()
     svc._client = _make_search_client()
 
@@ -1234,14 +1234,14 @@ async def test_search_events_query_string_value_matches_input() -> None:
 
     body = _get_search_body(svc._client)
     must = body["query"]["bool"]["must"]
-    qs_clauses = [c for c in must if "query_string" in c]
+    qs_clauses = [c for c in must if "simple_query_string" in c]
     assert len(qs_clauses) == 1
-    assert qs_clauses[0]["query_string"]["query"] == "mimikatz lsass"
+    assert qs_clauses[0]["simple_query_string"]["query"] == "mimikatz lsass"
 
 
 @pytest.mark.asyncio
 async def test_search_events_query_only_has_two_must_clauses() -> None:
-    """With a query but no filters, must has exactly: query_string + time range."""
+    """With a query but no filters, must has exactly: simple_query_string + time range."""
     svc = OpenSearchService()
     svc._client = _make_search_client()
 
@@ -1250,7 +1250,7 @@ async def test_search_events_query_only_has_two_must_clauses() -> None:
     body = _get_search_body(svc._client)
     must = body["query"]["bool"]["must"]
     assert len(must) == 2
-    assert any("query_string" in c for c in must)
+    assert any("simple_query_string" in c for c in must)
     assert any("range" in c for c in must)
 
 
@@ -1534,8 +1534,8 @@ async def test_search_events_combined_query_and_multiple_filters() -> None:
 
     body = _get_search_body(svc._client)
     must = body["query"]["bool"]["must"]
-    assert len(must) == 4  # query_string + 2 filters + time range
-    assert any("query_string" in c for c in must)
+    assert len(must) == 4  # simple_query_string + 2 filters + time range
+    assert any("simple_query_string" in c for c in must)
     assert {"term": {"severity_id": 5}} in must
     assert {"wildcard": {"src_endpoint.hostname": "*dc*"}} in must
     assert any("range" in c and "time" in c["range"] for c in must)

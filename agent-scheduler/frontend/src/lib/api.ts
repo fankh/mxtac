@@ -104,6 +104,11 @@ export interface SchedulerSettings {
   spawn_delay: number;
   task_timeout: number;
   model: string;
+  retry_max: number;
+  retry_backoff: number;
+  github_repo_url: string;
+  test_command: string;
+  test_timeout: number;
 }
 
 export const getSchedulerSettings = () =>
@@ -120,6 +125,11 @@ export const updateSchedulerSettings = (settings: {
   spawn_delay?: number;
   task_timeout?: number;
   model?: string;
+  retry_max?: number;
+  retry_backoff?: number;
+  github_repo_url?: string;
+  test_command?: string;
+  test_timeout?: number;
 }) =>
   fetchJson("/scheduler/settings", {
     method: "PUT",

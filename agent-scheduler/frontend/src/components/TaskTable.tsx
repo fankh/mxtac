@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useState } from "react";
 import type { Task, TaskStatus } from "@/lib/types";
 import { StatusBadge } from "./StatusBadge";
+import { TestBadge } from "./TestBadge";
 
 interface TaskTableProps {
   tasks: Task[];
   total: number;
   phases?: string[];
+  githubRepoUrl?: string;
   onFilter?: (filters: {
     status?: string;
     phase?: string;
@@ -25,7 +27,7 @@ const statuses: TaskStatus[] = [
   "cancelled",
 ];
 
-export function TaskTable({ tasks, total, phases, onFilter }: TaskTableProps) {
+export function TaskTable({ tasks, total, phases, githubRepoUrl, onFilter }: TaskTableProps) {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [phaseFilter, setPhaseFilter] = useState<string>("");
   const [search, setSearch] = useState("");
@@ -109,6 +111,7 @@ export function TaskTable({ tasks, total, phases, onFilter }: TaskTableProps) {
               <th className="py-2 px-3">Status</th>
               <th className="py-2 px-3">Retries</th>
               <th className="py-2 px-3">Commit</th>
+              <th className="py-2 px-3">Test</th>
               <th className="py-2 px-3">Updated</th>
             </tr>
           </thead>
@@ -141,12 +144,26 @@ export function TaskTable({ tasks, total, phases, onFilter }: TaskTableProps) {
                 </td>
                 <td className="py-2 px-3 font-mono text-xs">
                   {task.git_commit_sha ? (
-                    <span className="text-green-400">
-                      {task.git_commit_sha.slice(0, 8)}
-                    </span>
+                    githubRepoUrl ? (
+                      <a
+                        href={`${githubRepoUrl}/commit/${task.git_commit_sha}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-green-400 hover:text-green-300 hover:underline"
+                      >
+                        {task.git_commit_sha.slice(0, 8)}
+                      </a>
+                    ) : (
+                      <span className="text-green-400">
+                        {task.git_commit_sha.slice(0, 8)}
+                      </span>
+                    )
                   ) : (
                     <span className="text-gray-600">-</span>
                   )}
+                </td>
+                <td className="py-2 px-3">
+                  <TestBadge status={task.test_status} />
                 </td>
                 <td className="py-2 px-3 text-gray-500 text-xs">
                   {task.updated_at
@@ -157,7 +174,7 @@ export function TaskTable({ tasks, total, phases, onFilter }: TaskTableProps) {
             ))}
             {tasks.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-8 text-center text-gray-500">
+                <td colSpan={9} className="py-8 text-center text-gray-500">
                   No tasks found
                 </td>
               </tr>

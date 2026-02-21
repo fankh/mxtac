@@ -280,9 +280,73 @@ class Scheduler:
             if task:
                 await session.refresh(task)
                 await sse_broadcaster.broadcast("task_update", task.to_dict())
+                # Fire auto-test if task completed successfully
+                if task.status == TaskStatus.COMPLETED:
+                    working_dir = task.working_directory
+                    asyncio.create_task(self._run_auto_test(task_db_id, working_dir))
             if run:
                 await session.refresh(run)
                 await sse_broadcaster.broadcast("run_update", run.to_dict())
+
+    async def _run_auto_test(self, task_db_id: int, working_dir: str):
+        """Run auto-test command after task completion (non-blocking)."""
+        test_command = settings.scheduler_test_command
+        if not test_command:
+            return
+
+        cwd = working_dir or settings.mxtac_project_root
+        timeout = settings.scheduler_test_timeout
+
+        # Mark as testing
+        async with async_session() as session:
+            task = await session.get(Task, task_db_id)
+            if task:
+                task.test_status = "testing"
+                await session.commit()
+                await session.refresh(task)
+                await sse_broadcaster.broadcast("task_update", task.to_dict())
+
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                test_command,
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                stdout = b""
+                stderr = b"Test timed out"
+
+            output = (stdout.decode(errors="replace") + "\n" + stderr.decode(errors="replace")).strip()
+            passed = proc.returncode == 0
+
+            async with async_session() as session:
+                task = await session.get(Task, task_db_id)
+                if task:
+                    task.test_status = "passed" if passed else "failed"
+                    task.test_output = output[-10000:]  # cap output size
+                    await session.commit()
+                    await session.refresh(task)
+                    await sse_broadcaster.broadcast("task_update", task.to_dict())
+
+            logger.info(f"Auto-test for task {task_db_id}: {'passed' if passed else 'failed'}")
+
+        except Exception:
+            logger.exception(f"Auto-test failed for task {task_db_id}")
+            async with async_session() as session:
+                task = await session.get(Task, task_db_id)
+                if task:
+                    task.test_status = "failed"
+                    task.test_output = "Auto-test execution error"
+                    await session.commit()
+                    await session.refresh(task)
+                    await sse_broadcaster.broadcast("task_update", task.to_dict())
 
     async def _git_auto_commit(
         self, task_db_id: int, task_id: str, title: str, working_dir: str

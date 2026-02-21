@@ -31,6 +31,8 @@ export interface Task {
   git_commit_sha: string | null;
   model: string | null;
   allowed_tools: string[];
+  test_status: string | null;
+  test_output: string | null;
   created_at: string | null;
   updated_at: string | null;
 }

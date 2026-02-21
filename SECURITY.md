@@ -2,13 +2,18 @@
 
 ## Supported Versions
 
-| Version | Supported |
-|---------|-----------|
-| 2.x     | Yes       |
-| 1.x     | No        |
+Only the versions listed below receive security fixes. Patch releases are
+issued on the **current minor version only**; earlier minor versions are
+end-of-life as soon as the next minor is released.
 
-MxTac follows a **rolling release** model on the `main` branch. Only the latest
-release receives security updates.
+| Version       | Supported        | Notes                          |
+|---------------|------------------|--------------------------------|
+| 2.0.x (alpha) | ✅ Active         | Current development line       |
+| < 2.0.0       | ❌ End-of-life    | No security patches            |
+
+> **Alpha stability notice.** The 2.0.x alpha series receives security fixes
+> but may also receive breaking API changes without a deprecation notice.
+> Pin to an exact version in production deployments.
 
 ---
 
@@ -16,25 +21,71 @@ release receives security updates.
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-To report a security vulnerability:
+### Preferred — GitHub Private Vulnerability Reporting
 
-1. **Email:** Send details to the security team at `security@mxtac.internal`
-2. **Include:**
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact assessment
-   - Any suggested mitigations (optional)
+1. Navigate to the MxTac repository on GitHub.
+2. Click **Security → Report a vulnerability**.
+3. Fill in the form with as much detail as possible.
 
-You will receive an acknowledgment within **48 hours** and a full response
-within **7 business days**.
+### Alternative — Email
 
-### Responsible Disclosure
+Send a PGP-encrypted report to: **security@mxtac.io**
 
-- We ask that you give us reasonable time to investigate and fix the issue
-  before public disclosure
-- We will credit researchers who responsibly disclose vulnerabilities (unless
-  they prefer to remain anonymous)
-- We will not take legal action against researchers who follow this policy
+Include in your report:
+
+- Affected component(s) and version(s)
+- A clear description of the vulnerability and its impact
+- Step-by-step reproduction instructions or proof-of-concept code
+- Any proposed mitigations you are aware of
+- Your contact information for follow-up
+
+### Response Timeline
+
+| Milestone                        | Target                              |
+|----------------------------------|-------------------------------------|
+| Initial acknowledgement          | ≤ 2 business days                   |
+| Triage and severity assessment   | ≤ 5 business days                   |
+| Patch (Critical / High)          | ≤ 7 days from confirmed report      |
+| Patch (Medium)                   | ≤ 30 days from confirmed report     |
+| Patch (Low)                      | Next scheduled release              |
+| Public disclosure                | Coordinated with reporter           |
+
+We follow a **coordinated disclosure** model. We will work with you to agree
+on a disclosure date, typically after a patch is available. We credit reporters
+in the release notes unless you prefer to remain anonymous. We will not take
+legal action against researchers who follow this policy.
+
+---
+
+## Scope
+
+**In scope:**
+
+- `app/backend/` — FastAPI API server
+- `app/frontend/` — React web application
+- `agents/mxguard/` — EDR agent
+- `agents/mxwatch/` — NDR agent
+- `agent-scheduler/` — Task scheduler
+- Docker images published to GitHub Container Registry
+- Authentication, authorisation, and session management
+- Data handling — secrets, credentials, PII
+
+**Out of scope:**
+
+- Third-party dependencies (report upstream to the respective project)
+- Issues requiring physical access to the host
+- Social engineering or phishing of maintainers
+- Denial-of-service attacks against demo/development infrastructure
+
+---
+
+## Security Contacts
+
+| Role              | Contact               |
+|-------------------|-----------------------|
+| Security reports  | security@mxtac.io     |
+| Code of Conduct   | conduct@mxtac.io      |
+| General enquiries | hello@mxtac.io        |
 
 ---
 
