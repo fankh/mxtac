@@ -310,6 +310,8 @@ pub struct DetectorsConfig {
     pub dns_tunnel: DnsTunnelDetectorConfig,
     #[serde(default)]
     pub port_scan: PortScanDetectorConfig,
+    #[serde(default)]
+    pub proto_anomaly: ProtoAnomalyDetectorConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -359,6 +361,17 @@ fn default_scan_threshold() -> usize {
 }
 fn default_window_secs() -> u64 {
     60
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProtoAnomalyDetectorConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+impl Default for ProtoAnomalyDetectorConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
 }
 
 // -- Transport ---------------------------------------------------------------

@@ -28,6 +28,7 @@ use crate::capture::PcapCapture;
 use crate::capture::AfPacketCapture;
 use crate::detectors::dns_tunnel::DnsTunnelDetector;
 use crate::detectors::port_scan::PortScanDetector;
+use crate::detectors::proto_anomaly::ProtoAnomalyDetector;
 use crate::events::ocsf::{OcsfDevice, OcsfNetworkEvent};
 use crate::parsers::dns;
 use crate::parsers::http as http_parser;
@@ -158,6 +159,7 @@ async fn main() -> anyhow::Result<()> {
     // --- Detectors (stateful) --------------------------------------------------
     let mut dns_detector = DnsTunnelDetector::new(&cfg.detectors.dns_tunnel);
     let mut scan_detector = PortScanDetector::new(&cfg.detectors.port_scan);
+    let proto_detector = ProtoAnomalyDetector::new(&cfg.detectors.proto_anomaly);
 
     // --- Main packet processing loop -------------------------------------------
     info!("Entering packet processing loop");
@@ -276,6 +278,20 @@ async fn main() -> anyhow::Result<()> {
                                 let _ = evt_tx_clone.send(event).await;
                             }
                         }
+
+                        // Protocol anomaly detection on TCP payloads.
+                        if let Some(alert) = proto_detector.check_payload(payload, tcp_info.dst_port) {
+                            let event = OcsfNetworkEvent::from_alert(
+                                device_clone.clone(),
+                                src_ip,
+                                tcp_info.src_port,
+                                dst_ip,
+                                tcp_info.dst_port,
+                                "TCP",
+                                &alert,
+                            );
+                            let _ = evt_tx_clone.send(event).await;
+                        }
                     }
                 }
 
@@ -287,10 +303,9 @@ async fn main() -> anyhow::Result<()> {
                     };
 
                     // DNS parsing on port 53 (DNS) and 5353 (mDNS).
+                    let udp_payload = udp::extract_payload(udp_data);
                     if udp::is_dns_port(&udp_info) {
-                        let payload = udp::extract_payload(udp_data);
-
-                        if let Some(dns_info) = dns::parse_dns(payload) {
+                        if let Some(dns_info) = dns::parse_dns(udp_payload) {
                             if let Some(alert) = dns_detector.evaluate(&dns_info) {
                                 let event = OcsfNetworkEvent::from_alert(
                                     device_clone.clone(),
@@ -304,6 +319,20 @@ async fn main() -> anyhow::Result<()> {
                                 let _ = evt_tx_clone.send(event).await;
                             }
                         }
+                    }
+
+                    // Protocol anomaly detection on UDP payloads.
+                    if let Some(alert) = proto_detector.check_payload(udp_payload, udp_info.dst_port) {
+                        let event = OcsfNetworkEvent::from_alert(
+                            device_clone.clone(),
+                            src_ip,
+                            udp_info.src_port,
+                            dst_ip,
+                            udp_info.dst_port,
+                            "UDP",
+                            &alert,
+                        );
+                        let _ = evt_tx_clone.send(event).await;
                     }
                 }
 

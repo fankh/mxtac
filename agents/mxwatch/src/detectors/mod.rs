@@ -5,6 +5,7 @@
 
 pub mod dns_tunnel;
 pub mod port_scan;
+pub mod proto_anomaly;
 
 use serde::{Deserialize, Serialize};
 
