@@ -33,6 +33,11 @@ class SchedulerSettingsUpdate(BaseModel):
     spawn_delay: Optional[int] = None
     task_timeout: Optional[int] = None
     model: Optional[str] = None
+    retry_max: Optional[int] = None
+    retry_backoff: Optional[int] = None
+    github_repo_url: Optional[str] = None
+    test_command: Optional[str] = None
+    test_timeout: Optional[int] = None
 
 
 # --- Stats ---
@@ -252,6 +257,11 @@ async def get_scheduler_settings():
         "spawn_delay": settings.scheduler_spawn_delay,
         "task_timeout": settings.scheduler_task_timeout,
         "model": settings.claude_model,
+        "retry_max": settings.scheduler_retry_max,
+        "retry_backoff": settings.scheduler_retry_backoff,
+        "github_repo_url": settings.github_repo_url,
+        "test_command": settings.scheduler_test_command,
+        "test_timeout": settings.scheduler_test_timeout,
     }
 
 
@@ -265,6 +275,16 @@ async def update_scheduler_settings(req: SchedulerSettingsUpdate):
         settings.scheduler_task_timeout = req.task_timeout
     if req.model is not None:
         settings.claude_model = req.model
+    if req.retry_max is not None:
+        settings.scheduler_retry_max = req.retry_max
+    if req.retry_backoff is not None:
+        settings.scheduler_retry_backoff = req.retry_backoff
+    if req.github_repo_url is not None:
+        settings.github_repo_url = req.github_repo_url
+    if req.test_command is not None:
+        settings.scheduler_test_command = req.test_command
+    if req.test_timeout is not None:
+        settings.scheduler_test_timeout = req.test_timeout
     return {"status": "updated"}
 
 

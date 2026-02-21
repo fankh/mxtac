@@ -58,8 +58,8 @@ def _make_token(
     include_jti: bool = True,
     **extra_claims,
 ) -> str:
-    """Build a signed JWT with configurable claims."""
-    payload: dict = {"sub": sub, "role": role, **extra_claims}
+    """Build a signed JWT with configurable claims (includes kvr for key-version check)."""
+    payload: dict = {"sub": sub, "role": role, "kvr": settings.jwt_key_version, **extra_claims}
     if include_jti:
         payload["jti"] = str(uuid4())
     payload["exp"] = datetime.utcnow() + exp_delta
@@ -245,6 +245,7 @@ class TestSubClaimValidation:
         """Token without a 'sub' claim → 401 'Invalid token payload'."""
         payload = {
             "role": "analyst",
+            "kvr": settings.jwt_key_version,
             "exp": datetime.utcnow() + timedelta(hours=1),
         }
         token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
@@ -259,6 +260,7 @@ class TestSubClaimValidation:
         payload = {
             "sub": "",
             "role": "analyst",
+            "kvr": settings.jwt_key_version,
             "exp": datetime.utcnow() + timedelta(hours=1),
         }
         token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
@@ -279,6 +281,7 @@ class TestSubClaimValidation:
         payload = {
             "sub": None,
             "role": "analyst",
+            "kvr": settings.jwt_key_version,
             "exp": datetime.utcnow() + timedelta(hours=1),
         }
         token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
@@ -344,6 +347,7 @@ class TestJtiBlacklist:
             "sub": "analyst@mxtac.local",
             "role": "analyst",
             "jti": expected_jti,
+            "kvr": settings.jwt_key_version,
             "exp": datetime.utcnow() + timedelta(hours=1),
         }
         token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
@@ -369,6 +373,7 @@ class TestRoleExtraction:
         """Token without a 'role' claim → role defaults to 'viewer'."""
         payload = {
             "sub": "norole@mxtac.local",
+            "kvr": settings.jwt_key_version,
             "exp": datetime.utcnow() + timedelta(hours=1),
         }
         token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
@@ -495,6 +500,7 @@ class TestProtectedEndpointEnforcement:
         """Token without 'sub' claim is rejected on the protected endpoint → 401."""
         payload = {
             "role": "analyst",
+            "kvr": settings.jwt_key_version,
             "exp": datetime.utcnow() + timedelta(hours=1),
         }
         token = jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)

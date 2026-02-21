@@ -58,6 +58,8 @@ class Task(Base):
     git_commit_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
     model: Mapped[str | None] = mapped_column(String(50), nullable=True)
     allowed_tools: Mapped[str] = mapped_column(Text, default="[]")  # JSON list
+    test_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    test_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
@@ -102,6 +104,8 @@ class Task(Base):
             "git_commit_sha": self.git_commit_sha,
             "model": self.model,
             "allowed_tools": self.allowed_tools_list,
+            "test_status": self.test_status,
+            "test_output": self.test_output,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     scheduler_retry_max: int = 5
     scheduler_retry_backoff: int = 60  # base backoff in seconds
     scheduler_auto_start: bool = False
+    scheduler_test_command: str = ""  # empty = disabled
+    scheduler_test_timeout: int = 300  # 5 minutes
+
+    # GitHub
+    github_repo_url: str = "https://github.com/fankh/new-research"
 
     # Claude CLI
     claude_model: str = "sonnet"
