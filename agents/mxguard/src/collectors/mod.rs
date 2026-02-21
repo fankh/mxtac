@@ -8,6 +8,7 @@ pub mod process;
 pub mod file;
 pub mod network;
 pub mod auth;
+pub mod scheduled_task;
 /// Windows Registry monitoring (Windows only).
 #[cfg(target_os = "windows")]
 pub mod registry;

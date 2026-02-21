@@ -27,6 +27,8 @@
 //! | `MXGUARD_AUTH_POLL_INTERVAL_MS`       | `collectors.auth.poll_interval_ms`      |
 //! | `MXGUARD_REGISTRY_ENABLED`            | `collectors.registry.enabled`           |
 //! | `MXGUARD_REGISTRY_POLL_INTERVAL_MS`   | `collectors.registry.poll_interval_ms`  |
+//! | `MXGUARD_SCHEDULED_TASK_ENABLED`      | `collectors.scheduled_task.enabled`     |
+//! | `MXGUARD_SCHEDULED_TASK_POLL_MS`      | `collectors.scheduled_task.poll_interval_ms` |
 //! | `MXGUARD_RESOURCE_ENABLED`            | `resource_limits.enabled`               |
 //! | `MXGUARD_RESOURCE_CPU_LIMIT`          | `resource_limits.cpu_limit_percent`     |
 //! | `MXGUARD_RESOURCE_RAM_LIMIT_MB`       | `resource_limits.ram_limit_mb`          |
@@ -106,6 +108,9 @@ pub struct CollectorsConfig {
     /// Windows Registry monitoring (Windows only; disabled by default on other platforms).
     #[serde(default)]
     pub registry: RegistryCollectorConfig,
+    /// Scheduled task monitoring (cron, at, systemd timers).
+    #[serde(default)]
+    pub scheduled_task: ScheduledTaskCollectorConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -223,6 +228,40 @@ impl Default for RegistryCollectorConfig {
             enabled: false,
             watch_keys: default_registry_watch_keys(),
             poll_interval_ms: default_registry_poll_interval(),
+        }
+    }
+}
+
+/// Scheduled task monitoring configuration.
+///
+/// The collector polls cron directories, at job spools, and systemd timer
+/// directories on each `poll_interval_ms` interval. It maintains a SHA-256
+/// snapshot of all monitored files and emits OCSF File System Activity events
+/// (class_uid 1001) for additions, modifications, and deletions.
+///
+/// ATT&CK techniques covered: T1053 (Scheduled Task/Job), T1053.001 (At),
+/// T1053.003 (Cron), T1543.002 (Systemd Service).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScheduledTaskCollectorConfig {
+    /// Enable the scheduled task collector (default: true).
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Paths to monitor. May be individual files or directories (one level deep).
+    ///
+    /// Defaults to standard Linux cron/at/systemd-timer locations.
+    #[serde(default = "default_scheduled_task_paths")]
+    pub watch_paths: Vec<String>,
+    /// How often to poll for changes in milliseconds (default: 30 000 ms).
+    #[serde(default = "default_scheduled_task_poll_interval")]
+    pub poll_interval_ms: u64,
+}
+
+impl Default for ScheduledTaskCollectorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            watch_paths: default_scheduled_task_paths(),
+            poll_interval_ms: default_scheduled_task_poll_interval(),
         }
     }
 }
@@ -346,6 +385,22 @@ fn default_auth_poll_interval() -> u64 {
 }
 fn default_registry_poll_interval() -> u64 {
     5000
+}
+fn default_scheduled_task_poll_interval() -> u64 {
+    30_000
+}
+fn default_scheduled_task_paths() -> Vec<String> {
+    vec![
+        "/etc/crontab".into(),
+        "/etc/cron.d".into(),
+        "/etc/cron.hourly".into(),
+        "/etc/cron.daily".into(),
+        "/etc/cron.weekly".into(),
+        "/etc/cron.monthly".into(),
+        "/var/spool/cron/crontabs".into(),
+        "/var/spool/at".into(),
+        "/etc/systemd/system".into(),
+    ]
 }
 fn default_registry_watch_keys() -> Vec<String> {
     vec![
@@ -544,6 +599,19 @@ impl Config {
             self.collectors.registry.poll_interval_ms =
                 v.trim().parse::<u64>().map_err(|e| ConfigError::EnvParse {
                     var: "MXGUARD_REGISTRY_POLL_INTERVAL_MS",
+                    reason: e.to_string(),
+                })?;
+        }
+
+        // -- Collectors: scheduled task --------------------------------------
+        if let Some(v) = get_env("MXGUARD_SCHEDULED_TASK_ENABLED") {
+            self.collectors.scheduled_task.enabled =
+                parse_bool("MXGUARD_SCHEDULED_TASK_ENABLED", &v)?;
+        }
+        if let Some(v) = get_env("MXGUARD_SCHEDULED_TASK_POLL_MS") {
+            self.collectors.scheduled_task.poll_interval_ms =
+                v.trim().parse::<u64>().map_err(|e| ConfigError::EnvParse {
+                    var: "MXGUARD_SCHEDULED_TASK_POLL_MS",
                     reason: e.to_string(),
                 })?;
         }

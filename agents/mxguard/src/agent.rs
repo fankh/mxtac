@@ -12,6 +12,7 @@ use crate::collectors::process::ProcessCollector;
 use crate::collectors::file::FileCollector;
 use crate::collectors::network::NetworkCollector;
 use crate::collectors::auth::AuthCollector;
+use crate::collectors::scheduled_task::ScheduledTaskCollector;
 #[cfg(target_os = "windows")]
 use crate::collectors::registry::RegistryCollector;
 use crate::collectors::Collector;
@@ -99,6 +100,20 @@ impl Agent {
             collector_handles.push(tokio::spawn(async move {
                 if let Err(e) = collector.run(tx, rx).await {
                     error!("Auth collector error: {e}");
+                }
+            }));
+        }
+
+        if self.config.collectors.scheduled_task.enabled {
+            let collector = ScheduledTaskCollector::new(
+                &self.config.collectors.scheduled_task,
+                self.device.clone(),
+            );
+            let tx = event_tx.clone();
+            let rx = shutdown_rx.clone();
+            collector_handles.push(tokio::spawn(async move {
+                if let Err(e) = collector.run(tx, rx).await {
+                    error!("Scheduled task collector error: {e}");
                 }
             }));
         }

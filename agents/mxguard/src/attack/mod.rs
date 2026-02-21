@@ -167,7 +167,7 @@ pub static TECHNIQUE_CATALOGUE: &[AttackTechnique] = &[
         name: "At",
         tactic: "Persistence",
         tactic_id: "TA0003",
-        data_source: "process",
+        data_source: "file,process",
     },
     AttackTechnique {
         id: "T1053.003",
@@ -1218,6 +1218,12 @@ pub fn tag_file_event(data: &FileActivityData) -> Vec<String> {
     {
         ids.insert("T1053");
         ids.insert("T1053.003");
+    }
+
+    // --- At job persistence (T1053.001) ---
+    if path.starts_with("/var/spool/at") {
+        ids.insert("T1053");
+        ids.insert("T1053.001");
     }
 
     // --- Systemd service persistence (T1543.002) ---
