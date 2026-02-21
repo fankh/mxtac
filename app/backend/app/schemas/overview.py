@@ -138,3 +138,35 @@ class CoverageTrend(BaseModel):
 
     points: list[CoverageTrendPoint]
     days: int
+
+
+class CoverageTargetUpdate(BaseModel):
+    """Request body for creating or updating the coverage target.
+
+    target_pct  — desired minimum coverage percentage (0–100)
+    enabled     — whether threshold alerting is active (default True)
+    label       — optional human-readable name (e.g. "Q1 2026 Goal")
+    """
+
+    target_pct: float
+    enabled: bool = True
+    label: str | None = None
+
+    model_config = {"json_schema_extra": {"examples": [{"target_pct": 80.0, "enabled": True, "label": "Q1 2026 Goal"}]}}
+
+
+class CoverageTargetRead(BaseModel):
+    """Response schema for the coverage target and current alert status.
+
+    target_pct           — the configured threshold percentage
+    enabled              — whether alerting is active
+    label                — optional label
+    current_pct          — live ATT&CK coverage percentage (from latest snapshot or live rules)
+    is_below_threshold   — True when enabled=True AND current_pct < target_pct
+    """
+
+    target_pct: float
+    enabled: bool
+    label: str | None = None
+    current_pct: float
+    is_below_threshold: bool

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ....core.database import get_db
 from ....core.rbac import require_permission
 from ....repositories.coverage_snapshot_repo import CoverageSnapshotRepo
+from ....repositories.coverage_target_repo import CoverageTargetRepo
 from ....repositories.rule_repo import RuleRepo
 from ....schemas.overview import (
     CoverageByDataSource,
@@ -17,6 +18,8 @@ from ....schemas.overview import (
     CoverageSummary,
     CoverageTrend,
     CoverageTrendPoint,
+    CoverageTargetRead,
+    CoverageTargetUpdate,
 )
 from ....services.mock_data import COVERAGE_SUMMARY
 
@@ -195,3 +198,80 @@ async def get_coverage_trend(
     ]
 
     return CoverageTrend(points=points, days=days)
+
+
+async def _get_current_pct(db: AsyncSession) -> float:
+    """Return the live coverage percentage from enabled rules (0.0 when no rules)."""
+    summary = await RuleRepo.get_coverage_summary(db)
+    if summary is None:
+        return COVERAGE_SUMMARY.coverage_pct
+    return summary["coverage_pct"]
+
+
+@router.get("/target", response_model=CoverageTargetRead)
+async def get_coverage_target(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("detections:read")),
+):
+    """Return the configured coverage target and current alert status.
+
+    - ``target_pct``         — the operator-configured threshold (0–100)
+    - ``enabled``            — whether alerting is active
+    - ``label``              — optional label (e.g. "Q1 2026 Goal")
+    - ``current_pct``        — live coverage percentage
+    - ``is_below_threshold`` — True when enabled=True AND current_pct < target_pct
+
+    If no target has been configured yet, returns a default disabled target at
+    80 % so the response always has a valid schema.
+    """
+    target = await CoverageTargetRepo.get(db)
+    current_pct = await _get_current_pct(db)
+
+    if target is None:
+        return CoverageTargetRead(
+            target_pct=80.0,
+            enabled=False,
+            label=None,
+            current_pct=current_pct,
+            is_below_threshold=False,
+        )
+
+    return CoverageTargetRead(
+        target_pct=target.target_pct,
+        enabled=target.enabled,
+        label=target.label,
+        current_pct=current_pct,
+        is_below_threshold=target.enabled and current_pct < target.target_pct,
+    )
+
+
+@router.put("/target", response_model=CoverageTargetRead)
+async def upsert_coverage_target(
+    body: CoverageTargetUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("detections:write")),
+):
+    """Create or update the coverage target threshold.
+
+    Sets the percentage that the live ATT&CK coverage must meet or exceed.
+    When ``enabled=True``, the ``is_below_threshold`` field on the GET response
+    will be ``True`` whenever coverage drops below ``target_pct``, signalling
+    that attention is required.
+
+    ``target_pct`` is clamped to [0, 100] server-side.
+    """
+    target = await CoverageTargetRepo.upsert(
+        db,
+        target_pct=body.target_pct,
+        enabled=body.enabled,
+        label=body.label,
+    )
+    current_pct = await _get_current_pct(db)
+
+    return CoverageTargetRead(
+        target_pct=target.target_pct,
+        enabled=target.enabled,
+        label=target.label,
+        current_pct=current_pct,
+        is_below_threshold=target.enabled and current_pct < target.target_pct,
+    )

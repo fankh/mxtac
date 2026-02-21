@@ -123,6 +123,43 @@ services:
     profiles:
       - dashboards
 
+  # ─── Prometheus (monitoring profile) ─────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+    profiles:
+      - monitoring
+
+  # ─── Grafana (monitoring profile) ─────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana-oss:11.0.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/mxtac-overview.json
+    volumes:
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
   # ─── Redpanda (Kafka-compatible) ──────────────────────────────────────────────
   redpanda:
     image: redpandadata/redpanda:v24.3.1
@@ -154,3 +191,5 @@ volumes:
   redis_data:
   opensearch_data:
   redpanda_data:
+  prometheus_data:
+  grafana_data:
