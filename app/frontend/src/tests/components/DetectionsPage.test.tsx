@@ -5,6 +5,10 @@ vi.mock('../../lib/api', () => ({
     list:   vi.fn(),
     get:    vi.fn(),
     update: vi.fn(),
+    bulk:   vi.fn(),
+  },
+  incidentsApi: {
+    create: vi.fn(),
   },
 }))
 
@@ -33,13 +37,17 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DetectionsPage } from '../../components/features/detections/DetectionsPage'
-import { detectionsApi } from '../../lib/api'
+import { detectionsApi, incidentsApi } from '../../lib/api'
 
 // ---------------------------------------------------------------------------
 // Typed reference to the mocked API
 // ---------------------------------------------------------------------------
 
-const mockApi = detectionsApi as { list: ReturnType<typeof vi.fn> }
+const mockApi = detectionsApi as {
+  list:   ReturnType<typeof vi.fn>
+  bulk:   ReturnType<typeof vi.fn>
+}
+const mockIncidentsApi = incidentsApi as { create: ReturnType<typeof vi.fn> }
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -990,6 +998,361 @@ describe('DetectionsPage', () => {
     it('renders the TopBar with the "Detections" crumb', () => {
       renderPage()
       expect(screen.getByTestId('topbar')).toHaveTextContent('Detections')
+    })
+  })
+
+  // =========================================================================
+  // Bulk selection — checkboxes
+  // =========================================================================
+  describe('bulk selection — checkboxes', () => {
+    beforeEach(() => {
+      mockApi.list.mockResolvedValue(
+        makeResponse([
+          makeDetection({ id: 'det-001', name: 'Detection Alpha' }),
+          makeDetection({ id: 'det-002', name: 'Detection Beta' }),
+        ]),
+      )
+    })
+
+    it('renders a row checkbox for each detection', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      expect(screen.getByTestId('row-checkbox-det-001')).toBeInTheDocument()
+      expect(screen.getByTestId('row-checkbox-det-002')).toBeInTheDocument()
+    })
+
+    it('renders a select-all checkbox in the header', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      expect(screen.getByTestId('select-all-checkbox')).toBeInTheDocument()
+    })
+
+    it('bulk toolbar is hidden when no items are checked', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      expect(screen.queryByTestId('bulk-toolbar')).not.toBeInTheDocument()
+    })
+
+    it('checking a row shows the bulk toolbar', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001'))
+      expect(screen.getByTestId('bulk-toolbar')).toBeInTheDocument()
+    })
+
+    it('checked-count shows correct count after checking one row', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001'))
+      expect(screen.getByTestId('checked-count')).toHaveTextContent('1 selected')
+    })
+
+    it('checking two rows shows count of 2', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001'))
+      fireEvent.click(screen.getByTestId('row-checkbox-det-002'))
+      expect(screen.getByTestId('checked-count')).toHaveTextContent('2 selected')
+    })
+
+    it('unchecking the only checked row hides the bulk toolbar', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001')) // check
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001')) // uncheck
+      expect(screen.queryByTestId('bulk-toolbar')).not.toBeInTheDocument()
+    })
+
+    it('select-all checkbox checks all rows on the page', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('select-all-checkbox'))
+      expect(screen.getByTestId('checked-count')).toHaveTextContent('2 selected')
+    })
+
+    it('clicking select-all when all are checked unchecks all', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('select-all-checkbox')) // check all
+      fireEvent.click(screen.getByTestId('select-all-checkbox')) // uncheck all
+      expect(screen.queryByTestId('bulk-toolbar')).not.toBeInTheDocument()
+    })
+
+    it('clear-selection button clears all checked rows', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001'))
+      fireEvent.click(screen.getByTestId('clear-selection'))
+      expect(screen.queryByTestId('bulk-toolbar')).not.toBeInTheDocument()
+    })
+
+    it('checking a row does not open the detection panel', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001'))
+      expect(screen.queryByTestId('detection-panel')).not.toBeInTheDocument()
+    })
+
+    it('summary row is hidden when items are checked', async () => {
+      mockApi.list.mockResolvedValue(
+        makeResponse([makeDetection({ id: 'det-001' })], { total: 42 }),
+      )
+      renderPage()
+      await screen.findByText('Detection Alpha').catch(() => {})
+      await waitFor(() => expect(screen.getByText(/42 detections/)).toBeInTheDocument())
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001'))
+      expect(screen.queryByText(/42 detections/)).not.toBeInTheDocument()
+    })
+  })
+
+  // =========================================================================
+  // Bulk action toolbar — buttons
+  // =========================================================================
+  describe('bulk action toolbar — buttons', () => {
+    beforeEach(() => {
+      mockApi.list.mockResolvedValue(
+        makeResponse([makeDetection({ id: 'det-001', name: 'Detection Alpha' })]),
+      )
+    })
+
+    async function selectOneAndGetToolbar() {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001'))
+    }
+
+    it('shows Resolve Selected button', async () => {
+      await selectOneAndGetToolbar()
+      expect(screen.getByTestId('bulk-resolve')).toBeInTheDocument()
+    })
+
+    it('shows Mark False Positive button', async () => {
+      await selectOneAndGetToolbar()
+      expect(screen.getByTestId('bulk-fp')).toBeInTheDocument()
+    })
+
+    it('shows Assign To input', async () => {
+      await selectOneAndGetToolbar()
+      expect(screen.getByTestId('assign-input')).toBeInTheDocument()
+    })
+
+    it('shows Create Incident button', async () => {
+      await selectOneAndGetToolbar()
+      expect(screen.getByTestId('bulk-create-incident')).toBeInTheDocument()
+    })
+
+    it('Assign button is disabled when assign input is empty', async () => {
+      await selectOneAndGetToolbar()
+      expect(screen.getByTestId('assign-apply')).toBeDisabled()
+    })
+
+    it('Assign button is enabled after typing in assign input', async () => {
+      await selectOneAndGetToolbar()
+      fireEvent.change(screen.getByTestId('assign-input'), { target: { value: 'analyst' } })
+      expect(screen.getByTestId('assign-apply')).not.toBeDisabled()
+    })
+  })
+
+  // =========================================================================
+  // Confirmation modal
+  // =========================================================================
+  describe('confirmation modal', () => {
+    beforeEach(() => {
+      mockApi.list.mockResolvedValue(
+        makeResponse([makeDetection({ id: 'det-001', name: 'Detection Alpha' })]),
+      )
+    })
+
+    async function checkOneRow() {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001'))
+    }
+
+    it('confirm modal is not shown initially', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      expect(screen.queryByTestId('confirm-modal')).not.toBeInTheDocument()
+    })
+
+    it('clicking Resolve Selected opens the confirm modal', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-resolve'))
+      expect(screen.getByTestId('confirm-modal')).toBeInTheDocument()
+    })
+
+    it('resolve modal shows "Resolve Detections" heading', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-resolve'))
+      expect(screen.getByTestId('confirm-modal')).toHaveTextContent('Resolve Detections')
+    })
+
+    it('clicking Mark False Positive opens the confirm modal', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-fp'))
+      expect(screen.getByTestId('confirm-modal')).toBeInTheDocument()
+    })
+
+    it('false positive modal shows "Mark as False Positive" heading', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-fp'))
+      expect(screen.getByTestId('confirm-modal')).toHaveTextContent('Mark as False Positive')
+    })
+
+    it('clicking Assign with a name opens the confirm modal', async () => {
+      await checkOneRow()
+      fireEvent.change(screen.getByTestId('assign-input'), { target: { value: 'analyst' } })
+      fireEvent.click(screen.getByTestId('assign-apply'))
+      expect(screen.getByTestId('confirm-modal')).toBeInTheDocument()
+    })
+
+    it('assign modal shows the assignee name', async () => {
+      await checkOneRow()
+      fireEvent.change(screen.getByTestId('assign-input'), { target: { value: 'analyst' } })
+      fireEvent.click(screen.getByTestId('assign-apply'))
+      expect(screen.getByTestId('confirm-modal')).toHaveTextContent('analyst')
+    })
+
+    it('clicking Create Incident opens the confirm modal', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-create-incident'))
+      expect(screen.getByTestId('confirm-modal')).toBeInTheDocument()
+    })
+
+    it('create incident modal shows incident title input', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-create-incident'))
+      expect(screen.getByTestId('incident-title-input')).toBeInTheDocument()
+    })
+
+    it('create incident modal shows severity select', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-create-incident'))
+      expect(screen.getByTestId('incident-severity-select')).toBeInTheDocument()
+    })
+
+    it('confirm button is disabled for create_incident when title is empty', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-create-incident'))
+      expect(screen.getByTestId('confirm-button')).toBeDisabled()
+    })
+
+    it('confirm button is enabled for create_incident after entering a title', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-create-incident'))
+      fireEvent.change(screen.getByTestId('incident-title-input'), { target: { value: 'My Incident' } })
+      expect(screen.getByTestId('confirm-button')).not.toBeDisabled()
+    })
+
+    it('clicking Cancel closes the modal', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-resolve'))
+      fireEvent.click(screen.getByTestId('modal-cancel'))
+      expect(screen.queryByTestId('confirm-modal')).not.toBeInTheDocument()
+    })
+
+    it('clicking modal close (×) closes the modal', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-resolve'))
+      fireEvent.click(screen.getByTestId('modal-close'))
+      expect(screen.queryByTestId('confirm-modal')).not.toBeInTheDocument()
+    })
+
+    it('clicking the overlay closes the modal', async () => {
+      await checkOneRow()
+      fireEvent.click(screen.getByTestId('bulk-resolve'))
+      fireEvent.click(screen.getByTestId('modal-overlay'))
+      expect(screen.queryByTestId('confirm-modal')).not.toBeInTheDocument()
+    })
+  })
+
+  // =========================================================================
+  // Bulk actions — API calls
+  // =========================================================================
+  describe('bulk actions — API calls', () => {
+    beforeEach(() => {
+      mockApi.list.mockResolvedValue(
+        makeResponse([makeDetection({ id: 'det-001', name: 'Detection Alpha' })]),
+      )
+      mockApi.bulk.mockResolvedValue({ updated: 1 })
+      mockIncidentsApi.create.mockResolvedValue({ id: 99, title: 'Test', severity: 'high' })
+    })
+
+    async function checkAndConfirm(action: () => void) {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001'))
+      action()
+      fireEvent.click(await screen.findByTestId('confirm-button'))
+    }
+
+    it('confirm on Resolve calls detectionsApi.bulk with status=resolved', async () => {
+      await checkAndConfirm(() => fireEvent.click(screen.getByTestId('bulk-resolve')))
+      await waitFor(() => {
+        expect(mockApi.bulk).toHaveBeenCalledWith({
+          ids: ['det-001'],
+          action: 'update',
+          data: { status: 'resolved' },
+        })
+      })
+    })
+
+    it('confirm on Mark FP calls detectionsApi.bulk with status=false_positive', async () => {
+      await checkAndConfirm(() => fireEvent.click(screen.getByTestId('bulk-fp')))
+      await waitFor(() => {
+        expect(mockApi.bulk).toHaveBeenCalledWith({
+          ids: ['det-001'],
+          action: 'update',
+          data: { status: 'false_positive' },
+        })
+      })
+    })
+
+    it('confirm on Assign calls detectionsApi.bulk with assigned_to', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001'))
+      fireEvent.change(screen.getByTestId('assign-input'), { target: { value: 'analyst' } })
+      fireEvent.click(screen.getByTestId('assign-apply'))
+      fireEvent.click(await screen.findByTestId('confirm-button'))
+      await waitFor(() => {
+        expect(mockApi.bulk).toHaveBeenCalledWith({
+          ids: ['det-001'],
+          action: 'update',
+          data: { assigned_to: 'analyst' },
+        })
+      })
+    })
+
+    it('confirm on Create Incident calls incidentsApi.create with detection_ids', async () => {
+      renderPage()
+      await screen.findByText('Detection Alpha')
+      fireEvent.click(screen.getByTestId('row-checkbox-det-001'))
+      fireEvent.click(screen.getByTestId('bulk-create-incident'))
+      fireEvent.change(screen.getByTestId('incident-title-input'), { target: { value: 'My Incident' } })
+      fireEvent.click(await screen.findByTestId('confirm-button'))
+      await waitFor(() => {
+        expect(mockIncidentsApi.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'My Incident',
+            detection_ids: ['det-001'],
+          }),
+        )
+      })
+    })
+
+    it('after successful bulk action the modal closes', async () => {
+      await checkAndConfirm(() => fireEvent.click(screen.getByTestId('bulk-resolve')))
+      await waitFor(() => {
+        expect(screen.queryByTestId('confirm-modal')).not.toBeInTheDocument()
+      })
+    })
+
+    it('after successful bulk action the selection is cleared', async () => {
+      await checkAndConfirm(() => fireEvent.click(screen.getByTestId('bulk-resolve')))
+      await waitFor(() => {
+        expect(screen.queryByTestId('bulk-toolbar')).not.toBeInTheDocument()
+      })
     })
   })
 

@@ -76,6 +76,12 @@ export const handlers = [
     }),
   ),
 
+  // Detection bulk update
+  http.post(`${BASE}/detections/bulk`, async ({ request }) => {
+    const body = await request.json() as { ids: string[]; action: string; data: Record<string, unknown> }
+    return HttpResponse.json({ updated: body.ids.length })
+  }),
+
   // Detection update
   http.patch(`${BASE}/detections/:id`, async ({ params, request }) => {
     const body = await request.json() as Record<string, unknown>
