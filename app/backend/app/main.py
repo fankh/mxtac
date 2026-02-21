@@ -197,6 +197,79 @@ async def _rule_reload_subscriber() -> None:
             pass
 
 
+async def _daily_snapshot_task() -> None:
+    """Take a daily OpenSearch snapshot and prune snapshots past the retention window.
+
+    Sleeps until the next UTC midnight, then:
+      1. Registers the filesystem repository (idempotent).
+      2. Creates a timestamped snapshot of all mxtac-* indices.
+      3. Deletes snapshots whose start_time is older than
+         ``settings.opensearch_snapshot_retention_days``.
+
+    Runs silently when OpenSearch is unavailable.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    _REPO_NAME = "mxtac-snapshots"
+
+    while True:
+        # Sleep until next midnight UTC.
+        now = datetime.now(timezone.utc)
+        next_midnight = (now + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        sleep_secs = (next_midnight - now).total_seconds()
+
+        try:
+            await asyncio.sleep(sleep_secs)
+        except asyncio.CancelledError:
+            raise
+
+        try:
+            os_client = get_opensearch()
+            if not os_client.is_available:
+                logger.info("Daily snapshot skipped — OpenSearch not available")
+                continue
+
+            repo_path = settings.opensearch_snapshot_repo
+            snapshot_name = f"mxtac-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+
+            await os_client.create_snapshot_repo(_REPO_NAME, repo_path)
+            await os_client.create_snapshot(_REPO_NAME, snapshot_name)
+            logger.info("Daily snapshot created: %s/%s", _REPO_NAME, snapshot_name)
+
+            # Prune snapshots older than the configured retention window.
+            retention_days = settings.opensearch_snapshot_retention_days
+            cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+            snapshots = await os_client.list_snapshots(_REPO_NAME)
+            for snap in snapshots:
+                start_str = snap.get("start_time", "")
+                if not start_str:
+                    continue
+                try:
+                    # Normalise the ISO timestamp: "2024-01-15T00:00:00.000Z" → aware dt
+                    snap_time = datetime.fromisoformat(
+                        start_str[:-1] + "+00:00" if start_str.endswith("Z") else start_str
+                    )
+                    if snap_time < cutoff:
+                        await os_client.delete_snapshot(_REPO_NAME, snap["name"])
+                        logger.info(
+                            "Pruned expired snapshot: %s/%s (age > %dd)",
+                            _REPO_NAME,
+                            snap["name"],
+                            retention_days,
+                        )
+                except Exception as parse_exc:
+                    logger.debug(
+                        "Could not parse snapshot start_time %r: %s", start_str, parse_exc
+                    )
+
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Daily snapshot task failed — will retry next midnight")
+
+
 async def _storage_metrics_collector() -> None:
     """Periodically refresh OpenSearch storage Prometheus gauges.
 
@@ -516,6 +589,10 @@ async def on_startup() -> None:
         logger.info("IOC expiry task started")
     except Exception:
         logger.exception("IOC expiry task start failed")
+
+    # 14. Start daily OpenSearch snapshot task — snapshot + retention pruning (feature 38.3)
+    asyncio.create_task(_daily_snapshot_task(), name="daily-snapshot-task")
+    logger.info("Daily OpenSearch snapshot task started (fires at next UTC midnight)")
 
     logger.info("MxTac API startup complete")
 

@@ -964,6 +964,147 @@ class OpenSearchService:
 
         return {"index_sizes": index_sizes, "events_per_day": events_per_day}
 
+    # ── Snapshot management — feature 38.3 ───────────────────────────────────
+
+    async def create_snapshot_repo(self, name: str, path: str) -> bool:
+        """Register a filesystem snapshot repository in OpenSearch.
+
+        Uses the ``fs`` repository type with compression enabled.  Safe to
+        call multiple times — a PUT on an existing repository is idempotent.
+        The ``path`` must be listed in ``path.repo`` in OpenSearch's config.
+
+        Returns ``True`` on success, ``False`` when the client is unavailable
+        or the request fails.
+        """
+        if self._client is None:
+            return False
+        try:
+            await self._client.snapshot.create_repository(
+                repository=name,
+                body={
+                    "type": "fs",
+                    "settings": {
+                        "location": path,
+                        "compress": True,
+                    },
+                },
+            )
+            logger.info("Snapshot repository registered: %s -> %s", name, path)
+            return True
+        except Exception as exc:
+            logger.error("create_snapshot_repo failed: %s", exc)
+            return False
+
+    async def create_snapshot(self, repo: str, name: str) -> dict[str, Any] | None:
+        """Initiate a snapshot of all mxtac-* indices (non-blocking).
+
+        Returns the raw OpenSearch response dict on success, or ``None`` when
+        the client is unavailable or the API call fails.  The snapshot runs
+        asynchronously in the cluster; callers should poll ``list_snapshots``
+        to check for completion.
+        """
+        if self._client is None:
+            return None
+        try:
+            resp = await self._client.snapshot.create(
+                repository=repo,
+                snapshot=name,
+                body={
+                    "indices": "mxtac-*",
+                    "ignore_unavailable": True,
+                    "include_global_state": False,
+                },
+                params={"wait_for_completion": "false"},
+            )
+            logger.info("Snapshot initiated: %s/%s", repo, name)
+            return resp
+        except Exception as exc:
+            logger.error("create_snapshot failed: %s", exc)
+            return None
+
+    async def list_snapshots(self, repo: str) -> list[dict[str, Any]]:
+        """List all snapshots in *repo* with their status and size.
+
+        Returns a list of dicts with keys:
+          ``name``, ``state``, ``start_time``, ``end_time``,
+          ``duration_millis``, ``indices``, ``size_bytes``,
+          ``shards_total``, ``shards_successful``, ``shards_failed``.
+
+        Returns an empty list when the client is unavailable, the repository
+        does not exist, or the query fails.
+        """
+        if self._client is None:
+            return []
+        try:
+            resp = await self._client.snapshot.get(
+                repository=repo,
+                snapshot="_all",
+            )
+            result = []
+            for s in resp.get("snapshots", []):
+                # ``stats.total.size_in_bytes`` is only present during IN_PROGRESS
+                # snapshots; default to 0 for completed / failed snapshots.
+                size_bytes = (
+                    s.get("stats", {}).get("total", {}).get("size_in_bytes", 0)
+                )
+                result.append({
+                    "name": s.get("snapshot", ""),
+                    "state": s.get("state", ""),
+                    "start_time": s.get("start_time", ""),
+                    "end_time": s.get("end_time", ""),
+                    "duration_millis": s.get("duration_in_millis", 0),
+                    "indices": s.get("indices", []),
+                    "size_bytes": size_bytes,
+                    "shards_total": s.get("shards", {}).get("total", 0),
+                    "shards_successful": s.get("shards", {}).get("successful", 0),
+                    "shards_failed": s.get("shards", {}).get("failed", 0),
+                })
+            return result
+        except Exception as exc:
+            logger.error("list_snapshots failed: %s", exc)
+            return []
+
+    async def restore_snapshot(self, repo: str, name: str) -> bool:
+        """Restore all mxtac-* indices from *name* in *repo* (non-blocking).
+
+        Runs asynchronously in the cluster.  Returns ``True`` when the
+        restore request is accepted, ``False`` on failure.
+        """
+        if self._client is None:
+            return False
+        try:
+            await self._client.snapshot.restore(
+                repository=repo,
+                snapshot=name,
+                body={
+                    "indices": "mxtac-*",
+                    "ignore_unavailable": True,
+                    "include_global_state": False,
+                },
+                params={"wait_for_completion": "false"},
+            )
+            logger.info("Snapshot restore initiated: %s/%s", repo, name)
+            return True
+        except Exception as exc:
+            logger.error("restore_snapshot failed: %s", exc)
+            return False
+
+    async def delete_snapshot(self, repo: str, name: str) -> bool:
+        """Delete a single snapshot from the repository.
+
+        Returns ``True`` on success or ``False`` when the client is
+        unavailable / the deletion fails.
+        """
+        if self._client is None:
+            return False
+        try:
+            await self._client.snapshot.delete(repository=repo, snapshot=name)
+            logger.info("Deleted snapshot: %s/%s", repo, name)
+            return True
+        except Exception as exc:
+            logger.error("delete_snapshot failed: %s", exc)
+            return False
+
     async def close(self) -> None:
         if self._client:
             await self._client.close()

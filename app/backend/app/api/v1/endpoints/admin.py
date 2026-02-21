@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 from typing import Any
 
+from ....core.config import settings
 from ....core.security import get_current_user
 from ....services.audit import get_audit_logger
+from ....services.opensearch_client import get_opensearch_dep
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# OpenSearch snapshot repository identifier (logical name within OpenSearch).
+# The filesystem path is configured via settings.opensearch_snapshot_repo.
+_SNAPSHOT_REPO_NAME = "mxtac-snapshots"
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -33,6 +41,36 @@ class AuditLogResponse(BaseModel):
     page: int
     page_size: int
     items: list[AuditLogEntry]
+
+
+class SnapshotInfo(BaseModel):
+    name: str
+    state: str
+    start_time: str
+    end_time: str
+    duration_millis: int
+    indices: list[str]
+    size_bytes: int
+    shards_total: int
+    shards_successful: int
+    shards_failed: int
+
+
+class SnapshotListResponse(BaseModel):
+    repo: str
+    snapshots: list[SnapshotInfo]
+
+
+class CreateSnapshotResponse(BaseModel):
+    snapshot: str
+    repo: str
+    status: str
+
+
+class RestoreSnapshotResponse(BaseModel):
+    snapshot: str
+    repo: str
+    status: str
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -84,4 +122,98 @@ async def get_audit_log(
         page=page,
         page_size=page_size,
         items=[AuditLogEntry(**item) for item in result["items"]],
+    )
+
+
+# ── Snapshot endpoints — feature 38.3 ────────────────────────────────────────
+
+
+@router.post("/snapshots", response_model=CreateSnapshotResponse, status_code=202)
+async def create_snapshot(
+    current_user: dict = Depends(get_current_user),
+    os_client=Depends(get_opensearch_dep),
+) -> CreateSnapshotResponse:
+    """
+    Initiate an OpenSearch snapshot of all mxtac-* indices.
+
+    The snapshot runs asynchronously in the cluster; the response returns
+    immediately with ``status: "initiated"``.  Requires admin role.
+    """
+    _require_admin(current_user)
+
+    if not os_client.is_available:
+        raise HTTPException(status_code=503, detail="OpenSearch is not available")
+
+    snapshot_name = f"mxtac-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+
+    # Ensure the filesystem repository is registered (idempotent PUT).
+    await os_client.create_snapshot_repo(_SNAPSHOT_REPO_NAME, settings.opensearch_snapshot_repo)
+
+    result = await os_client.create_snapshot(_SNAPSHOT_REPO_NAME, snapshot_name)
+    if result is None:
+        raise HTTPException(status_code=500, detail="Snapshot creation failed")
+
+    return CreateSnapshotResponse(
+        snapshot=snapshot_name,
+        repo=_SNAPSHOT_REPO_NAME,
+        status="initiated",
+    )
+
+
+@router.get("/snapshots", response_model=SnapshotListResponse)
+async def list_snapshots(
+    current_user: dict = Depends(get_current_user),
+    os_client=Depends(get_opensearch_dep),
+) -> SnapshotListResponse:
+    """
+    List all OpenSearch snapshots with their state and size.
+
+    Requires admin role.
+    """
+    _require_admin(current_user)
+
+    if not os_client.is_available:
+        raise HTTPException(status_code=503, detail="OpenSearch is not available")
+
+    snapshots = await os_client.list_snapshots(_SNAPSHOT_REPO_NAME)
+    return SnapshotListResponse(
+        repo=_SNAPSHOT_REPO_NAME,
+        snapshots=[SnapshotInfo(**s) for s in snapshots],
+    )
+
+
+@router.post(
+    "/snapshots/{name}/restore",
+    response_model=RestoreSnapshotResponse,
+    status_code=202,
+)
+async def restore_snapshot(
+    name: str = Path(
+        ...,
+        max_length=200,
+        pattern=r"^[a-zA-Z0-9._-]+$",
+        description="Snapshot name to restore",
+    ),
+    current_user: dict = Depends(get_current_user),
+    os_client=Depends(get_opensearch_dep),
+) -> RestoreSnapshotResponse:
+    """
+    Restore all mxtac-* indices from a named snapshot.
+
+    The restore runs asynchronously in the cluster; the response returns
+    immediately with ``status: "initiated"``.  Requires admin role.
+    """
+    _require_admin(current_user)
+
+    if not os_client.is_available:
+        raise HTTPException(status_code=503, detail="OpenSearch is not available")
+
+    success = await os_client.restore_snapshot(_SNAPSHOT_REPO_NAME, name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Snapshot restore failed")
+
+    return RestoreSnapshotResponse(
+        snapshot=name,
+        repo=_SNAPSHOT_REPO_NAME,
+        status="initiated",
     )

@@ -159,6 +159,12 @@ class Settings(BaseSettings):
     opensearch_alerts_retention_days: int = 365   # alerts: hot 30d → warm → delete
     opensearch_audit_retention_days: int = 1095   # audit: hot 90d → warm → delete (3 years)
 
+    # OpenSearch snapshot management — feature 38.3
+    # Filesystem path where snapshots are stored (must be accessible by OpenSearch nodes).
+    opensearch_snapshot_repo: str = "/backups/opensearch"
+    # Number of days to retain snapshots; older ones are auto-deleted by the daily task.
+    opensearch_snapshot_retention_days: int = 30
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 
