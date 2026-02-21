@@ -90,6 +90,14 @@ class Settings(BaseSettings):
     alert_webhook_timeout: int = 5  # seconds per request
     alert_webhook_retry_count: int = 3  # retries on timeout / 5xx
 
+    # Alert syslog output — emit enriched alerts to a syslog destination
+    alert_syslog_output_enabled: bool = False
+    alert_syslog_host: str = "localhost"  # hostname, IP, or /dev/log for Unix socket
+    alert_syslog_port: int = 514  # standard syslog port (ignored for Unix socket)
+    alert_syslog_protocol: str = "udp"  # "udp" | "tcp"
+    alert_syslog_facility: str = "local0"  # syslog facility (local0–local7 recommended)
+    alert_syslog_tag: str = "mxtac-alert"  # syslog application tag (ident)
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 

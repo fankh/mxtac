@@ -269,6 +269,75 @@ export interface SavedQueryUpdate {
   time_to?: string
 }
 
+// ── Incidents ─────────────────────────────────────────────────────────────────
+
+export type IncidentStatus = 'new' | 'investigating' | 'contained' | 'resolved' | 'closed'
+export type NoteType = 'comment' | 'status_change' | 'evidence'
+
+export interface IncidentNote {
+  id: string
+  author: string
+  content: string
+  note_type: NoteType
+  created_at: string
+}
+
+export interface Incident {
+  id: number
+  title: string
+  description: string | null
+  severity: SeverityLevel
+  status: IncidentStatus
+  priority: number
+  assigned_to: string | null
+  created_by: string
+  detection_ids: string[]
+  technique_ids: string[]
+  tactic_ids: string[]
+  hosts: string[]
+  ttd_seconds: number | null
+  ttr_seconds: number | null
+  closed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface IncidentDetail extends Incident {
+  detections: Detection[]
+  notes: IncidentNote[]
+  duration_seconds: number
+}
+
+export interface IncidentCreate {
+  title: string
+  description?: string | null
+  severity: SeverityLevel
+  detection_ids?: string[]
+  assigned_to?: string | null
+}
+
+export interface IncidentUpdate {
+  title?: string | null
+  description?: string | null
+  severity?: SeverityLevel | null
+  status?: IncidentStatus | null
+  priority?: number | null
+  assigned_to?: string | null
+  detection_ids?: string[] | null
+}
+
+export interface IncidentMetrics {
+  total_incidents: Record<string, number>
+  mttr_seconds: number | null
+  mttd_seconds: number | null
+  open_incidents_count: number
+  incidents_by_severity: Record<string, number>
+  incidents_this_week: number
+  incidents_this_month: number
+  from_date: string
+  to_date: string
+}
+
 // ── Audit Logs ────────────────────────────────────────────────────────────────
 
 export interface AuditLogEntry {

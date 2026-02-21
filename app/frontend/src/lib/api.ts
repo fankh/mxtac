@@ -6,6 +6,7 @@ import type {
   AuditLogEntry,
   Asset, AssetCreate, AssetStats, BulkAssetResult,
   SavedQuery, SavedQueryCreate, SavedQueryUpdate,
+  Incident, IncidentDetail, IncidentCreate, IncidentUpdate, IncidentNote, IncidentMetrics,
 } from '../types/api'
 
 const http = axios.create({
@@ -183,6 +184,44 @@ export const assetsApi = {
 
   getIncidents: (id: number, params: { page?: number; page_size?: number } = {}): Promise<PaginatedResponse<Record<string, unknown>>> =>
     http.get(`/assets/${id}/incidents`, { params }).then(r => r.data),
+}
+
+// ── Incidents ─────────────────────────────────────────────────────────────────
+
+export interface IncidentListParams {
+  page?: number
+  page_size?: number
+  severity?: string[]
+  status?: string[]
+  assigned_to?: string
+  search?: string
+  sort?: 'created_at' | 'severity' | 'status'
+}
+
+export const incidentsApi = {
+  list: (params: IncidentListParams = {}): Promise<PaginatedResponse<Incident>> =>
+    http.get('/incidents', { params }).then(r => r.data),
+
+  get: (id: number): Promise<IncidentDetail> =>
+    http.get(`/incidents/${id}`).then(r => r.data),
+
+  create: (body: IncidentCreate): Promise<Incident> =>
+    http.post('/incidents', body).then(r => r.data),
+
+  update: (id: number, body: IncidentUpdate): Promise<Incident> =>
+    http.patch(`/incidents/${id}`, body).then(r => r.data),
+
+  delete: (id: number): Promise<void> =>
+    http.delete(`/incidents/${id}`).then(r => r.data),
+
+  addNote: (id: number, content: string, note_type = 'comment'): Promise<IncidentNote> =>
+    http.post(`/incidents/${id}/notes`, { content, note_type }).then(r => r.data),
+
+  listNotes: (id: number): Promise<IncidentNote[]> =>
+    http.get(`/incidents/${id}/notes`).then(r => r.data),
+
+  metrics: (from_date?: string, to_date?: string): Promise<IncidentMetrics> =>
+    http.get('/incidents/metrics', { params: { from_date, to_date } }).then(r => r.data),
 }
 
 // ── Saved Hunt Queries ────────────────────────────────────────────────────────

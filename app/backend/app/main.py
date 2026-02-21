@@ -331,6 +331,29 @@ async def on_startup() -> None:
         except Exception:
             logger.exception("Alert webhook output start failed")
 
+    # 8.7. Wire alert syslog output — emit enriched alerts to a syslog destination
+    if settings.alert_syslog_output_enabled:
+        try:
+            from .services.alert_syslog_output import alert_syslog_output
+            ash = await alert_syslog_output(
+                queue,
+                host=settings.alert_syslog_host,
+                port=settings.alert_syslog_port,
+                protocol=settings.alert_syslog_protocol,
+                facility=settings.alert_syslog_facility,
+                tag=settings.alert_syslog_tag,
+            )
+            app.state.alert_syslog_handler = ash
+            logger.info(
+                "Alert syslog output started → %s:%d (%s) facility=%s",
+                settings.alert_syslog_host,
+                settings.alert_syslog_port,
+                settings.alert_syslog_protocol,
+                settings.alert_syslog_facility,
+            )
+        except Exception:
+            logger.exception("Alert syslog output start failed")
+
     # 9. Start connectors from DB — publish raw events into the pipeline
     try:
         from .connectors.registry import start_connectors_from_db
@@ -400,6 +423,14 @@ async def on_shutdown() -> None:
             await aws.close()
     except Exception:
         logger.exception("AlertWebhookSender close failed")
+
+    # Close alert syslog handler (release syslog socket)
+    try:
+        ash = getattr(app.state, "alert_syslog_handler", None)
+        if ash is not None:
+            await ash.close()
+    except Exception:
+        logger.exception("AlertSyslogHandler close failed")
 
     # Close OpenSearch client
     try:
