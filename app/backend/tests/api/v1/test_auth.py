@@ -1308,15 +1308,16 @@ async def test_change_password_success_returns_200(client: AsyncClient) -> None:
     token = create_password_change_token(_FORCED_USER_ID)
     user = _user_must_change_password()
     with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
-        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
-            resp = await client.post(
-                CHANGE_PASSWORD_URL,
-                json={
-                    "password_change_token": token,
-                    "new_password": "NewSecure1!",
-                    "confirm_password": "NewSecure1!",
-                },
-            )
+        with patch(MOCK_VERIFY, return_value=False):
+            with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+                resp = await client.post(
+                    CHANGE_PASSWORD_URL,
+                    json={
+                        "password_change_token": token,
+                        "new_password": "NewSecure1!",
+                        "confirm_password": "NewSecure1!",
+                    },
+                )
     assert resp.status_code == 200
 
 
@@ -1326,15 +1327,16 @@ async def test_change_password_returns_access_token(client: AsyncClient) -> None
     token = create_password_change_token(_FORCED_USER_ID)
     user = _user_must_change_password()
     with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
-        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
-            resp = await client.post(
-                CHANGE_PASSWORD_URL,
-                json={
-                    "password_change_token": token,
-                    "new_password": "NewSecure1!",
-                    "confirm_password": "NewSecure1!",
-                },
-            )
+        with patch(MOCK_VERIFY, return_value=False):
+            with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+                resp = await client.post(
+                    CHANGE_PASSWORD_URL,
+                    json={
+                        "password_change_token": token,
+                        "new_password": "NewSecure1!",
+                        "confirm_password": "NewSecure1!",
+                    },
+                )
     data = resp.json()
     assert "access_token" in data
     assert "refresh_token" in data
@@ -1346,15 +1348,16 @@ async def test_change_password_clears_must_change_flag(client: AsyncClient) -> N
     token = create_password_change_token(_FORCED_USER_ID)
     user = _user_must_change_password()
     with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
-        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
-            await client.post(
-                CHANGE_PASSWORD_URL,
-                json={
-                    "password_change_token": token,
-                    "new_password": "NewSecure1!",
-                    "confirm_password": "NewSecure1!",
-                },
-            )
+        with patch(MOCK_VERIFY, return_value=False):
+            with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+                await client.post(
+                    CHANGE_PASSWORD_URL,
+                    json={
+                        "password_change_token": token,
+                        "new_password": "NewSecure1!",
+                        "confirm_password": "NewSecure1!",
+                    },
+                )
     assert user.must_change_password is False
 
 
@@ -1364,15 +1367,16 @@ async def test_change_password_updates_hashed_password(client: AsyncClient) -> N
     token = create_password_change_token(_FORCED_USER_ID)
     user = _user_must_change_password()
     with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
-        with patch(MOCK_HASH, return_value="$2b$12$newhash") as mock_h:
-            await client.post(
-                CHANGE_PASSWORD_URL,
-                json={
-                    "password_change_token": token,
-                    "new_password": "NewSecure1!",
-                    "confirm_password": "NewSecure1!",
-                },
-            )
+        with patch(MOCK_VERIFY, return_value=False):
+            with patch(MOCK_HASH, return_value="$2b$12$newhash") as mock_h:
+                await client.post(
+                    CHANGE_PASSWORD_URL,
+                    json={
+                        "password_change_token": token,
+                        "new_password": "NewSecure1!",
+                        "confirm_password": "NewSecure1!",
+                    },
+                )
     mock_h.assert_called_once_with("NewSecure1!")
     assert user.hashed_password == "$2b$12$newhash"
 
@@ -1483,15 +1487,16 @@ async def test_change_password_with_mfa_enabled_returns_mfa_token(client: AsyncC
     token = create_password_change_token(_FORCED_USER_ID)
     user = _user_must_change_password(mfa_enabled=True)
     with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
-        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
-            resp = await client.post(
-                CHANGE_PASSWORD_URL,
-                json={
-                    "password_change_token": token,
-                    "new_password": "NewSecure1!",
-                    "confirm_password": "NewSecure1!",
-                },
-            )
+        with patch(MOCK_VERIFY, return_value=False):
+            with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+                resp = await client.post(
+                    CHANGE_PASSWORD_URL,
+                    json={
+                        "password_change_token": token,
+                        "new_password": "NewSecure1!",
+                        "confirm_password": "NewSecure1!",
+                    },
+                )
     data = resp.json()
     assert resp.status_code == 200
     assert data.get("mfa_required") is True
@@ -1676,15 +1681,16 @@ async def test_change_password_updates_password_changed_at(client: AsyncClient) 
     token = create_password_change_token(_EXPIRY_USER_ID)
     before = datetime.now(timezone.utc)
     with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
-        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
-            resp = await client.post(
-                CHANGE_PASSWORD_URL,
-                json={
-                    "password_change_token": token,
-                    "new_password": "NewSecure1!",
-                    "confirm_password": "NewSecure1!",
-                },
-            )
+        with patch(MOCK_VERIFY, return_value=False):
+            with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+                resp = await client.post(
+                    CHANGE_PASSWORD_URL,
+                    json={
+                        "password_change_token": token,
+                        "new_password": "NewSecure1!",
+                        "confirm_password": "NewSecure1!",
+                    },
+                )
     assert resp.status_code == 200
     assert user.password_changed_at is not None
     assert user.password_changed_at >= before
@@ -1696,15 +1702,16 @@ async def test_change_password_for_expired_returns_access_token(client: AsyncCli
     user = _user_with_password_age(days=91)
     token = create_password_change_token(_EXPIRY_USER_ID)
     with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
-        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
-            resp = await client.post(
-                CHANGE_PASSWORD_URL,
-                json={
-                    "password_change_token": token,
-                    "new_password": "NewSecure1!",
-                    "confirm_password": "NewSecure1!",
-                },
-            )
+        with patch(MOCK_VERIFY, return_value=False):
+            with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+                resp = await client.post(
+                    CHANGE_PASSWORD_URL,
+                    json={
+                        "password_change_token": token,
+                        "new_password": "NewSecure1!",
+                        "confirm_password": "NewSecure1!",
+                    },
+                )
     data = resp.json()
     assert "access_token" in data
     assert "refresh_token" in data

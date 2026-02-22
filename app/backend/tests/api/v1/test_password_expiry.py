@@ -242,15 +242,16 @@ async def test_change_password_sets_password_changed_at(client: AsyncClient) -> 
     before = _now()
 
     with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
-        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
-            resp = await client.post(
-                CHANGE_PW_URL,
-                json={
-                    "password_change_token": pc_token,
-                    "new_password": "NewSecure1!",
-                    "confirm_password": "NewSecure1!",
-                },
-            )
+        with patch(MOCK_VERIFY_PW, return_value=False):
+            with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+                resp = await client.post(
+                    CHANGE_PW_URL,
+                    json={
+                        "password_change_token": pc_token,
+                        "new_password": "NewSecure1!",
+                        "confirm_password": "NewSecure1!",
+                    },
+                )
 
     after = _now()
 
@@ -271,15 +272,16 @@ async def test_change_password_clears_must_change_password_and_sets_timestamp(
     pc_token = create_password_change_token(_TEST_USER_ID)
 
     with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
-        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
-            resp = await client.post(
-                CHANGE_PW_URL,
-                json={
-                    "password_change_token": pc_token,
-                    "new_password": "NewSecure1!",
-                    "confirm_password": "NewSecure1!",
-                },
-            )
+        with patch(MOCK_VERIFY_PW, return_value=False):
+            with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+                resp = await client.post(
+                    CHANGE_PW_URL,
+                    json={
+                        "password_change_token": pc_token,
+                        "new_password": "NewSecure1!",
+                        "confirm_password": "NewSecure1!",
+                    },
+                )
 
     assert resp.status_code == 200
     assert user.must_change_password is False
@@ -295,15 +297,16 @@ async def test_change_password_returns_tokens_after_update(client: AsyncClient) 
     pc_token = create_password_change_token(_TEST_USER_ID)
 
     with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
-        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
-            resp = await client.post(
-                CHANGE_PW_URL,
-                json={
-                    "password_change_token": pc_token,
-                    "new_password": "NewSecure1!",
-                    "confirm_password": "NewSecure1!",
-                },
-            )
+        with patch(MOCK_VERIFY_PW, return_value=False):
+            with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+                resp = await client.post(
+                    CHANGE_PW_URL,
+                    json={
+                        "password_change_token": pc_token,
+                        "new_password": "NewSecure1!",
+                        "confirm_password": "NewSecure1!",
+                    },
+                )
 
     assert resp.status_code == 200
     data = resp.json()
