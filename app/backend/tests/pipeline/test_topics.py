@@ -808,6 +808,12 @@ class TestAlertManagerTopics:
 
         await q.subscribe(Topic.ENRICHED, "test", capture)
 
+        # Patch CMDB lookup: DC hosts get criticality 1.0, workstations get 0.5
+        async def _host_criticality(hostname: str) -> float:
+            return 1.0 if hostname.startswith("dc") else 0.5
+
+        mgr._asset_criticality = _host_criticality  # type: ignore[method-assign]
+
         mgr._valkey.set = AsyncMock(return_value=True)
         await mgr.process(_alert_dict(rule_id="dc-rule", host="dc01"))
         mgr._valkey.set = AsyncMock(return_value=True)

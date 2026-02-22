@@ -698,7 +698,10 @@ class TestSyntheticEventPipelineEndToEnd:
 
     async def test_dc_host_gets_highest_asset_criticality(self) -> None:
         """Domain controller prefix 'dc' yields criticality 1.0 (the maximum default)."""
-        q, enriched, _ = await self._setup_full_pipeline()
+        q, enriched, mgr = await self._setup_full_pipeline()
+
+        # Patch CMDB lookup: DC hosts always return criticality 1.0 (CMDB score 5)
+        mgr._asset_criticality = AsyncMock(return_value=1.0)
 
         raw = _wazuh_process_raw(
             cmd_line="powershell.exe -enc dGVzdA==",

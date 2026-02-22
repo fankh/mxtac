@@ -2,6 +2,7 @@
 Tests for OpenCTIConnector.
 
 Feature 6.20 — OpenCTI connector — threat intelligence feed:
+Feature 29.6 — OpenCTI enrichment connector — lookup_observable:
 
 Initialization:
   - client is None on init
@@ -72,6 +73,25 @@ OpenCTIConnectorFactory:
   - optional keys have correct defaults (object_types=[], page_size=100)
   - verify_ssl defaults to True
   - timeout defaults to 30
+
+lookup_observable() — Feature 29.6:
+  - returns None when client is None
+  - returns None for unsupported ioc_type
+  - does not call client when ioc_type is unsupported
+  - returns node dict on successful match
+  - returns None when no edges in response
+  - returns None on GraphQL errors
+  - returns None on HTTP errors (fail-open)
+  - returns None on unexpected exception (fail-open)
+  - filter includes observable_value eq filter with the given value
+  - filter includes entity_type filter for ip (IPv4-Addr, IPv6-Addr)
+  - filter includes entity_type filter for domain (Domain-Name)
+  - filter includes entity_type filter for url (Url)
+  - filter includes entity_type filter for email (Email-Addr)
+  - filter includes entity_type filter for hash_md5 (StixFile)
+  - filter includes entity_type filter for hash_sha256 (StixFile)
+  - returns first edge node when multiple edges returned
+  - returns None when first edge node is empty dict
 """
 
 from __future__ import annotations
@@ -934,3 +954,190 @@ class TestOpenCTIConnectorFactory:
             InMemoryQueue(),
         )
         assert conn.config.extra["timeout"] == 60
+
+
+# ── lookup_observable() — Feature 29.6 ────────────────────────────────────────
+
+
+def _observable_resp(nodes: list, /) -> MagicMock:
+    """Build a mock response containing stixCyberObservables edges."""
+    return _make_response(
+        200,
+        {
+            "data": {
+                "stixCyberObservables": {
+                    "edges": [{"node": n} for n in nodes],
+                }
+            }
+        },
+    )
+
+
+class TestOpenCTILookupObservable:
+    async def test_returns_none_when_client_is_none(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        result = await conn.lookup_observable("ip", "1.2.3.4")
+        assert result is None
+
+    async def test_returns_none_for_unsupported_ioc_type(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        conn._client = mock_client
+
+        result = await conn.lookup_observable("unknown_type", "something")
+
+        assert result is None
+
+    async def test_does_not_call_client_for_unsupported_ioc_type(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock()
+        conn._client = mock_client
+
+        await conn.lookup_observable("unsupported", "val")
+
+        mock_client.post.assert_not_called()
+
+    async def test_returns_node_on_successful_match(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        expected = {
+            "id": "ipv4-001",
+            "entity_type": "IPv4-Addr",
+            "observable_value": "10.0.0.1",
+        }
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=_observable_resp([expected]))
+        conn._client = mock_client
+
+        result = await conn.lookup_observable("ip", "10.0.0.1")
+
+        assert result == expected
+
+    async def test_returns_none_when_no_edges(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=_observable_resp([]))
+        conn._client = mock_client
+
+        result = await conn.lookup_observable("domain", "evil.com")
+
+        assert result is None
+
+    async def test_returns_none_on_graphql_errors(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(
+            return_value=_make_response(200, {"errors": [{"message": "Forbidden"}]})
+        )
+        conn._client = mock_client
+
+        result = await conn.lookup_observable("ip", "1.2.3.4")
+
+        assert result is None
+
+    async def test_returns_none_on_http_error(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=_make_response(503, {}))
+        conn._client = mock_client
+
+        result = await conn.lookup_observable("ip", "1.2.3.4")
+
+        assert result is None
+
+    async def test_returns_none_on_unexpected_exception(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(side_effect=RuntimeError("connection refused"))
+        conn._client = mock_client
+
+        result = await conn.lookup_observable("ip", "1.2.3.4")
+
+        assert result is None
+
+    async def _lookup_and_get_filters(
+        self, conn: OpenCTIConnector, ioc_type: str, value: str
+    ) -> list[dict]:
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=_observable_resp([]))
+        conn._client = mock_client
+
+        await conn.lookup_observable(ioc_type, value)
+
+        call_kwargs = mock_client.post.call_args[1]
+        return call_kwargs["json"]["variables"]["filters"]["filters"]
+
+    async def test_filter_includes_observable_value(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        filters = await self._lookup_and_get_filters(conn, "ip", "10.10.10.10")
+
+        value_filters = [f for f in filters if f["key"] == "observable_value"]
+        assert len(value_filters) == 1
+        assert value_filters[0]["operator"] == "eq"
+        assert "10.10.10.10" in value_filters[0]["values"]
+
+    async def test_filter_entity_types_for_ip(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        filters = await self._lookup_and_get_filters(conn, "ip", "1.2.3.4")
+
+        type_filters = [f for f in filters if f["key"] == "entity_type"]
+        assert len(type_filters) == 1
+        assert "IPv4-Addr" in type_filters[0]["values"]
+        assert "IPv6-Addr" in type_filters[0]["values"]
+
+    async def test_filter_entity_types_for_domain(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        filters = await self._lookup_and_get_filters(conn, "domain", "evil.com")
+
+        type_filters = [f for f in filters if f["key"] == "entity_type"]
+        assert type_filters[0]["values"] == ["Domain-Name"]
+
+    async def test_filter_entity_types_for_url(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        filters = await self._lookup_and_get_filters(conn, "url", "http://evil.com/x")
+
+        type_filters = [f for f in filters if f["key"] == "entity_type"]
+        assert type_filters[0]["values"] == ["Url"]
+
+    async def test_filter_entity_types_for_email(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        filters = await self._lookup_and_get_filters(conn, "email", "bad@evil.com")
+
+        type_filters = [f for f in filters if f["key"] == "entity_type"]
+        assert type_filters[0]["values"] == ["Email-Addr"]
+
+    async def test_filter_entity_types_for_hash_md5(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        filters = await self._lookup_and_get_filters(conn, "hash_md5", "abc123")
+
+        type_filters = [f for f in filters if f["key"] == "entity_type"]
+        assert "StixFile" in type_filters[0]["values"]
+
+    async def test_filter_entity_types_for_hash_sha256(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        filters = await self._lookup_and_get_filters(conn, "hash_sha256", "deadbeef")
+
+        type_filters = [f for f in filters if f["key"] == "entity_type"]
+        assert "StixFile" in type_filters[0]["values"]
+
+    async def test_returns_first_edge_when_multiple_nodes(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        first = {"id": "obj-1", "entity_type": "IPv4-Addr", "observable_value": "1.1.1.1"}
+        second = {"id": "obj-2", "entity_type": "IPv4-Addr", "observable_value": "1.1.1.1"}
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=_observable_resp([first, second]))
+        conn._client = mock_client
+
+        result = await conn.lookup_observable("ip", "1.1.1.1")
+
+        assert result == first
+
+    async def test_returns_none_when_first_edge_node_is_empty(self) -> None:
+        conn = OpenCTIConnector(_make_config(), InMemoryQueue())
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=_observable_resp([{}]))
+        conn._client = mock_client
+
+        result = await conn.lookup_observable("ip", "1.2.3.4")
+
+        assert result is None

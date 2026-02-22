@@ -26,6 +26,11 @@ Feature 6.20: OpenCTI connector — threat intelligence feed.
   JSON state file).
   Exponential backoff (1 s → 60 s cap) is applied after consecutive failures,
   matching the Prowler connector pattern.
+
+Feature 29.6: OpenCTI enrichment connector.
+  Adds lookup_observable(ioc_type, value) for on-demand enrichment.
+  Used by ioc_matcher for real-time threat intelligence lookups against
+  OpenCTI's stixCyberObservables GraphQL endpoint.
 """
 
 from __future__ import annotations
@@ -47,8 +52,46 @@ DEFAULT_PAGE_SIZE = 100
 BACKOFF_BASE = 1.0    # seconds — initial delay after a failure
 BACKOFF_MAX  = 60.0   # seconds — maximum backoff delay
 
+# Map MxTac IOC types to OpenCTI STIX cyber observable entity types
+_IOC_TYPE_TO_OPENCTI: dict[str, list[str]] = {
+    "ip":          ["IPv4-Addr", "IPv6-Addr"],
+    "domain":      ["Domain-Name"],
+    "url":         ["Url"],
+    "email":       ["Email-Addr"],
+    "hash_md5":    ["StixFile"],
+    "hash_sha256": ["StixFile"],
+}
+
 # GraphQL query to probe API health
 _HEALTH_QUERY = "{ about { version } }"
+
+# GraphQL query for on-demand observable lookup by value — Feature 29.6
+_OBSERVABLE_LOOKUP_QUERY = """
+query LookupObservable($filters: FilterGroup) {
+  stixCyberObservables(first: 5, filters: $filters) {
+    edges {
+      node {
+        id
+        entity_type
+        standard_id
+        created_at
+        updated_at
+        observable_value
+        indicators {
+          edges {
+            node {
+              id
+              name
+              x_opencti_score
+              confidence
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
 
 # GraphQL query to fetch STIX core objects with cursor pagination and timestamp filter
 _OBJECTS_QUERY = """
@@ -299,6 +342,94 @@ class OpenCTIConnector(BaseConnector):
                 )
             except asyncio.TimeoutError:
                 pass
+
+    # ── On-demand enrichment (Feature 29.6) ──────────────────────────────────
+
+    async def lookup_observable(
+        self, ioc_type: str, value: str
+    ) -> dict[str, Any] | None:
+        """Look up a single observable in OpenCTI by IOC type and value.
+
+        Used by ioc_matcher for real-time enrichment (Feature 29.6).
+
+        Args:
+            ioc_type: MxTac IOC type (ip, domain, hash_md5, hash_sha256, url, email).
+            value:    The observable value to search for.
+
+        Returns:
+            The first matching OpenCTI observable node dict, or ``None`` if not
+            found or if any error occurs (fail-open — never raises).
+        """
+        if self._client is None:
+            logger.warning(
+                "lookup_observable: client not initialized — call _connect() first"
+            )
+            return None
+
+        opencti_types = _IOC_TYPE_TO_OPENCTI.get(ioc_type)
+        if opencti_types is None:
+            logger.warning(
+                "lookup_observable: unsupported ioc_type=%s (supported: %s)",
+                ioc_type,
+                list(_IOC_TYPE_TO_OPENCTI),
+            )
+            return None
+
+        filters: dict[str, Any] = {
+            "mode": "and",
+            "filterGroups": [],
+            "filters": [
+                {
+                    "key": "observable_value",
+                    "operator": "eq",
+                    "values": [value],
+                    "mode": "or",
+                },
+                {
+                    "key": "entity_type",
+                    "operator": "eq",
+                    "values": opencti_types,
+                    "mode": "or",
+                },
+            ],
+        }
+
+        try:
+            resp = await self._client.post(
+                "/graphql",
+                json={"query": _OBSERVABLE_LOOKUP_QUERY, "variables": {"filters": filters}},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            if "errors" in data:
+                logger.warning(
+                    "lookup_observable: GraphQL errors ioc_type=%s value=%r errors=%s",
+                    ioc_type,
+                    value,
+                    data["errors"],
+                )
+                return None
+
+            edges = (
+                data.get("data", {})
+                .get("stixCyberObservables", {})
+                .get("edges", [])
+            )
+            if not edges:
+                return None
+
+            node = edges[0].get("node")
+            return node if node else None
+
+        except Exception as exc:
+            logger.warning(
+                "lookup_observable: failed ioc_type=%s value=%r err=%s",
+                ioc_type,
+                value,
+                exc,
+            )
+            return None
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 

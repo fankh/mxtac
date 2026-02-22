@@ -150,6 +150,17 @@ class Settings(BaseSettings):
     #   [{"name":"AlienVault","taxii_url":"https://...","collection_id":"...","api_key":"..."}]
     threat_intel_feeds: list[ThreatIntelFeedConfig] = []
 
+    # OpenCTI enrichment — feature 29.6
+    # Global defaults used by ioc_matcher for on-demand observable lookups.
+    # These mirror the per-connector settings but allow enrichment without
+    # a running polling connector.  Leave empty to disable enrichment lookups.
+    opencti_url: str = ""
+    opencti_token: str = Field(
+        default="",
+        repr=False,
+        json_schema_extra={"x-sensitive": True, "format": "password"},
+    )
+
     # IOC expiry — feature 29.8
     # Number of days without a hit before an IOC is auto-deactivated.
     # Set to 0 to disable stale-hit expiry (only expires_at-based expiry runs).
