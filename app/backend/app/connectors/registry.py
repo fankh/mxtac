@@ -325,6 +325,25 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
             status_callback=_status_cb,
         )
 
+    if cls is VelociraptorConnector:
+        # Feature 6.23: persist fetch timestamp so restarts do not re-ingest artifacts
+        state_file = _velociraptor_state_file(db_conn.name)
+        initial_ts = _load_velociraptor_timestamp(state_file)
+
+        async def _velociraptor_checkpoint(
+            ts: datetime,
+            _sf: Path = state_file,
+        ) -> None:
+            _save_velociraptor_timestamp(_sf, ts)
+
+        return VelociraptorConnector(
+            config,
+            queue,
+            initial_last_fetched_at=initial_ts,
+            checkpoint_callback=_velociraptor_checkpoint,
+            status_callback=_status_cb,
+        )
+
     return cls(config, queue, status_callback=_status_cb)
 
 

@@ -1,8 +1,12 @@
 import re
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from ..core.rbac import PERMISSIONS
 from ..core.validators import EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validate_password_complexity, validate_password_no_consecutive
+
+_VALID_SCOPES: frozenset[str] = frozenset(PERMISSIONS.keys())
 
 # Accepts any user@domain.tld format — including RFC 6762 .local names used
 # by internal service accounts (e.g. analyst@mxtac.local).
@@ -103,3 +107,49 @@ class ChangePasswordRequest(BaseModel):
         if self.new_password != self.confirm_password:
             raise ValueError("passwords do not match")
         return self
+
+
+# ---------------------------------------------------------------------------
+# Feature 1.11 — Scoped API key management
+# ---------------------------------------------------------------------------
+
+
+class APIKeyCreate(BaseModel):
+    label: str = Field(..., min_length=1, max_length=255)
+    scopes: list[str] = Field(..., min_length=1)
+    expires_at: datetime | None = None
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, v: list[str]) -> list[str]:
+        invalid = [s for s in v if s not in _VALID_SCOPES]
+        if invalid:
+            raise ValueError(f"Invalid scope(s): {', '.join(sorted(invalid))}")
+        # Deduplicate while preserving order
+        return list(dict.fromkeys(v))
+
+    @field_validator("expires_at")
+    @classmethod
+    def validate_expires_at(cls, v: datetime | None) -> datetime | None:
+        if v is not None:
+            # Ensure timezone-aware comparison
+            if v.tzinfo is None:
+                raise ValueError("expires_at must include timezone information")
+            if v <= datetime.now(timezone.utc):
+                raise ValueError("expires_at must be in the future")
+        return v
+
+
+class APIKeyResponse(BaseModel):
+    id: str
+    label: str | None
+    scopes: list[str]
+    is_active: bool
+    created_at: datetime
+    expires_at: datetime | None = None
+    last_used_at: datetime | None = None
+
+
+class APIKeyCreateResponse(APIKeyResponse):
+    """Extends APIKeyResponse with the raw key — returned once on creation only."""
+    key: str

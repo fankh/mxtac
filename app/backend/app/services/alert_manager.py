@@ -203,13 +203,106 @@ class AlertManager:
             "host":          alert.host,
             "time":          alert.time.isoformat(),
             "event_snapshot": alert.event_snapshot,
-            # Enrichment placeholders (extend with real lookups)
+            # Enrichment
             "asset_criticality":  self._asset_criticality(alert.host),
             "recurrence_count":   await self._get_recurrence_count(alert),
-            "threat_intel":       None,   # TODO: OpenCTI lookup
+            "threat_intel":       await self._lookup_threat_intel(alert),
             "geo_ip":             None,   # TODO: GeoIP lookup
         }
         return d
+
+    async def _lookup_threat_intel(self, alert: SigmaAlert) -> dict[str, Any] | None:
+        """Look up IOC matches for the alert in the threat intelligence table.
+
+        Extracts candidate indicator values from the alert host and event_snapshot,
+        queries the IOC table for active matches, increments hit counts, and returns
+        a summary dict or None if no active IOCs match.
+
+        Fail-open: returns None when the database is unavailable so the pipeline
+        is not blocked by a CTI DB outage.
+        """
+        try:
+            # Collect candidate (ioc_type -> [values]) pairs from the alert.
+            candidates: dict[str, list[str]] = {}
+
+            def _add(ioc_type: str, value: str | None) -> None:
+                if value and isinstance(value, str):
+                    v = value.strip()
+                    if v:
+                        candidates.setdefault(ioc_type, []).append(v)
+
+            snap = alert.event_snapshot or {}
+
+            # Host can be an IP address or a hostname — try both types.
+            _add("ip", alert.host)
+            _add("domain", alert.host)
+
+            # Flat event fields (common across connectors)
+            _add("ip",         snap.get("src_ip"))
+            _add("ip",         snap.get("dst_ip"))
+            _add("domain",     snap.get("domain"))
+            _add("domain",     snap.get("hostname"))
+            _add("hash_md5",   snap.get("hash_md5"))
+            _add("hash_sha256", snap.get("hash_sha256"))
+
+            # OCSF nested fields
+            _add("ip", (snap.get("src") or {}).get("ip"))
+            _add("ip", (snap.get("dst") or {}).get("ip"))
+            _proc = snap.get("process") or {}
+            _file = _proc.get("file") or {}
+            _add("hash_md5",   _file.get("hash_md5"))
+            _add("hash_sha256", _file.get("hash_sha256"))
+
+            if not candidates:
+                return None
+
+            from ..core.database import AsyncSessionLocal
+            from ..repositories.ioc_repo import IOCRepo
+
+            matched: list[dict[str, Any]] = []
+
+            async with AsyncSessionLocal() as session:
+                for ioc_type, values in candidates.items():
+                    hits = await IOCRepo.bulk_lookup(session, ioc_type=ioc_type, values=values)
+                    for ioc in hits:
+                        if not ioc.is_active:
+                            continue
+                        matched.append({
+                            "ioc_id":      ioc.id,
+                            "ioc_type":    ioc.ioc_type,
+                            "value":       ioc.value,
+                            "severity":    ioc.severity,
+                            "confidence":  ioc.confidence,
+                            "source":      ioc.source,
+                            "tags":        ioc.tags or [],
+                            "description": ioc.description,
+                        })
+                        await IOCRepo.increment_hit(session, ioc.id)
+
+                if matched:
+                    await session.commit()
+
+            if not matched:
+                return None
+
+            _SEVERITY_ORDER = ["low", "medium", "high", "critical"]
+            highest = max(
+                matched,
+                key=lambda m: _SEVERITY_ORDER.index(m["severity"])
+                              if m["severity"] in _SEVERITY_ORDER else -1,
+            )
+            return {
+                "matched":          matched,
+                "ioc_count":        len(matched),
+                "highest_severity": highest["severity"],
+            }
+
+        except Exception:
+            logger.exception(
+                "AlertManager threat intel lookup failed (non-fatal) rule_id=%s host=%s",
+                alert.rule_id, alert.host,
+            )
+            return None
 
     async def _get_recurrence_count(self, alert: SigmaAlert) -> int:
         """Count recent detections for (rule_id, host) in the last 24 hours.

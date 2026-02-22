@@ -263,12 +263,73 @@ async def _test_opencti_connection(config: dict) -> tuple[bool, str]:
         return False, f"Connection test failed: {exc}"
 
 
+async def _test_velociraptor_connection(config: dict) -> tuple[bool, str]:
+    """Verify Velociraptor API connectivity by running a trivial VQL health probe."""
+    import json as _json
+
+    api_url = config.get("api_url", "").rstrip("/")
+    api_key = config.get("api_key", "")
+    verify_ssl = config.get("verify_ssl", True)
+    org_id = config.get("org_id", "")
+
+    if not api_url:
+        return False, "Missing required config key: api_url"
+    if not api_key:
+        return False, "Missing required config key: api_key"
+
+    headers = {
+        "Grpc-Metadata-Api-Token": api_key,
+        "Content-Type": "application/json",
+    }
+    if org_id:
+        headers["Grpc-Metadata-Velociraptor-Org-Id"] = org_id
+
+    try:
+        version = "unknown"
+        body = {"query": [{"name": "health", "vql": "SELECT version() AS version FROM scope()"}]}
+        async with httpx.AsyncClient(
+            verify=verify_ssl,
+            timeout=10,
+            follow_redirects=True,
+            headers=headers,
+        ) as client:
+            async with client.stream("POST", f"{api_url}/api/v1/query", json=body) as resp:
+                if resp.status_code == 401:
+                    return False, "Velociraptor API reachable but API key is invalid"
+                if resp.status_code != 200:
+                    return False, f"Velociraptor API returned unexpected status {resp.status_code}"
+                async for line in resp.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        packet = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+                    raw = packet.get("Response", "")
+                    if not raw:
+                        continue
+                    try:
+                        rows = _json.loads(raw)
+                        if rows and isinstance(rows[0], dict):
+                            version = rows[0].get("version", "unknown")
+                    except (_json.JSONDecodeError, IndexError):
+                        pass
+                    break  # one packet is enough for connectivity check
+        return True, f"Velociraptor API reachable (version: {version})"
+    except httpx.ConnectError as exc:
+        return False, f"Cannot connect to Velociraptor API: {exc}"
+    except Exception as exc:
+        return False, f"Connection test failed: {exc}"
+
+
 _CONNECTION_TESTERS: dict[str, Any] = {
-    "wazuh":    _test_wazuh_connection,
-    "zeek":     _test_zeek_connection,
-    "suricata": _test_suricata_connection,
-    "prowler":  _test_prowler_connection,
-    "opencti":  _test_opencti_connection,
+    "wazuh":         _test_wazuh_connection,
+    "zeek":          _test_zeek_connection,
+    "suricata":      _test_suricata_connection,
+    "prowler":       _test_prowler_connection,
+    "opencti":       _test_opencti_connection,
+    "velociraptor":  _test_velociraptor_connection,
 }
 
 

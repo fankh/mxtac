@@ -30,8 +30,12 @@ from ....core.valkey import (
     is_account_locked,
 )
 from ....repositories.user_repo import UserRepo
-from ....core.rbac import require_permission
+from ....repositories.api_key_repo import APIKeyRepo
+from ....core.rbac import require_permission, permissions_for_role
 from ....schemas.auth import (
+    APIKeyCreate,
+    APIKeyCreateResponse,
+    APIKeyResponse,
     ChangePasswordRequest,
     LoginRequest,
     LogoutResponse,
@@ -428,3 +432,107 @@ async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depend
         refresh_token=refresh,
         expires_in=settings.access_token_expire_minutes * 60,
     )
+
+
+# ---------------------------------------------------------------------------
+# Feature 1.11 — Scoped API key management
+# ---------------------------------------------------------------------------
+
+_API_KEY_BYTES = 32  # 256-bit entropy
+
+
+def _generate_api_key() -> str:
+    """Return a cryptographically random API key with a recognisable prefix."""
+    return "mxtac_" + secrets.token_urlsafe(_API_KEY_BYTES)
+
+
+@router.post("/api-keys", response_model=APIKeyCreateResponse, status_code=201)
+async def create_api_key(
+    body: APIKeyCreate,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a scoped API key for the authenticated user.
+
+    The raw key is returned **once** in this response — store it securely,
+    it cannot be retrieved again.
+
+    Requested scopes must be a subset of the permissions granted to the
+    caller's role.  Admins may assign any valid scope.
+    """
+    user_permissions = permissions_for_role(current_user["role"])
+    forbidden = [s for s in body.scopes if s not in user_permissions]
+    if forbidden:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Scopes exceed your role permissions: {forbidden}",
+        )
+
+    user = await UserRepo.get_by_email(db, current_user["email"])
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    raw_key = _generate_api_key()
+    api_key = await APIKeyRepo.create(
+        db,
+        raw_key=raw_key,
+        label=body.label,
+        owner_id=str(user.id),
+        scopes=body.scopes,
+        expires_at=body.expires_at,
+    )
+    return APIKeyCreateResponse(
+        id=api_key.id,
+        label=api_key.label,
+        scopes=api_key.scopes or [],
+        is_active=api_key.is_active,
+        created_at=api_key.created_at,
+        expires_at=api_key.expires_at,
+        last_used_at=api_key.last_used_at,
+        key=raw_key,
+    )
+
+
+@router.get("/api-keys", response_model=list[APIKeyResponse])
+async def list_api_keys(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all active API keys belonging to the authenticated user."""
+    user = await UserRepo.get_by_email(db, current_user["email"])
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    keys = await APIKeyRepo.list_by_owner(db, str(user.id))
+    return [
+        APIKeyResponse(
+            id=k.id,
+            label=k.label,
+            scopes=k.scopes or [],
+            is_active=k.is_active,
+            created_at=k.created_at,
+            expires_at=k.expires_at,
+            last_used_at=k.last_used_at,
+        )
+        for k in keys
+    ]
+
+
+@router.delete("/api-keys/{key_id}", status_code=204)
+async def revoke_api_key(
+    key_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke (deactivate) an API key.
+
+    Users can revoke only their own keys.  Admins can revoke any key.
+    Returns 404 when the key is not found or belongs to a different owner.
+    """
+    user = await UserRepo.get_by_email(db, current_user["email"])
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    owner_filter = None if current_user["role"] == "admin" else str(user.id)
+    revoked = await APIKeyRepo.revoke(db, key_id, owner_id=owner_filter)
+    if not revoked:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
