@@ -2,7 +2,7 @@ import re
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from ..core.validators import EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validate_password_complexity
+from ..core.validators import EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validate_password_complexity, validate_password_no_consecutive
 
 # Accepts any user@domain.tld format — including RFC 6762 .local names used
 # by internal service accounts (e.g. analyst@mxtac.local).
@@ -95,7 +95,8 @@ class ChangePasswordRequest(BaseModel):
     @field_validator("new_password")
     @classmethod
     def validate_new_password_policy(cls, v: str) -> str:
-        return validate_password_complexity(v)
+        validate_password_complexity(v)
+        return validate_password_no_consecutive(v)
 
     @model_validator(mode="after")
     def passwords_match(self) -> "ChangePasswordRequest":

@@ -1,12 +1,13 @@
 """Shared input validation helpers for MxTac.
 
 Provides:
-- escape_like()                 — escape SQL LIKE wildcard characters
-- validate_ip_address()         — IPv4 / IPv6 validation
-- validate_cidr()               — CIDR notation validation
-- validate_hostname()           — RFC 952 / 1123 hostname validation
-- validate_password_complexity() — min 8 chars + 3 of 4 character types (feature 2.1)
-- EMAIL_MAX_LENGTH              — RFC 5321 maximum email address length
+- escape_like()                      — escape SQL LIKE wildcard characters
+- validate_ip_address()              — IPv4 / IPv6 validation
+- validate_cidr()                    — CIDR notation validation
+- validate_hostname()                — RFC 952 / 1123 hostname validation
+- validate_password_complexity()     — min 8 chars + 3 of 4 character types (feature 2.1)
+- validate_password_no_consecutive() — no more than 3 consecutive identical chars (feature 2.2)
+- EMAIL_MAX_LENGTH                   — RFC 5321 maximum email address length
 - PASSWORD_MIN_LENGTH / PASSWORD_MAX_LENGTH — password length bounds
 """
 
@@ -91,6 +92,24 @@ def validate_password_complexity(v: str) -> str:
         raise ValueError(
             "Password must contain at least 3 of the following character types: "
             "uppercase letters, lowercase letters, digits, special characters"
+        )
+    return v
+
+
+# Feature 2.2 — No more than 3 consecutive identical characters.
+# Matches 4 or more of the same character in a row (case-sensitive).
+_CONSECUTIVE_CHARS_RE = re.compile(r"(.)\1{3,}")
+
+
+def validate_password_no_consecutive(v: str) -> str:
+    """Return *v* if it contains no run of 4+ identical consecutive characters.
+
+    Policy (feature 2.2): passwords must not contain more than 3 consecutive
+    identical characters (e.g. 'aaaa', '1111', '!!!!' are all rejected).
+    """
+    if _CONSECUTIVE_CHARS_RE.search(v):
+        raise ValueError(
+            "Password must not contain more than 3 consecutive identical characters"
         )
     return v
 

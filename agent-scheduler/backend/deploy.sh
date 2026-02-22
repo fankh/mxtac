@@ -7,17 +7,19 @@ HOST="0.0.0.0"
 PORT="13002"
 LOG="/tmp/agent-scheduler.log"
 
-# Kill existing process
-PID=$(pgrep -f "uvicorn $APP" || true)
-if [ -n "$PID" ]; then
-    echo "Stopping existing process (pid=$PID)..."
-    kill "$PID"
+# Kill existing processes
+PIDS=$(pgrep -f "uvicorn $APP" || true)
+if [ -n "$PIDS" ]; then
+    echo "Stopping existing processes (pids: $(echo $PIDS))..."
+    kill $PIDS 2>/dev/null || true
     sleep 2
-    # Force kill if still running
-    if kill -0 "$PID" 2>/dev/null; then
-        kill -9 "$PID"
-        sleep 1
-    fi
+    # Force kill any survivors
+    for p in $PIDS; do
+        if kill -0 "$p" 2>/dev/null; then
+            kill -9 "$p" 2>/dev/null || true
+        fi
+    done
+    sleep 1
     echo "Stopped."
 else
     echo "No existing process found."

@@ -1,4 +1,7 @@
-"""Tests for feature 2.1: Password policy — min 8 chars, 3 of 4 character types.
+"""Tests for password policy features.
+
+Feature 2.1: min 8 chars, 3 of 4 character types.
+Feature 2.2: no more than 3 consecutive identical characters.
 
 Coverage:
   validate_password_complexity — accepted: 3+ character types present
@@ -7,6 +10,8 @@ Coverage:
   validate_password_complexity — all 4 types accepted
   validate_password_complexity — short passwords that would pass type check still pass
     (length is enforced separately by Pydantic field constraints)
+  validate_password_no_consecutive — accepted: runs of 3 or fewer identical chars
+  validate_password_no_consecutive — rejected: runs of 4 or more identical chars
   UserCreate schema — password complexity enforced on user creation
   ChangePasswordRequest schema — complexity enforced on password change
 """
@@ -16,7 +21,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.core.validators import validate_password_complexity
+from app.core.validators import validate_password_complexity, validate_password_no_consecutive
 from app.api.v1.endpoints.users import UserCreate
 from app.schemas.auth import ChangePasswordRequest
 
@@ -243,3 +248,130 @@ class TestChangePasswordRequestComplexity:
         # This passes because new_password is valid; confirm_password matches
         req = self._make("Secure1!", "Secure1!")
         assert req.confirm_password == "Secure1!"
+
+
+# ---------------------------------------------------------------------------
+# validate_password_no_consecutive — unit tests (feature 2.2)
+# ---------------------------------------------------------------------------
+
+
+class TestValidatePasswordNoConsecutiveAccepted:
+    """Passwords with runs of at most 3 identical chars are accepted."""
+
+    def test_no_repeated_chars(self):
+        assert validate_password_no_consecutive("Passw0rd!") == "Passw0rd!"
+
+    def test_exactly_one_repeated(self):
+        """Two identical chars in a row — allowed."""
+        assert validate_password_no_consecutive("aaBB11!!") == "aaBB11!!"
+
+    def test_exactly_two_repeated(self):
+        """Three identical chars in a row — still allowed."""
+        assert validate_password_no_consecutive("aaaBB1!X") == "aaaBB1!X"
+
+    def test_exactly_three_repeated_digits(self):
+        """Three identical digits — boundary: allowed."""
+        assert validate_password_no_consecutive("111Pass!") == "111Pass!"
+
+    def test_exactly_three_repeated_specials(self):
+        """Three identical special chars — boundary: allowed."""
+        assert validate_password_no_consecutive("Abc!!!1") == "Abc!!!1"
+
+    def test_multiple_runs_each_under_limit(self):
+        """Multiple separate runs of ≤3 each — all allowed."""
+        assert validate_password_no_consecutive("aaaBBB1!") == "aaaBBB1!"
+
+    def test_returns_original_value(self):
+        """Function returns the original password string unchanged."""
+        pwd = "Passw0rd!"
+        assert validate_password_no_consecutive(pwd) is pwd
+
+
+class TestValidatePasswordNoConsecutiveRejected:
+    """Passwords with runs of 4+ identical chars are rejected."""
+
+    def test_four_lowercase_raises(self):
+        """4 identical lowercase chars."""
+        with pytest.raises(ValueError, match="more than 3 consecutive identical"):
+            validate_password_no_consecutive("aaaaPass1!")
+
+    def test_four_uppercase_raises(self):
+        """4 identical uppercase chars."""
+        with pytest.raises(ValueError, match="more than 3 consecutive identical"):
+            validate_password_no_consecutive("AAAAPass1!")
+
+    def test_four_digits_raises(self):
+        """4 identical digits."""
+        with pytest.raises(ValueError, match="more than 3 consecutive identical"):
+            validate_password_no_consecutive("Pass1111!")
+
+    def test_four_specials_raises(self):
+        """4 identical special chars."""
+        with pytest.raises(ValueError, match="more than 3 consecutive identical"):
+            validate_password_no_consecutive("Pass1!!!!")
+
+    def test_five_repeated_chars_raises(self):
+        """5 identical chars — also rejected."""
+        with pytest.raises(ValueError, match="more than 3 consecutive identical"):
+            validate_password_no_consecutive("aaaaaPas1!")
+
+    def test_run_in_middle_raises(self):
+        """Run of 4 in the middle of the password."""
+        with pytest.raises(ValueError, match="more than 3 consecutive identical"):
+            validate_password_no_consecutive("PaAAAAss1!")
+
+    def test_run_at_end_raises(self):
+        """Run of 4 at the end of the password."""
+        with pytest.raises(ValueError, match="more than 3 consecutive identical"):
+            validate_password_no_consecutive("Passw0rdaaaa")
+
+    def test_error_message_content(self):
+        """Error message describes the constraint clearly."""
+        with pytest.raises(ValueError) as exc_info:
+            validate_password_no_consecutive("aaaaPas1!")
+        assert "3 consecutive identical" in str(exc_info.value)
+
+
+class TestNoConsecutiveSchemaIntegration:
+    """Feature 2.2 enforced via UserCreate and ChangePasswordRequest schemas."""
+
+    def test_user_create_rejects_four_consecutive(self):
+        """UserCreate rejects password with 4+ identical consecutive chars."""
+        with pytest.raises(ValidationError, match="more than 3 consecutive identical"):
+            UserCreate(email="user@example.com", password="Passaaaa1!")
+
+    def test_user_create_accepts_three_consecutive(self):
+        """UserCreate accepts password with exactly 3 consecutive identical chars."""
+        u = UserCreate(email="user@example.com", password="Passaaa1!")
+        assert u.email == "user@example.com"
+
+    def test_change_password_rejects_four_consecutive(self):
+        """ChangePasswordRequest rejects new_password with 4+ identical consecutive chars."""
+        token = "x" * 10
+        with pytest.raises(ValidationError, match="more than 3 consecutive identical"):
+            ChangePasswordRequest(
+                password_change_token=token,
+                new_password="Passaaaa1!",
+                confirm_password="Passaaaa1!",
+            )
+
+    def test_change_password_accepts_three_consecutive(self):
+        """ChangePasswordRequest accepts new_password with exactly 3 consecutive chars."""
+        token = "x" * 10
+        req = ChangePasswordRequest(
+            password_change_token=token,
+            new_password="Passaaa1!",
+            confirm_password="Passaaa1!",
+        )
+        assert req.new_password == "Passaaa1!"
+
+    def test_complexity_checked_before_consecutive(self):
+        """Both complexity (2.1) and consecutive (2.2) checks run on new_password.
+        A password failing complexity raises a complexity error."""
+        token = "x" * 10
+        with pytest.raises(ValidationError, match="3 of the following character types"):
+            ChangePasswordRequest(
+                password_change_token=token,
+                new_password="aaaabbbb",
+                confirm_password="aaaabbbb",
+            )
