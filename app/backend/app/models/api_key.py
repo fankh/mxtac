@@ -29,6 +29,11 @@ class APIKey(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True, default=None
     )
 
+    # Feature 3.9 — Permission sets
+    # permission_set_id: UUID of the PermissionSet used at key creation (audit/display only)
+    # The effective scopes are always stored in the `scopes` field (snapshotted at creation)
+    permission_set_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+
     def __repr__(self) -> str:
         return f"<APIKey {self.id} label={self.label!r}>"
 

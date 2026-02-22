@@ -111,17 +111,24 @@ class ChangePasswordRequest(BaseModel):
 
 # ---------------------------------------------------------------------------
 # Feature 1.11 — Scoped API key management
+# Feature 3.9 — Scoped API keys (per-permission set)
 # ---------------------------------------------------------------------------
 
 
 class APIKeyCreate(BaseModel):
     label: str = Field(..., min_length=1, max_length=255)
-    scopes: list[str] = Field(..., min_length=1)
+    # Feature 3.9: either `scopes` or `permission_set_id` must be provided.
+    # Provide `scopes` for explicit per-permission control (Feature 1.11),
+    # or `permission_set_id` to derive scopes from a named PermissionSet.
+    scopes: list[str] | None = Field(None, min_length=1)
+    permission_set_id: str | None = None
     expires_at: datetime | None = None
 
     @field_validator("scopes")
     @classmethod
-    def validate_scopes(cls, v: list[str]) -> list[str]:
+    def validate_scopes(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
         invalid = [s for s in v if s not in _VALID_SCOPES]
         if invalid:
             raise ValueError(f"Invalid scope(s): {', '.join(sorted(invalid))}")
@@ -139,11 +146,21 @@ class APIKeyCreate(BaseModel):
                 raise ValueError("expires_at must be in the future")
         return v
 
+    @model_validator(mode="after")
+    def require_scopes_or_permission_set(self) -> "APIKeyCreate":
+        if self.scopes is None and self.permission_set_id is None:
+            raise ValueError("Either 'scopes' or 'permission_set_id' must be provided")
+        if self.scopes is not None and self.permission_set_id is not None:
+            raise ValueError("Provide either 'scopes' or 'permission_set_id', not both")
+        return self
+
 
 class APIKeyResponse(BaseModel):
     id: str
     label: str | None
     scopes: list[str]
+    # Feature 3.9: ID of the PermissionSet used at creation (None if created with explicit scopes)
+    permission_set_id: str | None = None
     is_active: bool
     created_at: datetime
     expires_at: datetime | None = None

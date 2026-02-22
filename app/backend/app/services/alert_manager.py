@@ -55,12 +55,24 @@ _DEDUP_PREFIX = "mxtac:dedup:"
 _GEOIP_NOT_AVAILABLE = object()
 _GEOIP_CACHE_PREFIX = "mxtac:geoip:"
 
-# Asset criticality defaults
+# Asset criticality defaults — kept for backward-compatibility with scoring tests.
+# The actual lookup now uses the CMDB (feature 9.9); these values are no longer
+# used by _asset_criticality() but remain importable so existing tests compile.
 DEFAULT_ASSET_CRITICALITY: dict[str, float] = {
     "dc":  1.0,   # Domain Controller prefix
     "srv": 0.8,
     "win": 0.6,
     "lin": 0.5,
+}
+
+# CMDB criticality scale — maps the Asset.criticality integer (1-5) to the
+# 0.0-1.0 float range consumed by the scoring formula (feature 9.9).
+ASSET_CRITICALITY_SCALE: dict[int, float] = {
+    1: 0.2,   # Low
+    2: 0.4,   # Medium-Low
+    3: 0.5,   # Medium (also the default when the asset is not in the CMDB)
+    4: 0.8,   # High
+    5: 1.0,   # Mission-Critical
 }
 
 
@@ -243,7 +255,7 @@ class AlertManager:
             "time":          alert.time.isoformat(),
             "event_snapshot": alert.event_snapshot,
             # Enrichment
-            "asset_criticality":  self._asset_criticality(alert.host),
+            "asset_criticality":  await self._asset_criticality(alert.host),
             "recurrence_count":   await self._get_recurrence_count(alert),
             "threat_intel":       threat_intel,
             "geo_ip":             await self._lookup_geoip(alert),
@@ -272,15 +284,39 @@ class AlertManager:
             )
             return 0
 
-    def _asset_criticality(self, hostname: str) -> float:
-        """Simple prefix-based criticality -- replace with CMDB lookup."""
+    async def _asset_criticality(self, hostname: str) -> float:
+        """Look up asset criticality from the CMDB (feature 9.9).
+
+        Maps the Asset.criticality integer (1–5) stored in PostgreSQL to the
+        0.0–1.0 float range consumed by the scoring formula:
+
+            1 → 0.2  (Low)
+            2 → 0.4  (Medium-Low)
+            3 → 0.5  (Medium — default when the asset is not registered)
+            4 → 0.8  (High)
+            5 → 1.0  (Mission-Critical)
+
+        Lookup order (delegated to AssetRepo.get_criticality):
+          1. Exact hostname match (indexed, fast).
+          2. IP-address substring match across ip_addresses column.
+          3. Default criticality (3 → 0.5) when no record is found.
+
+        Fail-open: returns 0.5 on any DB error so the pipeline is never
+        blocked by a missing or unreachable CMDB.
+        """
         if not hostname:
+            return ASSET_CRITICALITY_SCALE[3]
+        try:
+            from ..core.database import AsyncSessionLocal
+            from ..repositories.asset_repo import AssetRepo
+            async with AsyncSessionLocal() as session:
+                db_criticality = await AssetRepo.get_criticality(session, hostname)
+                return ASSET_CRITICALITY_SCALE.get(db_criticality, 0.5)
+        except Exception:
+            logger.exception(
+                "AlertManager CMDB criticality lookup failed (non-fatal) host=%s", hostname
+            )
             return 0.5
-        hn = hostname.lower()
-        for prefix, crit in DEFAULT_ASSET_CRITICALITY.items():
-            if hn.startswith(prefix):
-                return crit
-        return 0.5
 
     # -- GeoIP enrichment (feature 9.8) ------------------------------------
 

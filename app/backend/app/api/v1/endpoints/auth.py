@@ -31,6 +31,7 @@ from ....core.valkey import (
 )
 from ....repositories.user_repo import UserRepo
 from ....repositories.api_key_repo import APIKeyRepo
+from ....repositories.permission_set_repo import PermissionSetRepo
 from ....core.rbac import require_permission, permissions_for_role
 from ....schemas.auth import (
     APIKeyCreate,
@@ -436,6 +437,7 @@ async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depend
 
 # ---------------------------------------------------------------------------
 # Feature 1.11 — Scoped API key management
+# Feature 3.9 — Scoped API keys (per-permission set)
 # ---------------------------------------------------------------------------
 
 _API_KEY_BYTES = 32  # 256-bit entropy
@@ -459,9 +461,29 @@ async def create_api_key(
 
     Requested scopes must be a subset of the permissions granted to the
     caller's role.  Admins may assign any valid scope.
+
+    Feature 3.9: Alternatively, supply ``permission_set_id`` to derive scopes
+    from a named PermissionSet.  The effective scopes are snapshotted at
+    creation time; later changes to the PermissionSet do not affect the key.
     """
     user_permissions = permissions_for_role(current_user["role"])
-    forbidden = [s for s in body.scopes if s not in user_permissions]
+
+    # Feature 3.9: resolve scopes from permission set if provided
+    permission_set_id: str | None = None
+    if body.permission_set_id is not None:
+        ps = await PermissionSetRepo.get_by_id(db, body.permission_set_id)
+        if ps is None or not ps.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Permission set not found",
+            )
+        effective_scopes: list[str] = ps.permissions
+        permission_set_id = ps.id
+    else:
+        effective_scopes = body.scopes  # type: ignore[assignment]  # validated by schema
+
+    # Scope escalation check: requested scopes must be within the caller's role
+    forbidden = [s for s in effective_scopes if s not in user_permissions]
     if forbidden:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -478,13 +500,15 @@ async def create_api_key(
         raw_key=raw_key,
         label=body.label,
         owner_id=str(user.id),
-        scopes=body.scopes,
+        scopes=effective_scopes,
         expires_at=body.expires_at,
+        permission_set_id=permission_set_id,
     )
     return APIKeyCreateResponse(
         id=api_key.id,
         label=api_key.label,
         scopes=api_key.scopes or [],
+        permission_set_id=api_key.permission_set_id,
         is_active=api_key.is_active,
         created_at=api_key.created_at,
         expires_at=api_key.expires_at,
@@ -508,6 +532,7 @@ async def list_api_keys(
             id=k.id,
             label=k.label,
             scopes=k.scopes or [],
+            permission_set_id=k.permission_set_id,
             is_active=k.is_active,
             created_at=k.created_at,
             expires_at=k.expires_at,

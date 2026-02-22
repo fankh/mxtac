@@ -166,6 +166,7 @@ import pytest
 from app.pipeline.queue import InMemoryQueue, Topic
 from app.services.alert_manager import (
     AlertManager,
+    ASSET_CRITICALITY_SCALE,
     DEDUP_WINDOW_SECONDS,
     DEFAULT_ASSET_CRITICALITY,
     MAX_SCORE,
@@ -422,32 +423,52 @@ def test_score_high_severity_yields_higher_score_than_low():
 
 
 # ---------------------------------------------------------------------------
-# Section 4 — _asset_criticality()
+# Section 4 — _asset_criticality()  (feature 9.9: CMDB-backed lookup)
 # ---------------------------------------------------------------------------
 
 
-def test_asset_criticality_dc_prefix():
-    """DC prefix must yield the highest criticality (1.0)."""
-    queue = MagicMock()
-    mgr = AlertManager.__new__(AlertManager)
-    mgr._queue = queue
-    assert mgr._asset_criticality("dc-01") == 1.0
+@pytest.mark.asyncio
+async def test_asset_criticality_db_hit_returns_mapped_value():
+    """When AssetRepo returns criticality=5, _asset_criticality() must return 1.0."""
+    mgr = _mgr_no_init()
+    mock_session = MagicMock()
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("app.core.database.AsyncSessionLocal", return_value=mock_cm),
+        patch("app.repositories.asset_repo.AssetRepo.get_criticality", new=AsyncMock(return_value=5)),
+    ):
+        result = await mgr._asset_criticality("dc-prod-01")
+
+    assert result == pytest.approx(1.0)
 
 
-def test_asset_criticality_unknown_prefix_defaults():
-    """Unknown hostname prefix must return the default criticality (0.5)."""
-    queue = MagicMock()
-    mgr = AlertManager.__new__(AlertManager)
-    mgr._queue = queue
-    assert mgr._asset_criticality("laptop-unknown") == 0.5
+@pytest.mark.asyncio
+async def test_asset_criticality_db_miss_returns_default():
+    """When AssetRepo returns default criticality=3 (asset not found), must return 0.5."""
+    mgr = _mgr_no_init()
+    mock_session = MagicMock()
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("app.core.database.AsyncSessionLocal", return_value=mock_cm),
+        patch("app.repositories.asset_repo.AssetRepo.get_criticality", new=AsyncMock(return_value=3)),
+    ):
+        result = await mgr._asset_criticality("laptop-unknown")
+
+    assert result == pytest.approx(0.5)
 
 
-def test_asset_criticality_empty_hostname_defaults():
-    """Empty hostname must return the default criticality (0.5)."""
-    queue = MagicMock()
-    mgr = AlertManager.__new__(AlertManager)
-    mgr._queue = queue
-    assert mgr._asset_criticality("") == 0.5
+@pytest.mark.asyncio
+async def test_asset_criticality_empty_hostname_defaults():
+    """Empty hostname must return the default criticality (0.5) without any DB call."""
+    mgr = _mgr_no_init()
+    result = await mgr._asset_criticality("")
+    assert result == pytest.approx(0.5)
 
 
 # ---------------------------------------------------------------------------
@@ -2739,7 +2760,7 @@ async def test_9_4_end_to_end_process_score_reflects_severity_weight() -> None:
         severity_norm = (severity_id - 1) / 4
         expected = round((severity_norm × 0.60 + asset_crit × 0.25) × 10, 1)
 
-    host="srv-01" → asset_criticality=0.8 (SRV prefix), severity_id=4:
+    host="srv-01" → CMDB criticality=4 → asset_criticality=0.8, severity_id=4:
         severity_norm = (4-1)/4 = 0.75
         expected = round((0.75 × 0.60 + 0.8 × 0.25) × 10, 1) = round(6.5, 1) = 6.5
     """
@@ -2757,6 +2778,7 @@ async def test_9_4_end_to_end_process_score_reflects_severity_weight() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=0.8)),
         patch.object(queue, "publish", side_effect=capture),
     ):
         await mgr.process(alert_dict)
@@ -2776,7 +2798,7 @@ async def test_9_4_end_to_end_process_score_reflects_severity_weight() -> None:
 async def test_9_4_end_to_end_critical_severity_score() -> None:
     """process() with severity_id=5 (critical) on a DC host must yield score=8.5.
 
-    host="dc-01" → asset_criticality=1.0, severity_id=5:
+    host="dc-01" → CMDB criticality=5 → asset_criticality=1.0, severity_id=5:
         severity_norm = (5-1)/4 = 1.0
         expected = round((1.0 × 0.60 + 1.0 × 0.25) × 10, 1) = round(8.5, 1) = 8.5
     """
@@ -2794,6 +2816,7 @@ async def test_9_4_end_to_end_critical_severity_score() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=1.0)),
         patch.object(queue, "publish", side_effect=capture),
     ):
         await mgr.process(alert_dict)
@@ -2916,75 +2939,91 @@ def test_9_5_default_asset_criticality_lin_is_0_5() -> None:
     assert DEFAULT_ASSET_CRITICALITY["lin"] == pytest.approx(0.5)
 
 
-def test_9_5_asset_criticality_dc_prefix() -> None:
-    """_asset_criticality('dc-01') must return 1.0."""
+# feature 9.9: _asset_criticality() is now async and CMDB-backed.
+# The prefix-based stub tests have been replaced with DB-mock tests below.
+# Scale mapping: DB int 1→0.2, 2→0.4, 3→0.5, 4→0.8, 5→1.0.
+
+def _make_asset_crit_mocks(db_return: int):
+    """Return (mock_cm, patch_ctx) for mocking AsyncSessionLocal + AssetRepo.get_criticality."""
+    mock_session = MagicMock()
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+    return mock_cm, AsyncMock(return_value=db_return)
+
+
+@pytest.mark.asyncio
+async def test_9_5_asset_criticality_db_criticality_5_returns_1_0() -> None:
+    """When AssetRepo returns criticality=5 (mission-critical), result must be 1.0."""
     mgr = _mgr_no_init()
-    assert mgr._asset_criticality("dc-01") == pytest.approx(1.0)
+    mock_cm, mock_get = _make_asset_crit_mocks(5)
+    with (
+        patch("app.core.database.AsyncSessionLocal", return_value=mock_cm),
+        patch("app.repositories.asset_repo.AssetRepo.get_criticality", new=mock_get),
+    ):
+        result = await mgr._asset_criticality("dc-prod-01")
+    assert result == pytest.approx(1.0)
 
 
-def test_9_5_asset_criticality_srv_prefix() -> None:
-    """_asset_criticality('srv-01') must return 0.8."""
+@pytest.mark.asyncio
+async def test_9_5_asset_criticality_db_criticality_4_returns_0_8() -> None:
+    """When AssetRepo returns criticality=4 (high), result must be 0.8."""
     mgr = _mgr_no_init()
-    assert mgr._asset_criticality("srv-01") == pytest.approx(0.8)
+    mock_cm, mock_get = _make_asset_crit_mocks(4)
+    with (
+        patch("app.core.database.AsyncSessionLocal", return_value=mock_cm),
+        patch("app.repositories.asset_repo.AssetRepo.get_criticality", new=mock_get),
+    ):
+        result = await mgr._asset_criticality("srv-db01")
+    assert result == pytest.approx(0.8)
 
 
-def test_9_5_asset_criticality_win_prefix() -> None:
-    """_asset_criticality('win-ws01') must return 0.6."""
+@pytest.mark.asyncio
+async def test_9_5_asset_criticality_db_criticality_3_returns_0_5() -> None:
+    """When AssetRepo returns criticality=3 (medium), result must be 0.5."""
     mgr = _mgr_no_init()
-    assert mgr._asset_criticality("win-ws01") == pytest.approx(0.6)
+    mock_cm, mock_get = _make_asset_crit_mocks(3)
+    with (
+        patch("app.core.database.AsyncSessionLocal", return_value=mock_cm),
+        patch("app.repositories.asset_repo.AssetRepo.get_criticality", new=mock_get),
+    ):
+        result = await mgr._asset_criticality("ws-app01")
+    assert result == pytest.approx(0.5)
 
 
-def test_9_5_asset_criticality_lin_prefix() -> None:
-    """_asset_criticality('lin-app01') must return 0.5."""
+@pytest.mark.asyncio
+async def test_9_5_asset_criticality_db_criticality_2_returns_0_4() -> None:
+    """When AssetRepo returns criticality=2 (medium-low), result must be 0.4."""
     mgr = _mgr_no_init()
-    assert mgr._asset_criticality("lin-app01") == pytest.approx(0.5)
+    mock_cm, mock_get = _make_asset_crit_mocks(2)
+    with (
+        patch("app.core.database.AsyncSessionLocal", return_value=mock_cm),
+        patch("app.repositories.asset_repo.AssetRepo.get_criticality", new=mock_get),
+    ):
+        result = await mgr._asset_criticality("dev-01")
+    assert result == pytest.approx(0.4)
 
 
-def test_9_5_asset_criticality_unknown_prefix_defaults_to_0_5() -> None:
-    """_asset_criticality() must return 0.5 for hostnames with no matching prefix."""
+@pytest.mark.asyncio
+async def test_9_5_asset_criticality_host_not_found_returns_default_0_5() -> None:
+    """When AssetRepo returns default criticality=3 (asset not found), result must be 0.5."""
     mgr = _mgr_no_init()
-    assert mgr._asset_criticality("workstation-42") == pytest.approx(0.5)
-    assert mgr._asset_criticality("laptop-x") == pytest.approx(0.5)
-    assert mgr._asset_criticality("web-proxy") == pytest.approx(0.5)
+    # AssetRepo._DEFAULT_CRITICALITY is 3; get_criticality returns 3 for unknown hosts.
+    mock_cm, mock_get = _make_asset_crit_mocks(3)
+    with (
+        patch("app.core.database.AsyncSessionLocal", return_value=mock_cm),
+        patch("app.repositories.asset_repo.AssetRepo.get_criticality", new=mock_get),
+    ):
+        result = await mgr._asset_criticality("workstation-42")
+    assert result == pytest.approx(0.5)
 
 
-def test_9_5_asset_criticality_empty_hostname_defaults_to_0_5() -> None:
-    """_asset_criticality('') must return the default (0.5) without error."""
+@pytest.mark.asyncio
+async def test_9_5_asset_criticality_empty_hostname_defaults_to_0_5() -> None:
+    """_asset_criticality('') must return the default (0.5) without querying the DB."""
     mgr = _mgr_no_init()
-    assert mgr._asset_criticality("") == pytest.approx(0.5)
-
-
-def test_9_5_asset_criticality_case_insensitive_dc() -> None:
-    """'DC-01' (uppercase) must match the 'dc' prefix → criticality 1.0."""
-    mgr = _mgr_no_init()
-    assert mgr._asset_criticality("DC-01") == pytest.approx(1.0)
-
-
-def test_9_5_asset_criticality_case_insensitive_srv() -> None:
-    """'SRV-01' (uppercase) must match the 'srv' prefix → criticality 0.8."""
-    mgr = _mgr_no_init()
-    assert mgr._asset_criticality("SRV-01") == pytest.approx(0.8)
-
-
-def test_9_5_asset_criticality_case_insensitive_win() -> None:
-    """'WIN-WS01' (uppercase) must match the 'win' prefix → criticality 0.6."""
-    mgr = _mgr_no_init()
-    assert mgr._asset_criticality("WIN-WS01") == pytest.approx(0.6)
-
-
-def test_9_5_asset_criticality_case_insensitive_lin() -> None:
-    """'LIN-APP01' (uppercase) must match the 'lin' prefix → criticality 0.5."""
-    mgr = _mgr_no_init()
-    assert mgr._asset_criticality("LIN-APP01") == pytest.approx(0.5)
-
-
-def test_9_5_asset_criticality_prefix_matches_startswith_not_exact() -> None:
-    """_asset_criticality() must use startswith — 'dcserver01' must still yield 1.0."""
-    mgr = _mgr_no_init()
-    assert mgr._asset_criticality("dcserver01") == pytest.approx(1.0)
-    assert mgr._asset_criticality("srvbackup") == pytest.approx(0.8)
-    assert mgr._asset_criticality("windowshost") == pytest.approx(0.6)
-    assert mgr._asset_criticality("linuxnode") == pytest.approx(0.5)
+    result = await mgr._asset_criticality("")
+    assert result == pytest.approx(0.5)
 
 
 def test_9_5_dc_isolated_asset_contribution_is_2_5() -> None:
@@ -3034,14 +3073,14 @@ def test_9_5_lin_isolated_asset_contribution_is_1_25() -> None:
 
 
 def test_9_5_default_criticality_isolated_contribution_is_1_25() -> None:
-    """Unknown-prefix host (crit=0.5) with severity_id=1 must yield score ≈ 1.25.
+    """Default fallback criticality (0.5) with severity_id=1 must yield score ≈ 1.25.
 
-    This verifies the default fallback criticality (0.5) produces the same result as lin.
+    The CMDB default (DB criticality=3 → 0.5) produces the same isolated score.
     raw=1.25 → round(1.25, 1) = 1.2 under Python banker's rounding; use abs=0.1.
     """
     mgr = _mgr_no_init()
-    # _asset_criticality("unknown-host") returns 0.5 (default)
-    crit = mgr._asset_criticality("unknown-host")
+    # ASSET_CRITICALITY_SCALE[3] == 0.5 (the default returned for unknown hosts)
+    crit = ASSET_CRITICALITY_SCALE[3]
     assert crit == pytest.approx(0.5)
     result = mgr._score({"severity_id": 1, "asset_criticality": crit})
     assert result["score"] == pytest.approx(1.25, abs=0.1)
@@ -3160,16 +3199,15 @@ def test_9_5_score_cap_applied_with_very_high_asset_criticality() -> None:
 
 
 def test_9_5_asset_criticality_enrich_propagates_to_score() -> None:
-    """_enrich() must call _asset_criticality(host) and include its value in the dict fed to _score().
+    """CMDB criticality must propagate through _score() correctly.
 
-    Verified by checking that the published score for a DC host is higher than for an
-    unknown-prefix host at the same severity level — confirming _enrich() passes through
-    the correct asset_criticality value rather than a fixed constant.
+    Uses ASSET_CRITICALITY_SCALE to simulate mission-critical (5→1.0) vs
+    default (3→0.5) and confirms the higher criticality produces a higher score.
     """
     mgr = _mgr_no_init()
 
-    dc_crit      = mgr._asset_criticality("dc-01")
-    default_crit = mgr._asset_criticality("unknown-host")
+    dc_crit      = ASSET_CRITICALITY_SCALE[5]   # Mission-Critical → 1.0
+    default_crit = ASSET_CRITICALITY_SCALE[3]   # Medium (default) → 0.5
 
     assert dc_crit > default_crit, (
         f"DC criticality ({dc_crit}) must exceed default ({default_crit}) to validate the test"
@@ -3185,7 +3223,7 @@ def test_9_5_asset_criticality_enrich_propagates_to_score() -> None:
 async def test_9_5_end_to_end_dc_host_asset_weighted_score() -> None:
     """process() with a DC host must publish a score reflecting the 1.0 × 0.25 asset weight.
 
-    host='dc-01' → asset_criticality=1.0, severity_id=3 (medium):
+    host='dc-01' → CMDB criticality=5 → asset_criticality=1.0, severity_id=3 (medium):
         severity_norm = (3-1)/4 = 0.5
         expected = round((0.5 × 0.60 + 1.0 × 0.25) × 10, 1) = round(5.5, 1) = 5.5
     """
@@ -3203,6 +3241,7 @@ async def test_9_5_end_to_end_dc_host_asset_weighted_score() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=1.0)),
         patch.object(queue, "publish", side_effect=capture),
     ):
         await mgr.process(alert_dict)
@@ -3219,7 +3258,7 @@ async def test_9_5_end_to_end_dc_host_asset_weighted_score() -> None:
 async def test_9_5_end_to_end_srv_host_asset_weighted_score() -> None:
     """process() with a SRV host must publish a score reflecting the 0.8 × 0.25 asset weight.
 
-    host='srv-01' → asset_criticality=0.8, severity_id=3 (medium):
+    host='srv-01' → CMDB criticality=4 → asset_criticality=0.8, severity_id=3 (medium):
         severity_norm = (3-1)/4 = 0.5
         expected = round((0.5 × 0.60 + 0.8 × 0.25) × 10, 1) = round(5.0, 1) = 5.0
     """
@@ -3237,6 +3276,7 @@ async def test_9_5_end_to_end_srv_host_asset_weighted_score() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=0.8)),
         patch.object(queue, "publish", side_effect=capture),
     ):
         await mgr.process(alert_dict)
@@ -3253,7 +3293,8 @@ async def test_9_5_end_to_end_srv_host_asset_weighted_score() -> None:
 async def test_9_5_end_to_end_dc_outscores_srv_same_severity() -> None:
     """process() must produce a higher score for DC vs SRV host at identical severity.
 
-    DC vs SRV delta = (1.0 - 0.8) × 0.25 × 10 = 0.5 at any severity level.
+    DC (CMDB criticality=5 → 1.0) vs SRV (CMDB criticality=4 → 0.8):
+    delta = (1.0 - 0.8) × 0.25 × 10 = 0.5 at any severity level.
     """
     queue = InMemoryQueue()
     await queue.start()
@@ -3274,6 +3315,7 @@ async def test_9_5_end_to_end_dc_outscores_srv_same_severity() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=1.0)),
         patch.object(queue, "publish", side_effect=capture_dc),
     ):
         await mgr.process(dc_dict)
@@ -3281,6 +3323,7 @@ async def test_9_5_end_to_end_dc_outscores_srv_same_severity() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=0.8)),
         patch.object(queue, "publish", side_effect=capture_srv),
     ):
         await mgr.process(srv_dict)
@@ -3768,7 +3811,7 @@ async def test_9_10_published_payload_has_asset_criticality_field() -> None:
 
 @pytest.mark.asyncio
 async def test_9_10_published_payload_asset_criticality_dc_host() -> None:
-    """DC host → asset_criticality=1.0 in published payload."""
+    """DC host (CMDB criticality=5) → asset_criticality=1.0 in published payload."""
     queue = InMemoryQueue()
     await queue.start()
 
@@ -3781,6 +3824,7 @@ async def test_9_10_published_payload_asset_criticality_dc_host() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=1.0)),
         patch.object(queue, "publish", side_effect=capture),
     ):
         await mgr.process(_make_alert_dict(host="dc-01"))
@@ -3794,7 +3838,7 @@ async def test_9_10_published_payload_asset_criticality_dc_host() -> None:
 
 @pytest.mark.asyncio
 async def test_9_10_published_payload_asset_criticality_srv_host() -> None:
-    """SRV host → asset_criticality=0.8 in published payload."""
+    """SRV host (CMDB criticality=4) → asset_criticality=0.8 in published payload."""
     queue = InMemoryQueue()
     await queue.start()
 
@@ -3807,6 +3851,7 @@ async def test_9_10_published_payload_asset_criticality_srv_host() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=0.8)),
         patch.object(queue, "publish", side_effect=capture),
     ):
         await mgr.process(_make_alert_dict(host="srv-02"))
@@ -3956,10 +4001,10 @@ async def test_9_10_published_payload_score_in_valid_range() -> None:
 
 @pytest.mark.asyncio
 async def test_9_10_published_score_critical_dc_host() -> None:
-    """Critical severity (id=5) + DC host → published score matches formula.
+    """Critical severity (id=5) + DC host (CMDB criticality=5) → published score=8.5.
 
     severity_norm = (5-1)/4 = 1.0
-    asset_crit = 1.0
+    asset_crit = ASSET_CRITICALITY_SCALE[5] = 1.0
     expected = round((1.0 × 0.60 + 1.0 × 0.25 + 0.0 × 0.15) × 10, 1) = 8.5
     """
     queue = InMemoryQueue()
@@ -3975,6 +4020,7 @@ async def test_9_10_published_score_critical_dc_host() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=1.0)),
         patch.object(queue, "publish", side_effect=capture),
     ):
         await mgr.process(alert_dict)

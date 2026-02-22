@@ -632,6 +632,21 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("Inactive account lock task start failed")
 
+    # 17. Start escalation task — escalate unacknowledged critical/high alerts (feature 27.7)
+    try:
+        from .services.escalation import escalation_task
+        asyncio.create_task(
+            escalation_task(dispatcher=notification_dispatcher),
+            name="escalation-task",
+        )
+        logger.info(
+            "Escalation task started (timeout_min=%d channel_id=%s)",
+            settings.escalation_timeout_minutes,
+            settings.escalation_channel_id,
+        )
+    except Exception:
+        logger.exception("Escalation task start failed")
+
     logger.info("MxTac API startup complete")
 
 

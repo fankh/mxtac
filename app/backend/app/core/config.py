@@ -212,6 +212,14 @@ class Settings(BaseSettings):
     auto_create_incident_min_severity: str = "high"  # "low" | "medium" | "high" | "critical"
     correlation_window_seconds: int = 3600  # 1-hour window
 
+    # Alert escalation — feature 27.7
+    # Background task (every 5 min) escalates active critical/high detections
+    # that have not been acknowledged after escalation_timeout_minutes.
+    # Set escalation_channel_id to the NotificationChannel.id that should
+    # receive escalation messages.  Leave None to disable escalation.
+    escalation_timeout_minutes: int = 30
+    escalation_channel_id: int | None = None
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 

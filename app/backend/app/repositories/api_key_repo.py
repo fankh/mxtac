@@ -36,6 +36,7 @@ class APIKeyRepo:
         owner_id: str | None = None,
         scopes: list[str] | None = None,
         expires_at: datetime | None = None,
+        permission_set_id: str | None = None,
     ) -> APIKey:
         api_key = APIKey(
             key_hash=hash_api_key(raw_key),
@@ -43,6 +44,7 @@ class APIKeyRepo:
             owner_id=owner_id,
             scopes=scopes,
             expires_at=expires_at,
+            permission_set_id=permission_set_id,
         )
         db.add(api_key)
         await db.flush()
