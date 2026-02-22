@@ -60,6 +60,8 @@ class Task(Base):
     allowed_tools: Mapped[str] = mapped_column(Text, default="[]")  # JSON list
     test_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     test_output: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    verification_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
@@ -106,6 +108,8 @@ class Task(Base):
             "allowed_tools": self.allowed_tools_list,
             "test_status": self.test_status,
             "test_output": self.test_output,
+            "verification_status": self.verification_status,
+            "verification_output": self.verification_output,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -175,4 +179,35 @@ class Log(Base):
             "level": self.level,
             "message": self.message,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agent_name: Mapped[str] = mapped_column(String(100), index=True)
+    started_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    output: Mapped[str] = mapped_column(Text, default="")
+    items_processed: Mapped[int] = mapped_column(Integer, default=0)
+    items_found: Mapped[int] = mapped_column(Integer, default=0)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "agent_name": self.agent_name,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "status": self.status,
+            "summary": self.summary,
+            "output": self.output,
+            "items_processed": self.items_processed,
+            "items_found": self.items_found,
         }

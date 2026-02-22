@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter + feature 21.7 mxtac_pipeline_latency_seconds histogram.
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter + feature 21.7 mxtac_pipeline_latency_seconds histogram + feature 9.1 MD5(rule_id + host) dedup key.
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -42,18 +42,42 @@ Coverage:
   - latency histogram: observe() called even when alert is a duplicate (feature 21.7)
   - latency histogram: observe() called even when process() raises an exception (feature 21.7)
   - latency histogram: observe() call count equals process() call count (feature 21.7)
+  - feature 9.1 MD5 key: key has "mxtac:dedup:" prefix + 32-char lowercase hex suffix
+  - feature 9.1 MD5 key: total key length is always 44 characters
+  - feature 9.1 MD5 key: suffix contains only lowercase hexadecimal characters
+  - feature 9.1 MD5 key: exact MD5 value matches hashlib.md5(f'{rule_id}|{host}'.encode())
+  - feature 9.1 MD5 key: verified for multiple known (rule_id, host) pairs
+  - feature 9.1 MD5 key: verified with empty rule_id, empty host, and both empty
+  - feature 9.1 MD5 key: case-sensitive — "srv-01" and "SRV-01" produce different keys
+  - feature 9.1 MD5 key: case-sensitive — rule_id casing affects the hash
+  - feature 9.1 MD5 key: deterministic — 10 consecutive calls produce identical keys
+  - feature 9.1 MD5 key: deterministic across independent AlertManager instances
+  - feature 9.1 MD5 key: pipe '|' inside rule_id or host creates raw collision (documented)
+  - feature 9.1 MD5 key: all-distinct keys for five different rule_ids on the same host
+  - feature 9.1 MD5 key: all-distinct keys for five different hosts with the same rule_id
+  - feature 9.1 MD5 key: _is_duplicate() passes the exact dedup key as Valkey SET argument
+  - feature 9.1 MD5 key: Valkey key argument starts with "mxtac:dedup:" in end-to-end process()
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.pipeline.queue import InMemoryQueue, Topic
-from app.services.alert_manager import AlertManager, DEDUP_WINDOW_SECONDS, MAX_SCORE, W_ASSET, W_RECUR, W_SEVERITY
+from app.services.alert_manager import (
+    AlertManager,
+    DEDUP_WINDOW_SECONDS,
+    MAX_SCORE,
+    W_ASSET,
+    W_RECUR,
+    W_SEVERITY,
+    _DEDUP_PREFIX,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1514,4 +1538,468 @@ async def test_process_observe_count_equals_process_call_count():
     )
 
     await queue.stop()
+    await queue.stop()
+
+
+# ---------------------------------------------------------------------------
+# Section 12 — Feature 9.1: _dedup_key() MD5(rule_id + host) key computation
+# ---------------------------------------------------------------------------
+#
+# The dedup key formula (from alert_manager.py _dedup_key):
+#
+#   raw    = f"{alert.rule_id}|{alert.host}".encode()
+#   digest = hashlib.md5(raw).hexdigest()
+#   key    = f"{_DEDUP_PREFIX}{digest}"
+#
+# where _DEDUP_PREFIX = "mxtac:dedup:"
+#
+# This section validates:
+#   - Key format: exactly "mxtac:dedup:" + 32-char lowercase hex
+#   - Exact MD5 hash values for known inputs
+#   - The '|' separator between rule_id and host
+#   - Edge cases: empty strings
+#   - Case sensitivity for rule_id and host
+#   - Determinism across calls and instances
+#   - Non-collision for distinct (rule_id, host) pairs
+#   - End-to-end: Valkey receives the correct key from _is_duplicate()
+
+
+def _reference_dedup_key(rule_id: str, host: str) -> str:
+    """Reference implementation of the dedup key formula — mirrors alert_manager.py."""
+    raw = f"{rule_id}|{host}".encode()
+    digest = hashlib.md5(raw).hexdigest()
+    return f"{_DEDUP_PREFIX}{digest}"
+
+
+def _mgr_bare() -> AlertManager:
+    """Return an AlertManager without __init__ to avoid Valkey connection."""
+    mgr = AlertManager.__new__(AlertManager)
+    mgr._queue = MagicMock()
+    return mgr
+
+
+# ── Key format ────────────────────────────────────────────────────────────────
+
+
+def test_dedup_prefix_constant_value() -> None:
+    """_DEDUP_PREFIX must be exactly 'mxtac:dedup:'."""
+    assert _DEDUP_PREFIX == "mxtac:dedup:"
+
+
+def test_dedup_key_starts_with_mxtac_dedup_prefix() -> None:
+    """_dedup_key() result must begin with 'mxtac:dedup:'."""
+    mgr = _mgr_bare()
+    alert = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01")
+    assert mgr._dedup_key(alert).startswith("mxtac:dedup:")
+
+
+def test_dedup_key_suffix_is_32_char_hex() -> None:
+    """The portion after the prefix must be a 32-character hexadecimal string."""
+    mgr = _mgr_bare()
+    alert = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01")
+    key = mgr._dedup_key(alert)
+    suffix = key[len("mxtac:dedup:"):]
+    assert len(suffix) == 32
+    assert all(c in "0123456789abcdef" for c in suffix), (
+        f"Suffix must be lowercase hex; got {suffix!r}"
+    )
+
+
+def test_dedup_key_total_length_is_44() -> None:
+    """Total key length must be len('mxtac:dedup:') + 32 = 44 characters."""
+    mgr = _mgr_bare()
+    alert = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01")
+    assert len(mgr._dedup_key(alert)) == 44
+
+
+def test_dedup_key_hex_suffix_is_lowercase() -> None:
+    """hashlib.md5().hexdigest() returns lowercase; key must not contain uppercase hex."""
+    mgr = _mgr_bare()
+    alert = _make_sigma_alert(rule_id="SIGMA-T1059", host="SRV-01")
+    suffix = mgr._dedup_key(alert)[len("mxtac:dedup:"):]
+    assert suffix == suffix.lower(), (
+        f"MD5 hex digest must be lowercase; got {suffix!r}"
+    )
+
+
+# ── Exact MD5 hash values ─────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("rule_id,host", [
+    ("sigma-T1059", "srv-01"),
+    ("sigma-T1003", "dc-01"),
+    ("sigma-T1566", "win-workstation"),
+    ("sigma-T1021", "lin-server-02"),
+    ("lateral-movement-rule", "dc-02.corp.example.com"),
+])
+def test_dedup_key_exact_md5_matches_reference(rule_id: str, host: str) -> None:
+    """_dedup_key() must produce exactly md5(f'{rule_id}|{host}'.encode()).hexdigest()
+    for each known (rule_id, host) pair."""
+    mgr = _mgr_bare()
+    alert = _make_sigma_alert(rule_id=rule_id, host=host)
+    expected = _reference_dedup_key(rule_id, host)
+    assert mgr._dedup_key(alert) == expected, (
+        f"MD5 mismatch for rule_id={rule_id!r}, host={host!r}: "
+        f"got {mgr._dedup_key(alert)!r}, expected {expected!r}"
+    )
+
+
+def test_dedup_key_empty_rule_id_matches_reference() -> None:
+    """_dedup_key() must compute MD5 correctly when rule_id is empty."""
+    mgr = _mgr_bare()
+    alert = _make_sigma_alert(rule_id="", host="srv-01")
+    assert mgr._dedup_key(alert) == _reference_dedup_key("", "srv-01")
+
+
+def test_dedup_key_empty_host_matches_reference() -> None:
+    """_dedup_key() must compute MD5 correctly when host is empty."""
+    mgr = _mgr_bare()
+    alert = _make_sigma_alert(rule_id="sigma-T1059", host="")
+    assert mgr._dedup_key(alert) == _reference_dedup_key("sigma-T1059", "")
+
+
+def test_dedup_key_both_empty_matches_reference() -> None:
+    """_dedup_key() must compute a valid key even when both rule_id and host are empty."""
+    mgr = _mgr_bare()
+    alert = _make_sigma_alert(rule_id="", host="")
+    expected = _reference_dedup_key("", "")
+    result = mgr._dedup_key(alert)
+    assert result == expected
+    assert result.startswith("mxtac:dedup:")
+    assert len(result) == 44
+
+
+# ── Pipe separator semantics ─────────────────────────────────────────────────
+
+
+def test_dedup_key_pipe_separator_in_rule_id_creates_same_raw_as_pipe_in_host() -> None:
+    """Documents known behavior: rule_id='a|b' + host='c' collides with rule_id='a' + host='b|c'.
+
+    Both produce raw string 'a|b|c', so their MD5 hashes are identical.
+    This is an expected consequence of using '|' as separator when inputs
+    can themselves contain '|'. This test documents (not fixes) the behavior.
+    """
+    mgr = _mgr_bare()
+    a1 = _make_sigma_alert(rule_id="a|b", host="c")
+    a2 = _make_sigma_alert(rule_id="a", host="b|c")
+    # Both yield raw = b"a|b|c" — so the keys will be equal
+    assert mgr._dedup_key(a1) == mgr._dedup_key(a2), (
+        "rule_id='a|b'/host='c' and rule_id='a'/host='b|c' produce raw='a|b|c' "
+        "and thus identical MD5 keys — documented edge case"
+    )
+
+
+def test_dedup_key_no_pipe_in_inputs_does_not_collide() -> None:
+    """Distinct (rule_id, host) pairs without embedded '|' must never collide.
+
+    Verifies that the separator only causes ambiguity when inputs contain '|';
+    ordinary strings are always distinguishable.
+    """
+    mgr = _mgr_bare()
+    pairs = [
+        ("sigma-T1059", "srv-01"),
+        ("sigma-T1059", "srv-010"),   # host is prefix of another
+        ("sigma-T105", "9srv-01"),    # digits shifted across boundary
+        ("sigma", "T1059-srv-01"),    # rule_id is strict prefix
+    ]
+    keys = [mgr._dedup_key(_make_sigma_alert(rule_id=r, host=h)) for r, h in pairs]
+    assert len(set(keys)) == len(pairs), (
+        "All four distinct (rule_id, host) pairs without '|' must produce unique keys"
+    )
+
+
+# ── Case sensitivity ──────────────────────────────────────────────────────────
+
+
+def test_dedup_key_case_sensitive_for_host() -> None:
+    """Different-cased hostnames must produce different dedup keys."""
+    mgr = _mgr_bare()
+    lower = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01")
+    upper = _make_sigma_alert(rule_id="sigma-T1059", host="SRV-01")
+    mixed = _make_sigma_alert(rule_id="sigma-T1059", host="Srv-01")
+    assert mgr._dedup_key(lower) != mgr._dedup_key(upper)
+    assert mgr._dedup_key(lower) != mgr._dedup_key(mixed)
+    assert mgr._dedup_key(upper) != mgr._dedup_key(mixed)
+
+
+def test_dedup_key_case_sensitive_for_rule_id() -> None:
+    """Different-cased rule_ids must produce different dedup keys."""
+    mgr = _mgr_bare()
+    lower = _make_sigma_alert(rule_id="sigma-t1059", host="srv-01")
+    upper = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01")
+    assert mgr._dedup_key(lower) != mgr._dedup_key(upper)
+
+
+def test_dedup_key_fully_uppercase_inputs_differ_from_lowercase() -> None:
+    """All-uppercase (rule_id, host) must differ from all-lowercase version."""
+    mgr = _mgr_bare()
+    lc = _make_sigma_alert(rule_id="sigma-t1059", host="srv-01")
+    uc = _make_sigma_alert(rule_id="SIGMA-T1059", host="SRV-01")
+    assert mgr._dedup_key(lc) != mgr._dedup_key(uc)
+
+
+# ── Determinism ───────────────────────────────────────────────────────────────
+
+
+def test_dedup_key_deterministic_across_10_calls() -> None:
+    """Calling _dedup_key() 10 times on the same alert always yields the same key."""
+    mgr = _mgr_bare()
+    alert = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01")
+    keys = {mgr._dedup_key(alert) for _ in range(10)}
+    assert len(keys) == 1, f"Expected exactly one unique key across 10 calls; got {keys}"
+
+
+def test_dedup_key_deterministic_across_independent_instances() -> None:
+    """Two freshly created AlertManager instances must produce identical keys."""
+    mgr1 = _mgr_bare()
+    mgr2 = _mgr_bare()
+    alert = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01")
+    assert mgr1._dedup_key(alert) == mgr2._dedup_key(alert)
+
+
+def test_dedup_key_same_for_different_alert_ids_same_rule_host() -> None:
+    """Two SigmaAlert objects with different .id values but identical rule_id+host
+    must produce the same dedup key — the id field is not part of the key."""
+    mgr = _mgr_bare()
+    a1 = _make_sigma_alert(id="uuid-aaa", rule_id="sigma-T1059", host="srv-01")
+    a2 = _make_sigma_alert(id="uuid-bbb", rule_id="sigma-T1059", host="srv-01")
+    assert mgr._dedup_key(a1) == mgr._dedup_key(a2), (
+        "Alert .id must not influence the dedup key; only rule_id and host matter"
+    )
+
+
+def test_dedup_key_differs_for_different_alert_times_same_rule_host() -> None:
+    """Alerts with the same rule_id+host but different timestamps share the same key.
+
+    Deduplication is keyed on (rule_id, host) only — the timestamp is not
+    part of the key.  Time-based dedup window is enforced by the Valkey TTL,
+    not by hashing the timestamp into the key.
+    """
+    mgr = _mgr_bare()
+    t1 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 1, 1, 0, 4, 59, tzinfo=timezone.utc)  # 1 second before window expires
+    a1 = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01", time=t1)
+    a2 = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01", time=t2)
+    assert mgr._dedup_key(a1) == mgr._dedup_key(a2), (
+        "Timestamp must not be part of the dedup key"
+    )
+
+
+# ── Non-collision for distinct inputs ─────────────────────────────────────────
+
+
+@pytest.mark.parametrize("rule_id", [
+    "sigma-T1059",
+    "sigma-T1003",
+    "sigma-T1566",
+    "sigma-T1021",
+    "sigma-T1136",
+])
+def test_dedup_key_unique_per_rule_id_on_same_host(rule_id: str) -> None:
+    """Each distinct rule_id on the same host must produce a unique key."""
+    mgr = _mgr_bare()
+    alert = _make_sigma_alert(rule_id=rule_id, host="srv-01")
+    expected = _reference_dedup_key(rule_id, "srv-01")
+    assert mgr._dedup_key(alert) == expected
+
+
+def test_dedup_key_all_unique_for_five_rule_ids() -> None:
+    """Five distinct rule_ids on the same host must all produce different keys."""
+    mgr = _mgr_bare()
+    rule_ids = ["sigma-T1059", "sigma-T1003", "sigma-T1566", "sigma-T1021", "sigma-T1136"]
+    keys = [mgr._dedup_key(_make_sigma_alert(rule_id=r, host="srv-01")) for r in rule_ids]
+    assert len(set(keys)) == 5, "All five rule_id/host combinations must yield unique keys"
+
+
+def test_dedup_key_all_unique_for_five_hosts() -> None:
+    """The same rule_id on five distinct hosts must produce five different keys."""
+    mgr = _mgr_bare()
+    hosts = ["srv-01", "dc-01", "win-workstation", "lin-server", "dc-02"]
+    keys = [mgr._dedup_key(_make_sigma_alert(rule_id="sigma-T1059", host=h)) for h in hosts]
+    assert len(set(keys)) == 5, "All five host variations must yield unique keys"
+
+
+# ── End-to-end: Valkey receives the correct key ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_is_duplicate_passes_exact_dedup_key_to_valkey_set() -> None:
+    """_is_duplicate() must pass the exact _dedup_key() result as the first positional
+    argument to the Valkey SET command."""
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+    sigma_alert = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01")
+
+    expected_key = mgr._dedup_key(sigma_alert)
+    captured_keys: list[str] = []
+
+    async def mock_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        captured_keys.append(key)
+        return True
+
+    with patch.object(mgr._valkey, "set", side_effect=mock_set):
+        await mgr._is_duplicate(sigma_alert)
+
+    assert len(captured_keys) == 1
+    assert captured_keys[0] == expected_key, (
+        f"Valkey SET received key {captured_keys[0]!r}; "
+        f"expected {expected_key!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_process_valkey_set_key_has_mxtac_dedup_prefix() -> None:
+    """End-to-end: the Valkey SET key used by process() starts with 'mxtac:dedup:'."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="srv-01")
+
+    valkey_keys_used: list[str] = []
+
+    original_set = mgr._valkey.set
+
+    async def spy_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        valkey_keys_used.append(key)
+        return True
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=spy_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    assert len(valkey_keys_used) == 1
+    assert valkey_keys_used[0].startswith("mxtac:dedup:"), (
+        f"Valkey key must start with 'mxtac:dedup:'; got {valkey_keys_used[0]!r}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_valkey_set_key_is_32_char_hex_after_prefix() -> None:
+    """End-to-end: the suffix after 'mxtac:dedup:' in the Valkey key is 32-char lowercase hex."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="dc-01")
+
+    valkey_keys_used: list[str] = []
+
+    async def spy_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        valkey_keys_used.append(key)
+        return True
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=spy_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    key = valkey_keys_used[0]
+    suffix = key[len("mxtac:dedup:"):]
+    assert len(suffix) == 32, f"Expected 32-char hex suffix; got {len(suffix)} chars: {suffix!r}"
+    assert all(c in "0123456789abcdef" for c in suffix), (
+        f"Suffix must be lowercase hex characters; got {suffix!r}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_valkey_key_matches_dedup_key_for_same_alert() -> None:
+    """End-to-end: the Valkey SET key matches what _dedup_key() returns for the same alert."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    rule_id = "sigma-T1059"
+    host = "srv-01"
+    alert_dict = _make_alert_dict(rule_id=rule_id, host=host)
+
+    # Compute expected key via reference formula
+    expected_key = _reference_dedup_key(rule_id, host)
+
+    valkey_keys_used: list[str] = []
+
+    async def spy_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        valkey_keys_used.append(key)
+        return True
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=spy_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    assert valkey_keys_used[0] == expected_key, (
+        f"process() must use key {expected_key!r}; got {valkey_keys_used[0]!r}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_two_different_hosts_use_different_valkey_keys() -> None:
+    """Two alerts with different hosts must result in different Valkey SET keys."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+
+    valkey_keys: list[str] = []
+
+    async def spy_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        valkey_keys.append(key)
+        return True
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=spy_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1059", host="srv-01"))
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1059", host="dc-01"))
+
+    assert len(valkey_keys) == 2
+    assert valkey_keys[0] != valkey_keys[1], (
+        "Different hosts must produce different Valkey dedup keys"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_process_same_host_different_rules_use_different_valkey_keys() -> None:
+    """Two alerts with different rule_ids on the same host must use different Valkey keys."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+
+    valkey_keys: list[str] = []
+
+    async def spy_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        valkey_keys.append(key)
+        return True
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=spy_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=AsyncMock()),
+    ):
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1059", host="srv-01"))
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1003", host="srv-01"))
+
+    assert len(valkey_keys) == 2
+    assert valkey_keys[0] != valkey_keys[1], (
+        "Different rule_ids on the same host must produce different Valkey dedup keys"
+    )
+
     await queue.stop()

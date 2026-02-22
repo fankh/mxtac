@@ -675,6 +675,16 @@ class WatchdogAgent:
             })
             await scheduler.stop()
             await retry_agent.stop()
+
+            # Stop new agents (except TaskCreatorAgent which may continue discovering)
+            try:
+                from .agents import ALL_NEW_AGENTS
+                for agent in ALL_NEW_AGENTS:
+                    if agent.NAME != "TaskCreatorAgent":
+                        await agent.stop()
+            except ImportError:
+                pass
+
             self._running = False
 
 

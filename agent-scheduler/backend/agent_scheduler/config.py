@@ -40,6 +40,42 @@ class Settings(BaseSettings):
     # MxTac
     mxtac_project_root: str = "/home/khchoi/development/new-research/mitre-attack/mxtac"
 
+    # --- New Agent Settings ---
+
+    # TaskCreatorAgent (P0)
+    agent_task_creator_enabled: bool = True
+    agent_task_creator_interval: int = 3600  # 1 hour
+    agent_task_creator_max_tasks_per_cycle: int = 20
+    agent_task_creator_use_claude: bool = True
+
+    # VerifierAgent (P0)
+    agent_verifier_enabled: bool = True
+    agent_verifier_interval: int = 180  # 3 minutes
+    agent_verifier_max_per_cycle: int = 3
+    agent_verifier_use_claude: bool = True
+    agent_verifier_fail_action: str = "mark"  # "mark" or "reset"
+
+    # TestAgent (P1)
+    agent_test_enabled: bool = False
+    agent_test_interval: int = 300  # 5 minutes
+    agent_test_full_suite_every: int = 6  # run full suite every Nth cycle
+    agent_test_timeout: int = 300
+
+    # LintAgent (P1)
+    agent_lint_enabled: bool = False
+    agent_lint_interval: int = 600  # 10 minutes
+    agent_lint_error_threshold: int = 50
+
+    # IntegrationAgent (P2)
+    agent_integration_enabled: bool = False
+    agent_integration_interval: int = 900  # 15 minutes
+    agent_integration_smoke_url: str = ""
+
+    # SecurityAuditAgent (P2)
+    agent_security_enabled: bool = False
+    agent_security_interval: int = 1800  # 30 minutes
+    agent_security_bandit_skip: str = ""
+
     @property
     def db_path(self) -> Path:
         """Extract the file path from the SQLite URL."""

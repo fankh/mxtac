@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .agents import get_enabled_agents
 from .auth import require_auth
 from .config import settings
 from .database import init_db
@@ -24,6 +25,12 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
+    # Start enabled new agents
+    enabled_agents = get_enabled_agents()
+    for agent in enabled_agents:
+        logger.info("Starting %s...", agent.NAME)
+        await agent.start()
+
     if settings.scheduler_auto_start:
         logger.info("Auto-starting scheduler...")
         await scheduler.start()
@@ -38,6 +45,11 @@ async def lifespan(app: FastAPI):
     if scheduler.is_running:
         logger.info("Stopping scheduler...")
         await scheduler.stop()
+
+    # Stop new agents
+    for agent in reversed(enabled_agents):
+        logger.info("Stopping %s...", agent.NAME)
+        await agent.stop()
 
 
 app = FastAPI(

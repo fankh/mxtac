@@ -1,0 +1,171 @@
+import asyncio
+import datetime
+import logging
+from abc import ABC, abstractmethod
+
+from ..database import async_session
+from ..models import AgentRun
+from ..scheduler import sse_broadcaster
+
+logger = logging.getLogger(__name__)
+
+
+class BaseAgent(ABC):
+    """Abstract base class for all new lifecycle agents.
+
+    Subclasses implement `run_cycle()` which returns a dict with:
+      - summary: str
+      - items_processed: int
+      - items_found: int
+      - output: str (optional extra detail)
+    """
+
+    NAME: str = "BaseAgent"
+    DEFAULT_INTERVAL: int = 300
+    DESCRIPTION: str = ""
+
+    # Shared semaphore to prevent concurrent Claude CLI calls
+    _claude_semaphore = asyncio.Semaphore(1)
+
+    def __init__(self):
+        self._running = False
+        self._task: asyncio.Task | None = None
+        self._last_action: datetime.datetime | None = None
+        self._action_count: int = 0
+        self._interval: int = self.DEFAULT_INTERVAL
+        self._current_run_id: int | None = None
+
+    @property
+    def status(self) -> str:
+        return "running" if self._running else "stopped"
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.NAME,
+            "status": self.status,
+            "interval_seconds": self._interval,
+            "description": self.DESCRIPTION,
+            "last_action": self._last_action.isoformat() if self._last_action else None,
+            "action_count": self._action_count,
+        }
+
+    async def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._task = asyncio.create_task(self._loop())
+        logger.info("%s started (interval=%ds)", self.NAME, self._interval)
+
+    async def stop(self):
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+        logger.info("%s stopped", self.NAME)
+
+    async def trigger(self):
+        """Manual one-shot execution."""
+        logger.info("%s triggered manually", self.NAME)
+        try:
+            run_id = await self._record_start()
+            result = await self.run_cycle()
+            await self._record_finish(run_id, "completed", result)
+            self._last_action = datetime.datetime.utcnow()
+            self._action_count += 1
+            return result
+        except Exception:
+            logger.exception("Error in %s manual trigger", self.NAME)
+            if run_id:
+                await self._record_finish(run_id, "failed", {
+                    "summary": "Error during manual trigger",
+                })
+            raise
+
+    async def _loop(self):
+        while self._running:
+            try:
+                await asyncio.sleep(self._interval)
+                run_id = await self._record_start()
+                try:
+                    result = await self.run_cycle()
+                    await self._record_finish(run_id, "completed", result)
+                except Exception:
+                    logger.exception("Error in %s cycle", self.NAME)
+                    await self._record_finish(run_id, "failed", {
+                        "summary": "Cycle error",
+                    })
+                self._last_action = datetime.datetime.utcnow()
+                self._action_count += 1
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Error in %s loop", self.NAME)
+                await asyncio.sleep(30)
+
+    async def _record_start(self) -> int:
+        """Create an AgentRun row at cycle start. Returns the run id."""
+        async with async_session() as session:
+            agent_run = AgentRun(
+                agent_name=self.NAME,
+                status="running",
+            )
+            session.add(agent_run)
+            await session.commit()
+            await session.refresh(agent_run)
+            return agent_run.id
+
+    async def _record_finish(self, run_id: int, status: str, result: dict):
+        """Update the AgentRun row at cycle end."""
+        async with async_session() as session:
+            agent_run = await session.get(AgentRun, run_id)
+            if agent_run:
+                agent_run.finished_at = datetime.datetime.utcnow()
+                agent_run.status = status
+                agent_run.summary = result.get("summary", "")
+                agent_run.output = result.get("output", "")
+                agent_run.items_processed = result.get("items_processed", 0)
+                agent_run.items_found = result.get("items_found", 0)
+                await session.commit()
+
+    async def _run_subprocess(
+        self, cmd: str, cwd: str | None = None, timeout: int = 120
+    ) -> tuple[int, str, str]:
+        """Run a shell command with timeout. Returns (returncode, stdout, stderr)."""
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                cwd=cwd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                return -1, "", f"Command timed out after {timeout}s"
+
+            return (
+                proc.returncode or 0,
+                stdout.decode(errors="replace"),
+                stderr.decode(errors="replace"),
+            )
+        except Exception as e:
+            return -1, "", str(e)
+
+    @abstractmethod
+    async def run_cycle(self) -> dict:
+        """Execute one cycle of the agent's work.
+
+        Returns a dict with at least:
+          - summary: str
+          - items_processed: int
+          - items_found: int
+        """
+        ...

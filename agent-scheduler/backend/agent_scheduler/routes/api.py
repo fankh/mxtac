@@ -8,9 +8,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from ..agents import ALL_NEW_AGENTS, get_agent_by_name
 from ..config import settings
 from ..database import get_session
-from ..models import Run, RunStatus, Task, TaskStatus
+from ..models import AgentRun, Run, RunStatus, Task, TaskStatus
 from ..executor import executor
 from ..scheduler import scheduler, retry_agent, watchdog_agent
 from ..task_loader import load_tasks_into_db, parse_yaml_directory, parse_yaml_tasks
@@ -76,13 +77,46 @@ async def get_stats(session: AsyncSession = Depends(get_session)):
 
 @router.get("/agents")
 async def get_agents():
-    return {
-        "agents": [
-            scheduler.to_dict(),
-            retry_agent.to_dict(),
-            watchdog_agent.to_dict(),
-        ]
-    }
+    agents = [
+        scheduler.to_dict(),
+        retry_agent.to_dict(),
+        watchdog_agent.to_dict(),
+    ]
+    for agent in ALL_NEW_AGENTS:
+        agents.append(agent.to_dict())
+    return {"agents": agents}
+
+
+@router.post("/agents/{agent_name}/trigger")
+async def trigger_agent(agent_name: str):
+    agent = get_agent_by_name(agent_name)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"Agent not found: {agent_name}")
+    try:
+        result = await agent.trigger()
+        return {"status": "triggered", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/agents/{agent_name}/runs")
+async def get_agent_runs(
+    agent_name: str,
+    limit: int = Query(default=20, le=100),
+    session: AsyncSession = Depends(get_session),
+):
+    agent = get_agent_by_name(agent_name)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"Agent not found: {agent_name}")
+
+    result = await session.execute(
+        select(AgentRun)
+        .where(AgentRun.agent_name == agent_name)
+        .order_by(AgentRun.started_at.desc())
+        .limit(limit)
+    )
+    runs = result.scalars().all()
+    return [r.to_dict() for r in runs]
 
 
 # --- Tasks ---
