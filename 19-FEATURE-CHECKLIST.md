@@ -196,7 +196,7 @@
 |---|---------|:----:|:----:|----------|-------|
 | 9.1 | Deduplication — MD5(rule_id + host) key | `[x]` | `[ ]` | P0 | `alert_manager.py` |
 | 9.2 | Dedup window — 5 minutes TTL | `[x]` | `[ ]` | P0 | In-process dict (single instance) |
-| 9.3 | Distributed dedup — Valkey SETEX NX | `[ ]` | `[ ]` | P1 | Task 3.2 |
+| 9.3 | Distributed dedup — Valkey SETEX NX | `[x]` | `[T]` | P1 | Task 3.2 |
 | 9.4 | Risk score: severity × 0.60 | `[x]` | `[ ]` | P0 | |
 | 9.5 | Risk score: asset criticality × 0.25 | `[x]` | `[ ]` | P0 | Prefix-based defaults |
 | 9.6 | Risk score: recurrence bonus × 0.15 | `[~]` | `[ ]` | P1 | Placeholder, always 0 |

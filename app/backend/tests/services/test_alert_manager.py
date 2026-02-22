@@ -137,6 +137,19 @@ Coverage:
   - feature 9.10 publish: 5 distinct alerts → 5 publish calls
   - feature 9.10 publish: 3 new + 2 duplicate alerts → exactly 3 publish calls
   - feature 9.10 publish: published payload contains all required fields
+  - feature 9.3 distributed dedup: Valkey SET called with nx=True (atomic SETEX NX semantics)
+  - feature 9.3 distributed dedup: Valkey SET called with ex=DEDUP_WINDOW_SECONDS
+  - feature 9.3 distributed dedup: Valkey SET called with value "1" as presence marker
+  - feature 9.3 distributed dedup: new alert returns False from _is_duplicate() (SET returns True)
+  - feature 9.3 distributed dedup: duplicate alert returns True from _is_duplicate() (SET returns None)
+  - feature 9.3 distributed dedup: fail-open — Valkey exception → _is_duplicate() returns False
+  - feature 9.3 distributed dedup: two replicas produce the same dedup key (cross-instance consistency)
+  - feature 9.3 distributed dedup: replica B blocked when replica A set the key first (shared Valkey NX)
+  - feature 9.3 distributed dedup: concurrent replicas — exactly one wins the SETEX NX lock
+  - feature 9.3 distributed dedup: post-TTL expiry both replicas can process the alert again
+  - feature 9.3 distributed dedup: no GET-before-SET (pure atomic SETEX NX, no TOCTOU race)
+  - feature 9.3 distributed dedup: independent keys per (rule_id, host) — no cross-pair interference
+  - feature 9.3 distributed dedup: three replicas — exactly one publishes per concurrent race
 """
 
 from __future__ import annotations
@@ -4186,5 +4199,577 @@ async def test_9_10_published_payload_contains_all_required_fields() -> None:
     assert not missing, (
         f"Published payload is missing required fields: {missing}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Section 15 — feature 9.3: Distributed dedup via Valkey SETEX NX
+# ---------------------------------------------------------------------------
+#
+# Feature 9.3 upgrades the single-instance in-process dict dedup (9.2) to a
+# Valkey-backed distributed dedup. The key design properties:
+#
+#   1. Atomic: `SET key "1" NX EX 300` — one round-trip, no TOCTOU race.
+#   2. Distributed: all replicas share a single Valkey keyspace; the first
+#      replica to SET wins, all others see None and treat it as a duplicate.
+#   3. Self-expiring: the EX TTL automatically evicts stale entries across
+#      the entire cluster with no manual cleanup.
+#
+# These tests verify the Valkey SETEX NX contract and cross-replica
+# coordination. A shared in-memory dict simulates the Valkey keyspace.
+
+
+def _make_distributed_valkey_pair(
+    store: dict | None = None,
+) -> tuple:
+    """Return two independent Valkey mocks sharing the same NX keyspace.
+
+    Any number of mocks can share the same ``store``; whichever calls SET NX
+    first wins — all subsequent callers for the same key get None.
+
+    Returns (mock_a, mock_b, store).
+    """
+    if store is None:
+        store = {}
+
+    async def shared_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        if nx and key in store:
+            return None   # key already exists — NX fails
+        store[key] = value
+        return True       # key newly set
+
+    mock_a = MagicMock()
+    mock_a.set = AsyncMock(side_effect=shared_set)
+    mock_a.aclose = AsyncMock()
+
+    mock_b = MagicMock()
+    mock_b.set = AsyncMock(side_effect=shared_set)
+    mock_b.aclose = AsyncMock()
+
+    return mock_a, mock_b, store
+
+
+# ── SETEX NX call contract ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_3_is_duplicate_calls_valkey_set_with_nx_true() -> None:
+    """_is_duplicate() must call Valkey SET with nx=True.
+
+    nx=True is what makes the operation a SET-if-Not-eXists, ensuring
+    only the first caller among all replicas succeeds.
+    """
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+
+    from app.engine.sigma_engine import SigmaAlert
+    alert = SigmaAlert(
+        id="test-9.3-nx",
+        rule_id="sigma-nx-test",
+        rule_title="NX Test",
+        level="high",
+        severity_id=4,
+        technique_ids=["T1059"],
+        tactic_ids=["execution"],
+        host="srv-01",
+        time=datetime.now(timezone.utc),
+        event_snapshot={},
+    )
+
+    captured: list[dict] = []
+
+    async def spy_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        captured.append({"key": key, "value": value, "nx": nx, "ex": ex})
+        return True
+
+    with patch.object(mgr._valkey, "set", side_effect=spy_set):
+        await mgr._is_duplicate(alert)
+
+    assert len(captured) == 1, "Valkey SET must be called exactly once"
+    assert captured[0]["nx"] is True, (
+        f"SET must use nx=True for atomic SETEX NX semantics; got nx={captured[0]['nx']!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_9_3_is_duplicate_calls_valkey_set_with_correct_ex() -> None:
+    """_is_duplicate() must call Valkey SET with ex=DEDUP_WINDOW_SECONDS.
+
+    The EX parameter sets the key TTL so Valkey auto-evicts the entry
+    after the dedup window — no manual cleanup required.
+    """
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+
+    from app.engine.sigma_engine import SigmaAlert
+    alert = SigmaAlert(
+        id="test-9.3-ex",
+        rule_id="sigma-ex-test",
+        rule_title="EX Test",
+        level="medium",
+        severity_id=3,
+        technique_ids=[],
+        tactic_ids=[],
+        host="win-02",
+        time=datetime.now(timezone.utc),
+        event_snapshot={},
+    )
+
+    captured_ex: list[int | None] = []
+
+    async def spy_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        captured_ex.append(ex)
+        return True
+
+    with patch.object(mgr._valkey, "set", side_effect=spy_set):
+        await mgr._is_duplicate(alert)
+
+    assert len(captured_ex) == 1
+    assert captured_ex[0] == DEDUP_WINDOW_SECONDS, (
+        f"SET ex must equal DEDUP_WINDOW_SECONDS ({DEDUP_WINDOW_SECONDS}); "
+        f"got ex={captured_ex[0]!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_9_3_is_duplicate_calls_valkey_set_with_value_one() -> None:
+    """_is_duplicate() must call Valkey SET with value '1' as the presence marker.
+
+    The value '1' is a conventional, minimal presence marker — the actual
+    dedup decision is made by whether the SET succeeds (NX), not the value.
+    """
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+
+    from app.engine.sigma_engine import SigmaAlert
+    alert = SigmaAlert(
+        id="test-9.3-val",
+        rule_id="sigma-val-test",
+        rule_title="Value Test",
+        level="low",
+        severity_id=2,
+        technique_ids=[],
+        tactic_ids=[],
+        host="lin-03",
+        time=datetime.now(timezone.utc),
+        event_snapshot={},
+    )
+
+    captured_values: list[str] = []
+
+    async def spy_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        captured_values.append(value)
+        return True
+
+    with patch.object(mgr._valkey, "set", side_effect=spy_set):
+        await mgr._is_duplicate(alert)
+
+    assert len(captured_values) == 1
+    assert captured_values[0] == "1", (
+        f"SET value must be '1'; got {captured_values[0]!r}"
+    )
+
+
+# ── Return value semantics ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_3_is_duplicate_returns_false_when_set_succeeds() -> None:
+    """_is_duplicate() must return False when Valkey SET returns True (key was new)."""
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+
+    from app.engine.sigma_engine import SigmaAlert
+    alert = SigmaAlert(
+        id="test-9.3-new",
+        rule_id="sigma-T1003",
+        rule_title="New Alert",
+        level="high",
+        severity_id=4,
+        technique_ids=["T1003"],
+        tactic_ids=["credential-access"],
+        host="dc-01",
+        time=datetime.now(timezone.utc),
+        event_snapshot={},
+    )
+
+    with patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)):
+        result = await mgr._is_duplicate(alert)
+
+    assert result is False, (
+        "SET returned True (key newly set) → alert is new → _is_duplicate() must return False"
+    )
+
+
+@pytest.mark.asyncio
+async def test_9_3_is_duplicate_returns_true_when_set_fails() -> None:
+    """_is_duplicate() must return True when Valkey SET returns None (key already existed)."""
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+
+    from app.engine.sigma_engine import SigmaAlert
+    alert = SigmaAlert(
+        id="test-9.3-dup",
+        rule_id="sigma-T1003",
+        rule_title="Duplicate Alert",
+        level="high",
+        severity_id=4,
+        technique_ids=["T1003"],
+        tactic_ids=["credential-access"],
+        host="dc-01",
+        time=datetime.now(timezone.utc),
+        event_snapshot={},
+    )
+
+    with patch.object(mgr._valkey, "set", new=AsyncMock(return_value=None)):
+        result = await mgr._is_duplicate(alert)
+
+    assert result is True, (
+        "SET returned None (key already exists) → alert is duplicate → _is_duplicate() must return True"
+    )
+
+
+@pytest.mark.asyncio
+async def test_9_3_fail_open_on_valkey_exception() -> None:
+    """_is_duplicate() must return False (fail-open) when Valkey raises an exception.
+
+    A Valkey outage must never suppress valid alerts. The fail-open policy
+    allows the alert through so operators still see security events even
+    when the dedup store is temporarily unavailable.
+    """
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+
+    from app.engine.sigma_engine import SigmaAlert
+    alert = SigmaAlert(
+        id="test-9.3-fail",
+        rule_id="sigma-T9999",
+        rule_title="Fail Open Test",
+        level="critical",
+        severity_id=5,
+        technique_ids=[],
+        tactic_ids=[],
+        host="srv-99",
+        time=datetime.now(timezone.utc),
+        event_snapshot={},
+    )
+
+    async def raise_connection_error(*args, **kwargs):
+        raise ConnectionError("Valkey connection refused")
+
+    with patch.object(mgr._valkey, "set", side_effect=raise_connection_error):
+        result = await mgr._is_duplicate(alert)
+
+    assert result is False, (
+        "Valkey exception must not suppress the alert — fail-open must return False"
+    )
+
+
+# ── Atomicity: no GET-before-SET ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_3_no_get_before_set_atomic_operation() -> None:
+    """_is_duplicate() must NOT call Valkey GET before SET.
+
+    A GET-then-SET pattern creates a TOCTOU race window where two replicas
+    both observe the key absent and both publish the same alert. The atomic
+    SETEX NX closes that window entirely: only one caller succeeds, the rest
+    get None — all in a single round-trip.
+    """
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+
+    from app.engine.sigma_engine import SigmaAlert
+    alert = SigmaAlert(
+        id="test-9.3-atomic",
+        rule_id="sigma-atomic",
+        rule_title="Atomic Test",
+        level="medium",
+        severity_id=3,
+        technique_ids=[],
+        tactic_ids=[],
+        host="srv-01",
+        time=datetime.now(timezone.utc),
+        event_snapshot={},
+    )
+
+    mock_set = AsyncMock(return_value=True)
+    mock_get = AsyncMock()
+
+    with (
+        patch.object(mgr._valkey, "set", new=mock_set),
+        patch.object(mgr._valkey, "get", new=mock_get),
+    ):
+        await mgr._is_duplicate(alert)
+
+    mock_set.assert_awaited_once()
+    mock_get.assert_not_awaited()
+
+
+# ── Cross-replica coordination ────────────────────────────────────────────────
+
+
+def test_9_3_two_replicas_produce_identical_dedup_key() -> None:
+    """Two independent AlertManager replicas must derive the same dedup key.
+
+    Key determinism is essential for distributed dedup: both replicas must
+    address the same Valkey key so that the SET NX acts as a true mutex.
+    """
+    queue = InMemoryQueue()
+    mgr_a = AlertManager(queue)
+    mgr_b = AlertManager(queue)
+
+    from app.engine.sigma_engine import SigmaAlert
+    alert = SigmaAlert(
+        id="test-key-det",
+        rule_id="sigma-T1059",
+        rule_title="Command Shell",
+        level="high",
+        severity_id=4,
+        technique_ids=["T1059"],
+        tactic_ids=["execution"],
+        host="srv-01",
+        time=datetime.now(timezone.utc),
+        event_snapshot={},
+    )
+
+    key_a = mgr_a._dedup_key(alert)
+    key_b = mgr_b._dedup_key(alert)
+
+    assert key_a == key_b, (
+        "Both replicas must produce the same dedup key for the same alert; "
+        f"mgr_a={key_a!r}, mgr_b={key_b!r}"
+    )
+    assert key_a.startswith(_DEDUP_PREFIX), (
+        f"Dedup key must start with {_DEDUP_PREFIX!r}; got {key_a!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_9_3_replica_b_blocked_when_replica_a_wins_set_nx() -> None:
+    """Replica B must treat the alert as a duplicate when Replica A set the key first.
+
+    Distributed dedup sequence:
+      Replica A → SET NX → True  (key absent  → wins the lock → publishes)
+      Replica B → SET NX → None  (key present → loses         → blocked)
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr_a = AlertManager(queue)
+    mgr_b = AlertManager(queue)
+
+    mock_a, mock_b, _ = _make_distributed_valkey_pair()
+    mgr_a._valkey = mock_a
+    mgr_b._valkey = mock_b
+
+    alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="srv-01")
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    with (
+        patch.object(mgr_a, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr_b, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr_a.process(alert_dict)   # Replica A: SET NX wins → publishes
+        await mgr_b.process(alert_dict)   # Replica B: key exists → blocked
+
+    assert len(published) == 1, (
+        "Replica A should publish; Replica B must be blocked by the shared Valkey NX lock. "
+        f"Got {len(published)} publish call(s)."
+    )
+    assert published[0][0] == Topic.ENRICHED
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_3_concurrent_replicas_exactly_one_publishes() -> None:
+    """Under concurrent processing, exactly one replica wins the SETEX NX lock.
+
+    Uses asyncio.gather to race two replicas on the same alert simultaneously.
+    The atomic SET NX ensures only one coroutine sees True; the other sees None.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr_a = AlertManager(queue)
+    mgr_b = AlertManager(queue)
+
+    mock_a, mock_b, _ = _make_distributed_valkey_pair()
+    mgr_a._valkey = mock_a
+    mgr_b._valkey = mock_b
+
+    alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="dc-01")
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    with (
+        patch.object(mgr_a, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr_b, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await asyncio.gather(
+            mgr_a.process(alert_dict),
+            mgr_b.process(alert_dict),
+        )
+
+    assert len(published) == 1, (
+        "Exactly one replica must publish; the other must be blocked by the NX lock. "
+        f"Got {len(published)} publish call(s)."
+    )
+    assert published[0][0] == Topic.ENRICHED
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_3_three_concurrent_replicas_exactly_one_publishes() -> None:
+    """With three concurrent replicas, exactly one wins the SETEX NX lock.
+
+    Extends the two-replica race to three to ensure the atomic SET NX
+    correctly serialises any number of concurrent callers.
+    """
+    store: dict = {}
+
+    async def shared_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        if nx and key in store:
+            return None
+        store[key] = value
+        return True
+
+    queue = InMemoryQueue()
+    await queue.start()
+
+    managers = []
+    for _ in range(3):
+        mgr = AlertManager(queue)
+        mock_v = MagicMock()
+        mock_v.set = AsyncMock(side_effect=shared_set)
+        mock_v.aclose = AsyncMock()
+        mgr._valkey = mock_v
+        managers.append(mgr)
+
+    alert_dict = _make_alert_dict(rule_id="sigma-T1078", host="dc-01")
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    with (
+        patch.object(managers[0], "_persist_to_db", new=AsyncMock()),
+        patch.object(managers[1], "_persist_to_db", new=AsyncMock()),
+        patch.object(managers[2], "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await asyncio.gather(*[m.process(alert_dict) for m in managers])
+
+    assert len(published) == 1, (
+        "Exactly one of three replicas must publish; the other two must be blocked. "
+        f"Got {len(published)} publish call(s)."
+    )
+    assert published[0][0] == Topic.ENRICHED
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_3_post_ttl_expiry_both_replicas_can_process_again() -> None:
+    """After the shared Valkey TTL expires, either replica can process the alert again.
+
+    Sequence:
+      Replica A: SET NX → True  → published (TTL starts)
+      Replica B: SET NX → None  → blocked   (key still present)
+      [Simulate TTL expiry: clear shared store]
+      Replica B: SET NX → True  → published (new TTL starts)
+
+    This validates that the Valkey EX mechanism restores availability
+    across ALL replicas once the dedup window expires.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr_a = AlertManager(queue)
+    mgr_b = AlertManager(queue)
+
+    mock_a, mock_b, store = _make_distributed_valkey_pair()
+    mgr_a._valkey = mock_a
+    mgr_b._valkey = mock_b
+
+    alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="srv-01")
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    with (
+        patch.object(mgr_a, "_persist_to_db", new=AsyncMock()),
+        patch.object(mgr_b, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr_a.process(alert_dict)   # Replica A: new → published
+        await mgr_b.process(alert_dict)   # Replica B: duplicate → blocked
+
+        store.clear()                     # Simulate Valkey TTL expiry
+
+        await mgr_b.process(alert_dict)   # Replica B: new window → published
+
+    assert len(published) == 2, (
+        "Expected 2 publishes: Replica A (1st) and Replica B after TTL expiry (3rd); "
+        f"got {len(published)}."
+    )
+    assert all(t[0] == Topic.ENRICHED for t in published)
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_3_independent_keys_per_rule_host_pair_no_interference() -> None:
+    """Different (rule_id, host) pairs must have independent dedup windows.
+
+    Two distinct alerts that happen to be processed concurrently must NOT
+    interfere with each other's dedup key. Each pair gets its own Valkey key
+    so a hit on one does not suppress the other.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    # Shared in-memory store simulates Valkey
+    store: dict = {}
+
+    async def shared_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        if nx and key in store:
+            return None
+        store[key] = value
+        return True
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=shared_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        # Process two completely different (rule_id, host) pairs
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1059", host="srv-01"))
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1078", host="dc-01"))
+
+    assert len(published) == 2, (
+        "Two distinct (rule_id, host) pairs must both be published "
+        f"(independent dedup windows); got {len(published)}."
+    )
+    assert published[0][0] == Topic.ENRICHED
+    assert published[1][0] == Topic.ENRICHED
+
+    await queue.stop()
 
     await queue.stop()
