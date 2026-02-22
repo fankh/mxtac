@@ -151,7 +151,7 @@ class Scheduler:
                 deps = task.depends_on_list
                 if deps:
                     all_met = all(
-                        status_map.get(dep) in (TaskStatus.COMPLETED, TaskStatus.SKIPPED)
+                        status_map.get(dep) in (TaskStatus.COMPLETED, TaskStatus.SKIPPED, TaskStatus.FAILED)
                         for dep in deps
                     )
                     if not all_met:
@@ -461,5 +461,68 @@ class Scheduler:
         return killed
 
 
-# Module-level singleton
+class RetryAgent:
+    """Background agent that periodically resets FAILED tasks to PENDING."""
+
+    INTERVAL_SECONDS = 300  # 5 minutes
+
+    def __init__(self):
+        self._running = False
+        self._task: asyncio.Task | None = None
+
+    async def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._task = asyncio.create_task(self._loop())
+        logger.info("RetryAgent started (interval=%ds)", self.INTERVAL_SECONDS)
+
+    async def stop(self):
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+        logger.info("RetryAgent stopped")
+
+    async def _loop(self):
+        while self._running:
+            try:
+                await asyncio.sleep(self.INTERVAL_SECONDS)
+                await self._retry_failed_tasks()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Error in RetryAgent loop")
+                await asyncio.sleep(30)
+
+    async def _retry_failed_tasks(self):
+        async with async_session() as session:
+            result = await session.execute(
+                select(Task).where(Task.status == TaskStatus.FAILED)
+            )
+            failed_tasks = result.scalars().all()
+            if not failed_tasks:
+                return
+
+            count = 0
+            for task in failed_tasks:
+                task.status = TaskStatus.PENDING
+                task.retry_count = 0
+                count += 1
+
+            await session.commit()
+            logger.info("RetryAgent reset %d failed tasks to PENDING", count)
+
+            # Broadcast updates so the frontend reflects the changes
+            for task in failed_tasks:
+                await session.refresh(task)
+                await sse_broadcaster.broadcast("task_update", task.to_dict())
+
+
+# Module-level singletons
 scheduler = Scheduler()
+retry_agent = RetryAgent()
