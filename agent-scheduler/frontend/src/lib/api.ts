@@ -1,4 +1,4 @@
-import type { AgentsResponse, CategoryInfo, PhaseInfo, Run, RunListResponse, Stats, Task, TaskListResponse } from "./types";
+import type { AgentRunInfo, AgentsResponse, CategoryInfo, PhaseInfo, Run, RunListResponse, Stats, Task, TaskListResponse } from "./types";
 
 const BASE = "/api";
 

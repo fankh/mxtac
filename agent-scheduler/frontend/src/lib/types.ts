@@ -33,6 +33,8 @@ export interface Task {
   allowed_tools: string[];
   test_status: string | null;
   test_output: string | null;
+  verification_status: string | null;
+  verification_output: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -128,4 +130,16 @@ export interface RunListResponse {
   total: number;
   limit: number;
   offset: number;
+}
+
+export interface AgentRunInfo {
+  id: number;
+  agent_name: string;
+  started_at: string | null;
+  finished_at: string | null;
+  status: string;
+  summary: string;
+  output: string;
+  items_processed: number;
+  items_found: number;
 }
