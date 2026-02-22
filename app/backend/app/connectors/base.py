@@ -146,9 +146,17 @@ class BaseConnector(ABC):
     # ── Poll loop ────────────────────────────────────────────────────────────
 
     async def _poll_loop(self) -> None:
+        # Feature 7.15: capture field_mapping once; None means no overrides configured.
+        _field_mapping = self.config.extra.get("field_mapping")
+
         while not self._stop_event.is_set():
             try:
                 async for event in self._fetch_events():
+                    # Feature 7.15: inject per-connector field mapping metadata so the
+                    # normaliser pipeline can apply YAML overrides without modifying the
+                    # source event structure.
+                    if _field_mapping is not None:
+                        event = {**event, "_mxtac_field_mapping": _field_mapping}
                     await self.queue.publish(self.topic, event)
                     self.health.events_total += 1
                     self.health.last_event_at = datetime.now(timezone.utc)

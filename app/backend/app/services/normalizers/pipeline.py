@@ -9,11 +9,30 @@ from pydantic import ValidationError
 
 from ...core.logging import get_logger
 from ...pipeline.queue import MessageQueue, Topic
+from .field_mapping import FieldMappingConfig
 from .wazuh import WazuhNormalizer
 from .zeek import ZeekNormalizer
 from .suricata import SuricataNormalizer
 
 logger = get_logger(__name__)
+
+# Internal metadata key injected by BaseConnector (Feature 7.15)
+_FIELD_MAPPING_KEY = "_mxtac_field_mapping"
+
+
+def _extract_field_mapping(raw: dict[str, Any]) -> tuple[dict[str, Any], FieldMappingConfig]:
+    """Strip the internal ``_mxtac_field_mapping`` key from *raw* and parse it.
+
+    Returns a ``(clean_raw, field_mapping_config)`` pair.  The normaliser always
+    receives a clean raw dict (no internal metadata keys), while the pipeline
+    retains the parsed config to apply overrides after normalisation.
+    """
+    mapping_data = raw.get(_FIELD_MAPPING_KEY)
+    if mapping_data is None:
+        return raw, FieldMappingConfig()
+    # Build clean copy without the internal key so normaliser & raw storage are clean
+    clean = {k: v for k, v in raw.items() if k != _FIELD_MAPPING_KEY}
+    return clean, FieldMappingConfig.from_config(mapping_data)
 
 
 class NormalizerPipeline:
@@ -56,34 +75,43 @@ class NormalizerPipeline:
         )
 
     async def _handle_wazuh(self, raw: dict[str, Any]) -> None:
+        # Feature 7.15: strip internal field mapping key before passing to normaliser
+        clean_raw, field_mapping = _extract_field_mapping(raw)
         try:
-            event = self._wazuh.normalize(raw)
+            event = self._wazuh.normalize(clean_raw)
+            event = field_mapping.apply(event, clean_raw)
             await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
         except ValidationError as exc:
             logger.warning("Wazuh schema validation error: %s", exc)
-            await self._send_to_dlq("wazuh", raw, exc, "schema_validation")
+            await self._send_to_dlq("wazuh", clean_raw, exc, "schema_validation")
         except Exception as exc:
             logger.exception("Wazuh normalization error")
-            await self._send_to_dlq("wazuh", raw, exc, "normalization_error")
+            await self._send_to_dlq("wazuh", clean_raw, exc, "normalization_error")
 
     async def _handle_zeek(self, raw: dict[str, Any]) -> None:
+        # Feature 7.15: strip internal field mapping key before passing to normaliser
+        clean_raw, field_mapping = _extract_field_mapping(raw)
         try:
-            event = self._zeek.normalize(raw)
+            event = self._zeek.normalize(clean_raw)
+            event = field_mapping.apply(event, clean_raw)
             await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
         except ValidationError as exc:
             logger.warning("Zeek schema validation error: %s", exc)
-            await self._send_to_dlq("zeek", raw, exc, "schema_validation")
+            await self._send_to_dlq("zeek", clean_raw, exc, "schema_validation")
         except Exception as exc:
             logger.exception("Zeek normalization error")
-            await self._send_to_dlq("zeek", raw, exc, "normalization_error")
+            await self._send_to_dlq("zeek", clean_raw, exc, "normalization_error")
 
     async def _handle_suricata(self, raw: dict[str, Any]) -> None:
+        # Feature 7.15: strip internal field mapping key before passing to normaliser
+        clean_raw, field_mapping = _extract_field_mapping(raw)
         try:
-            event = self._suricata.normalize(raw)
+            event = self._suricata.normalize(clean_raw)
+            event = field_mapping.apply(event, clean_raw)
             await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
         except ValidationError as exc:
             logger.warning("Suricata schema validation error: %s", exc)
-            await self._send_to_dlq("suricata", raw, exc, "schema_validation")
+            await self._send_to_dlq("suricata", clean_raw, exc, "schema_validation")
         except Exception as exc:
             logger.exception("Suricata normalization error")
-            await self._send_to_dlq("suricata", raw, exc, "normalization_error")
+            await self._send_to_dlq("suricata", clean_raw, exc, "normalization_error")
