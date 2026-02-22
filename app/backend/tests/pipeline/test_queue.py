@@ -109,11 +109,14 @@ class TestMessageQueueABC:
             async def stop(self) -> None:
                 pass
 
+            async def drain(self, timeout: float = 30.0) -> None:
+                pass
+
         assert isinstance(FullQueue(), MessageQueue)
 
-    def test_abstract_methods_are_publish_subscribe_start_stop(self) -> None:
+    def test_abstract_methods_are_publish_subscribe_start_stop_drain(self) -> None:
         assert MessageQueue.__abstractmethods__ == frozenset(
-            {"publish", "subscribe", "start", "stop"}
+            {"publish", "subscribe", "start", "stop", "drain"}
         )
 
 

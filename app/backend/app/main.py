@@ -616,6 +616,14 @@ async def on_shutdown() -> None:
         except Exception:
             logger.exception("Connector stop failed name=%s", conn.config.name)
 
+    # Drain queue — process all remaining in-flight messages before cancelling consumers
+    try:
+        queue = getattr(app.state, "queue", None)
+        if queue is not None:
+            await queue.drain()
+    except Exception:
+        logger.exception("Queue drain failed")
+
     # Stop message queue (cancels all consumer tasks)
     try:
         queue = getattr(app.state, "queue", None)

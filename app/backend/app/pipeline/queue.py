@@ -55,6 +55,9 @@ class MessageQueue(ABC):
     @abstractmethod
     async def stop(self) -> None: ...
 
+    @abstractmethod
+    async def drain(self, timeout: float = 30.0) -> None: ...
+
 
 # ── In-process queue (single-process dev / testing) ─────────────────────────
 
@@ -92,6 +95,29 @@ class InMemoryQueue(MessageQueue):
 
     async def start(self) -> None:
         logger.info("InMemoryQueue started")
+
+    async def drain(self, timeout: float = 30.0) -> None:
+        """Wait for all queued messages to be processed before returning.
+
+        Joins every per-topic asyncio.Queue so that stop() does not cancel
+        consumer tasks while messages are still in-flight.  A configurable
+        *timeout* prevents the process from hanging indefinitely when a
+        consumer is slow or stalled.
+        """
+        joins = [q.join() for q in self._queues.values()]
+        if not joins:
+            logger.info("InMemoryQueue drain: no queues — nothing to drain")
+            return
+        try:
+            await asyncio.wait_for(asyncio.gather(*joins), timeout=timeout)
+            logger.info("InMemoryQueue drained successfully")
+        except asyncio.TimeoutError:
+            remaining = sum(q.qsize() for q in self._queues.values())
+            logger.warning(
+                "InMemoryQueue drain timed out after %.1fs — %d message(s) may be unprocessed",
+                timeout,
+                remaining,
+            )
 
     async def stop(self) -> None:
         for task in self._tasks:
@@ -155,6 +181,17 @@ class RedisStreamQueue(MessageQueue):
     async def start(self) -> None:
         logger.info("RedisStreamQueue started url=%s", settings.valkey_url)
 
+    async def drain(self, timeout: float = 30.0) -> None:
+        """No-op: Redis Streams are persistent.
+
+        Messages written to the stream survive process exit and will be
+        re-delivered by the consumer group on the next startup.  There is
+        no in-process buffer to drain.
+        """
+        logger.info(
+            "RedisStreamQueue drain: messages persist in the stream — no in-process buffer to drain"
+        )
+
     async def stop(self) -> None:
         for task in self._tasks:
             task.cancel()
@@ -214,6 +251,23 @@ class KafkaQueue(MessageQueue):
 
         task = asyncio.create_task(_consume(), name=f"kafka-consumer-{topic}-{group}")
         self._tasks.append(task)
+
+    async def drain(self, timeout: float = 30.0) -> None:
+        """Flush the Kafka producer so all published messages are sent before exit.
+
+        Consumer messages persist in Kafka partitions and will not be lost.
+        The producer flush ensures that any buffered-but-not-yet-sent records
+        are committed to the broker before the process exits.
+        """
+        if self._producer is None:
+            return
+        try:
+            await asyncio.wait_for(self._producer.flush(), timeout=timeout)
+            logger.info("KafkaQueue producer flushed successfully")
+        except asyncio.TimeoutError:
+            logger.warning("KafkaQueue drain flush timed out after %.1fs", timeout)
+        except Exception:
+            logger.exception("KafkaQueue drain flush failed")
 
     async def stop(self) -> None:
         for task in self._tasks:

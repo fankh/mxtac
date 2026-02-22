@@ -371,11 +371,31 @@ class TestShutdownCleanup:
 
         mock_os.close.assert_called_once()
 
-    async def test_shutdown_full_pipeline_cleanup_order(self) -> None:
-        """All cleanup calls happen: connectors → queue → alert_mgr → os_client."""
+    async def test_shutdown_calls_drain_before_stop(self) -> None:
+        """Shutdown drains the queue before stopping it (feature 5.7)."""
         call_order: list[str] = []
 
         mock_queue = AsyncMock()
+        mock_queue.drain = AsyncMock(side_effect=lambda: call_order.append("queue.drain"))
+        mock_queue.stop = AsyncMock(side_effect=lambda: call_order.append("queue.stop"))
+
+        app.state.queue = mock_queue
+        app.state.alert_mgr = None
+        app.state.os_client = None
+        app.state.connectors = {}
+
+        await on_shutdown()
+
+        assert "queue.drain" in call_order
+        assert "queue.stop" in call_order
+        assert call_order.index("queue.drain") < call_order.index("queue.stop")
+
+    async def test_shutdown_full_pipeline_cleanup_order(self) -> None:
+        """All cleanup calls happen: connectors → drain → queue.stop → alert_mgr → os_client."""
+        call_order: list[str] = []
+
+        mock_queue = AsyncMock()
+        mock_queue.drain = AsyncMock(side_effect=lambda: call_order.append("queue.drain"))
         mock_queue.stop = AsyncMock(side_effect=lambda: call_order.append("queue.stop"))
 
         mock_alert_mgr = AsyncMock()
@@ -396,7 +416,23 @@ class TestShutdownCleanup:
 
         await on_shutdown()
 
-        assert call_order == ["conn.stop", "queue.stop", "alert_mgr.close", "os.close"]
+        assert call_order == ["conn.stop", "queue.drain", "queue.stop", "alert_mgr.close", "os.close"]
+
+    async def test_shutdown_drain_failure_does_not_prevent_stop(self) -> None:
+        """A drain() failure must not prevent queue.stop() from being called."""
+        mock_queue = AsyncMock()
+        mock_queue.drain.side_effect = RuntimeError("drain error")
+        mock_os = AsyncMock()
+
+        app.state.queue = mock_queue
+        app.state.alert_mgr = None
+        app.state.os_client = mock_os
+        app.state.connectors = {}
+
+        await on_shutdown()
+
+        mock_queue.stop.assert_called_once()
+        mock_os.close.assert_called_once()
 
 
 # ── Integration: pipeline subscription wiring ─────────────────────────────────
