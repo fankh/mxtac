@@ -1,14 +1,14 @@
-"""Tests for feature 9.9 — Enrichment: asset criticality from CMDB.
+"""Tests for feature 9.9 / 30.4 — Enrichment: asset criticality from CMDB.
 
 Coverage:
   - ASSET_CRITICALITY_SCALE: constant has exactly 5 entries (keys 1-5)
-  - ASSET_CRITICALITY_SCALE: 1→0.2, 2→0.4, 3→0.5, 4→0.8, 5→1.0
+  - ASSET_CRITICALITY_SCALE: 1→0.00, 2→0.25, 3→0.50, 4→0.75, 5→1.00 (formula: (c-1)/4)
   - _asset_criticality(): empty hostname returns ASSET_CRITICALITY_SCALE[3]=0.5 without DB call
   - _asset_criticality(): DB criticality=5 (mission-critical) → returns 1.0
-  - _asset_criticality(): DB criticality=4 (high) → returns 0.8
+  - _asset_criticality(): DB criticality=4 (high) → returns 0.75
   - _asset_criticality(): DB criticality=3 (medium / default) → returns 0.5
-  - _asset_criticality(): DB criticality=2 (medium-low) → returns 0.4
-  - _asset_criticality(): DB criticality=1 (low) → returns 0.2
+  - _asset_criticality(): DB criticality=2 (medium-low) → returns 0.25
+  - _asset_criticality(): DB criticality=1 (low) → returns 0.0
   - _asset_criticality(): DB returns default criticality=3 for unknown host → 0.5
   - _asset_criticality(): DB error → fail-open returns 0.5 (pipeline not blocked)
   - _asset_criticality(): all five scale values in [0.0, 1.0] range
@@ -88,28 +88,28 @@ def test_9_9_scale_has_five_entries() -> None:
     assert set(ASSET_CRITICALITY_SCALE.keys()) == {1, 2, 3, 4, 5}
 
 
-def test_9_9_scale_level_1_is_0_2() -> None:
-    """ASSET_CRITICALITY_SCALE[1] (Low) must equal 0.2."""
-    assert ASSET_CRITICALITY_SCALE[1] == pytest.approx(0.2)
+def test_9_9_scale_level_1_is_0_0() -> None:
+    """ASSET_CRITICALITY_SCALE[1] (Low) must equal 0.0 — formula (1-1)/4."""
+    assert ASSET_CRITICALITY_SCALE[1] == pytest.approx(0.0)
 
 
-def test_9_9_scale_level_2_is_0_4() -> None:
-    """ASSET_CRITICALITY_SCALE[2] (Medium-Low) must equal 0.4."""
-    assert ASSET_CRITICALITY_SCALE[2] == pytest.approx(0.4)
+def test_9_9_scale_level_2_is_0_25() -> None:
+    """ASSET_CRITICALITY_SCALE[2] (Medium-Low) must equal 0.25 — formula (2-1)/4."""
+    assert ASSET_CRITICALITY_SCALE[2] == pytest.approx(0.25)
 
 
 def test_9_9_scale_level_3_is_0_5() -> None:
-    """ASSET_CRITICALITY_SCALE[3] (Medium, default) must equal 0.5."""
+    """ASSET_CRITICALITY_SCALE[3] (Medium, default) must equal 0.5 — formula (3-1)/4."""
     assert ASSET_CRITICALITY_SCALE[3] == pytest.approx(0.5)
 
 
-def test_9_9_scale_level_4_is_0_8() -> None:
-    """ASSET_CRITICALITY_SCALE[4] (High) must equal 0.8."""
-    assert ASSET_CRITICALITY_SCALE[4] == pytest.approx(0.8)
+def test_9_9_scale_level_4_is_0_75() -> None:
+    """ASSET_CRITICALITY_SCALE[4] (High) must equal 0.75 — formula (4-1)/4."""
+    assert ASSET_CRITICALITY_SCALE[4] == pytest.approx(0.75)
 
 
 def test_9_9_scale_level_5_is_1_0() -> None:
-    """ASSET_CRITICALITY_SCALE[5] (Mission-Critical) must equal 1.0."""
+    """ASSET_CRITICALITY_SCALE[5] (Mission-Critical) must equal 1.0 — formula (5-1)/4."""
     assert ASSET_CRITICALITY_SCALE[5] == pytest.approx(1.0)
 
 
@@ -167,8 +167,8 @@ async def test_9_9_db_criticality_5_returns_1_0() -> None:
 
 
 @pytest.mark.asyncio
-async def test_9_9_db_criticality_4_returns_0_8() -> None:
-    """AssetRepo returns criticality=4 (High) → _asset_criticality() returns 0.8."""
+async def test_9_9_db_criticality_4_returns_0_75() -> None:
+    """AssetRepo returns criticality=4 (High) → _asset_criticality() returns 0.75."""
     mgr = _mgr_no_init()
     mock_cm, mock_get = _make_db_mocks(4)
 
@@ -178,7 +178,7 @@ async def test_9_9_db_criticality_4_returns_0_8() -> None:
     ):
         result = await mgr._asset_criticality("srv-db01")
 
-    assert result == pytest.approx(0.8)
+    assert result == pytest.approx(0.75)
 
 
 @pytest.mark.asyncio
@@ -197,8 +197,8 @@ async def test_9_9_db_criticality_3_returns_0_5() -> None:
 
 
 @pytest.mark.asyncio
-async def test_9_9_db_criticality_2_returns_0_4() -> None:
-    """AssetRepo returns criticality=2 (Medium-Low) → _asset_criticality() returns 0.4."""
+async def test_9_9_db_criticality_2_returns_0_25() -> None:
+    """AssetRepo returns criticality=2 (Medium-Low) → _asset_criticality() returns 0.25."""
     mgr = _mgr_no_init()
     mock_cm, mock_get = _make_db_mocks(2)
 
@@ -208,12 +208,12 @@ async def test_9_9_db_criticality_2_returns_0_4() -> None:
     ):
         result = await mgr._asset_criticality("dev-laptop-01")
 
-    assert result == pytest.approx(0.4)
+    assert result == pytest.approx(0.25)
 
 
 @pytest.mark.asyncio
-async def test_9_9_db_criticality_1_returns_0_2() -> None:
-    """AssetRepo returns criticality=1 (Low) → _asset_criticality() returns 0.2."""
+async def test_9_9_db_criticality_1_returns_0_0() -> None:
+    """AssetRepo returns criticality=1 (Low) → _asset_criticality() returns 0.0."""
     mgr = _mgr_no_init()
     mock_cm, mock_get = _make_db_mocks(1)
 
@@ -223,7 +223,7 @@ async def test_9_9_db_criticality_1_returns_0_2() -> None:
     ):
         result = await mgr._asset_criticality("printer-01")
 
-    assert result == pytest.approx(0.2)
+    assert result == pytest.approx(0.0)
 
 
 @pytest.mark.asyncio
@@ -280,9 +280,9 @@ async def test_9_9_repo_exception_fail_open_returns_0_5() -> None:
 
 @pytest.mark.asyncio
 async def test_9_9_all_scale_levels_produce_correct_float() -> None:
-    """All five DB criticality levels must map to their correct float values."""
+    """All five DB criticality levels must map to their correct float values (formula (c-1)/4)."""
     mgr = _mgr_no_init()
-    expected = {1: 0.2, 2: 0.4, 3: 0.5, 4: 0.8, 5: 1.0}
+    expected = {1: 0.0, 2: 0.25, 3: 0.5, 4: 0.75, 5: 1.0}
 
     for db_level, expected_float in expected.items():
         mock_cm, mock_get = _make_db_mocks(db_level)
@@ -310,10 +310,10 @@ def test_9_9_mission_critical_isolated_score_contribution() -> None:
 
 
 def test_9_9_high_criticality_isolated_score_contribution() -> None:
-    """High asset (scale[4]=0.8) with severity_id=1 → score = 0.8 × 0.25 × 10 = 2.0."""
+    """High asset (scale[4]=0.75) with severity_id=1 → score = 0.75 × 0.25 × 10 = 1.875."""
     mgr = _mgr_no_init()
     result = mgr._score({"severity_id": 1, "asset_criticality": ASSET_CRITICALITY_SCALE[4]})
-    assert result["score"] == pytest.approx(2.0, abs=0.05)
+    assert result["score"] == pytest.approx(1.875, abs=0.05)
 
 
 def test_9_9_medium_criticality_isolated_score_contribution() -> None:
@@ -324,10 +324,10 @@ def test_9_9_medium_criticality_isolated_score_contribution() -> None:
 
 
 def test_9_9_low_criticality_isolated_score_contribution() -> None:
-    """Low asset (scale[1]=0.2) with severity_id=1 → score = 0.2 × 0.25 × 10 = 0.5."""
+    """Low asset (scale[1]=0.0) with severity_id=1 → score = 0.0 × 0.25 × 10 = 0.0."""
     mgr = _mgr_no_init()
     result = mgr._score({"severity_id": 1, "asset_criticality": ASSET_CRITICALITY_SCALE[1]})
-    assert result["score"] == pytest.approx(0.5, abs=0.05)
+    assert result["score"] == pytest.approx(0.0, abs=0.05)
 
 
 def test_9_9_scores_strictly_increase_with_cmdb_criticality() -> None:

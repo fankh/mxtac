@@ -2966,8 +2966,8 @@ async def test_9_5_asset_criticality_db_criticality_5_returns_1_0() -> None:
 
 
 @pytest.mark.asyncio
-async def test_9_5_asset_criticality_db_criticality_4_returns_0_8() -> None:
-    """When AssetRepo returns criticality=4 (high), result must be 0.8."""
+async def test_9_5_asset_criticality_db_criticality_4_returns_0_75() -> None:
+    """When AssetRepo returns criticality=4 (high), result must be 0.75 — formula (4-1)/4."""
     mgr = _mgr_no_init()
     mock_cm, mock_get = _make_asset_crit_mocks(4)
     with (
@@ -2975,7 +2975,7 @@ async def test_9_5_asset_criticality_db_criticality_4_returns_0_8() -> None:
         patch("app.repositories.asset_repo.AssetRepo.get_criticality", new=mock_get),
     ):
         result = await mgr._asset_criticality("srv-db01")
-    assert result == pytest.approx(0.8)
+    assert result == pytest.approx(0.75)
 
 
 @pytest.mark.asyncio
@@ -2992,8 +2992,8 @@ async def test_9_5_asset_criticality_db_criticality_3_returns_0_5() -> None:
 
 
 @pytest.mark.asyncio
-async def test_9_5_asset_criticality_db_criticality_2_returns_0_4() -> None:
-    """When AssetRepo returns criticality=2 (medium-low), result must be 0.4."""
+async def test_9_5_asset_criticality_db_criticality_2_returns_0_25() -> None:
+    """When AssetRepo returns criticality=2 (medium-low), result must be 0.25 — formula (2-1)/4."""
     mgr = _mgr_no_init()
     mock_cm, mock_get = _make_asset_crit_mocks(2)
     with (
@@ -3001,7 +3001,7 @@ async def test_9_5_asset_criticality_db_criticality_2_returns_0_4() -> None:
         patch("app.repositories.asset_repo.AssetRepo.get_criticality", new=mock_get),
     ):
         result = await mgr._asset_criticality("dev-01")
-    assert result == pytest.approx(0.4)
+    assert result == pytest.approx(0.25)
 
 
 @pytest.mark.asyncio
@@ -3256,11 +3256,11 @@ async def test_9_5_end_to_end_dc_host_asset_weighted_score() -> None:
 
 @pytest.mark.asyncio
 async def test_9_5_end_to_end_srv_host_asset_weighted_score() -> None:
-    """process() with a SRV host must publish a score reflecting the 0.8 × 0.25 asset weight.
+    """process() with a SRV host must publish a score reflecting the 0.75 × 0.25 asset weight.
 
-    host='srv-01' → CMDB criticality=4 → asset_criticality=0.8, severity_id=3 (medium):
+    host='srv-01' → CMDB criticality=4 → asset_criticality=0.75, severity_id=3 (medium):
         severity_norm = (3-1)/4 = 0.5
-        expected = round((0.5 × 0.60 + 0.8 × 0.25) × 10, 1) = round(5.0, 1) = 5.0
+        expected = round((0.5 × 0.60 + 0.75 × 0.25) × 10, 1) = round(4.875, 1) ≈ 4.9
     """
     queue = InMemoryQueue()
     await queue.start()
@@ -3276,14 +3276,14 @@ async def test_9_5_end_to_end_srv_host_asset_weighted_score() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
-        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=0.8)),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=0.75)),
         patch.object(queue, "publish", side_effect=capture),
     ):
         await mgr.process(alert_dict)
 
     assert len(published) == 1
-    assert published[0]["score"] == pytest.approx(5.0, abs=0.05), (
-        f"Expected score=5.0 for severity_id=3, srv host; got {published[0]['score']}"
+    assert published[0]["score"] == pytest.approx(4.875, abs=0.1), (
+        f"Expected score≈4.875 for severity_id=3, srv host; got {published[0]['score']}"
     )
 
     await queue.stop()
@@ -3293,8 +3293,8 @@ async def test_9_5_end_to_end_srv_host_asset_weighted_score() -> None:
 async def test_9_5_end_to_end_dc_outscores_srv_same_severity() -> None:
     """process() must produce a higher score for DC vs SRV host at identical severity.
 
-    DC (CMDB criticality=5 → 1.0) vs SRV (CMDB criticality=4 → 0.8):
-    delta = (1.0 - 0.8) × 0.25 × 10 = 0.5 at any severity level.
+    DC (CMDB criticality=5 → 1.0) vs SRV (CMDB criticality=4 → 0.75):
+    delta = (1.0 - 0.75) × 0.25 × 10 = 0.625 at any severity level.
     """
     queue = InMemoryQueue()
     await queue.start()
@@ -3323,7 +3323,7 @@ async def test_9_5_end_to_end_dc_outscores_srv_same_severity() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
-        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=0.8)),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=0.75)),
         patch.object(queue, "publish", side_effect=capture_srv),
     ):
         await mgr.process(srv_dict)
@@ -3334,7 +3334,7 @@ async def test_9_5_end_to_end_dc_outscores_srv_same_severity() -> None:
         f"DC score ({dc_published[0]['score']:.2f}) must exceed "
         f"SRV score ({srv_published[0]['score']:.2f}) at same severity"
     )
-    assert dc_published[0]["score"] - srv_published[0]["score"] == pytest.approx(0.5, abs=0.05)
+    assert dc_published[0]["score"] - srv_published[0]["score"] == pytest.approx(0.625, abs=0.05)
 
     await queue.stop()
 
@@ -3838,7 +3838,7 @@ async def test_9_10_published_payload_asset_criticality_dc_host() -> None:
 
 @pytest.mark.asyncio
 async def test_9_10_published_payload_asset_criticality_srv_host() -> None:
-    """SRV host (CMDB criticality=4) → asset_criticality=0.8 in published payload."""
+    """SRV host (CMDB criticality=4) → asset_criticality=0.75 in published payload."""
     queue = InMemoryQueue()
     await queue.start()
 
@@ -3851,13 +3851,13 @@ async def test_9_10_published_payload_asset_criticality_srv_host() -> None:
     with (
         patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
         patch.object(mgr, "_persist_to_db", new=AsyncMock()),
-        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=0.8)),
+        patch.object(mgr, "_asset_criticality", new=AsyncMock(return_value=0.75)),
         patch.object(queue, "publish", side_effect=capture),
     ):
         await mgr.process(_make_alert_dict(host="srv-02"))
 
-    assert payloads[0]["asset_criticality"] == pytest.approx(0.8), (
-        f"srv host must produce asset_criticality=0.8; got {payloads[0]['asset_criticality']}"
+    assert payloads[0]["asset_criticality"] == pytest.approx(0.75), (
+        f"srv host must produce asset_criticality=0.75; got {payloads[0]['asset_criticality']}"
     )
 
     await queue.stop()

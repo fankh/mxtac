@@ -66,14 +66,20 @@ DEFAULT_ASSET_CRITICALITY: dict[str, float] = {
 }
 
 # CMDB criticality scale — maps the Asset.criticality integer (1-5) to the
-# 0.0-1.0 float range consumed by the scoring formula (feature 9.9).
+# 0.0-1.0 float range using the linear formula (criticality - 1) / 4.
+# (feature 30.4 / mxtac-9.9)
 ASSET_CRITICALITY_SCALE: dict[int, float] = {
-    1: 0.2,   # Low
-    2: 0.4,   # Medium-Low
-    3: 0.5,   # Medium (also the default when the asset is not in the CMDB)
-    4: 0.8,   # High
-    5: 1.0,   # Mission-Critical
+    1: 0.00,  # Low          — (1-1)/4
+    2: 0.25,  # Medium-Low   — (2-1)/4
+    3: 0.50,  # Medium       — (3-1)/4  (also the default when asset not in CMDB)
+    4: 0.75,  # High         — (4-1)/4
+    5: 1.00,  # Mission-Critical — (5-1)/4
 }
+
+# Valkey caching for asset criticality lookups — avoids a DB hit on every alert
+# (feature 30.4). Stores the raw integer criticality (1-5) with a 5-minute TTL.
+_ASSET_CRIT_CACHE_PREFIX = "mxtac:asset_crit:"
+ASSET_CRIT_CACHE_TTL = 300  # 5-minute TTL (seconds)
 
 
 class AlertManager:
@@ -285,33 +291,56 @@ class AlertManager:
             return 0
 
     async def _asset_criticality(self, hostname: str) -> float:
-        """Look up asset criticality from the CMDB (feature 9.9).
+        """Look up asset criticality from the CMDB with Valkey read-through cache.
 
         Maps the Asset.criticality integer (1–5) stored in PostgreSQL to the
-        0.0–1.0 float range consumed by the scoring formula:
+        0.0–1.0 float range using the linear formula ``(criticality - 1) / 4``:
 
-            1 → 0.2  (Low)
-            2 → 0.4  (Medium-Low)
-            3 → 0.5  (Medium — default when the asset is not registered)
-            4 → 0.8  (High)
-            5 → 1.0  (Mission-Critical)
+            1 → 0.00  (Low)
+            2 → 0.25  (Medium-Low)
+            3 → 0.50  (Medium — default when the asset is not registered)
+            4 → 0.75  (High)
+            5 → 1.00  (Mission-Critical)
 
-        Lookup order (delegated to AssetRepo.get_criticality):
-          1. Exact hostname match (indexed, fast).
-          2. IP-address substring match across ip_addresses column.
-          3. Default criticality (3 → 0.5) when no record is found.
+        Lookup order:
+          1. Valkey cache (key: ``mxtac:asset_crit:{hostname}``, TTL 5 min).
+          2. AssetRepo.get_criticality() — exact hostname, then IP substring match.
+          3. Default criticality (3 → 0.50) when no record is found.
 
-        Fail-open: returns 0.5 on any DB error so the pipeline is never
-        blocked by a missing or unreachable CMDB.
+        Fail-open: returns 0.50 on any DB or cache error so the pipeline is
+        never blocked by a missing or unreachable CMDB/Valkey.
+        (feature 30.4 / mxtac-9.9)
         """
         if not hostname:
             return ASSET_CRITICALITY_SCALE[3]
+
+        cache_key = f"{_ASSET_CRIT_CACHE_PREFIX}{hostname}"
+
+        # Cache read (fail-open: AttributeError, connection error, etc. all caught)
+        try:
+            cached = await self._valkey.get(cache_key)
+            if cached is not None:
+                return ASSET_CRITICALITY_SCALE.get(int(cached), 0.5)
+        except Exception:
+            pass  # Valkey unavailable — fall through to DB
+
+        # DB lookup (fail-open)
         try:
             from ..core.database import AsyncSessionLocal
             from ..repositories.asset_repo import AssetRepo
             async with AsyncSessionLocal() as session:
                 db_criticality = await AssetRepo.get_criticality(session, hostname)
-                return ASSET_CRITICALITY_SCALE.get(db_criticality, 0.5)
+
+            # Cache write (non-fatal — nested try so a Valkey failure doesn't
+            # prevent returning the DB-sourced value)
+            try:
+                await self._valkey.set(
+                    cache_key, str(db_criticality), ex=ASSET_CRIT_CACHE_TTL
+                )
+            except Exception:
+                pass
+
+            return ASSET_CRITICALITY_SCALE.get(db_criticality, 0.5)
         except Exception:
             logger.exception(
                 "AlertManager CMDB criticality lookup failed (non-fatal) host=%s", hostname
@@ -519,6 +548,27 @@ class AlertManager:
 
     # -- Persistence -------------------------------------------------------
 
+    async def _update_asset_stats(self, session: Any, hostname: str) -> None:
+        """Stamp last_seen_at and increment detection_count for the referenced asset.
+
+        Called within an open DB session after a detection is created.  Uses
+        bulk UPDATE so the operation is a no-op (0 rows affected) when the
+        hostname does not exist in the assets table.
+
+        Non-fatal: any exception is caught and logged so a CMDB update failure
+        never blocks detection persistence. (feature 30.4)
+        """
+        if not hostname:
+            return
+        try:
+            from ..repositories.asset_repo import AssetRepo
+            await AssetRepo.update_last_seen(session, hostname)
+            await AssetRepo.increment_detection_count(session, hostname)
+        except Exception:
+            logger.exception(
+                "AlertManager asset stats update failed (non-fatal) host=%s", hostname
+            )
+
     async def _persist_to_db(self, scored: dict[str, Any]) -> None:
         """Persist enriched alert to PostgreSQL. Non-fatal — pipeline continues on error."""
         try:
@@ -543,6 +593,8 @@ class AlertManager:
                     rule_name     = (scored["rule_id"] or "")[:500] or None,
                 )
                 await self._correlate_incident(session, scored)
+                # Update asset last_seen_at + detection_count (feature 30.4)
+                await self._update_asset_stats(session, scored.get("host", ""))
                 await session.commit()
             logger.debug("AlertManager persisted detection id=%s", scored["id"])
         except Exception:
