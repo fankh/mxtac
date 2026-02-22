@@ -21,6 +21,7 @@ from .zeek import ZeekConnector
 from .suricata import SuricataConnector
 from .prowler import ProwlerConnector
 from .opencti import OpenCTIConnector
+from .syslog import SyslogUDPConnector
 
 logger = get_logger(__name__)
 
@@ -30,6 +31,7 @@ CONNECTOR_TYPES: dict[str, type[BaseConnector]] = {
     "suricata": SuricataConnector,
     "prowler": ProwlerConnector,
     "opencti": OpenCTIConnector,
+    "syslog": SyslogUDPConnector,
 }
 
 # ── Feature 6.10 / 6.17: connector offset state file helpers ──────────────────

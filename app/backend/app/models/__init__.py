@@ -14,8 +14,9 @@ from .notification import NotificationChannel
 from .oidc_provider import OIDCProvider, OIDCUserLink
 from .report import Report
 from .rule import Rule
+from .saml_provider import SAMLProvider, SAMLUserLink
 from .saved_query import SavedQuery
 from .suppression_rule import SuppressionRule
 from .user import User
 
-__all__ = ["Agent", "APIKey", "Asset", "AuditLog", "Base", "Connector", "CoverageSnapshot", "CoverageTarget", "Detection", "Event", "Incident", "IOC", "NotificationChannel", "OIDCProvider", "OIDCUserLink", "Report", "Rule", "SavedQuery", "SuppressionRule", "User"]
+__all__ = ["Agent", "APIKey", "Asset", "AuditLog", "Base", "Connector", "CoverageSnapshot", "CoverageTarget", "Detection", "Event", "Incident", "IOC", "NotificationChannel", "OIDCProvider", "OIDCUserLink", "Report", "Rule", "SAMLProvider", "SAMLUserLink", "SavedQuery", "SuppressionRule", "User"]

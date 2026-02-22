@@ -19,7 +19,7 @@ from ....repositories.connector_repo import ConnectorRepo
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
 
-CONNECTOR_TYPES = ["wazuh", "zeek", "suricata", "prowler", "opencti", "velociraptor", "osquery", "generic"]
+CONNECTOR_TYPES = ["wazuh", "zeek", "suricata", "prowler", "opencti", "syslog", "velociraptor", "osquery", "generic"]
 
 
 class ConnectorCreate(BaseModel):
