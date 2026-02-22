@@ -173,8 +173,8 @@ class SuricataNormalizer:
             severity_id=1,
             metadata_product="Suricata",
             metadata_uid=str(flow_id) if flow_id is not None else None,
-            src_endpoint=Endpoint(ip=raw.get("src_ip")),
-            dst_endpoint=Endpoint(ip=raw.get("dest_ip")),
+            src_endpoint=Endpoint(ip=raw.get("src_ip"), port=raw.get("src_port")),
+            dst_endpoint=Endpoint(ip=raw.get("dest_ip"), port=raw.get("dest_port")),
             network_traffic={
                 "query":   dns.get("rrname"),
                 "qtype":   dns.get("rrtype"),
