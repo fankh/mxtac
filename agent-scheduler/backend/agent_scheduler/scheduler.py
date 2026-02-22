@@ -523,6 +523,104 @@ class RetryAgent:
                 await sse_broadcaster.broadcast("task_update", task.to_dict())
 
 
+class WatchdogAgent:
+    """Background agent that monitors task progress and auto-stops when done.
+
+    Every 2 minutes it:
+      - Logs a progress summary (completed/running/pending/failed)
+      - Broadcasts progress via SSE for the frontend
+      - Auto-stops the scheduler + all agents when no work remains
+    """
+
+    INTERVAL_SECONDS = 120  # 2 minutes
+
+    def __init__(self):
+        self._running = False
+        self._task: asyncio.Task | None = None
+
+    async def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._task = asyncio.create_task(self._loop())
+        logger.info("WatchdogAgent started (interval=%ds)", self.INTERVAL_SECONDS)
+
+    async def stop(self):
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+        logger.info("WatchdogAgent stopped")
+
+    async def _loop(self):
+        while self._running:
+            try:
+                await asyncio.sleep(self.INTERVAL_SECONDS)
+                await self._check_progress()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Error in WatchdogAgent loop")
+                await asyncio.sleep(30)
+
+    async def _check_progress(self):
+        async with async_session() as session:
+            result = await session.execute(select(Task))
+            all_tasks = result.scalars().all()
+
+        if not all_tasks:
+            return
+
+        from collections import Counter
+        counts = Counter(t.status for t in all_tasks)
+        total = len(all_tasks)
+        completed = counts.get(TaskStatus.COMPLETED, 0)
+        running = counts.get(TaskStatus.RUNNING, 0)
+        pending = counts.get(TaskStatus.PENDING, 0)
+        failed = counts.get(TaskStatus.FAILED, 0)
+        skipped = counts.get(TaskStatus.SKIPPED, 0)
+        cancelled = counts.get(TaskStatus.CANCELLED, 0)
+
+        pct = (completed / total * 100) if total else 0
+
+        logger.info(
+            "Watchdog: %d/%d done (%.0f%%) | running=%d pending=%d failed=%d skipped=%d cancelled=%d",
+            completed, total, pct, running, pending, failed, skipped, cancelled,
+        )
+
+        # Broadcast progress to frontend
+        await sse_broadcaster.broadcast("progress", {
+            "total": total,
+            "completed": completed,
+            "running": running,
+            "pending": pending,
+            "failed": failed,
+            "skipped": skipped,
+            "cancelled": cancelled,
+            "percent": round(pct, 1),
+        })
+
+        # Auto-stop when all work is finished (nothing pending or running)
+        if pending == 0 and running == 0:
+            logger.info(
+                "Watchdog: All tasks finished (%d completed, %d failed, %d skipped, %d cancelled). "
+                "Stopping scheduler.",
+                completed, failed, skipped, cancelled,
+            )
+            await sse_broadcaster.broadcast("scheduler", {
+                "status": "finished",
+                "message": f"All {total} tasks processed: {completed} completed, {failed} failed",
+            })
+            await scheduler.stop()
+            await retry_agent.stop()
+            self._running = False
+
+
 # Module-level singletons
 scheduler = Scheduler()
 retry_agent = RetryAgent()
+watchdog_agent = WatchdogAgent()

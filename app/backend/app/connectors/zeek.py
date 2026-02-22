@@ -64,8 +64,9 @@ class ZeekConnector(BaseConnector):
         *,
         initial_positions: dict[str, int] | None = None,
         checkpoint_callback: Callable[[dict[str, int]], Awaitable[None]] | None = None,
+        status_callback: Callable[[str, str | None], Awaitable[None]] | None = None,
     ) -> None:
-        super().__init__(config, queue)
+        super().__init__(config, queue, status_callback=status_callback)
         # Seed from persisted state; defaults to empty (fresh start)
         self._file_positions: dict[str, int] = dict(initial_positions or {})
         self._checkpoint_callback = checkpoint_callback

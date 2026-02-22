@@ -19,7 +19,7 @@ import httpx
 
 from ..core.logging import get_logger
 from ..pipeline.queue import Topic
-from .base import BaseConnector, ConnectorConfig
+from .base import BaseConnector, ConnectorConfig, ConnectorStatus
 
 logger = get_logger(__name__)
 
@@ -38,8 +38,9 @@ class WazuhConnector(BaseConnector):
         *,
         initial_last_fetched_at: datetime | None = None,
         checkpoint_callback: Callable[[datetime], Awaitable[None]] | None = None,
+        status_callback: Callable[[str, str | None], Awaitable[None]] | None = None,
     ) -> None:
-        super().__init__(config, queue)
+        super().__init__(config, queue, status_callback=status_callback)
         self._client: httpx.AsyncClient | None = None
         self._token: str | None = None
         self._last_fetched_at: datetime = (
@@ -153,6 +154,8 @@ class WazuhConnector(BaseConnector):
                     self.health.last_event_at = datetime.now(timezone.utc)
                 # Success — reset backoff to base
                 self._backoff_delay = BACKOFF_BASE
+                # Feature 6.6: persist active status to DB after a successful cycle
+                await self._update_db_status(ConnectorStatus.ACTIVE.value)
             except asyncio.CancelledError:
                 break
             except Exception as exc:
@@ -164,6 +167,8 @@ class WazuhConnector(BaseConnector):
                     exc,
                     self._backoff_delay,
                 )
+                # Feature 6.6: persist error status and message to DB
+                await self._update_db_status(ConnectorStatus.ERROR.value, str(exc))
                 # Sleep for the current backoff delay before retrying
                 try:
                     await asyncio.wait_for(

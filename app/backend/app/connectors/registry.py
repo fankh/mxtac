@@ -108,6 +108,19 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
         extra=extra,
     )
 
+    # Feature 6.6: shared status_callback — persists status + error_message to DB
+    connector_id = db_conn.id
+
+    async def _status_cb(
+        status: str,
+        error_message: str | None,
+        _id: str = connector_id,
+    ) -> None:
+        from ..core.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await ConnectorRepo.update_status(session, _id, status, error_message)
+            await session.commit()
+
     if cls is WazuhConnector:
         # Feature 6.3: load persisted timestamp to avoid re-ingesting on restart
         initial_last_fetched_at: datetime | None = None
@@ -121,8 +134,6 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
                     db_conn.last_seen_at,
                 )
 
-        connector_id = db_conn.id
-
         async def _checkpoint(ts: datetime, _id: str = connector_id) -> None:
             from ..core.database import AsyncSessionLocal
             async with AsyncSessionLocal() as session:
@@ -134,6 +145,7 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
             queue,
             initial_last_fetched_at=initial_last_fetched_at,
             checkpoint_callback=_checkpoint,
+            status_callback=_status_cb,
         )
 
     if cls is ZeekConnector:
@@ -152,6 +164,7 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
             queue,
             initial_positions=initial_positions,
             checkpoint_callback=_zeek_checkpoint,
+            status_callback=_status_cb,
         )
 
     if cls is SuricataConnector:
@@ -170,9 +183,10 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
             queue,
             initial_position=initial_position,
             checkpoint_callback=_suricata_checkpoint,
+            status_callback=_status_cb,
         )
 
-    return cls(config, queue)
+    return cls(config, queue, status_callback=_status_cb)
 
 
 async def start_connectors_from_db(

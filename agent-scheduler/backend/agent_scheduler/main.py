@@ -8,7 +8,7 @@ from .auth import require_auth
 from .config import settings
 from .database import init_db
 from .routes import api, auth, sse
-from .scheduler import retry_agent, scheduler
+from .scheduler import retry_agent, scheduler, watchdog_agent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,10 +28,12 @@ async def lifespan(app: FastAPI):
         logger.info("Auto-starting scheduler...")
         await scheduler.start()
         await retry_agent.start()
+        await watchdog_agent.start()
 
     yield
 
     # Shutdown
+    await watchdog_agent.stop()
     await retry_agent.stop()
     if scheduler.is_running:
         logger.info("Stopping scheduler...")

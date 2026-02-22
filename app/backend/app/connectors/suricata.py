@@ -50,8 +50,9 @@ class SuricataConnector(BaseConnector):
         *,
         initial_position: int | None = None,
         checkpoint_callback: Callable[[int], Awaitable[None]] | None = None,
+        status_callback: Callable[[str, str | None], Awaitable[None]] | None = None,
     ) -> None:
-        super().__init__(config, queue)
+        super().__init__(config, queue, status_callback=status_callback)
         # Feature 6.17: restore persisted offset when provided; 0 otherwise.
         self._file_position: int = initial_position if initial_position is not None else 0
         self._has_initial_position: bool = initial_position is not None
