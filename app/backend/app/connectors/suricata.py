@@ -20,6 +20,10 @@ Feature 6.17: Track file offset across restarts.
   events are tailed.  On restart the saved offset is restored; if the file
   has been rotated (saved offset > current file size) the offset is reset to
   0 so the new file is read from the beginning.
+Feature 6.18: Every parsed event is published raw and unchanged to the
+  ``mxtac.raw.suricata`` queue topic via BaseConnector._poll_loop().  The
+  ``topic`` property returns ``Topic.RAW_SURICATA`` so the base class routes
+  all events to the correct destination automatically.
 """
 
 from __future__ import annotations

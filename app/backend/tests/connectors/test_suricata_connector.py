@@ -26,6 +26,7 @@ Coverage:
     - picks up newly appended lines on subsequent calls
     - yields multiple events from one file
 
+Feature 6.18 — Publish raw events to `mxtac.raw.suricata`:
   Poll loop integration:
     - publishes each event to mxtac.raw.suricata topic
     - health.events_total increments per published event
