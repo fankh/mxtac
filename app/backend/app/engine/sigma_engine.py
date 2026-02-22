@@ -29,6 +29,7 @@ from uuid import uuid4
 from ..core.logging import get_logger
 from ..core.metrics import rule_matches as _rule_matches_counter
 from ..services.normalizers.ocsf import OCSFEvent
+from .field_mapper import ocsf_to_sigma_flat
 
 logger = get_logger(__name__)
 
@@ -606,18 +607,13 @@ class SigmaEngine:
 
     async def evaluate(self, event: OCSFEvent) -> AsyncGenerator[SigmaAlert, None]:
         """Yield SigmaAlert for each matching rule."""
-        flat_event = event.model_dump()
-        flat_event["_product"]  = event.metadata_product.lower()
-        # Flatten process fields for direct field matching
-        flat_event.update(event.process.model_dump())
-        flat_event.update(event.src_endpoint.model_dump())
-
         candidate_rules = self._get_candidates(event)
 
         for rule in candidate_rules:
             if not rule.enabled:
                 continue
             try:
+                flat_event = ocsf_to_sigma_flat(event, rule.logsource)
                 if rule._matcher.matches(flat_event):
                     _rule_matches_counter.labels(rule_id=rule.id, level=rule.level).inc()
                     yield SigmaAlert(
