@@ -13,6 +13,8 @@ from .field_mapping import FieldMappingConfig
 from .wazuh import WazuhNormalizer
 from .zeek import ZeekNormalizer
 from .suricata import SuricataNormalizer
+from .prowler import ProwlerNormalizer
+from .velociraptor import VelociraptorNormalizer
 
 if TYPE_CHECKING:
     from ..auto_discovery import AssetDiscovery
@@ -50,6 +52,8 @@ class NormalizerPipeline:
         self._wazuh = WazuhNormalizer()
         self._zeek = ZeekNormalizer()
         self._suricata = SuricataNormalizer()
+        self._prowler = ProwlerNormalizer()
+        self._velociraptor = VelociraptorNormalizer()
         # Feature 30.5: optional asset auto-discovery hook
         self._discovery = discovery
 
@@ -58,6 +62,8 @@ class NormalizerPipeline:
         await self._queue.subscribe(Topic.RAW_WAZUH, "normalizer", self._handle_wazuh)
         await self._queue.subscribe(Topic.RAW_ZEEK, "normalizer", self._handle_zeek)
         await self._queue.subscribe(Topic.RAW_SURICATA, "normalizer", self._handle_suricata)
+        await self._queue.subscribe(Topic.RAW_PROWLER, "normalizer", self._handle_prowler)
+        await self._queue.subscribe(Topic.RAW_VELOCIRAPTOR, "normalizer", self._handle_velociraptor)
         logger.info("NormalizerPipeline subscribed to raw topics")
 
     async def _send_to_dlq(
@@ -133,3 +139,31 @@ class NormalizerPipeline:
         except Exception as exc:
             logger.exception("Suricata normalization error")
             await self._send_to_dlq("suricata", clean_raw, exc, "normalization_error")
+
+    async def _handle_prowler(self, raw: dict[str, Any]) -> None:
+        # Feature 35.1: strip internal field mapping key before passing to normaliser
+        clean_raw, field_mapping = _extract_field_mapping(raw)
+        try:
+            event = self._prowler.normalize(clean_raw)
+            event = field_mapping.apply(event, clean_raw)
+            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+        except ValidationError as exc:
+            logger.warning("Prowler schema validation error: %s", exc)
+            await self._send_to_dlq("prowler", clean_raw, exc, "schema_validation")
+        except Exception as exc:
+            logger.exception("Prowler normalization error")
+            await self._send_to_dlq("prowler", clean_raw, exc, "normalization_error")
+
+    async def _handle_velociraptor(self, raw: dict[str, Any]) -> None:
+        # Feature 35.2: strip internal field mapping key before passing to normaliser
+        clean_raw, field_mapping = _extract_field_mapping(raw)
+        try:
+            event = self._velociraptor.normalize(clean_raw)
+            event = field_mapping.apply(event, clean_raw)
+            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+        except ValidationError as exc:
+            logger.warning("Velociraptor schema validation error: %s", exc)
+            await self._send_to_dlq("velociraptor", clean_raw, exc, "schema_validation")
+        except Exception as exc:
+            logger.exception("Velociraptor normalization error")
+            await self._send_to_dlq("velociraptor", clean_raw, exc, "normalization_error")

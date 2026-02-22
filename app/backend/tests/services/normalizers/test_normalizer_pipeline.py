@@ -1,14 +1,18 @@
-"""Tests for NormalizerPipeline — Feature 7.13: subscribe + route + publish.
+"""Tests for NormalizerPipeline — Feature 7.13 / 35.2: subscribe + route + publish.
 
 Coverage:
-  - Construction: WazuhNormalizer, ZeekNormalizer, SuricataNormalizer instantiated
-  - start(): subscribes to RAW_WAZUH, RAW_ZEEK, RAW_SURICATA with group "normalizer"
+  - Construction: WazuhNormalizer, ZeekNormalizer, SuricataNormalizer, ProwlerNormalizer,
+    VelociraptorNormalizer instantiated
+  - start(): subscribes to RAW_WAZUH, RAW_ZEEK, RAW_SURICATA, RAW_PROWLER,
+    RAW_VELOCIRAPTOR with group "normalizer"
   - _handle_wazuh(): routes to WazuhNormalizer, publishes to NORMALIZED
   - _handle_zeek(): routes to ZeekNormalizer, publishes to NORMALIZED
   - _handle_suricata(): routes to SuricataNormalizer, publishes to NORMALIZED
+  - _handle_prowler(): routes to ProwlerNormalizer, publishes to NORMALIZED
+  - _handle_velociraptor(): routes to VelociraptorNormalizer, publishes to NORMALIZED
   - Error isolation: normalizer exception is caught, does NOT propagate to queue
   - Published payload is a dict (model_dump result) with required OCSF fields
-  - Metadata product correctly set per source (Wazuh, Zeek, Suricata)
+  - Metadata product correctly set per source (Wazuh, Zeek, Suricata, Velociraptor)
   - Integration: InMemoryQueue end-to-end — raw event in → OCSF dict on NORMALIZED
   - Multiple raw events from different sources all land on same NORMALIZED topic
 """
@@ -91,6 +95,20 @@ def _suricata_raw() -> dict[str, Any]:
     }
 
 
+def _velociraptor_raw() -> dict[str, Any]:
+    """Minimal Velociraptor Linux.Sys.Pslist artifact that produces a valid OCSFEvent."""
+    return {
+        "_artifact_name": "Linux.Sys.Pslist",
+        "_source": "velociraptor",
+        "Pid": 1234,
+        "PPid": 1,
+        "Name": "bash",
+        "Exe": "/bin/bash",
+        "Cmdline": "/bin/bash -c id",
+        "Username": "root",
+    }
+
+
 # ── Construction ───────────────────────────────────────────────────────────────
 
 
@@ -117,6 +135,18 @@ class TestNormalizerPipelineConstruction:
 
         pipeline = NormalizerPipeline(InMemoryQueue())
         assert isinstance(pipeline._suricata, SuricataNormalizer)
+
+    def test_prowler_normalizer_created(self) -> None:
+        from app.services.normalizers.prowler import ProwlerNormalizer
+
+        pipeline = NormalizerPipeline(InMemoryQueue())
+        assert isinstance(pipeline._prowler, ProwlerNormalizer)
+
+    def test_velociraptor_normalizer_created(self) -> None:
+        from app.services.normalizers.velociraptor import VelociraptorNormalizer
+
+        pipeline = NormalizerPipeline(InMemoryQueue())
+        assert isinstance(pipeline._velociraptor, VelociraptorNormalizer)
 
 
 # ── start() — subscription wiring ─────────────────────────────────────────────
@@ -150,13 +180,31 @@ class TestNormalizerPipelineStart:
         topics_subscribed = [call.args[0] for call in q.subscribe.call_args_list]
         assert Topic.RAW_SURICATA in topics_subscribed
 
-    async def test_start_makes_three_subscriptions(self) -> None:
+    async def test_start_subscribes_to_raw_prowler(self) -> None:
         q = MagicMock()
         q.subscribe = AsyncMock()
         pipeline = NormalizerPipeline(q)
         await pipeline.start()
 
-        assert q.subscribe.call_count == 3
+        topics_subscribed = [call.args[0] for call in q.subscribe.call_args_list]
+        assert Topic.RAW_PROWLER in topics_subscribed
+
+    async def test_start_subscribes_to_raw_velociraptor(self) -> None:
+        q = MagicMock()
+        q.subscribe = AsyncMock()
+        pipeline = NormalizerPipeline(q)
+        await pipeline.start()
+
+        topics_subscribed = [call.args[0] for call in q.subscribe.call_args_list]
+        assert Topic.RAW_VELOCIRAPTOR in topics_subscribed
+
+    async def test_start_makes_five_subscriptions(self) -> None:
+        q = MagicMock()
+        q.subscribe = AsyncMock()
+        pipeline = NormalizerPipeline(q)
+        await pipeline.start()
+
+        assert q.subscribe.call_count == 5
 
     async def test_start_uses_normalizer_consumer_group(self) -> None:
         q = MagicMock()
@@ -377,6 +425,80 @@ class TestHandleSuricata:
         assert q.publish.call_args.args[0] == Topic.DLQ
 
 
+# ── _handle_velociraptor() — route + publish ───────────────────────────────────
+
+
+class TestHandleVelociraptor:
+    async def test_handle_velociraptor_publishes_to_normalized_topic(self) -> None:
+        q = MagicMock()
+        q.publish = AsyncMock()
+        pipeline = NormalizerPipeline(q)
+
+        await pipeline._handle_velociraptor(_velociraptor_raw())
+
+        q.publish.assert_awaited_once()
+        topic_published = q.publish.call_args.args[0]
+        assert topic_published == Topic.NORMALIZED
+
+    async def test_handle_velociraptor_publishes_dict(self) -> None:
+        q = MagicMock()
+        q.publish = AsyncMock()
+        pipeline = NormalizerPipeline(q)
+
+        await pipeline._handle_velociraptor(_velociraptor_raw())
+
+        payload = q.publish.call_args.args[1]
+        assert isinstance(payload, dict)
+
+    async def test_handle_velociraptor_payload_has_class_uid(self) -> None:
+        q = MagicMock()
+        q.publish = AsyncMock()
+        pipeline = NormalizerPipeline(q)
+
+        await pipeline._handle_velociraptor(_velociraptor_raw())
+
+        payload = q.publish.call_args.args[1]
+        assert "class_uid" in payload
+
+    async def test_handle_velociraptor_payload_metadata_product_is_velociraptor(
+        self,
+    ) -> None:
+        q = MagicMock()
+        q.publish = AsyncMock()
+        pipeline = NormalizerPipeline(q)
+
+        await pipeline._handle_velociraptor(_velociraptor_raw())
+
+        payload = q.publish.call_args.args[1]
+        assert payload["metadata_product"] == "Velociraptor"
+
+    async def test_handle_velociraptor_exception_does_not_propagate(self) -> None:
+        q = MagicMock()
+        q.publish = AsyncMock()
+        pipeline = NormalizerPipeline(q)
+
+        with patch.object(
+            pipeline._velociraptor, "normalize", side_effect=ValueError("bad velociraptor")
+        ):
+            await pipeline._handle_velociraptor({})  # should not raise
+
+    async def test_handle_velociraptor_no_normalized_publish_on_exception(
+        self,
+    ) -> None:
+        q = MagicMock()
+        q.publish = AsyncMock()
+        pipeline = NormalizerPipeline(q)
+
+        with patch.object(
+            pipeline._velociraptor, "normalize", side_effect=RuntimeError("fail")
+        ):
+            await pipeline._handle_velociraptor({})
+
+        # Must publish to DLQ, never to NORMALIZED
+        q.publish.assert_awaited_once()
+        assert q.publish.call_args.args[0] == Topic.DLQ
+
+
 # ── OCSF field validation ──────────────────────────────────────────────────────
 
 
@@ -429,6 +551,15 @@ class TestOCSFPayloadFields:
     async def test_suricata_payload_severity_id_is_int(self) -> None:
         payload = await self._get_payload("_handle_suricata", _suricata_raw())
         assert isinstance(payload["severity_id"], int)
+
+    async def test_velociraptor_payload_has_all_required_ocsf_fields(self) -> None:
+        payload = await self._get_payload("_handle_velociraptor", _velociraptor_raw())
+        for field in self._REQUIRED_FIELDS:
+            assert field in payload, f"Missing OCSF field: {field}"
+
+    async def test_velociraptor_payload_metadata_product_is_velociraptor(self) -> None:
+        payload = await self._get_payload("_handle_velociraptor", _velociraptor_raw())
+        assert payload["metadata_product"] == "Velociraptor"
 
 
 # ── Integration: InMemoryQueue end-to-end ─────────────────────────────────────
@@ -491,7 +622,25 @@ class TestNormalizerPipelineIntegration:
 
         await q.stop()
 
-    async def test_events_from_all_three_sources_all_land_on_normalized(self) -> None:
+    async def test_velociraptor_raw_event_lands_on_normalized_topic(self) -> None:
+        q = InMemoryQueue()
+        await q.start()
+
+        pipeline = NormalizerPipeline(q)
+        await pipeline.start()
+
+        received: list[dict] = []
+        await q.subscribe(Topic.NORMALIZED, "test-collector", received.append)
+
+        await q.publish(Topic.RAW_VELOCIRAPTOR, _velociraptor_raw())
+        await asyncio.sleep(0.15)
+
+        assert len(received) == 1
+        assert received[0]["metadata_product"] == "Velociraptor"
+
+        await q.stop()
+
+    async def test_events_from_all_sources_all_land_on_normalized(self) -> None:
         q = InMemoryQueue()
         await q.start()
 
@@ -504,11 +653,12 @@ class TestNormalizerPipelineIntegration:
         await q.publish(Topic.RAW_WAZUH, _wazuh_raw())
         await q.publish(Topic.RAW_ZEEK, _zeek_raw())
         await q.publish(Topic.RAW_SURICATA, _suricata_raw())
-        await asyncio.sleep(0.25)
+        await q.publish(Topic.RAW_VELOCIRAPTOR, _velociraptor_raw())
+        await asyncio.sleep(0.30)
 
-        assert len(received) == 3
+        assert len(received) == 4
         products = {e["metadata_product"] for e in received}
-        assert products == {"Wazuh", "Zeek", "Suricata"}
+        assert products == {"Wazuh", "Zeek", "Suricata", "Velociraptor"}
 
         await q.stop()
 
