@@ -56,6 +56,22 @@ def create_password_change_token(user_id: str) -> str:
     return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
 
 
+def create_invite_token(user_id: str) -> str:
+    """Create an invite token (48-hour TTL) for a newly invited user.
+
+    Claims: sub=user_id, purpose="invite", jti, kvr, exp.
+    Sent via email so the recipient can set their password and activate the account.
+    """
+    to_encode = {
+        "sub": user_id,
+        "purpose": "invite",
+        "jti": str(uuid4()),
+        "kvr": settings.jwt_key_version,
+        "exp": datetime.utcnow() + timedelta(hours=48),
+    }
+    return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
+
+
 def create_refresh_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)

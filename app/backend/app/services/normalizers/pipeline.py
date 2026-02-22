@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
@@ -13,6 +13,9 @@ from .field_mapping import FieldMappingConfig
 from .wazuh import WazuhNormalizer
 from .zeek import ZeekNormalizer
 from .suricata import SuricataNormalizer
+
+if TYPE_CHECKING:
+    from ..auto_discovery import AssetDiscovery
 
 logger = get_logger(__name__)
 
@@ -38,11 +41,17 @@ def _extract_field_mapping(raw: dict[str, Any]) -> tuple[dict[str, Any], FieldMa
 class NormalizerPipeline:
     """Consumes raw events from all source topics, normalizes to OCSF, publishes to mxtac.normalized."""
 
-    def __init__(self, queue: MessageQueue) -> None:
+    def __init__(
+        self,
+        queue: MessageQueue,
+        discovery: AssetDiscovery | None = None,
+    ) -> None:
         self._queue = queue
         self._wazuh = WazuhNormalizer()
         self._zeek = ZeekNormalizer()
         self._suricata = SuricataNormalizer()
+        # Feature 30.5: optional asset auto-discovery hook
+        self._discovery = discovery
 
     async def start(self) -> None:
         """Subscribe to all raw topics."""
@@ -80,6 +89,9 @@ class NormalizerPipeline:
         try:
             event = self._wazuh.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
+            # Feature 30.5: auto-discover asset from Wazuh agent info
+            if self._discovery is not None:
+                await self._discovery.process_event(event, "wazuh")
             await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
         except ValidationError as exc:
             logger.warning("Wazuh schema validation error: %s", exc)
@@ -94,6 +106,9 @@ class NormalizerPipeline:
         try:
             event = self._zeek.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
+            # Feature 30.5: auto-discover assets from Zeek src/dst IPs
+            if self._discovery is not None:
+                await self._discovery.process_event(event, "zeek")
             await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
         except ValidationError as exc:
             logger.warning("Zeek schema validation error: %s", exc)
@@ -108,6 +123,9 @@ class NormalizerPipeline:
         try:
             event = self._suricata.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
+            # Feature 30.5: auto-discover assets from Suricata src/dst IPs
+            if self._discovery is not None:
+                await self._discovery.process_event(event, "suricata")
             await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
         except ValidationError as exc:
             logger.warning("Suricata schema validation error: %s", exc)

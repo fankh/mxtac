@@ -48,6 +48,9 @@ dependencies = [
     "duckdb==1.4.4",
     "pytz==2025.2",
 
+    # ── Cron Scheduling ────────────────────────────────────────────────────────
+    "croniter==6.0.0",
+
     # ── GeoIP Enrichment ───────────────────────────────────────────────────────
     # MaxMind GeoIP2 reader for offline mmdb lookups (feature 9.8).
     # Requires a GeoLite2-City.mmdb or GeoIP2-City.mmdb file; configure via

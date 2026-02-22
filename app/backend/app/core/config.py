@@ -231,6 +231,22 @@ class Settings(BaseSettings):
     escalation_timeout_minutes: int = 30
     escalation_channel_id: int | None = None
 
+    # Asset auto-discovery — feature 30.5
+    # When True, the normalizer pipeline automatically creates or updates
+    # CMDB asset records from ingested events (Wazuh agents, Zeek conn.log,
+    # Suricata, MxGuard heartbeats).  Only internal IPs (RFC 1918 by default)
+    # are registered.  Rate-limited to one upsert per hostname per 5 minutes
+    # using Valkey to avoid thundering-herd writes.
+    asset_auto_discovery: bool = True
+    # CIDRs that count as "internal" — only IPs within these ranges are
+    # registered in the CMDB.  Set via the ASSET_INTERNAL_NETWORKS env var
+    # as a JSON array, e.g. '["10.0.0.0/8","172.16.0.0/12"]'.
+    asset_internal_networks: list[str] = [
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+    ]
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 

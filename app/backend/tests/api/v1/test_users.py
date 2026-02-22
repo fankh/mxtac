@@ -6,6 +6,7 @@ Coverage:
   - POST create: 422 on invalid role; 201 on valid payload; 409 on duplicate email
   - PATCH update: 404 when not found; 422 on invalid role
   - DELETE: 404 when not found; 204 on success
+  - POST /invite: 403 non-admin; 422 invalid role; 409 duplicate email; 200 success
 
 Uses in-memory SQLite via the ``client`` fixture (get_db overridden).
 ``hash_password`` is mocked to avoid passlib/bcrypt incompatibility.
@@ -233,3 +234,139 @@ async def test_delete_user_soft_delete(client: AsyncClient, admin_headers: dict)
     get_resp = await client.get(f"{BASE_URL}/{user_id}", headers=admin_headers)
     assert get_resp.status_code == 200
     assert get_resp.json()["is_active"] is False
+
+
+# ---------------------------------------------------------------------------
+# POST /users/invite — feature 4.6
+# ---------------------------------------------------------------------------
+
+INVITE_URL = f"{BASE_URL}/invite"
+_MOCK_SMTP = "app.api.v1.endpoints.users.aiosmtplib.send"
+
+_INVITE_PAYLOAD = {
+    "email": "invited@mxtac.local",
+    "full_name": "Invited User",
+    "role": "analyst",
+}
+
+
+@pytest.mark.asyncio
+async def test_invite_user_non_admin_denied(client: AsyncClient, analyst_headers: dict) -> None:
+    """POST /users/invite with non-admin role → 403."""
+    resp = await client.post(INVITE_URL, headers=analyst_headers, json=_INVITE_PAYLOAD)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_invite_user_unauthenticated(client: AsyncClient) -> None:
+    """POST /users/invite without auth → 401 or 403."""
+    resp = await client.post(INVITE_URL, json=_INVITE_PAYLOAD)
+    assert resp.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_invite_user_invalid_role(client: AsyncClient, admin_headers: dict) -> None:
+    """POST /users/invite with invalid role → 422."""
+    resp = await client.post(
+        INVITE_URL,
+        headers=admin_headers,
+        json={**_INVITE_PAYLOAD, "role": "superuser"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_invite_user_invalid_email(client: AsyncClient, admin_headers: dict) -> None:
+    """POST /users/invite with invalid email format → 422."""
+    resp = await client.post(
+        INVITE_URL,
+        headers=admin_headers,
+        json={**_INVITE_PAYLOAD, "email": "not-an-email"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_invite_user_success_email_sent(client: AsyncClient, admin_headers: dict) -> None:
+    """POST /users/invite succeeds → 200 with invite_token and email_sent=True."""
+    with patch(_MOCK_HASH, return_value=_HASHED_PW), patch(_MOCK_SMTP) as mock_send:
+        mock_send.return_value = None  # aiosmtplib.send returns None on success
+        resp = await client.post(INVITE_URL, headers=admin_headers, json=_INVITE_PAYLOAD)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["email"] == _INVITE_PAYLOAD["email"]
+    assert data["role"] == _INVITE_PAYLOAD["role"]
+    assert isinstance(data["invite_token"], str)
+    assert len(data["invite_token"]) > 0
+    assert data["email_sent"] is True
+    mock_send.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_invite_user_smtp_failure_returns_email_sent_false(
+    client: AsyncClient, admin_headers: dict
+) -> None:
+    """POST /users/invite when SMTP fails → 200 with email_sent=False (user still created)."""
+    with patch(_MOCK_HASH, return_value=_HASHED_PW), patch(_MOCK_SMTP, side_effect=Exception("SMTP unreachable")):
+        resp = await client.post(INVITE_URL, headers=admin_headers, json=_INVITE_PAYLOAD)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["email"] == _INVITE_PAYLOAD["email"]
+    assert data["email_sent"] is False
+    assert isinstance(data["invite_token"], str)
+
+
+@pytest.mark.asyncio
+async def test_invite_user_duplicate_email(client: AsyncClient, admin_headers: dict) -> None:
+    """POST /users/invite with already-registered email → 409."""
+    with patch(_MOCK_HASH, return_value=_HASHED_PW), patch(_MOCK_SMTP):
+        await client.post(INVITE_URL, headers=admin_headers, json=_INVITE_PAYLOAD)
+        resp = await client.post(INVITE_URL, headers=admin_headers, json=_INVITE_PAYLOAD)
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Email already registered"
+
+
+@pytest.mark.asyncio
+async def test_invite_user_conflict_with_direct_create(client: AsyncClient, admin_headers: dict) -> None:
+    """POST /users/invite on email already created via POST /users → 409."""
+    with patch(_MOCK_HASH, return_value=_HASHED_PW):
+        await client.post(BASE_URL, headers=admin_headers, json=_VALID_PAYLOAD)
+
+    with patch(_MOCK_HASH, return_value=_HASHED_PW), patch(_MOCK_SMTP):
+        resp = await client.post(
+            INVITE_URL,
+            headers=admin_headers,
+            json={**_INVITE_PAYLOAD, "email": _VALID_PAYLOAD["email"]},
+        )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_invite_user_appears_in_list(client: AsyncClient, admin_headers: dict) -> None:
+    """Invited user is visible in GET /users list with is_active=True."""
+    with patch(_MOCK_HASH, return_value=_HASHED_PW), patch(_MOCK_SMTP):
+        await client.post(INVITE_URL, headers=admin_headers, json=_INVITE_PAYLOAD)
+
+    list_resp = await client.get(BASE_URL, headers=admin_headers)
+    assert list_resp.status_code == 200
+    emails = [u["email"] for u in list_resp.json()]
+    assert _INVITE_PAYLOAD["email"] in emails
+
+
+@pytest.mark.asyncio
+async def test_invite_token_is_valid_jwt(client: AsyncClient, admin_headers: dict) -> None:
+    """The returned invite_token is a signed JWT with purpose='invite'."""
+    from jose import jwt as jose_jwt
+    from app.core.config import settings
+
+    with patch(_MOCK_HASH, return_value=_HASHED_PW), patch(_MOCK_SMTP):
+        resp = await client.post(INVITE_URL, headers=admin_headers, json=_INVITE_PAYLOAD)
+
+    token = resp.json()["invite_token"]
+    payload = jose_jwt.decode(token, settings.secret_key, algorithms=["HS256"])
+    assert payload["purpose"] == "invite"
+    assert "sub" in payload
+    assert "exp" in payload
