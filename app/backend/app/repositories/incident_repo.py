@@ -120,6 +120,31 @@ class IncidentRepo:
         return result or 0
 
     @staticmethod
+    async def find_open_by_host_tactic(
+        session: AsyncSession,
+        host: str,
+        tactic: str,
+        window_seconds: int,
+    ) -> Incident | None:
+        """Return the most recent open incident matching (host, tactic) within window_seconds.
+
+        An incident is considered open when its status is not 'resolved' or 'closed'.
+        Only incidents whose tactic_ids JSON array contains the given tactic are matched.
+        The correlation window is measured from the incident's created_at timestamp.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+        result = await session.execute(
+            select(Incident)
+            .where(Incident.hosts.contains([host]))
+            .where(Incident.tactic_ids.contains([tactic]))
+            .where(Incident.status.not_in(["resolved", "closed"]))
+            .where(Incident.created_at >= cutoff)
+            .order_by(Incident.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
     async def get_by_detection(session: AsyncSession, detection_id: str) -> list[Incident]:
         """Return all incidents that reference the given detection_id in their detection_ids JSON array."""
         result = await session.execute(

@@ -232,7 +232,7 @@ class TestHandleWazuh:
         with patch.object(pipeline._wazuh, "normalize", side_effect=ValueError("bad")):
             await pipeline._handle_wazuh(bad_event)  # should not raise
 
-    async def test_handle_wazuh_no_publish_on_exception(self) -> None:
+    async def test_handle_wazuh_no_normalized_publish_on_exception(self) -> None:
         q = MagicMock()
         q.publish = AsyncMock()
         pipeline = NormalizerPipeline(q)
@@ -240,7 +240,9 @@ class TestHandleWazuh:
         with patch.object(pipeline._wazuh, "normalize", side_effect=RuntimeError("fail")):
             await pipeline._handle_wazuh({})
 
-        q.publish.assert_not_awaited()
+        # Must publish to DLQ, never to NORMALIZED
+        q.publish.assert_awaited_once()
+        assert q.publish.call_args.args[0] == Topic.DLQ
 
 
 # ── _handle_zeek() — route + publish ──────────────────────────────────────────
@@ -296,7 +298,7 @@ class TestHandleZeek:
         with patch.object(pipeline._zeek, "normalize", side_effect=ValueError("bad zeek")):
             await pipeline._handle_zeek({})  # should not raise
 
-    async def test_handle_zeek_no_publish_on_exception(self) -> None:
+    async def test_handle_zeek_no_normalized_publish_on_exception(self) -> None:
         q = MagicMock()
         q.publish = AsyncMock()
         pipeline = NormalizerPipeline(q)
@@ -304,7 +306,9 @@ class TestHandleZeek:
         with patch.object(pipeline._zeek, "normalize", side_effect=RuntimeError("fail")):
             await pipeline._handle_zeek({})
 
-        q.publish.assert_not_awaited()
+        # Must publish to DLQ, never to NORMALIZED
+        q.publish.assert_awaited_once()
+        assert q.publish.call_args.args[0] == Topic.DLQ
 
 
 # ── _handle_suricata() — route + publish ───────────────────────────────────────
@@ -360,7 +364,7 @@ class TestHandleSuricata:
         with patch.object(pipeline._suricata, "normalize", side_effect=ValueError("bad")):
             await pipeline._handle_suricata({})  # should not raise
 
-    async def test_handle_suricata_no_publish_on_exception(self) -> None:
+    async def test_handle_suricata_no_normalized_publish_on_exception(self) -> None:
         q = MagicMock()
         q.publish = AsyncMock()
         pipeline = NormalizerPipeline(q)
@@ -368,7 +372,9 @@ class TestHandleSuricata:
         with patch.object(pipeline._suricata, "normalize", side_effect=RuntimeError("fail")):
             await pipeline._handle_suricata({})
 
-        q.publish.assert_not_awaited()
+        # Must publish to DLQ, never to NORMALIZED
+        q.publish.assert_awaited_once()
+        assert q.publish.call_args.args[0] == Topic.DLQ
 
 
 # ── OCSF field validation ──────────────────────────────────────────────────────

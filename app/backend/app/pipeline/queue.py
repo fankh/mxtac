@@ -33,6 +33,7 @@ class Topic:
     NORMALIZED      = "mxtac.normalized"
     ALERTS          = "mxtac.alerts"
     ENRICHED        = "mxtac.enriched"
+    DLQ             = "mxtac.dlq"
 
 
 # ── Abstract base ────────────────────────────────────────────────────────────

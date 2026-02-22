@@ -203,12 +203,93 @@ class AlertManager:
                     time          = alert_time,
                     rule_name     = (scored["rule_id"] or "")[:500] or None,
                 )
+                await self._correlate_incident(session, scored)
                 await session.commit()
             logger.debug("AlertManager persisted detection id=%s", scored["id"])
         except Exception:
             logger.exception(
                 "AlertManager DB persistence failed (non-fatal) id=%s", scored.get("id")
             )
+
+    # -- Auto-correlation --------------------------------------------------
+
+    # Severity rank: higher index = higher severity
+    _SEVERITY_RANK: dict[str, int] = {
+        "low": 0, "medium": 1, "high": 2, "critical": 3,
+    }
+
+    async def _correlate_incident(self, session: Any, scored: dict[str, Any]) -> None:
+        """Auto-correlate this detection into an incident (feature 26.8).
+
+        Logic:
+        1. If auto_create_incident_enabled is False, do nothing.
+        2. Look for an open incident with (host, tactic) within correlation_window_seconds.
+           If found: append this detection_id to its detection_ids list.
+        3. If not found and severity >= auto_create_incident_min_severity: create a new incident.
+        """
+        if not settings.auto_create_incident_enabled:
+            return
+
+        host       = scored.get("host", "")
+        tactic_ids = scored.get("tactic_ids") or []
+        tactic     = tactic_ids[0] if tactic_ids else ""
+        detection_id = scored.get("id", "")
+        severity   = scored.get("level", "medium")
+
+        if not host or not tactic or not detection_id:
+            return
+
+        from ..repositories.incident_repo import IncidentRepo
+
+        existing = await IncidentRepo.find_open_by_host_tactic(
+            session,
+            host=host,
+            tactic=tactic,
+            window_seconds=settings.correlation_window_seconds,
+        )
+
+        if existing:
+            # Append detection_id if not already present
+            ids = list(existing.detection_ids or [])
+            if detection_id not in ids:
+                ids.append(detection_id)
+                existing.detection_ids = ids
+            logger.info(
+                "AlertManager correlated detection=%s into incident=%s (host=%s tactic=%s)",
+                detection_id, existing.id, host, tactic,
+            )
+            return
+
+        # Check severity threshold for new incident creation
+        min_rank = self._SEVERITY_RANK.get(settings.auto_create_incident_min_severity, 2)
+        alert_rank = self._SEVERITY_RANK.get(severity, 0)
+        if alert_rank < min_rank:
+            return
+
+        from ..repositories.incident_repo import IncidentRepo
+        technique_ids = scored.get("technique_ids") or []
+        await IncidentRepo.create(
+            session,
+            title        = f"Auto: {scored.get('rule_title', 'Unknown')} on {host}",
+            description  = (
+                f"Auto-created by alert-to-incident correlation.\n"
+                f"Rule: {scored.get('rule_id', '')}\n"
+                f"Host: {host}\n"
+                f"Tactic: {tactic}"
+            ),
+            severity     = severity,
+            status       = "new",
+            priority     = 3,
+            created_by   = "system",
+            detection_ids= [detection_id],
+            technique_ids= technique_ids,
+            tactic_ids   = tactic_ids,
+            hosts        = [host],
+        )
+        logger.info(
+            "AlertManager created new incident for detection=%s (host=%s tactic=%s severity=%s)",
+            detection_id, host, tactic, severity,
+        )
 
     # -- Cleanup -----------------------------------------------------------
 

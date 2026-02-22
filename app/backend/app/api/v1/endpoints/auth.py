@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import secrets
 import string
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pyotp
 from cryptography.fernet import Fernet
@@ -93,6 +93,23 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
+
+    # Feature 1.7 — Inactive account lock: lock accounts that have not logged in
+    # for account_inactivity_days days. Only fires when the setting is enabled (>0)
+    # and the user has previously logged in. Accounts that are already inactive
+    # are handled by the is_active check below.
+    if settings.account_inactivity_days > 0 and user.is_active and user.last_login_at is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=settings.account_inactivity_days)
+        if user.last_login_at < cutoff:
+            now = datetime.now(timezone.utc)
+            user.is_active = False
+            user.inactive_locked_at = now
+            await db.flush()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account locked due to inactivity. Contact your administrator.",
+            )
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -101,6 +118,10 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     # Successful authentication — reset the failed-attempt counter.
     await clear_login_attempts(body.email)
+
+    # Record the successful login timestamp (feature 1.7).
+    user.last_login_at = datetime.now(timezone.utc)
+    await db.flush()
 
     if user.mfa_enabled:
         mfa_token = create_mfa_token(str(user.id))

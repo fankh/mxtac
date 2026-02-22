@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, JSON, String
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, TimestampMixin, new_uuid
@@ -18,6 +20,14 @@ class User(Base, TimestampMixin):
     mfa_secret: Mapped[str | None] = mapped_column(String(512), nullable=True, default=None)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     mfa_backup_codes: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+
+    # Inactive account lock fields (feature 1.7)
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    inactive_locked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     def __repr__(self) -> str:
         return f"<User {self.email} role={self.role}>"

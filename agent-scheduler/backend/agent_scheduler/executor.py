@@ -91,6 +91,7 @@ class Executor:
                 )
 
                 pid = process.pid
+                logger.info(f"Task {task_db_id} spawned, pid={pid}")
                 if task_db_id is not None:
                     self._running_processes[task_db_id] = process
 
@@ -103,8 +104,11 @@ class Executor:
                     stdout = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
                     stderr = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
 
+                    rc = process.returncode or 0
+                    dur = f"{duration:.1f}"
+                    logger.info(f"Task {task_db_id} (pid={pid}) finished: exit_code={rc}, duration={dur}s")
                     return ExecutionResult(
-                        exit_code=process.returncode or 0,
+                        exit_code=rc,
                         stdout=stdout,
                         stderr=stderr,
                         pid=pid,
@@ -138,6 +142,7 @@ class Executor:
             finally:
                 if task_db_id is not None:
                     self._running_processes.pop(task_db_id, None)
+                    logger.debug(f"Task {task_db_id} removed from tracking")
 
     async def cancel(self, task_db_id: int) -> bool:
         """Cancel a running process by task DB ID."""

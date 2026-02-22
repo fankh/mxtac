@@ -3,6 +3,7 @@ Tests for expired token → 401 — Feature 28.4
 Tests for token refresh — Feature 28.5
 Tests for refresh token rotation — Feature 1.2
 Tests for account lockout (5 failed attempts → 30 min) — Feature 1.6
+Tests for inactive account lock (90 days no login) — Feature 1.7
 
 Coverage:
   - Happy path: status code, response schema, JWT claims
@@ -27,7 +28,7 @@ backend initialisation that breaks runtime hash computation).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -1033,3 +1034,137 @@ async def test_lockout_unlocked_account_proceeds_normally(client: AsyncClient) -
                 with patch(MOCK_CLEAR, new=AsyncMock()):
                     resp = await client.post(LOGIN_URL, json=VALID_CREDS)
     assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Inactive account lock — Feature 1.7
+# ---------------------------------------------------------------------------
+
+
+def _user_with_last_login(days_ago: int) -> User:
+    """Return an active user whose last_login_at is ``days_ago`` days in the past."""
+    return User(
+        email="analyst@mxtac.local",
+        hashed_password="$2b$12$placeholder_not_used_in_tests",
+        full_name="Test User",
+        role="analyst",
+        is_active=True,
+        last_login_at=datetime.now(timezone.utc) - timedelta(days=days_ago),
+    )
+
+
+def _user_never_logged_in() -> User:
+    """Return an active user who has never logged in (last_login_at=None)."""
+    return User(
+        email="analyst@mxtac.local",
+        hashed_password="$2b$12$placeholder_not_used_in_tests",
+        full_name="Test User",
+        role="analyst",
+        is_active=True,
+        last_login_at=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_inactivity_lock_91_days_returns_403(client: AsyncClient) -> None:
+    """Account inactive for 91 days → 403 Forbidden."""
+    user = _user_with_last_login(91)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_inactivity_lock_90_days_exact_returns_403(client: AsyncClient) -> None:
+    """Account inactive for exactly 90 days → 403 (boundary: cutoff is exclusive)."""
+    user = _user_with_last_login(90)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_inactivity_lock_detail_mentions_inactivity(client: AsyncClient) -> None:
+    """Inactivity lock response body indicates the reason."""
+    user = _user_with_last_login(91)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert "inactivity" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_inactivity_lock_89_days_returns_200(client: AsyncClient) -> None:
+    """Account inactive for only 89 days → 200 (not yet eligible for lock)."""
+    user = _user_with_last_login(89)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_inactivity_lock_never_logged_in_returns_200(client: AsyncClient) -> None:
+    """User with last_login_at=None (never logged in) is not locked by inactivity rule."""
+    user = _user_never_logged_in()
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_inactivity_lock_wrong_password_not_locked(client: AsyncClient) -> None:
+    """Wrong password on an inactive account → 401, not 403 (credential check first)."""
+    user = _user_with_last_login(120)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=False):
+                resp = await client.post(LOGIN_URL, json={"email": "analyst@mxtac.local", "password": "wrong"})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_inactivity_lock_sets_is_active_false(client: AsyncClient) -> None:
+    """After inactivity lock, the user object has is_active=False."""
+    user = _user_with_last_login(91)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert user.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_inactivity_lock_sets_inactive_locked_at(client: AsyncClient) -> None:
+    """After inactivity lock, inactive_locked_at is populated on the user object."""
+    user = _user_with_last_login(91)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert user.inactive_locked_at is not None
+
+
+@pytest.mark.asyncio
+async def test_successful_login_updates_last_login_at(client: AsyncClient) -> None:
+    """Successful login sets last_login_at to a recent datetime on the user object."""
+    before = datetime.now(timezone.utc)
+    user = _user_with_last_login(10)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert resp.status_code == 200
+    assert user.last_login_at is not None
+    assert user.last_login_at >= before

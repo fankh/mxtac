@@ -602,6 +602,17 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("Data retention task start failed")
 
+    # 16. Start inactive account lock task — locks accounts idle for 90+ days (feature 1.7)
+    try:
+        from .services.inactive_account import inactive_account_lock_task
+        asyncio.create_task(inactive_account_lock_task(), name="inactive-account-lock-task")
+        logger.info(
+            "Inactive account lock task started (fires daily at 03:00 UTC, inactivity_days=%d)",
+            settings.account_inactivity_days,
+        )
+    except Exception:
+        logger.exception("Inactive account lock task start failed")
+
     logger.info("MxTac API startup complete")
 
 

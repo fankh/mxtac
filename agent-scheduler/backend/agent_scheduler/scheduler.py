@@ -192,7 +192,29 @@ class Scheduler:
                 asyncio.create_task(self._run_task(task.id))
                 dispatched += 1
 
+            if dispatched > 0:
+                logger.info(
+                    f"Dispatched {dispatched}/{len(eligible)} eligible tasks "
+                    f"(running={executor.running_count})"
+                )
+
     async def _run_task(self, task_db_id: int):
+        """Wrapper that catches crashes and resets ghost tasks to PENDING."""
+        try:
+            await self._run_task_inner(task_db_id)
+        except Exception:
+            logger.exception(f"Task {task_db_id} crashed, resetting to PENDING")
+            try:
+                async with async_session() as session:
+                    task = await session.get(Task, task_db_id)
+                    if task and task.status == TaskStatus.RUNNING:
+                        task.status = TaskStatus.PENDING
+                        await session.commit()
+                        await sse_broadcaster.broadcast("task_update", task.to_dict())
+            except Exception:
+                logger.exception(f"Task {task_db_id} CRITICAL: failed to reset")
+
+    async def _run_task_inner(self, task_db_id: int):
         """Execute a single task and record results."""
         async with async_session() as session:
             task = await session.get(Task, task_db_id)
@@ -203,6 +225,7 @@ class Scheduler:
             task.status = TaskStatus.RUNNING
             await session.commit()
             await session.refresh(task)
+            logger.info(f"Task {task.id} ({task.task_id}) status -> RUNNING")
             await sse_broadcaster.broadcast("task_update", task.to_dict())
 
             # Create run record
@@ -239,6 +262,11 @@ class Scheduler:
             attempt=task_attempt,
             max_retries=task_max_retries,
         )
+        logger.info(
+            f"Task {task_db_id} result: exit_code={result.exit_code}, "
+            f"pid={result.pid}, timed_out={result.timed_out}, "
+            f"duration={result.duration_seconds:.1f}s"
+        )
 
         # Auto-commit on success
         commit_sha = None
@@ -253,6 +281,8 @@ class Scheduler:
                 .order_by(Run.id.desc()).limit(1)
             )
             run = run_result.scalar_one_or_none()
+            if not run:
+                logger.warning(f"No RUNNING run record found for task {task_db_id}")
 
             if run:
                 run.exit_code = result.exit_code
@@ -288,6 +318,10 @@ class Scheduler:
                     task.retry_count += 1
                     if task.retry_count >= task.max_retries:
                         task.status = TaskStatus.FAILED
+                        logger.warning(
+                            f"Task {task_db_id} failed permanently after "
+                            f"{task.retry_count}/{task.max_retries} attempts"
+                        )
                         log2 = Log(
                             run_id=run.id if run else None,
                             level="ERROR",
@@ -296,6 +330,10 @@ class Scheduler:
                         session.add(log2)
                     else:
                         task.status = TaskStatus.PENDING  # Will retry
+                        logger.info(
+                            f"Task {task_db_id} will retry "
+                            f"(attempt {task.retry_count}/{task.max_retries})"
+                        )
 
             await session.commit()
 
@@ -649,6 +687,15 @@ class WatchdogAgent:
             "Watchdog: %d/%d done (%.0f%%) | running=%d pending=%d failed=%d skipped=%d cancelled=%d",
             completed, total, pct, running, pending, failed, skipped, cancelled,
         )
+
+        # Detect ghost tasks: RUNNING in DB but no active process in executor
+        running_tasks = [t for t in all_tasks if t.status == TaskStatus.RUNNING]
+        for t in running_tasks:
+            if t.id not in executor._running_processes:
+                logger.warning(
+                    f"Ghost task detected: task {t.id} ({t.task_id}) is RUNNING "
+                    f"in DB but has no active process"
+                )
 
         # Broadcast progress to frontend
         await sse_broadcaster.broadcast("progress", {

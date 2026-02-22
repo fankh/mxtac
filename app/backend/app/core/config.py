@@ -174,6 +174,19 @@ class Settings(BaseSettings):
     retention_audit_days: int = 1095     # informational — OpenSearch ISM controls audit (3 years)
     retention_iocs_days: int = 180       # expired IOCs hard-deleted after 180 days
 
+    # Inactive account lock — feature 1.7
+    # Accounts that have not logged in for this many days are auto-locked.
+    # Set to 0 to disable login-time inactivity checking (background task still respects this).
+    account_inactivity_days: int = 90
+
+    # Alert-to-incident auto-correlation — feature 26.8
+    # Group related alerts into incidents automatically after enrichment.
+    # Correlation key: (host, tactic) within correlation_window_seconds.
+    # Set auto_create_incident_enabled=False to disable entirely.
+    auto_create_incident_enabled: bool = True
+    auto_create_incident_min_severity: str = "high"  # "low" | "medium" | "high" | "critical"
+    correlation_window_seconds: int = 3600  # 1-hour window
+
     # Rate limiting
     rate_limit_per_minute: int = 300
 
