@@ -28,7 +28,7 @@ CONNECTOR_TYPES: dict[str, type[BaseConnector]] = {
     "suricata": SuricataConnector,
 }
 
-# ── Feature 6.10: Zeek offset state file helpers ──────────────────────────────
+# ── Feature 6.10 / 6.17: connector offset state file helpers ──────────────────
 
 _STATE_DIR = Path(os.environ.get("MXTAC_STATE_DIR", "/var/lib/mxtac"))
 
@@ -59,6 +59,37 @@ def _save_zeek_positions(state_file: Path, positions: dict[str, int]) -> None:
         tmp.rename(state_file)
     except Exception as exc:
         logger.warning("Failed to save Zeek state file=%s err=%s", state_file, exc)
+
+
+# ── Feature 6.17: Suricata offset state file helpers ──────────────────────────
+
+
+def _suricata_state_file(connector_name: str) -> Path:
+    """Return the path of the JSON state file for a Suricata connector."""
+    return _STATE_DIR / f"suricata_offset_{connector_name}.json"
+
+
+def _load_suricata_position(state_file: Path) -> int | None:
+    """Load persisted byte offset from *state_file*. Returns None on any error."""
+    try:
+        if state_file.exists():
+            data = json.loads(state_file.read_text())
+            if isinstance(data, int):
+                return data
+    except Exception as exc:
+        logger.warning("Failed to load Suricata state file=%s err=%s", state_file, exc)
+    return None
+
+
+def _save_suricata_position(state_file: Path, position: int) -> None:
+    """Atomically write *position* to *state_file* (write-then-rename)."""
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = state_file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(position))
+        tmp.rename(state_file)
+    except Exception as exc:
+        logger.warning("Failed to save Suricata state file=%s err=%s", state_file, exc)
 
 
 def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | None:
@@ -121,6 +152,24 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
             queue,
             initial_positions=initial_positions,
             checkpoint_callback=_zeek_checkpoint,
+        )
+
+    if cls is SuricataConnector:
+        # Feature 6.17: persist byte offset so restarts resume where they left off
+        state_file = _suricata_state_file(db_conn.name)
+        initial_position = _load_suricata_position(state_file)
+
+        async def _suricata_checkpoint(
+            position: int,
+            _sf: Path = state_file,
+        ) -> None:
+            _save_suricata_position(_sf, position)
+
+        return SuricataConnector(
+            config,
+            queue,
+            initial_position=initial_position,
+            checkpoint_callback=_suricata_checkpoint,
         )
 
     return cls(config, queue)

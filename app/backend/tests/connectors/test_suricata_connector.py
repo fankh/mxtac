@@ -58,6 +58,21 @@ Feature 6.16 — Filter by event_type: alert, dns, http, tls:
     - mixed events: only allowed types pass
     - file position advances even when all events are filtered
     - filter is case-sensitive (ALERT != alert)
+
+Feature 6.17 — Track file offset across restarts:
+  Initialization:
+    - initial_position=None leaves _file_position at 0
+    - initial_position=1024 sets _file_position to 1024
+    - checkpoint_callback defaults to None
+
+  _connect() with restored initial_position:
+    - keeps restored offset when offset <= file size
+    - resets offset to 0 when saved offset > file size (rotation detected)
+    - still seeks to EOF on fresh start (no initial_position)
+
+  _fetch_events() checkpoint:
+    - calls checkpoint_callback with updated position after each cycle
+    - does not call checkpoint_callback when it is None
 """
 
 from __future__ import annotations
@@ -723,5 +738,200 @@ class TestSuricataEventTypeFilter:
             assert first == []
             second = await _collect(conn)
             assert second == []
+        finally:
+            os.unlink(eve_path)
+
+
+# ── Feature 6.17 — Track file offset across restarts ──────────────────────────
+
+
+class TestSuricataOffsetPersistence:
+    """Feature 6.17 — Track file offset across restarts.
+
+    The connector accepts an optional ``initial_position`` byte offset (loaded
+    from a state file by the registry) and a ``checkpoint_callback`` that is
+    awaited with the updated offset after every _fetch_events() cycle.
+    """
+
+    # ── Initialization ───────────────────────────────────────────────────────
+
+    def test_no_initial_position_leaves_file_position_at_zero(self) -> None:
+        conn = SuricataConnector(_make_config(), InMemoryQueue())
+        assert conn._file_position == 0
+
+    def test_initial_position_sets_file_position(self) -> None:
+        conn = SuricataConnector(_make_config(), InMemoryQueue(), initial_position=1024)
+        assert conn._file_position == 1024
+
+    def test_checkpoint_callback_defaults_to_none(self) -> None:
+        conn = SuricataConnector(_make_config(), InMemoryQueue())
+        assert conn._checkpoint_callback is None
+
+    # ── _connect() with restored initial_position ────────────────────────────
+
+    async def test_connect_keeps_restored_offset_when_valid(self) -> None:
+        """If saved offset <= file size, _connect() keeps it (resume from checkpoint)."""
+        content = '{"event_type":"alert"}\n{"event_type":"dns"}\n'
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(content)
+            eve_path = f.name
+        try:
+            file_size = os.path.getsize(eve_path)
+            # Save a valid offset that is <= file size
+            saved_offset = file_size // 2
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path),
+                InMemoryQueue(),
+                initial_position=saved_offset,
+            )
+            await conn._connect()
+            assert conn._file_position == saved_offset
+        finally:
+            os.unlink(eve_path)
+
+    async def test_connect_resets_offset_to_zero_on_rotation(self) -> None:
+        """If saved offset > file size, log rotation is assumed and offset resets to 0."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert"}\n')
+            eve_path = f.name
+        try:
+            file_size = os.path.getsize(eve_path)
+            # Simulate stale offset from before log rotation (larger than current file)
+            stale_offset = file_size + 9999
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path),
+                InMemoryQueue(),
+                initial_position=stale_offset,
+            )
+            await conn._connect()
+            assert conn._file_position == 0
+        finally:
+            os.unlink(eve_path)
+
+    async def test_connect_seeks_to_eof_on_fresh_start(self) -> None:
+        """Without initial_position, _connect() still seeks to EOF (tail mode)."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert"}\n{"event_type":"dns"}\n')
+            eve_path = f.name
+        try:
+            expected_size = os.path.getsize(eve_path)
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            await conn._connect()
+            assert conn._file_position == expected_size
+        finally:
+            os.unlink(eve_path)
+
+    async def test_connect_keeps_zero_offset_when_restored_offset_equals_file_size(self) -> None:
+        """Saved offset exactly equal to file size is valid (caught up to EOF)."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert"}\n')
+            eve_path = f.name
+        try:
+            file_size = os.path.getsize(eve_path)
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path),
+                InMemoryQueue(),
+                initial_position=file_size,
+            )
+            await conn._connect()
+            assert conn._file_position == file_size
+        finally:
+            os.unlink(eve_path)
+
+    # ── _fetch_events() checkpoint ────────────────────────────────────────────
+
+    async def test_fetch_events_calls_checkpoint_with_updated_position(self) -> None:
+        """checkpoint_callback is awaited with the final file offset after each cycle."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert"}\n')
+            eve_path = f.name
+        try:
+            checkpointed: list[int] = []
+
+            async def _cb(pos: int) -> None:
+                checkpointed.append(pos)
+
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path),
+                InMemoryQueue(),
+                initial_position=0,
+                checkpoint_callback=_cb,
+            )
+            await _collect(conn)
+            assert len(checkpointed) == 1
+            assert checkpointed[0] == os.path.getsize(eve_path)
+        finally:
+            os.unlink(eve_path)
+
+    async def test_fetch_events_does_not_call_checkpoint_when_none(self) -> None:
+        """No callback is called when checkpoint_callback is None."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path),
+                InMemoryQueue(),
+                initial_position=0,
+                checkpoint_callback=None,
+            )
+            # Should not raise even though no callback is set
+            await _collect(conn)
+            assert conn._checkpoint_callback is None
+        finally:
+            os.unlink(eve_path)
+
+    async def test_checkpoint_called_even_when_all_events_filtered(self) -> None:
+        """Offset is checkpointed even if all events are dropped by the filter."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"flow"}\n{"event_type":"stats"}\n')
+            eve_path = f.name
+        try:
+            checkpointed: list[int] = []
+
+            async def _cb(pos: int) -> None:
+                checkpointed.append(pos)
+
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path),
+                InMemoryQueue(),
+                initial_position=0,
+                checkpoint_callback=_cb,
+            )
+            events = await _collect(conn)
+            assert events == []
+            assert len(checkpointed) == 1
+            assert checkpointed[0] == os.path.getsize(eve_path)
+        finally:
+            os.unlink(eve_path)
+
+    async def test_checkpoint_position_advances_across_two_cycles(self) -> None:
+        """Each successive call to _fetch_events() checkpoints a larger offset."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert"}\n')
+            eve_path = f.name
+        try:
+            checkpointed: list[int] = []
+
+            async def _cb(pos: int) -> None:
+                checkpointed.append(pos)
+
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path),
+                InMemoryQueue(),
+                initial_position=0,
+                checkpoint_callback=_cb,
+            )
+            await _collect(conn)  # first cycle: reads one line
+            pos_after_first = checkpointed[-1]
+
+            # Append a new line to simulate new events
+            with open(eve_path, "a") as fa:
+                fa.write('{"event_type":"dns"}\n')
+
+            await _collect(conn)  # second cycle: reads new line
+            pos_after_second = checkpointed[-1]
+
+            assert pos_after_second > pos_after_first
         finally:
             os.unlink(eve_path)

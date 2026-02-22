@@ -17,6 +17,8 @@ Coverage:
     - Wazuh: invalid last_seen_at is ignored gracefully (connector still created)
     - Zeek: loads initial positions from state file via _load_zeek_positions
     - Zeek: _file_positions empty dict when state file missing (initial_positions=None)
+    - Suricata: loads initial position from state file via _load_suricata_position
+    - Suricata: _file_position is 0 when state file missing (initial_position=None)
 
   start_connectors_from_db() — mock-based:
     - returns empty list when no enabled connectors
@@ -38,6 +40,16 @@ Coverage:
     - _load_zeek_positions returns None when JSON root is not a dict
     - _save_zeek_positions writes valid JSON to the file
     - _save_zeek_positions creates missing parent directories
+
+  Suricata state file helpers (Feature 6.17):
+    - _suricata_state_file returns path named suricata_offset_{name}.json
+    - _load_suricata_position returns None for missing file
+    - _load_suricata_position returns int for valid file
+    - _load_suricata_position returns None for malformed JSON
+    - _load_suricata_position returns None when JSON root is not an int
+    - _save_suricata_position writes valid JSON to the file
+    - _save_suricata_position creates missing parent directories
+    - save then load roundtrip preserves offset value
 """
 
 from __future__ import annotations
@@ -53,8 +65,11 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors.registry import (
+    _load_suricata_position,
     _load_zeek_positions,
+    _save_suricata_position,
     _save_zeek_positions,
+    _suricata_state_file,
     _zeek_state_file,
     build_connector,
     start_connectors_from_db,
@@ -199,6 +214,35 @@ class TestBuildConnector:
         assert isinstance(conn, ZeekConnector)
         # initial_positions=None means _file_positions starts as empty dict
         assert conn._file_positions == {}
+
+    # -- Suricata: initial_position handling (Feature 6.17) --------------------
+
+    def test_suricata_loads_initial_position_from_state_file(self) -> None:
+        saved_offset = 4096
+        config_json = json.dumps({"eve_file": "/var/log/suricata/eve.json"})
+        db_conn = _make_db_connector(name="suricata-main", connector_type="suricata", config_json=config_json)
+        with patch("app.connectors.registry._load_suricata_position", return_value=saved_offset):
+            conn = build_connector(db_conn, InMemoryQueue())
+        assert isinstance(conn, SuricataConnector)
+        assert conn._file_position == saved_offset
+
+    def test_suricata_file_position_zero_when_state_file_missing(self) -> None:
+        config_json = json.dumps({"eve_file": "/var/log/suricata/eve.json"})
+        db_conn = _make_db_connector(name="suricata-main", connector_type="suricata", config_json=config_json)
+        with patch("app.connectors.registry._load_suricata_position", return_value=None):
+            conn = build_connector(db_conn, InMemoryQueue())
+        assert isinstance(conn, SuricataConnector)
+        # initial_position=None means _file_position starts at 0
+        assert conn._file_position == 0
+
+    def test_suricata_checkpoint_callback_is_set(self) -> None:
+        """build_connector sets a checkpoint_callback on the SuricataConnector."""
+        config_json = json.dumps({"eve_file": "/var/log/suricata/eve.json"})
+        db_conn = _make_db_connector(name="suricata-cb", connector_type="suricata", config_json=config_json)
+        with patch("app.connectors.registry._load_suricata_position", return_value=None):
+            conn = build_connector(db_conn, InMemoryQueue())
+        assert isinstance(conn, SuricataConnector)
+        assert conn._checkpoint_callback is not None
 
 
 # ── start_connectors_from_db() ─────────────────────────────────────────────────
@@ -360,6 +404,80 @@ class TestZeekStateFileHelpers:
             assert loaded == positions
 
 
+# ── Suricata state file helpers (Feature 6.17) ────────────────────────────────
+
+
+class TestSuricataStateFileHelpers:
+    def test_suricata_state_file_returns_correct_filename(self) -> None:
+        result = _suricata_state_file("my-suricata")
+        assert result.name == "suricata_offset_my-suricata.json"
+
+    def test_suricata_state_file_is_path_object(self) -> None:
+        result = _suricata_state_file("suricata-prod")
+        assert isinstance(result, Path)
+
+    # -- _load_suricata_position -----------------------------------------------
+
+    def test_load_returns_none_for_missing_file(self) -> None:
+        missing = Path("/tmp/does_not_exist_mxtac_suricata_test_abc123.json")
+        result = _load_suricata_position(missing)
+        assert result is None
+
+    def test_load_returns_int_for_valid_file(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(8192, f)
+            tmp = Path(f.name)
+        try:
+            result = _load_suricata_position(tmp)
+            assert result == 8192
+            assert isinstance(result, int)
+        finally:
+            tmp.unlink()
+
+    def test_load_returns_none_for_malformed_json(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write("NOT_VALID_JSON")
+            tmp = Path(f.name)
+        try:
+            result = _load_suricata_position(tmp)
+            assert result is None
+        finally:
+            tmp.unlink()
+
+    def test_load_returns_none_when_json_root_is_not_int(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"offset": 123}, f)  # dict, not int
+            tmp = Path(f.name)
+        try:
+            result = _load_suricata_position(tmp)
+            assert result is None
+        finally:
+            tmp.unlink()
+
+    # -- _save_suricata_position -----------------------------------------------
+
+    def test_save_writes_valid_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "suricata_offset_test.json"
+            _save_suricata_position(state_file, 4096)
+            assert state_file.exists()
+            loaded = json.loads(state_file.read_text())
+            assert loaded == 4096
+
+    def test_save_creates_missing_parent_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            nested = Path(tmpdir) / "sub" / "dir" / "suricata_offset.json"
+            _save_suricata_position(nested, 100)
+            assert nested.exists()
+
+    def test_save_then_load_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "suricata_offset_roundtrip.json"
+            _save_suricata_position(state_file, 12345)
+            loaded = _load_suricata_position(state_file)
+            assert loaded == 12345
+
+
 # ── DB integration: start_connectors_from_db with real SQLite session ─────────
 
 
@@ -451,7 +569,8 @@ class TestStartConnectorsFromDbIntegration:
         db_session.add_all([wazuh, suricata, disabled_extra])
         await db_session.flush()
 
-        with patch("app.connectors.registry._load_zeek_positions", return_value=None):
+        with patch("app.connectors.registry._load_zeek_positions", return_value=None), \
+             patch("app.connectors.registry._load_suricata_position", return_value=None):
             connectors = await start_connectors_from_db(db_session, InMemoryQueue())
 
         assert len(connectors) == 2
