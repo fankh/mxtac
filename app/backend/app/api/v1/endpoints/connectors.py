@@ -191,10 +191,43 @@ async def _test_suricata_connection(config: dict) -> tuple[bool, str]:
     return False, f"Suricata EVE file not found: {eve_file}"
 
 
+async def _test_prowler_connection(config: dict) -> tuple[bool, str]:
+    """Verify Prowler API connectivity by probing the health endpoint."""
+    api_url = config.get("api_url", "").rstrip("/")
+    api_key = config.get("api_key", "")
+    verify_ssl = config.get("verify_ssl", True)
+
+    if not api_url:
+        return False, "Missing required config key: api_url"
+    if not api_key:
+        return False, "Missing required config key: api_key"
+
+    try:
+        async with httpx.AsyncClient(
+            verify=verify_ssl,
+            timeout=10,
+            follow_redirects=True,
+        ) as client:
+            resp = await client.get(
+                f"{api_url}/api/v1/health",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        if resp.status_code == 200:
+            return True, "Prowler API reachable and credentials valid"
+        if resp.status_code == 401:
+            return False, "Prowler API reachable but API key is invalid"
+        return False, f"Prowler API returned unexpected status {resp.status_code}"
+    except httpx.ConnectError as exc:
+        return False, f"Cannot connect to Prowler API: {exc}"
+    except Exception as exc:
+        return False, f"Connection test failed: {exc}"
+
+
 _CONNECTION_TESTERS: dict[str, Any] = {
     "wazuh":    _test_wazuh_connection,
     "zeek":     _test_zeek_connection,
     "suricata": _test_suricata_connection,
+    "prowler":  _test_prowler_connection,
 }
 
 
