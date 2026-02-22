@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter + feature 21.7 mxtac_pipeline_latency_seconds histogram + feature 9.1 MD5(rule_id + host) dedup key + feature 9.2 dedup window — 5 minutes TTL + feature 9.4 risk score: severity × 0.60 + feature 9.5 risk score: asset criticality × 0.25.
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter + feature 21.7 mxtac_pipeline_latency_seconds histogram + feature 9.1 MD5(rule_id + host) dedup key + feature 9.2 dedup window — 5 minutes TTL + feature 9.4 risk score: severity × 0.60 + feature 9.5 risk score: asset criticality × 0.25 + feature 9.10 publish enriched alerts to mxtac.enriched.
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -107,6 +107,36 @@ Coverage:
   - feature 9.5 asset weight: end-to-end process() with SRV host produces correct asset-weighted score
   - feature 9.5 asset weight: _asset_criticality() is called during _enrich() and propagates to _score()
   - feature 9.5 asset weight: delta between dc and srv prefix scores is uniform (0.5 per unit × 0.25 × 10 = 1.25 … 0.2×0.25×10=0.5)
+  - feature 9.10 publish: Topic.ENRICHED constant equals "mxtac.enriched"
+  - feature 9.10 publish: queue.publish() first arg is Topic.ENRICHED
+  - feature 9.10 publish: queue.publish() second arg is a dict
+  - feature 9.10 publish: queue.publish() called exactly once per non-duplicate alert
+  - feature 9.10 publish: queue.publish() NOT called for deduplicated alerts
+  - feature 9.10 publish: second identical alert within window is not published
+  - feature 9.10 publish: publish happens before _persist_to_db
+  - feature 9.10 publish: published payload id passes through unchanged
+  - feature 9.10 publish: published payload rule_id passes through unchanged
+  - feature 9.10 publish: published payload host passes through unchanged
+  - feature 9.10 publish: published payload time is ISO-format string
+  - feature 9.10 publish: published payload event_snapshot passes through unchanged
+  - feature 9.10 publish: published payload technique_ids passes through unchanged
+  - feature 9.10 publish: published payload tactic_ids passes through unchanged
+  - feature 9.10 publish: published payload contains asset_criticality enrichment field
+  - feature 9.10 publish: DC host → asset_criticality=1.0 in published payload
+  - feature 9.10 publish: SRV host → asset_criticality=0.8 in published payload
+  - feature 9.10 publish: published payload threat_intel is None (placeholder)
+  - feature 9.10 publish: published payload geo_ip is None (placeholder)
+  - feature 9.10 publish: published payload has score field
+  - feature 9.10 publish: published payload score is numeric
+  - feature 9.10 publish: published payload score in [0.0, 10.0]
+  - feature 9.10 publish: critical+DC published score matches formula (8.5)
+  - feature 9.10 publish: low+unknown published score matches formula (≈1.25)
+  - feature 9.10 publish: publish exception is caught; process() does not propagate it
+  - feature 9.10 publish: end-to-end subscriber receives enriched alert via InMemoryQueue
+  - feature 9.10 publish: end-to-end subscriber message contains score field in range
+  - feature 9.10 publish: 5 distinct alerts → 5 publish calls
+  - feature 9.10 publish: 3 new + 2 duplicate alerts → exactly 3 publish calls
+  - feature 9.10 publish: published payload contains all required fields
 """
 
 from __future__ import annotations
@@ -3249,3 +3279,912 @@ def test_9_5_all_prefix_criticalities_produce_distinct_isolated_scores() -> None
     # All distinct except lin == default (both 0.5 → both 1.25, which is acceptable)
     dc_srv_win = [isolated_scores["dc"], isolated_scores["srv"], isolated_scores["win"]]
     assert len(set(dc_srv_win)) == 3, "dc, srv, win isolated scores must be distinct"
+
+
+# ---------------------------------------------------------------------------
+# Section 16 — Feature 9.10: Publish enriched alerts to mxtac.enriched
+# ---------------------------------------------------------------------------
+#
+# Feature 9.10 is the final pipeline step in AlertManager.process():
+#
+#   enriched = await self._enrich(alert)
+#   scored   = self._score(enriched)
+#   await self._queue.publish(Topic.ENRICHED, scored)   ← feature 9.10
+#   await self._persist_to_db(scored)
+#
+# Topic.ENRICHED is the string constant "mxtac.enriched".
+#
+# The published payload is the *scored* dict — the enriched alert dict with
+# the "score" field added by _score().  It must carry through all fields from
+# the original alert dict plus the enrichment fields (asset_criticality,
+# threat_intel, geo_ip) and the computed score.
+#
+# Tests in this section verify:
+#   - Topic.ENRICHED constant equals "mxtac.enriched"
+#   - queue.publish() is called with Topic.ENRICHED as the first argument
+#   - queue.publish() receives exactly two positional args: (topic, payload)
+#   - publish is called exactly once per non-duplicate alert
+#   - publish is NOT called for deduplicated alerts
+#   - publish happens before _persist_to_db (ordering)
+#   - published payload contains all input pass-through fields
+#   - published payload "time" field is an ISO-format string (not datetime)
+#   - published payload "event_snapshot" passes through unchanged
+#   - published payload "technique_ids" and "tactic_ids" pass through unchanged
+#   - published payload "asset_criticality" reflects host prefix lookup
+#   - published payload "threat_intel" is None (placeholder)
+#   - published payload "geo_ip" is None (placeholder)
+#   - published payload "score" is a float in the closed interval [0.0, 10.0]
+#   - published payload "score" is present (not absent or None)
+#   - publish error (queue raises) is caught; process() does not propagate it
+#   - end-to-end: InMemoryQueue subscriber receives the enriched alert
+#   - multiple distinct alerts each generate exactly one publish call
+#   - high-severity DC host: published score matches formula
+#   - low-severity unknown host: published score matches formula
+
+
+# ── Topic constant ────────────────────────────────────────────────────────────
+
+
+def test_9_10_topic_enriched_constant_value() -> None:
+    """Topic.ENRICHED must equal the string 'mxtac.enriched'."""
+    assert Topic.ENRICHED == "mxtac.enriched"
+
+
+# ── queue.publish() argument verification ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_10_publish_first_arg_is_topic_enriched() -> None:
+    """queue.publish() first argument must be Topic.ENRICHED for non-duplicate alerts."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict()
+
+    captured_topics: list[str] = []
+
+    async def capture(topic, msg):
+        captured_topics.append(topic)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert len(captured_topics) == 1
+    assert captured_topics[0] == Topic.ENRICHED, (
+        f"Expected Topic.ENRICHED ('mxtac.enriched'), got {captured_topics[0]!r}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_publish_second_arg_is_dict() -> None:
+    """queue.publish() second argument must be a dict (the scored payload)."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict()
+
+    captured_payloads: list = []
+
+    async def capture(topic, msg):
+        captured_payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert len(captured_payloads) == 1
+    assert isinstance(captured_payloads[0], dict), (
+        f"Expected dict payload; got {type(captured_payloads[0])}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_publish_called_exactly_once_per_non_duplicate() -> None:
+    """queue.publish() must be called exactly once for a non-duplicate alert."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    mock_publish = AsyncMock()
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=mock_publish),
+    ):
+        await mgr.process(_make_alert_dict())
+
+    mock_publish.assert_awaited_once()
+
+    await queue.stop()
+
+
+# ── Deduplication: no publish ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_10_publish_not_called_for_duplicate() -> None:
+    """queue.publish() must NOT be called when _is_duplicate() returns True."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    mock_publish = AsyncMock()
+
+    with (
+        patch.object(mgr, "_is_duplicate", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", new=mock_publish),
+    ):
+        await mgr.process(_make_alert_dict())
+
+    mock_publish.assert_not_awaited()
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_publish_not_called_for_second_identical_alert() -> None:
+    """Sending the same alert twice: first → published, second → not published."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict()
+
+    publish_count = 0
+
+    async def counting_publish(topic, msg):
+        nonlocal publish_count
+        publish_count += 1
+
+    # First call: Valkey SET succeeds (new alert) → published
+    # Second call: Valkey SET returns None (duplicate) → not published
+    set_returns = iter([True, None])
+
+    async def mock_set(*args, **kwargs):
+        return next(set_returns)
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=mock_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=counting_publish),
+    ):
+        await mgr.process(alert_dict)
+        await mgr.process(alert_dict)
+
+    assert publish_count == 1, (
+        f"Expected exactly 1 publish call; got {publish_count}"
+    )
+
+    await queue.stop()
+
+
+# ── Ordering: publish before persist ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_10_publish_called_before_persist_to_db() -> None:
+    """queue.publish() must be awaited before _persist_to_db() in process()."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    call_order: list[str] = []
+
+    async def track_publish(topic, msg):
+        call_order.append("publish")
+
+    async def track_persist(scored):
+        call_order.append("persist")
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", side_effect=track_persist),
+        patch.object(queue, "publish", side_effect=track_publish),
+    ):
+        await mgr.process(_make_alert_dict())
+
+    assert call_order == ["publish", "persist"], (
+        f"Expected ['publish', 'persist']; got {call_order}"
+    )
+
+    await queue.stop()
+
+
+# ── Payload: pass-through fields ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_contains_id() -> None:
+    """Published payload must carry the alert id through unchanged."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict()
+    alert_dict["id"] = "specific-uuid-for-9-10"
+
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert payloads[0]["id"] == "specific-uuid-for-9-10"
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_contains_rule_id() -> None:
+    """Published payload must carry rule_id through unchanged."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(rule_id="sigma-T1003-lsass")
+
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert payloads[0]["rule_id"] == "sigma-T1003-lsass"
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_contains_host() -> None:
+    """Published payload must carry host through unchanged."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(host="dc-prod-01")
+
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert payloads[0]["host"] == "dc-prod-01"
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_time_is_iso_string() -> None:
+    """Published payload 'time' must be an ISO-format string, not a datetime object."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict()
+
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    time_val = payloads[0]["time"]
+    assert isinstance(time_val, str), (
+        f"Expected time as str; got {type(time_val)}"
+    )
+    # Must parse back to a datetime without raising
+    parsed = datetime.fromisoformat(time_val)
+    assert parsed.tzinfo is not None, "Parsed time must be timezone-aware"
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_event_snapshot_passes_through() -> None:
+    """Published payload must carry event_snapshot through unchanged."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    snapshot = {"pid": 9999, "cmdline": "/bin/sh -c id", "user": "root"}
+    alert_dict = _make_alert_dict()
+    alert_dict["event_snapshot"] = snapshot
+
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert payloads[0]["event_snapshot"] == snapshot
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_technique_ids_pass_through() -> None:
+    """Published payload must carry technique_ids list through unchanged."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    techs = ["T1059", "T1059.001"]
+    alert_dict = _make_alert_dict(technique_ids=techs)
+
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert payloads[0]["technique_ids"] == techs
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_tactic_ids_pass_through() -> None:
+    """Published payload must carry tactic_ids list through unchanged."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    tactics = ["execution", "persistence"]
+    alert_dict = _make_alert_dict(tactic_ids=tactics)
+
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert payloads[0]["tactic_ids"] == tactics
+
+    await queue.stop()
+
+
+# ── Payload: enrichment fields ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_has_asset_criticality_field() -> None:
+    """Published payload must contain the 'asset_criticality' enrichment field."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(_make_alert_dict(host="srv-01"))
+
+    assert "asset_criticality" in payloads[0], (
+        "Published payload must include 'asset_criticality' enrichment field"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_asset_criticality_dc_host() -> None:
+    """DC host → asset_criticality=1.0 in published payload."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(_make_alert_dict(host="dc-01"))
+
+    assert payloads[0]["asset_criticality"] == pytest.approx(1.0), (
+        f"dc host must produce asset_criticality=1.0; got {payloads[0]['asset_criticality']}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_asset_criticality_srv_host() -> None:
+    """SRV host → asset_criticality=0.8 in published payload."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(_make_alert_dict(host="srv-02"))
+
+    assert payloads[0]["asset_criticality"] == pytest.approx(0.8), (
+        f"srv host must produce asset_criticality=0.8; got {payloads[0]['asset_criticality']}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_threat_intel_is_none() -> None:
+    """Published payload 'threat_intel' must be None (OpenCTI placeholder)."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(_make_alert_dict())
+
+    assert "threat_intel" in payloads[0], "Published payload must contain 'threat_intel' key"
+    assert payloads[0]["threat_intel"] is None, (
+        f"threat_intel must be None (placeholder); got {payloads[0]['threat_intel']!r}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_geo_ip_is_none() -> None:
+    """Published payload 'geo_ip' must be None (GeoIP placeholder)."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(_make_alert_dict())
+
+    assert "geo_ip" in payloads[0], "Published payload must contain 'geo_ip' key"
+    assert payloads[0]["geo_ip"] is None, (
+        f"geo_ip must be None (placeholder); got {payloads[0]['geo_ip']!r}"
+    )
+
+    await queue.stop()
+
+
+# ── Payload: score field ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_has_score_field() -> None:
+    """Published payload must contain a 'score' field."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(_make_alert_dict())
+
+    assert "score" in payloads[0], "Published payload must include 'score' field"
+    assert payloads[0]["score"] is not None
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_score_is_float() -> None:
+    """Published payload 'score' must be a numeric float."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(_make_alert_dict())
+
+    score = payloads[0]["score"]
+    assert isinstance(score, (int, float)), (
+        f"score must be numeric; got {type(score)}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_score_in_valid_range() -> None:
+    """Published payload 'score' must be in [0.0, 10.0]."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(_make_alert_dict())
+
+    score = payloads[0]["score"]
+    assert 0.0 <= score <= 10.0, (
+        f"score={score} is outside [0.0, 10.0]"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_score_critical_dc_host() -> None:
+    """Critical severity (id=5) + DC host → published score matches formula.
+
+    severity_norm = (5-1)/4 = 1.0
+    asset_crit = 1.0
+    expected = round((1.0 × 0.60 + 1.0 × 0.25 + 0.0 × 0.15) × 10, 1) = 8.5
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(severity_id=5, host="dc-01")
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert payloads[0]["score"] == pytest.approx(8.5, abs=0.05), (
+        f"critical+dc expected score=8.5; got {payloads[0]['score']}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_score_low_severity_unknown_host() -> None:
+    """Low severity (id=1) + unknown host prefix → published score matches formula.
+
+    severity_norm = (1-1)/4 = 0.0
+    asset_crit = 0.5 (default)
+    expected = round((0.0 × 0.60 + 0.5 × 0.25 + 0.0 × 0.15) × 10, 1) = 1.2 or 1.3
+    (exact depends on rounding; use abs=0.1 to be rounding-mode agnostic)
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(severity_id=1, level="low", host="unknown-host")
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert payloads[0]["score"] == pytest.approx(1.25, abs=0.1), (
+        f"low+unknown expected score≈1.25; got {payloads[0]['score']}"
+    )
+
+    await queue.stop()
+
+
+# ── Error resilience ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_10_process_continues_when_publish_raises() -> None:
+    """process() must not propagate an exception raised by queue.publish().
+
+    The exception handler in process() wraps the entire try block, so a publish
+    failure is logged and swallowed — it must not crash the coroutine.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+
+    async def failing_publish(topic, msg):
+        raise RuntimeError("queue unavailable")
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=failing_publish),
+    ):
+        # Must complete without raising
+        await mgr.process(_make_alert_dict())
+
+    await queue.stop()
+
+
+# ── End-to-end via InMemoryQueue subscriber ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_10_e2e_subscriber_receives_enriched_alert() -> None:
+    """End-to-end: a subscriber on mxtac.enriched receives the alert published by process()."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    received: list[dict] = []
+
+    async def subscriber_handler(msg: dict) -> None:
+        received.append(msg)
+
+    await queue.subscribe(Topic.ENRICHED, "test-subscriber", subscriber_handler)
+
+    alert_dict = _make_alert_dict(severity_id=4, host="srv-01")
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+    ):
+        await mgr.process(alert_dict)
+
+    # Allow InMemoryQueue to deliver the message
+    await queue.drain(timeout=5.0)
+
+    assert len(received) == 1, (
+        f"Subscriber expected 1 message; got {len(received)}"
+    )
+    msg = received[0]
+    assert "score" in msg
+    assert "asset_criticality" in msg
+    assert msg["host"] == "srv-01"
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_e2e_subscriber_receives_score_field() -> None:
+    """End-to-end: the message received by a mxtac.enriched subscriber includes 'score'."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    received: list[dict] = []
+
+    async def subscriber_handler(msg: dict) -> None:
+        received.append(msg)
+
+    await queue.subscribe(Topic.ENRICHED, "test-score-subscriber", subscriber_handler)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+    ):
+        await mgr.process(_make_alert_dict(severity_id=3, host="win-laptop"))
+
+    await queue.drain(timeout=5.0)
+
+    assert received, "Subscriber must have received at least one message"
+    assert "score" in received[0]
+    assert 0.0 <= received[0]["score"] <= 10.0
+
+    await queue.stop()
+
+
+# ── Multiple alerts ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_10_multiple_distinct_alerts_each_published_once() -> None:
+    """Five distinct (rule_id, host) alerts must each trigger exactly one publish call."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    publish_count = 0
+
+    async def counting_publish(topic, msg):
+        nonlocal publish_count
+        publish_count += 1
+
+    # Valkey always returns True (new alert) so none are deduplicated
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=counting_publish),
+    ):
+        for i in range(5):
+            await mgr.process(_make_alert_dict(
+                rule_id=f"sigma-T{1000 + i}",
+                host=f"srv-{i:02d}",
+            ))
+
+    assert publish_count == 5, (
+        f"Expected 5 publish calls for 5 distinct alerts; got {publish_count}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_10_mixed_new_and_duplicate_alerts_correct_publish_count() -> None:
+    """3 new + 2 duplicate alerts → exactly 3 publish calls."""
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    publish_count = 0
+
+    async def counting_publish(topic, msg):
+        nonlocal publish_count
+        publish_count += 1
+
+    # Simulate: True, True, True (new), None, None (duplicates)
+    set_returns = iter([True, True, True, None, None])
+
+    async def mock_set(*args, **kwargs):
+        return next(set_returns)
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=mock_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=counting_publish),
+    ):
+        for i in range(5):
+            await mgr.process(_make_alert_dict(rule_id=f"sigma-T{i}"))
+
+    assert publish_count == 3, (
+        f"Expected 3 publish calls (3 new + 2 dup); got {publish_count}"
+    )
+
+    await queue.stop()
+
+
+# ── Payload completeness ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_9_10_published_payload_contains_all_required_fields() -> None:
+    """Published payload must contain every required enriched alert field."""
+    required_fields = {
+        # Pass-through from input
+        "id", "rule_id", "rule_title", "level", "severity_id",
+        "technique_ids", "tactic_ids", "host", "time", "event_snapshot",
+        # Enrichment additions
+        "asset_criticality", "threat_intel", "geo_ip",
+        # Score computation
+        "score",
+    }
+
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    payloads: list[dict] = []
+
+    async def capture(topic, msg):
+        payloads.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(_make_alert_dict())
+
+    assert payloads, "Expected one published message"
+    missing = required_fields - payloads[0].keys()
+    assert not missing, (
+        f"Published payload is missing required fields: {missing}"
+    )
+
+    await queue.stop()
