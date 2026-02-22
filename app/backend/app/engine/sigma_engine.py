@@ -97,7 +97,7 @@ def _nested_get(event: dict, parts: list[str]) -> Any:
 class _Condition:
     """
     Evaluates a single Sigma detection block against a flat event dict.
-    Supports: keywords, field modifiers (contains, startswith, endswith, re)
+    Supports: keywords, field modifiers (contains, startswith, endswith, re, base64, cidr)
 
     Detection criteria are pre-compiled at construction time into fast
     callables so that repeated ``matches()`` calls incur no parsing overhead.
@@ -194,22 +194,57 @@ class _Condition:
 
         if "base64" in modifiers:
             import base64 as _b64
-            decoded: list[str] = []
+            # Encode each plaintext rule value to base64; comparison is case-sensitive
+            # because base64 character case is semantically meaningful.
+            encoded: list[str] = []
             for v in value_list:
                 try:
-                    decoded.append(_b64.b64decode(str(v)).decode(errors="replace").lower())
+                    encoded.append(_b64.b64encode(str(v).encode("utf-8")).decode("ascii"))
                 except Exception:
-                    decoded.append("")
+                    encoded.append("")
 
-            def _b64_fn(evt: dict, _fp=field_parts, _dvs=decoded, _all=all_mod) -> bool:
+            if "contains" in modifiers:
+                def _b64c_fn(evt: dict, _fp=field_parts, _evs=encoded, _all=all_mod) -> bool:
+                    fv = _nested_get(evt, _fp)
+                    if fv is None:
+                        return False
+                    fs = str(fv)
+                    if _all:
+                        return all(ev in fs for ev in _evs)
+                    return any(ev in fs for ev in _evs)
+                return _b64c_fn
+
+            if "startswith" in modifiers:
+                def _b64sw_fn(evt: dict, _fp=field_parts, _evs=encoded, _all=all_mod) -> bool:
+                    fv = _nested_get(evt, _fp)
+                    if fv is None:
+                        return False
+                    fs = str(fv)
+                    if _all:
+                        return all(fs.startswith(ev) for ev in _evs)
+                    return any(fs.startswith(ev) for ev in _evs)
+                return _b64sw_fn
+
+            if "endswith" in modifiers:
+                def _b64ew_fn(evt: dict, _fp=field_parts, _evs=encoded, _all=all_mod) -> bool:
+                    fv = _nested_get(evt, _fp)
+                    if fv is None:
+                        return False
+                    fs = str(fv)
+                    if _all:
+                        return all(fs.endswith(ev) for ev in _evs)
+                    return any(fs.endswith(ev) for ev in _evs)
+                return _b64ew_fn
+
+            # Default: exact match (case-sensitive for base64)
+            def _b64_fn(evt: dict, _fp=field_parts, _evs=encoded, _all=all_mod) -> bool:
                 fv = _nested_get(evt, _fp)
                 if fv is None:
                     return False
-                fs = str(fv).lower()
+                fs = str(fv)
                 if _all:
-                    return all(dv in fs for dv in _dvs)
-                return any(dv in fs for dv in _dvs)
-
+                    return all(fs == ev for ev in _evs)
+                return any(fs == ev for ev in _evs)
             return _b64_fn
 
         if "cidr" in modifiers:
@@ -381,12 +416,20 @@ class _Condition:
                 except re.error:
                     return False
             if "base64" in modifiers:
-                import base64
+                import base64 as _b64
                 try:
-                    decoded = base64.b64decode(v).decode(errors="replace").lower()
-                    return decoded in field_str
+                    ev = _b64.b64encode(str(v).encode("utf-8")).decode("ascii")
                 except Exception:
                     return False
+                # Use the original-case field value; base64 is case-sensitive.
+                fv_raw = str(field_val)
+                if "contains" in modifiers:
+                    return ev in fv_raw
+                if "startswith" in modifiers:
+                    return fv_raw.startswith(ev)
+                if "endswith" in modifiers:
+                    return fv_raw.endswith(ev)
+                return fv_raw == ev
             if "cidr" in modifiers:
                 return self._cidr_match(field_str, vs)
             # Default: exact match
