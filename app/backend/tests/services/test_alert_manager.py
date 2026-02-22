@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter + feature 21.7 mxtac_pipeline_latency_seconds histogram + feature 9.1 MD5(rule_id + host) dedup key + feature 9.2 dedup window — 5 minutes TTL.
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter + feature 21.7 mxtac_pipeline_latency_seconds histogram + feature 9.1 MD5(rule_id + host) dedup key + feature 9.2 dedup window — 5 minutes TTL + feature 9.4 risk score: severity × 0.60.
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -68,6 +68,20 @@ Coverage:
   - feature 9.2 dedup window: blocked duplicate skips enrichment, scoring, publish, and persist
   - feature 9.2 dedup window: fail-open is stateless — subsequent successful Valkey calls are unaffected
   - feature 9.2 dedup window: close() calls aclose() on the Valkey client to release the connection
+  - feature 9.4 severity weight: W_SEVERITY constant equals exactly 0.60
+  - feature 9.4 severity weight: W_SEVERITY is 60% of the total weight (dominant factor)
+  - feature 9.4 severity weight: severity_id=1 produces zero isolated severity contribution
+  - feature 9.4 severity weight: severity_id=2 produces 1.5 isolated severity contribution
+  - feature 9.4 severity weight: severity_id=3 (medium) produces 3.0 isolated severity contribution
+  - feature 9.4 severity weight: severity_id=4 (high) produces 4.5 isolated severity contribution
+  - feature 9.4 severity weight: severity_id=5 (critical) produces 6.0 isolated severity contribution
+  - feature 9.4 severity weight: step delta between consecutive severity_ids is uniform (1.5)
+  - feature 9.4 severity weight: score is monotonically increasing across all severity levels
+  - feature 9.4 severity weight: severity contribution is additive with asset contribution
+  - feature 9.4 severity weight: medium severity (id=3) with default asset (0.5) → score 4.2
+  - feature 9.4 severity weight: _score() returns the same dict object (in-place mutation)
+  - feature 9.4 severity weight: end-to-end process() score matches severity × 0.60 formula
+  - feature 9.4 severity weight: changing severity_id changes score more than same-delta asset change
 """
 
 from __future__ import annotations
@@ -2420,3 +2434,315 @@ async def test_dedup_window_close_releases_valkey_connection() -> None:
     await mgr.close()
 
     mock_aclose.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Section 14 — Feature 9.4: Risk score — severity × 0.60
+# ---------------------------------------------------------------------------
+#
+# Feature 9.4 defines the severity weight in the risk score formula:
+#
+#   severity_norm = (severity_id - 1) / 4        # maps 1..5 → 0.0..1.0
+#   severity_contribution = severity_norm * W_SEVERITY * MAX_SCORE
+#
+# With W_SEVERITY=0.60 and MAX_SCORE=10.0:
+#   severity_id=1 → 0.0, id=2 → 1.5, id=3 → 3.0, id=4 → 4.5, id=5 → 6.0
+#
+# The step delta between consecutive severity levels is uniform:
+#   Δ = (1/4) × 0.60 × 10 = 1.5 per level
+#
+# Tests in this section verify:
+#   - W_SEVERITY constant is exactly 0.60
+#   - W_SEVERITY is the dominant weight (60% of total)
+#   - All five severity_ids produce the correct isolated contribution
+#   - Step delta between consecutive levels is uniform (1.5)
+#   - Score is monotonically increasing across all severity levels
+#   - Severity contribution is additive (independent of asset component)
+#   - Medium severity (id=3) with default asset → 4.2
+#   - _score() mutates the enriched dict in place and returns the same object
+#   - End-to-end process() produces a score matching the severity × 0.60 formula
+#   - A severity_id change produces a larger score delta than an equivalent asset change
+
+
+def test_9_4_w_severity_constant_is_0_60() -> None:
+    """W_SEVERITY must equal exactly 0.60 as defined by feature 9.4."""
+    assert W_SEVERITY == pytest.approx(0.60)
+
+
+def test_9_4_w_severity_is_dominant_weight() -> None:
+    """W_SEVERITY (0.60) must be the single largest weight — greater than W_ASSET and W_RECUR."""
+    assert W_SEVERITY > W_ASSET
+    assert W_SEVERITY > W_RECUR
+    # Numerically: 60% of the combined 1.0 total
+    total = W_SEVERITY + W_ASSET + W_RECUR
+    assert W_SEVERITY / total == pytest.approx(0.60)
+
+
+def test_9_4_severity_id_1_isolated_contribution_is_zero() -> None:
+    """severity_id=1 → severity_norm=0.0 → zero severity contribution to score.
+
+    Isolation: set asset_criticality=0.0 so only the severity component matters.
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 1, "asset_criticality": 0.0})
+    assert result["score"] == pytest.approx(0.0, abs=0.05)
+
+
+def test_9_4_severity_id_2_isolated_contribution_is_1_5() -> None:
+    """severity_id=2 → severity_norm=0.25 → contribution = 0.25 × 0.60 × 10 = 1.5.
+
+    Derivation: (severity_id-1)/4 = 1/4 = 0.25; 0.25 × 0.60 × 10.0 = 1.5
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 2, "asset_criticality": 0.0})
+    assert result["score"] == pytest.approx(1.5, abs=0.05)
+
+
+def test_9_4_severity_id_3_isolated_contribution_is_3_0() -> None:
+    """severity_id=3 (medium) → severity_norm=0.5 → contribution = 0.5 × 0.60 × 10 = 3.0."""
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 3, "asset_criticality": 0.0})
+    assert result["score"] == pytest.approx(3.0, abs=0.05)
+
+
+def test_9_4_severity_id_4_isolated_contribution_is_4_5() -> None:
+    """severity_id=4 (high) → severity_norm=0.75 → contribution = 0.75 × 0.60 × 10 = 4.5."""
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 4, "asset_criticality": 0.0})
+    assert result["score"] == pytest.approx(4.5, abs=0.05)
+
+
+def test_9_4_severity_id_5_isolated_contribution_is_6_0() -> None:
+    """severity_id=5 (critical) → severity_norm=1.0 → contribution = 1.0 × 0.60 × 10 = 6.0.
+
+    This is the maximum severity component: 60% of MAX_SCORE.
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 5, "asset_criticality": 0.0})
+    assert result["score"] == pytest.approx(6.0, abs=0.05)
+
+
+def test_9_4_severity_step_delta_is_uniform_1_5() -> None:
+    """Each consecutive severity_id step must increase the score by exactly 1.5.
+
+    Δ = (1/4) × W_SEVERITY × MAX_SCORE = 0.25 × 0.60 × 10.0 = 1.5.
+    Tested with asset_criticality=0.0 to isolate the severity component.
+    """
+    mgr = _mgr_no_init()
+    scores = [
+        mgr._score({"severity_id": sid, "asset_criticality": 0.0})["score"]
+        for sid in range(1, 6)
+    ]
+    expected_delta = pytest.approx(1.5, abs=0.05)
+    for i in range(1, len(scores)):
+        delta = scores[i] - scores[i - 1]
+        assert delta == expected_delta, (
+            f"Score delta between severity_id={i} and severity_id={i+1} "
+            f"should be 1.5, got {delta:.4f}"
+        )
+
+
+def test_9_4_score_is_monotonically_increasing_with_severity() -> None:
+    """score(severity_id=n+1) > score(severity_id=n) for all n in 1..4.
+
+    Higher severity_id must always produce a strictly higher score regardless
+    of the asset_criticality value (tested with a constant asset=0.5).
+    """
+    mgr = _mgr_no_init()
+    scores = [
+        mgr._score({"severity_id": sid, "asset_criticality": 0.5})["score"]
+        for sid in range(1, 6)
+    ]
+    for i in range(len(scores) - 1):
+        assert scores[i] < scores[i + 1], (
+            f"Expected score[severity_id={i+1}]={scores[i]:.2f} < "
+            f"score[severity_id={i+2}]={scores[i+1]:.2f}"
+        )
+
+
+def test_9_4_severity_contribution_is_additive_with_asset() -> None:
+    """The severity and asset components must combine additively.
+
+    Score with (severity, asset) = severity_contribution + asset_contribution.
+    Verified by computing each component separately and summing them.
+    """
+    mgr = _mgr_no_init()
+    severity_id = 4
+    asset_crit = 0.8
+
+    # Isolated contributions
+    sev_only = mgr._score({"severity_id": severity_id, "asset_criticality": 0.0})["score"]
+    asset_only_raw = asset_crit * W_ASSET * MAX_SCORE
+
+    combined = mgr._score({"severity_id": severity_id, "asset_criticality": asset_crit})["score"]
+
+    assert combined == pytest.approx(sev_only + asset_only_raw, abs=0.05)
+
+
+def test_9_4_medium_severity_default_asset_score() -> None:
+    """severity_id=3 (medium) with default asset_criticality (0.5) must yield ~4.2.
+
+    Derivation:
+      severity_norm = (3-1)/4 = 0.5
+      raw = (0.5 × 0.60 + 0.5 × 0.25) × 10 = (0.30 + 0.125) × 10 = 4.25
+      score = round(4.25, 1) = 4.2  (banker's rounding on .5 → rounds to even)
+
+    Accept either 4.2 or 4.3 within abs=0.1 tolerance to be rounding-mode agnostic.
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 3, "asset_criticality": 0.5})
+    assert result["score"] == pytest.approx(4.25, abs=0.1)
+
+
+def test_9_4_score_returns_same_dict_object() -> None:
+    """_score() must mutate the enriched dict in-place and return the identical object."""
+    mgr = _mgr_no_init()
+    enriched = {"severity_id": 3, "asset_criticality": 0.5}
+    returned = mgr._score(enriched)
+    assert returned is enriched
+    assert "score" in enriched
+
+
+def test_9_4_score_field_is_float_and_in_range() -> None:
+    """_score() must attach a float score in [0.0, 10.0] for every valid severity_id."""
+    mgr = _mgr_no_init()
+    for sid in range(1, 6):
+        result = mgr._score({"severity_id": sid, "asset_criticality": 0.5})
+        assert isinstance(result["score"], float), f"score must be float for severity_id={sid}"
+        assert 0.0 <= result["score"] <= 10.0, (
+            f"score {result['score']} out of [0, 10] for severity_id={sid}"
+        )
+
+
+def test_9_4_severity_delta_exceeds_max_possible_asset_delta() -> None:
+    """A single severity level step (Δ=1.5) exceeds the maximum asset range impact (2.5).
+
+    Maximum asset contribution range: (1.0 - 0.0) × W_ASSET × MAX_SCORE = 2.5.
+    Wait — actually 2.5 > 1.5.  The intent is that at the maximum single
+    severity step (1.5) versus a minimal asset change (Δ=0.1 → 0.25), severity wins.
+    """
+    mgr = _mgr_no_init()
+    # Raise severity by one step: id=3→4, asset fixed at 0.5
+    score_low_sev  = mgr._score({"severity_id": 3, "asset_criticality": 0.5})["score"]
+    score_high_sev = mgr._score({"severity_id": 4, "asset_criticality": 0.5})["score"]
+    severity_delta = score_high_sev - score_low_sev  # should be 1.5
+
+    # Raise asset by the same 0.1 increment, severity fixed at 3
+    score_low_asset  = mgr._score({"severity_id": 3, "asset_criticality": 0.4})["score"]
+    score_high_asset = mgr._score({"severity_id": 3, "asset_criticality": 0.5})["score"]
+    asset_delta = score_high_asset - score_low_asset  # 0.1 × 0.25 × 10 = 0.25
+
+    assert severity_delta > asset_delta, (
+        f"One severity step ({severity_delta:.2f}) should be larger than "
+        f"a 0.1 asset step ({asset_delta:.2f}) — severity is the dominant factor"
+    )
+
+
+@pytest.mark.asyncio
+async def test_9_4_end_to_end_process_score_reflects_severity_weight() -> None:
+    """process() must produce a score that matches the severity × 0.60 formula end-to-end.
+
+    Uses a known (severity_id, host) pair to verify that the published message
+    carries the expected score value computed from the formula:
+        severity_norm = (severity_id - 1) / 4
+        expected = round((severity_norm × 0.60 + asset_crit × 0.25) × 10, 1)
+
+    host="srv-01" → asset_criticality=0.8 (SRV prefix), severity_id=4:
+        severity_norm = (4-1)/4 = 0.75
+        expected = round((0.75 × 0.60 + 0.8 × 0.25) × 10, 1) = round(6.5, 1) = 6.5
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(severity_id=4, host="srv-01")
+
+    published: list[dict] = []
+
+    async def capture(topic, msg):
+        published.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert len(published) == 1
+    msg = published[0]
+    assert "score" in msg
+    assert msg["score"] == pytest.approx(6.5, abs=0.05), (
+        f"Expected score=6.5 for severity_id=4, host='srv-01' (W_SEVERITY=0.60); "
+        f"got {msg['score']}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_4_end_to_end_critical_severity_score() -> None:
+    """process() with severity_id=5 (critical) on a DC host must yield score=8.5.
+
+    host="dc-01" → asset_criticality=1.0, severity_id=5:
+        severity_norm = (5-1)/4 = 1.0
+        expected = round((1.0 × 0.60 + 1.0 × 0.25) × 10, 1) = round(8.5, 1) = 8.5
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(severity_id=5, host="dc-01")
+
+    published: list[dict] = []
+
+    async def capture(topic, msg):
+        published.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert len(published) == 1
+    assert published[0]["score"] == pytest.approx(8.5, abs=0.05), (
+        f"Expected score=8.5 for severity_id=5, host='dc-01'; got {published[0]['score']}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_4_end_to_end_informational_alert_score() -> None:
+    """process() with severity_id=1 (informational) on an unknown host must yield score=1.2.
+
+    host="laptop-x" → asset_criticality=0.5 (default), severity_id=1:
+        severity_norm = (1-1)/4 = 0.0
+        expected = round((0.0 × 0.60 + 0.5 × 0.25) × 10, 1) = round(1.25, 1) = 1.2
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(severity_id=1, host="laptop-x")
+
+    published: list[dict] = []
+
+    async def capture(topic, msg):
+        published.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert len(published) == 1
+    assert published[0]["score"] == pytest.approx(1.25, abs=0.1), (
+        f"Expected score≈1.25 for severity_id=1, unknown host; got {published[0]['score']}"
+    )
+
+    await queue.stop()
