@@ -56,6 +56,12 @@ export const getStats = () => fetchJson<Stats>("/stats");
 // Agents
 export const getAgents = () => fetchJson<AgentsResponse>("/agents");
 
+export const triggerAgent = (name: string) =>
+  fetchJson(`/agents/${name}/trigger`, { method: "POST" });
+
+export const getAgentRuns = (name: string, limit = 20) =>
+  fetchJson<AgentRunInfo[]>(`/agents/${name}/runs?limit=${limit}`);
+
 // Tasks
 export const getTasks = (params?: {
   status?: string;

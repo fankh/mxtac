@@ -39,6 +39,21 @@ export function useSSE(onEvent: SSEHandler) {
         handlerRef.current("scheduler", JSON.parse(e.data));
       } catch {}
     });
+    es.addEventListener("agent_report", (e) => {
+      try {
+        handlerRef.current("agent_report", JSON.parse(e.data));
+      } catch {}
+    });
+    es.addEventListener("security_alert", (e) => {
+      try {
+        handlerRef.current("security_alert", JSON.parse(e.data));
+      } catch {}
+    });
+    es.addEventListener("task_created", (e) => {
+      try {
+        handlerRef.current("task_created", JSON.parse(e.data));
+      } catch {}
+    });
 
     es.onerror = () => {
       setConnected(false);
