@@ -24,6 +24,11 @@ Feature 6.13: Every event yielded by _fetch_events() carries a ``_path``
 field set to the stem of the source log file (e.g. "conn" for conn.log,
 "dns" for dns.log).  The normalizer uses this field to determine which
 OCSF mapping to apply.
+
+Feature 6.14: Every parsed event is published raw and unchanged to the
+``mxtac.raw.zeek`` queue topic via BaseConnector._poll_loop().  The
+``topic`` property returns ``Topic.RAW_ZEEK`` so the base class routes
+all events to the correct destination automatically.
 """
 
 from __future__ import annotations

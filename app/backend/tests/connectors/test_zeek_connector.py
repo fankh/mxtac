@@ -13,12 +13,21 @@ Feature 6.9 — Tail Zeek log directory — conn.log, dns.log, http.log, ssl.log
     yields multiple events from one file
   - _parse_tsv_line(): parses conn/dns/http/ssl TSV, returns None for unknown log type,
     returns None for too-few fields, returns None on exception
-  - Publish (via _poll_loop): events published to mxtac.raw.zeek, topic is literal string,
-    payload published unchanged, events_total increments per event, no publish when
-    fetch yields nothing, errors caught without crash, errors_total increments, last_event_at
-    updated after publish
   - ZeekConnectorFactory: creates ZeekConnector, name/log_dir/log_types/poll_interval
     defaults and overrides, connector_type is "zeek"
+
+Feature 6.14 — Publish raw events to `mxtac.raw.zeek`:
+  - topic property returns Topic.RAW_ZEEK ("mxtac.raw.zeek")
+  - _poll_loop() publishes every yielded event to mxtac.raw.zeek
+  - Event payload is published unchanged (no wrapping or modification)
+  - All events in a single poll cycle are published
+  - events_total increments by one for each published event
+  - last_event_at is updated after each successful publish
+  - No publish when _fetch_events() yields nothing; events_total unchanged
+  - Exceptions from _fetch_events() are caught; poll loop continues
+  - errors_total increments on fetch exception
+  - error_message is updated on fetch exception
+  - Multiple events each published to mxtac.raw.zeek topic
 
 Feature 6.10 — Track file byte offset per log file — Survive restarts:
   - initial_positions seeds _file_positions dict
@@ -453,11 +462,11 @@ class TestZeekConnectorParseTsvLine:
         assert result is None
 
 
-# ── Publish (via _poll_loop) ───────────────────────────────────────────────────
+# ── Feature 6.14 — Publish raw events to `mxtac.raw.zeek` ────────────────────
 
 
 class TestZeekConnectorPublish:
-    """Events from _fetch_events() are published to mxtac.raw.zeek."""
+    """Feature 6.14: Events from _fetch_events() are published to mxtac.raw.zeek."""
 
     async def test_events_published_to_raw_zeek_topic(self) -> None:
         conn = ZeekConnector(_make_config(), InMemoryQueue())
