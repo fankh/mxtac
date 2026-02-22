@@ -390,6 +390,25 @@ async def delete_rule(
     await publish_rule_reload()
 
 
+@router.post("/{rule_id}/mark_fp", response_model=dict, status_code=200)
+async def mark_false_positive(
+    rule_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(require_permission("detections:write")),
+):
+    """Mark a rule match as a false positive — atomically increments fp_count.
+
+    Called by analysts when reviewing an alert triggered by this rule and
+    determining it is a false positive.  Requires detections:write permission
+    (analyst, hunter, engineer, admin).
+    """
+    rule = await RuleRepo.get_by_id(db, rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    await RuleRepo.increment_fp(db, rule_id)
+    return {"rule_id": rule_id, "status": "marked"}
+
+
 @router.post("/{rule_id}/test", response_model=RuleTestResponse)
 async def test_rule(
     rule_id: str,

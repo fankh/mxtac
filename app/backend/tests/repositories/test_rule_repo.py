@@ -24,6 +24,8 @@ Coverage:
   - delete(): found → deletes, flushes, returns True
   - delete(): not found → returns False without delete/flush
   - count(): returns scalar result; None result → 0
+  - increment_hit(): calls session.execute once with an UPDATE statement; no flush; returns None
+  - increment_fp(): calls session.execute once with an UPDATE statement; no flush; returns None
 """
 
 from __future__ import annotations
@@ -566,3 +568,125 @@ class TestRuleRepoCount:
         result = await RuleRepo.count(session)
 
         assert result == count_val
+
+
+# ---------------------------------------------------------------------------
+# increment_hit()
+# ---------------------------------------------------------------------------
+
+
+class TestRuleRepoIncrementHit:
+    """RuleRepo.increment_hit() atomically increments hit_count and sets last_hit_at."""
+
+    @pytest.mark.asyncio
+    async def test_calls_session_execute_once(self) -> None:
+        session = _make_session()
+
+        await RuleRepo.increment_hit(session, "rule-abc")
+
+        session.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_accepts_any_rule_id(self) -> None:
+        session = _make_session()
+
+        await RuleRepo.increment_hit(session, "rule-xyz-789")
+
+        session.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_does_not_flush(self) -> None:
+        session = _make_session()
+
+        await RuleRepo.increment_hit(session, "rule-abc")
+
+        session.flush.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returns_none(self) -> None:
+        session = _make_session()
+
+        result = await RuleRepo.increment_hit(session, "rule-abc")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_passes_update_statement_to_execute(self) -> None:
+        from sqlalchemy.sql.dml import Update
+
+        session = _make_session()
+        await RuleRepo.increment_hit(session, "rule-abc")
+
+        stmt = session.execute.call_args.args[0]
+        assert isinstance(stmt, Update)
+
+    @pytest.mark.asyncio
+    async def test_called_twice_executes_twice(self) -> None:
+        """Two calls produce two DB execute calls (no batching)."""
+        session = _make_session()
+
+        await RuleRepo.increment_hit(session, "rule-abc")
+        await RuleRepo.increment_hit(session, "rule-def")
+
+        assert session.execute.await_count == 2
+
+
+# ---------------------------------------------------------------------------
+# increment_fp()
+# ---------------------------------------------------------------------------
+
+
+class TestRuleRepoIncrementFp:
+    """RuleRepo.increment_fp() atomically increments fp_count for a rule."""
+
+    @pytest.mark.asyncio
+    async def test_calls_session_execute_once(self) -> None:
+        session = _make_session()
+
+        await RuleRepo.increment_fp(session, "rule-abc")
+
+        session.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_accepts_any_rule_id(self) -> None:
+        session = _make_session()
+
+        await RuleRepo.increment_fp(session, "rule-xyz-789")
+
+        session.execute.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_does_not_flush(self) -> None:
+        session = _make_session()
+
+        await RuleRepo.increment_fp(session, "rule-abc")
+
+        session.flush.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returns_none(self) -> None:
+        session = _make_session()
+
+        result = await RuleRepo.increment_fp(session, "rule-abc")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_passes_update_statement_to_execute(self) -> None:
+        from sqlalchemy.sql.dml import Update
+
+        session = _make_session()
+        await RuleRepo.increment_fp(session, "rule-abc")
+
+        stmt = session.execute.call_args.args[0]
+        assert isinstance(stmt, Update)
+
+    @pytest.mark.asyncio
+    async def test_called_twice_executes_twice(self) -> None:
+        """Two FP marks produce two DB execute calls."""
+        session = _make_session()
+
+        await RuleRepo.increment_fp(session, "rule-abc")
+        await RuleRepo.increment_fp(session, "rule-abc")
+
+        assert session.execute.await_count == 2

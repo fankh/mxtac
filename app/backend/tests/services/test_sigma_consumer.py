@@ -1,4 +1,5 @@
 """Tests for Feature 8.19 — sigma_consumer: reads mxtac.normalized, publishes mxtac.alerts.
+Feature 8.20 — DB hit_count update on rule match via session_factory.
 
 Coverage:
 
@@ -37,6 +38,16 @@ Coverage:
   - Normalized event not matching → no alert on Topic.ALERTS
   - Multiple events → multiple alerts
   - Error in one event does not block subsequent events
+
+  DB hit tracking (Feature 8.20):
+  - session_factory=None → RuleRepo.increment_hit not called
+  - Matching event with session_factory → RuleRepo.increment_hit called once
+  - increment_hit called with the correct rule_id
+  - session.commit() called after increment_hit
+  - Non-matching event → RuleRepo.increment_hit not called
+  - Two matching rules → increment_hit called twice
+  - Alert published even when session_factory() raises
+  - Alert published even when increment_hit raises
 """
 
 from __future__ import annotations
@@ -45,12 +56,13 @@ import asyncio
 import re
 from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.engine.sigma_engine import SigmaEngine
 from app.pipeline.queue import InMemoryQueue, Topic
+from app.repositories.rule_repo import RuleRepo
 from app.services.normalizers.ocsf import (
     Endpoint,
     OCSFCategory,
@@ -703,3 +715,156 @@ class TestSigmaConsumerIntegration:
         assert rule_ids == {"rule-ps-encoded-001", "rule-mimikatz-001"}
 
         await q.stop()
+
+
+# ---------------------------------------------------------------------------
+# DB hit tracking (Feature 8.20)
+# ---------------------------------------------------------------------------
+
+
+def _make_session_factory():
+    """Return (factory, session) for testing session_factory DB integration.
+
+    The factory is a sync callable (like async_sessionmaker) that returns an
+    object usable as ``async with session_factory() as session:``.
+    """
+    mock_session = MagicMock()
+    mock_session.commit = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_factory = MagicMock(return_value=mock_session)
+    return mock_factory, mock_session
+
+
+async def _get_handler_with_db(engine: SigmaEngine, session_factory) -> tuple[MagicMock, Any]:
+    """Call sigma_consumer with session_factory and return (mock_queue, handler)."""
+    q = MagicMock()
+    q.subscribe = AsyncMock()
+    await sigma_consumer(q, engine, session_factory=session_factory)
+    handler = q.subscribe.call_args.args[2]
+    return q, handler
+
+
+class TestHandlerHitCountDB:
+    """Feature 8.20 — sigma_consumer increments hit_count in DB on rule match."""
+
+    async def test_no_db_call_when_session_factory_is_none(self) -> None:
+        """session_factory=None → RuleRepo.increment_hit must not be called."""
+        engine = _engine_with_rule(_RULE_PS_ENCODED)
+        q = MagicMock()
+        q.subscribe = AsyncMock()
+        await sigma_consumer(q, engine, session_factory=None)
+        handler = q.subscribe.call_args.args[2]
+        q.publish = AsyncMock()
+
+        with patch.object(RuleRepo, "increment_hit", new=AsyncMock()) as mock_inc:
+            await handler(_event_dict())
+
+        mock_inc.assert_not_awaited()
+
+    async def test_increment_hit_called_on_match(self) -> None:
+        """Matching event with session_factory → RuleRepo.increment_hit awaited once."""
+        engine = _engine_with_rule(_RULE_PS_ENCODED)
+        mock_factory, mock_session = _make_session_factory()
+        q, handler = await _get_handler_with_db(engine, mock_factory)
+        q.publish = AsyncMock()
+
+        with patch.object(RuleRepo, "increment_hit", new=AsyncMock()) as mock_inc:
+            await handler(_event_dict())
+
+        mock_inc.assert_awaited_once()
+
+    async def test_increment_hit_called_with_correct_rule_id(self) -> None:
+        """increment_hit is called with the matched rule's id."""
+        engine = _engine_with_rule(_RULE_PS_ENCODED)
+        mock_factory, mock_session = _make_session_factory()
+        q, handler = await _get_handler_with_db(engine, mock_factory)
+        q.publish = AsyncMock()
+
+        with patch.object(RuleRepo, "increment_hit", new=AsyncMock()) as mock_inc:
+            await handler(_event_dict())
+
+        _, call_rule_id = mock_inc.call_args.args
+        assert call_rule_id == "rule-ps-encoded-001"
+
+    async def test_session_commit_called_after_increment_hit(self) -> None:
+        """session.commit() is awaited after a successful increment_hit."""
+        engine = _engine_with_rule(_RULE_PS_ENCODED)
+        mock_factory, mock_session = _make_session_factory()
+        q, handler = await _get_handler_with_db(engine, mock_factory)
+        q.publish = AsyncMock()
+
+        with patch.object(RuleRepo, "increment_hit", new=AsyncMock()):
+            await handler(_event_dict())
+
+        mock_session.commit.assert_awaited_once()
+
+    async def test_no_db_call_on_non_matching_event(self) -> None:
+        """Non-matching event → RuleRepo.increment_hit not called."""
+        engine = _engine_with_rule(_RULE_NO_MATCH)
+        mock_factory, mock_session = _make_session_factory()
+        q, handler = await _get_handler_with_db(engine, mock_factory)
+        q.publish = AsyncMock()
+
+        with patch.object(RuleRepo, "increment_hit", new=AsyncMock()) as mock_inc:
+            await handler(_event_dict())  # powershell.exe won't match _RULE_NO_MATCH
+
+        mock_inc.assert_not_awaited()
+
+    async def test_two_matching_rules_call_increment_hit_twice(self) -> None:
+        """Two matching rules → increment_hit called once per matched rule."""
+        engine = SigmaEngine()
+        for yaml_text in (_RULE_PS_ENCODED, _RULE_MIMIKATZ):
+            rule = engine.load_rule_yaml(yaml_text)
+            assert rule is not None
+            engine.add_rule(rule)
+
+        mock_factory, mock_session = _make_session_factory()
+        q, handler = await _get_handler_with_db(engine, mock_factory)
+        q.publish = AsyncMock()
+
+        event = _event_dict(
+            process=ProcessInfo(
+                name="powershell.exe",
+                cmd_line="powershell -enc mimikatz",
+            ).model_dump(),
+        )
+        with patch.object(RuleRepo, "increment_hit", new=AsyncMock()) as mock_inc:
+            await handler(event)
+
+        assert mock_inc.await_count == 2
+
+    async def test_alert_published_when_session_factory_raises(self) -> None:
+        """DB failure (session_factory() raises) does not suppress the alert publish."""
+        engine = _engine_with_rule(_RULE_PS_ENCODED)
+        # factory itself raises — simulates connection pool exhaustion
+        bad_factory = MagicMock(side_effect=Exception("DB down"))
+        q, handler = await _get_handler_with_db(engine, bad_factory)
+        q.publish = AsyncMock()
+
+        await handler(_event_dict())  # must not raise
+
+        q.publish.assert_awaited_once()
+
+    async def test_alert_published_when_increment_hit_raises(self) -> None:
+        """DB UPDATE failure does not suppress the alert publish."""
+        engine = _engine_with_rule(_RULE_PS_ENCODED)
+        mock_factory, mock_session = _make_session_factory()
+        q, handler = await _get_handler_with_db(engine, mock_factory)
+        q.publish = AsyncMock()
+
+        with patch.object(
+            RuleRepo, "increment_hit", new=AsyncMock(side_effect=Exception("DB error"))
+        ):
+            await handler(_event_dict())  # must not raise
+
+        q.publish.assert_awaited_once()
+
+    async def test_handler_does_not_raise_when_session_factory_raises(self) -> None:
+        """DB failure must never propagate out of the handler."""
+        engine = _engine_with_rule(_RULE_PS_ENCODED)
+        bad_factory = MagicMock(side_effect=RuntimeError("connection refused"))
+        q, handler = await _get_handler_with_db(engine, bad_factory)
+        q.publish = AsyncMock()
+
+        await handler(_event_dict())  # must not raise
