@@ -7,7 +7,7 @@ Rate limiting: max 1 notification per (channel_id, rule_id, host) per 5 minutes.
 All send errors are logged and swallowed — a delivery failure never interrupts the pipeline.
 
 Supported channel types:
-  email   — SMTP via thread-pool executor (smtplib)
+  email   — async SMTP via aiosmtplib (TLS and STARTTLS supported)
   slack   — POST to Slack incoming webhook URL with formatted attachment
   webhook — POST alert JSON to configured URL (configurable method, headers, auth)
   msteams — POST adaptive card to MS Teams webhook URL
@@ -19,9 +19,10 @@ import asyncio
 import email.mime.multipart
 import email.mime.text
 import json
-import smtplib
 import time
 from typing import TYPE_CHECKING, Any
+
+import aiosmtplib
 
 import httpx
 
@@ -58,6 +59,59 @@ def _severity_color(level: str) -> str:
         "medium": "#FFA500",
         "low": "#3AA3E3",
     }.get(level.lower(), "#808080")
+
+
+def _build_email_html(
+    *,
+    title: str,
+    severity: str,
+    host: str,
+    tactic: str,
+    technique: str,
+    timestamp: str,
+) -> str:
+    """Build an HTML email body for an alert notification."""
+    sev_lower = severity.lower()
+    sev_colors = {
+        "critical": "#8B0000",
+        "high": "#FF4500",
+        "medium": "#FFA500",
+        "low": "#3AA3E3",
+    }
+    sev_color = sev_colors.get(sev_lower, "#808080")
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body {{ font-family: Arial, sans-serif; background: #f9f9f9; padding: 20px; }}
+  .card {{ background: #fff; border-radius: 6px; padding: 24px; max-width: 600px;
+           box-shadow: 0 1px 4px rgba(0,0,0,.12); }}
+  h2 {{ margin: 0 0 16px; color: #222; }}
+  table {{ border-collapse: collapse; width: 100%; }}
+  th, td {{ padding: 8px 12px; text-align: left; border: 1px solid #e0e0e0; }}
+  th {{ background: #f2f2f2; color: #555; font-weight: 600; width: 35%; }}
+  .badge {{ display: inline-block; padding: 2px 8px; border-radius: 4px;
+            color: #fff; font-weight: bold; background: {sev_color}; }}
+  .footer {{ margin-top: 16px; font-size: 11px; color: #999; }}
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>MxTac Security Alert</h2>
+  <table>
+    <tr><th>Alert Title</th><td>{title}</td></tr>
+    <tr><th>Severity</th><td><span class="badge">{severity}</span></td></tr>
+    <tr><th>Host</th><td>{host}</td></tr>
+    <tr><th>Tactic</th><td>{tactic}</td></tr>
+    <tr><th>Technique</th><td>{technique}</td></tr>
+    <tr><th>Timestamp</th><td>{timestamp}</td></tr>
+  </table>
+  <p class="footer">Sent by MxTac — MITRE ATT&amp;CK Detection Platform</p>
+</div>
+</body>
+</html>"""
 
 
 class NotificationDispatcher:
@@ -235,49 +289,66 @@ class NotificationDispatcher:
     # ------------------------------------------------------------------
 
     async def _send_email(self, config: dict[str, Any], alert: dict[str, Any]) -> None:
-        """Send alert via SMTP (thread-pool executor wrapping smtplib)."""
-        smtp_host = config.get("smtp_host", "localhost")
-        smtp_port = int(config.get("smtp_port", 587))
-        from_addr = config.get("from_address", "mxtac@localhost")
-        to_addrs: list[str] = config.get("to_addresses", [])
+        """Send alert via aiosmtplib (async SMTP with TLS/STARTTLS support).
+
+        Channel config keys (all optional — fall back to global settings):
+          smtp_host       SMTP server hostname (default: localhost)
+          smtp_port       SMTP server port (default: 587)
+          from_address    Envelope From address
+          to_addresses    List of recipient addresses (required — skipped if empty)
+          use_tls         True → implicit TLS (port 465); False → STARTTLS (port 587)
+          username        SMTP auth username (omit for unauthenticated relay)
+          password        SMTP auth password
+        """
+        from ..core.config import settings  # noqa: PLC0415
+
+        smtp_host = config.get("smtp_host") or settings.smtp_host
+        smtp_port = int(config.get("smtp_port") or settings.smtp_port)
+        from_addr = config.get("from_address") or settings.smtp_from_address
+        to_addrs: list[str] = config.get("to_addresses") or []
         use_tls = bool(config.get("use_tls", False))
-        username = str(config.get("username", ""))
-        password = str(config.get("password", ""))
+        username = str(config.get("username") or settings.smtp_username)
+        password = str(config.get("password") or settings.smtp_password)
 
         if not to_addrs:
             logger.warning("NotificationDispatcher: email channel missing to_addresses")
             return
 
-        def _build_message() -> str:
-            level = alert.get("level", "unknown").upper()
-            host = alert.get("host", "unknown")
-            title = alert.get("rule_title", alert.get("rule_id", "Unknown Rule"))
-            score = alert.get("score", 0)
+        severity = (alert.get("level") or "unknown").upper()
+        title = alert.get("rule_title") or alert.get("rule_id") or "Unknown Rule"
+        host = alert.get("host") or "unknown"
+        tactic = ", ".join(alert.get("tactic_ids") or []) or "N/A"
+        technique = ", ".join(alert.get("technique_ids") or []) or "N/A"
+        timestamp = alert.get("time") or ""
 
-            subject = f"[MxTac Alert] [{level}] {title} — {host} (score {score})"
-            msg = email.mime.multipart.MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = from_addr
-            msg["To"] = ", ".join(to_addrs)
-            body = json.dumps(alert, indent=2, default=str)
-            msg.attach(email.mime.text.MIMEText(body, "plain", "utf-8"))
-            return msg.as_string()
+        subject = f"[MxTac {severity}] {title} on {host}"
 
-        def _send_sync() -> None:
-            raw = _build_message()
-            if use_tls:
-                smtp: smtplib.SMTP = smtplib.SMTP_SSL(smtp_host, smtp_port)
-            else:
-                smtp = smtplib.SMTP(smtp_host, smtp_port)
-            with smtp:
-                if not use_tls:
-                    smtp.starttls()
-                if username:
-                    smtp.login(username, password)
-                smtp.sendmail(from_addr, to_addrs, raw)
+        html_body = _build_email_html(
+            title=title,
+            severity=severity,
+            host=host,
+            tactic=tactic,
+            technique=technique,
+            timestamp=timestamp,
+        )
 
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, _send_sync)
+        msg = email.mime.multipart.MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = from_addr
+        msg["To"] = ", ".join(to_addrs)
+        msg.attach(email.mime.text.MIMEText(html_body, "html", "utf-8"))
+
+        # use_tls=True  → implicit TLS (SMTPS, typically port 465)
+        # use_tls=False → STARTTLS upgrade (typically port 587)
+        await aiosmtplib.send(
+            msg,
+            hostname=smtp_host,
+            port=smtp_port,
+            use_tls=use_tls,
+            start_tls=(not use_tls),
+            username=username or None,
+            password=password or None,
+        )
         logger.info(
             "NotificationDispatcher: email sent to=%s rule_id=%s",
             to_addrs,

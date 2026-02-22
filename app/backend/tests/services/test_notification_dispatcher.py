@@ -1,4 +1,4 @@
-"""Tests for NotificationDispatcher — feature 27.2.
+"""Tests for NotificationDispatcher — feature 27.2 / 27.3.
 
 Coverage:
   dispatch():
@@ -26,7 +26,12 @@ Coverage:
     - skips and logs warning when webhook_url is empty
 
   _send_email():
-    - calls run_in_executor (non-blocking) with smtplib send
+    - sends via aiosmtplib (async SMTP)
+    - subject line follows "[MxTac {SEVERITY}] {title} on {host}" format
+    - HTML body contains title, severity, host, tactic, technique, timestamp
+    - uses implicit TLS when use_tls=True
+    - uses STARTTLS when use_tls=False
+    - supports multiple to_addresses
     - skips and logs warning when to_addresses is empty
 
   load_channels():
@@ -448,8 +453,8 @@ async def test_send_msteams_skips_when_no_webhook_url():
 
 
 @pytest.mark.asyncio
-async def test_send_email_uses_executor():
-    """_send_email() must call run_in_executor (non-blocking SMTP)."""
+async def test_send_email_sends_via_aiosmtplib():
+    """_send_email() must send via aiosmtplib.send (async SMTP)."""
     dispatcher = NotificationDispatcher()
     config = {
         "smtp_host": "smtp.example.com",
@@ -457,22 +462,148 @@ async def test_send_email_uses_executor():
         "from_address": "alerts@example.com",
         "to_addresses": ["analyst@example.com"],
         "use_tls": False,
-        "username": "",
-        "password": "",
+        "username": "user",
+        "password": "pass",
     }
 
-    executor_calls: list = []
-
-    async def mock_executor(executor, func, *args):
-        executor_calls.append(func)
-        # Don't actually call the smtplib function in tests
-
-    with patch("asyncio.get_running_loop") as mock_loop:
-        mock_loop.return_value.run_in_executor = mock_executor
+    with patch("aiosmtplib.send", new_callable=AsyncMock) as mock_send:
         await dispatcher._send_email(config, _make_alert())
 
     await dispatcher.close()
-    assert len(executor_calls) == 1  # exactly one executor call
+    mock_send.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_send_email_subject_format():
+    """_send_email() subject must follow '[MxTac {SEVERITY}] {title} on {host}'."""
+    dispatcher = NotificationDispatcher()
+    config = {
+        "smtp_host": "smtp.example.com",
+        "from_address": "alerts@example.com",
+        "to_addresses": ["analyst@example.com"],
+    }
+    alert = _make_alert(level="critical", host="dc-01")
+    alert["rule_title"] = "Credential Dumping"
+
+    captured_msg = {}
+
+    async def _capture(msg, **kwargs):
+        captured_msg["subject"] = msg["Subject"]
+
+    with patch("aiosmtplib.send", side_effect=_capture):
+        await dispatcher._send_email(config, alert)
+
+    await dispatcher.close()
+    assert captured_msg["subject"] == "[MxTac CRITICAL] Credential Dumping on dc-01"
+
+
+@pytest.mark.asyncio
+async def test_send_email_html_body_contains_alert_details():
+    """_send_email() HTML body must include title, severity, host, tactic, technique, timestamp."""
+    dispatcher = NotificationDispatcher()
+    config = {
+        "smtp_host": "smtp.example.com",
+        "from_address": "alerts@example.com",
+        "to_addresses": ["analyst@example.com"],
+    }
+    alert = _make_alert(level="high", host="srv-web")
+    alert["rule_title"] = "Suspicious PowerShell"
+    alert["tactic_ids"] = ["execution"]
+    alert["technique_ids"] = ["T1059.001"]
+    alert["time"] = "2024-01-15T10:30:00Z"
+
+    captured_html = {}
+
+    async def _capture(msg, **kwargs):
+        for part in msg.walk():
+            if part.get_content_type() == "text/html":
+                captured_html["body"] = part.get_payload(decode=True).decode("utf-8")
+
+    with patch("aiosmtplib.send", side_effect=_capture):
+        await dispatcher._send_email(config, alert)
+
+    await dispatcher.close()
+    body = captured_html["body"]
+    assert "Suspicious PowerShell" in body
+    assert "HIGH" in body
+    assert "srv-web" in body
+    assert "execution" in body
+    assert "T1059.001" in body
+    assert "2024-01-15T10:30:00Z" in body
+
+
+@pytest.mark.asyncio
+async def test_send_email_uses_implicit_tls_when_use_tls_true():
+    """_send_email() must pass use_tls=True and start_tls=False to aiosmtplib."""
+    dispatcher = NotificationDispatcher()
+    config = {
+        "smtp_host": "smtp.example.com",
+        "smtp_port": 465,
+        "from_address": "alerts@example.com",
+        "to_addresses": ["analyst@example.com"],
+        "use_tls": True,
+    }
+
+    captured_kwargs: dict = {}
+
+    async def _capture(msg, **kwargs):
+        captured_kwargs.update(kwargs)
+
+    with patch("aiosmtplib.send", side_effect=_capture):
+        await dispatcher._send_email(config, _make_alert())
+
+    await dispatcher.close()
+    assert captured_kwargs.get("use_tls") is True
+    assert captured_kwargs.get("start_tls") is False
+
+
+@pytest.mark.asyncio
+async def test_send_email_uses_starttls_when_use_tls_false():
+    """_send_email() must pass use_tls=False and start_tls=True when use_tls is False."""
+    dispatcher = NotificationDispatcher()
+    config = {
+        "smtp_host": "smtp.example.com",
+        "smtp_port": 587,
+        "from_address": "alerts@example.com",
+        "to_addresses": ["analyst@example.com"],
+        "use_tls": False,
+    }
+
+    captured_kwargs: dict = {}
+
+    async def _capture(msg, **kwargs):
+        captured_kwargs.update(kwargs)
+
+    with patch("aiosmtplib.send", side_effect=_capture):
+        await dispatcher._send_email(config, _make_alert())
+
+    await dispatcher.close()
+    assert captured_kwargs.get("use_tls") is False
+    assert captured_kwargs.get("start_tls") is True
+
+
+@pytest.mark.asyncio
+async def test_send_email_supports_multiple_to_addresses():
+    """_send_email() To header must include all recipient addresses."""
+    dispatcher = NotificationDispatcher()
+    recipients = ["soc@example.com", "analyst@example.com", "ciso@example.com"]
+    config = {
+        "smtp_host": "smtp.example.com",
+        "from_address": "alerts@example.com",
+        "to_addresses": recipients,
+    }
+
+    captured_msg = {}
+
+    async def _capture(msg, **kwargs):
+        captured_msg["to"] = msg["To"]
+
+    with patch("aiosmtplib.send", side_effect=_capture):
+        await dispatcher._send_email(config, _make_alert())
+
+    await dispatcher.close()
+    for addr in recipients:
+        assert addr in captured_msg["to"]
 
 
 @pytest.mark.asyncio
@@ -485,12 +616,11 @@ async def test_send_email_skips_when_no_to_addresses():
         "to_addresses": [],
     }
 
-    with patch("asyncio.get_running_loop") as mock_loop:
-        mock_loop.return_value.run_in_executor = AsyncMock()
+    with patch("aiosmtplib.send", new_callable=AsyncMock) as mock_send:
         await dispatcher._send_email(config, _make_alert())
-        mock_loop.return_value.run_in_executor.assert_not_awaited()
 
     await dispatcher.close()
+    mock_send.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

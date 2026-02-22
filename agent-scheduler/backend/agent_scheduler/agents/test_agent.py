@@ -68,23 +68,41 @@ class TestAgent(BaseAgent):
                 select(Task)
                 .where(Task.status == TaskStatus.COMPLETED)
                 .where(Task.test_status.is_(None))
-                .limit(5)
+                .order_by(Task.updated_at.desc())
+                .limit(20)
             )
             tasks = result.scalars().all()
 
         results = []
+        tested_count = 0
         for task in tasks:
             target_files = task.target_files_list
             test_files = self._map_to_test_files(root, target_files)
 
             if not test_files:
+                # Mark as skipped so this task doesn't block the queue
+                async with async_session() as session:
+                    t = await session.get(Task, task.id)
+                    if t:
+                        t.test_status = "skipped"
+                        t.test_output = "No matching test files found"
+                        await session.commit()
+                logger.debug("No test files for task %s, marked skipped", task.task_id)
                 continue
+
+            if tested_count >= 5:
+                break
+            tested_count += 1
+
+            backend_dir = root / "app" / "backend"
+            venv_python = backend_dir / ".venv" / "bin" / "python3"
 
             for tf in test_files:
                 if tf.endswith(".py"):
+                    pytest_cmd = f"{venv_python} -m pytest" if venv_python.exists() else "python3 -m pytest"
                     rc, stdout, stderr = await self._run_subprocess(
-                        f"python -m pytest {tf} -v --tb=short",
-                        cwd=str(root / "app" / "backend"),
+                        f"{pytest_cmd} {tf} -v --tb=short",
+                        cwd=str(backend_dir),
                         timeout=settings.agent_test_timeout,
                     )
                 elif tf.endswith((".ts", ".tsx")):
@@ -124,7 +142,7 @@ class TestAgent(BaseAgent):
             return {"type": "suite", "pass": True, "detail": "No test directory found"}
 
         rc, stdout, stderr = await self._run_subprocess(
-            "python -m pytest tests/ -v --tb=short",
+            "python3 -m pytest tests/ -v --tb=short",
             cwd=str(root / "app" / "backend"),
             timeout=settings.agent_test_timeout,
         )

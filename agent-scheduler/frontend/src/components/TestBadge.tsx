@@ -13,6 +13,7 @@ export function TestBadge({ status }: TestBadgeProps) {
     testing: "bg-blue-500/20 text-blue-400 animate-pulse",
     passed: "bg-green-500/20 text-green-400",
     failed: "bg-red-500/20 text-red-400",
+    skipped: "bg-yellow-500/20 text-yellow-400",
   };
 
   const cls = styles[status] || "bg-gray-500/20 text-gray-400";

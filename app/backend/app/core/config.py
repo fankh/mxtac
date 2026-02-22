@@ -133,6 +133,18 @@ class Settings(BaseSettings):
     alert_email_to: list[str] = []               # recipient list
     alert_email_min_level: str = "high"          # minimum severity to email
 
+    # Notification dispatcher SMTP defaults — used by DB-backed email channels
+    # when a channel's config_json omits individual SMTP fields.
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = Field(
+        default="",
+        repr=False,
+        json_schema_extra={"x-sensitive": True, "format": "password"},
+    )
+    smtp_from_address: str = "mxtac-alerts@localhost"
+
     # Threat intelligence feeds — STIX/TAXII 2.1 (feature 29.5)
     # Set via THREAT_INTEL_FEEDS env var as a JSON array, e.g.:
     #   [{"name":"AlienVault","taxii_url":"https://...","collection_id":"...","api_key":"..."}]
