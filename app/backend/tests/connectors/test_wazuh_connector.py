@@ -1196,3 +1196,82 @@ class TestWazuhConnectorBackoff:
         # The first wait_for call in the error path must use 5.0 (backoff), not poll_interval
         assert 5.0 in captured_timeouts
         assert conn.config.poll_interval_seconds not in captured_timeouts
+
+
+# ── Feature 6.6 — Update connector status in DB ────────────────────────────────
+
+
+class TestWazuhConnectorStatusCallback:
+    """
+    Feature 6.6 — Update connector status in DB (last_seen_at, error_message).
+
+    The status_callback is called after each poll cycle so the database
+    reflects the connector's current status and, when applicable, its last
+    error message.
+    """
+
+    async def test_status_callback_called_with_active_on_successful_cycle(self) -> None:
+        """After a successful poll cycle, status_callback is called with 'active' and None."""
+        callback = AsyncMock()
+        conn = WazuhConnector(_make_config(), InMemoryQueue(), status_callback=callback)
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            return
+            yield  # noqa: unreachable — makes this an async generator
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        callback.assert_called_once_with(ConnectorStatus.ACTIVE.value, None)
+
+    async def test_status_callback_called_with_error_on_failed_cycle(self) -> None:
+        """After a failed poll cycle, status_callback receives 'error' and the error message."""
+        callback = AsyncMock()
+        conn = WazuhConnector(_make_config(), InMemoryQueue(), status_callback=callback)
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            raise RuntimeError("connection refused")
+            yield  # noqa: unreachable — makes this an async generator
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        callback.assert_called_once_with(ConnectorStatus.ERROR.value, "connection refused")
+
+    async def test_status_callback_none_does_not_raise(self) -> None:
+        """When status_callback is None, the poll loop runs without error."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue(), status_callback=None)
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            return
+            yield  # noqa: unreachable — makes this an async generator
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()  # must not raise
+
+    async def test_status_callback_called_once_per_cycle(self) -> None:
+        """status_callback is called exactly once per completed poll cycle."""
+        call_args: list[tuple] = []
+
+        async def callback(status: str, error_message) -> None:
+            call_args.append((status, error_message))
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue(), status_callback=callback)
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            return
+            yield  # noqa: unreachable — makes this an async generator
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        await conn._poll_loop()
+
+        assert len(call_args) == 1
+        assert call_args[0] == (ConnectorStatus.ACTIVE.value, None)

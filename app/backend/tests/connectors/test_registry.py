@@ -576,3 +576,46 @@ class TestStartConnectorsFromDbIntegration:
         assert len(connectors) == 2
         names = {c.config.name for c in connectors.values()}
         assert names == {"wazuh-main", "suricata-main"}
+
+
+# ── Feature 6.6 — Status callback wired by build_connector() ──────────────────
+
+
+class TestBuildConnectorStatusCallback:
+    """
+    Feature 6.6 — Update connector status in DB (last_seen_at, error_message).
+
+    build_connector() must attach a status_callback to every connector so that
+    status transitions during the poll loop are persisted to the database.
+    """
+
+    def test_wazuh_connector_has_status_callback(self) -> None:
+        """build_connector sets _status_callback on WazuhConnector."""
+        db_conn = _make_db_connector(connector_type="wazuh", config_json=_wazuh_config_json())
+        conn = build_connector(db_conn, InMemoryQueue())
+        assert isinstance(conn, WazuhConnector)
+        assert conn._status_callback is not None
+
+    def test_zeek_connector_has_status_callback(self) -> None:
+        """build_connector sets _status_callback on ZeekConnector."""
+        config_json = json.dumps({"log_dir": "/opt/zeek/logs/current"})
+        db_conn = _make_db_connector(connector_type="zeek", config_json=config_json)
+        with patch("app.connectors.registry._load_zeek_positions", return_value=None):
+            conn = build_connector(db_conn, InMemoryQueue())
+        assert isinstance(conn, ZeekConnector)
+        assert conn._status_callback is not None
+
+    def test_suricata_connector_has_status_callback(self) -> None:
+        """build_connector sets _status_callback on SuricataConnector."""
+        config_json = json.dumps({"eve_file": "/var/log/suricata/eve.json"})
+        db_conn = _make_db_connector(connector_type="suricata", config_json=config_json)
+        with patch("app.connectors.registry._load_suricata_position", return_value=None):
+            conn = build_connector(db_conn, InMemoryQueue())
+        assert isinstance(conn, SuricataConnector)
+        assert conn._status_callback is not None
+
+    def test_status_callback_is_callable(self) -> None:
+        """The status_callback attached to a connector is callable."""
+        db_conn = _make_db_connector(connector_type="wazuh", config_json=_wazuh_config_json())
+        conn = build_connector(db_conn, InMemoryQueue())
+        assert callable(conn._status_callback)
