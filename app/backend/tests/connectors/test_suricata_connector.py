@@ -32,6 +32,32 @@ Coverage:
     - health.last_event_at updated after first publish
     - no publish when fetch yields nothing
     - fetch error caught without crash; health.errors_total increments
+
+Feature 6.16 — Filter by event_type: alert, dns, http, tls:
+  DEFAULT_EVENT_TYPES class attribute:
+    - contains alert, dns, http, tls
+    - does not contain flow or stats
+
+  Default filter behaviour:
+    - alert event passes by default
+    - dns event passes by default
+    - http event passes by default
+    - tls event passes by default
+    - flow event filtered out by default
+    - stats event filtered out by default
+    - fileinfo event filtered out by default
+
+  Custom event_types configuration:
+    - custom event_types list overrides the default
+    - single-type filter passes only that type
+    - all four default types pass when all configured
+    - empty event_types list blocks all events
+
+  Edge cases:
+    - event without event_type field is filtered out
+    - mixed events: only allowed types pass
+    - file position advances even when all events are filtered
+    - filter is case-sensitive (ALERT != alert)
 """
 
 from __future__ import annotations
@@ -144,7 +170,7 @@ class TestSuricataFetchEvents:
     async def test_yields_parsed_json_events(self) -> None:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write('{"event_type":"alert","src_ip":"10.0.0.1"}\n')
-            f.write('{"event_type":"flow","dest_ip":"8.8.8.8"}\n')
+            f.write('{"event_type":"dns","dest_ip":"8.8.8.8"}\n')
             eve_path = f.name
         try:
             conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
@@ -152,7 +178,7 @@ class TestSuricataFetchEvents:
             events = await _collect(conn)
             assert len(events) == 2
             assert events[0]["event_type"] == "alert"
-            assert events[1]["event_type"] == "flow"
+            assert events[1]["event_type"] == "dns"
         finally:
             os.unlink(eve_path)
 
@@ -175,7 +201,7 @@ class TestSuricataFetchEvents:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write('{"event_type":"alert"}\n')
             f.write('NOT_JSON_AT_ALL\n')
-            f.write('{"event_type":"flow"}\n')
+            f.write('{"event_type":"dns"}\n')
             eve_path = f.name
         try:
             conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
@@ -183,7 +209,7 @@ class TestSuricataFetchEvents:
             events = await _collect(conn)
             assert len(events) == 2
             assert events[0]["event_type"] == "alert"
-            assert events[1]["event_type"] == "flow"
+            assert events[1]["event_type"] == "dns"
         finally:
             os.unlink(eve_path)
 
@@ -224,17 +250,19 @@ class TestSuricataFetchEvents:
             conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
             conn._file_position = 0
             await _collect(conn)  # consume first line
-            # Append a new line
+            # Append a new line with a type in the default allowlist
             with open(eve_path, "a") as fa:
-                fa.write('{"event_type":"flow"}\n')
+                fa.write('{"event_type":"dns"}\n')
             second = await _collect(conn)
             assert len(second) == 1
-            assert second[0]["event_type"] == "flow"
+            assert second[0]["event_type"] == "dns"
         finally:
             os.unlink(eve_path)
 
     async def test_yields_multiple_events_from_one_file(self) -> None:
-        events_data = [{"event_type": f"type-{i}", "i": i} for i in range(5)]
+        # Use event types that are in the default allowlist
+        event_types = ["alert", "dns", "http", "tls", "alert"]
+        events_data = [{"event_type": t, "i": i} for i, t in enumerate(event_types)]
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             for ev in events_data:
                 f.write(json.dumps(ev) + "\n")
@@ -293,7 +321,8 @@ class TestSuricataPollLoop:
         await queue.start()
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write('{"event_type":"alert"}\n{"event_type":"flow"}\n')
+            # Both event types must be in the default allowlist
+            f.write('{"event_type":"alert"}\n{"event_type":"dns"}\n')
             eve_path = f.name
         try:
             conn = SuricataConnector(_make_config(eve_file=eve_path), queue)
@@ -393,3 +422,306 @@ class TestSuricataPollLoop:
         assert "disk read error" in conn.health.error_message
 
         await queue.stop()
+
+
+# ── Feature 6.16 — Filter by event_type ───────────────────────────────────────
+
+
+class TestSuricataEventTypeFilter:
+    """Feature 6.16 — Filter by event_type: alert, dns, http, tls.
+
+    _fetch_events() applies an event_type allowlist so only events whose
+    event_type field matches a configured value are yielded.  The default
+    allowlist is SuricataConnector.DEFAULT_EVENT_TYPES = ("alert", "dns",
+    "http", "tls").
+    """
+
+    # ── DEFAULT_EVENT_TYPES class attribute ───────────────────────────────────
+
+    def test_default_event_types_contains_alert(self) -> None:
+        assert "alert" in SuricataConnector.DEFAULT_EVENT_TYPES
+
+    def test_default_event_types_contains_dns(self) -> None:
+        assert "dns" in SuricataConnector.DEFAULT_EVENT_TYPES
+
+    def test_default_event_types_contains_http(self) -> None:
+        assert "http" in SuricataConnector.DEFAULT_EVENT_TYPES
+
+    def test_default_event_types_contains_tls(self) -> None:
+        assert "tls" in SuricataConnector.DEFAULT_EVENT_TYPES
+
+    def test_default_event_types_does_not_contain_flow(self) -> None:
+        assert "flow" not in SuricataConnector.DEFAULT_EVENT_TYPES
+
+    def test_default_event_types_does_not_contain_stats(self) -> None:
+        assert "stats" not in SuricataConnector.DEFAULT_EVENT_TYPES
+
+    # ── Default filter: each allowed type passes ──────────────────────────────
+
+    async def test_alert_event_passes_default_filter(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert","src_ip":"1.2.3.4"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert len(events) == 1
+            assert events[0]["event_type"] == "alert"
+        finally:
+            os.unlink(eve_path)
+
+    async def test_dns_event_passes_default_filter(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"dns","query":"example.com"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert len(events) == 1
+            assert events[0]["event_type"] == "dns"
+        finally:
+            os.unlink(eve_path)
+
+    async def test_http_event_passes_default_filter(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"http","http":{"method":"GET"}}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert len(events) == 1
+            assert events[0]["event_type"] == "http"
+        finally:
+            os.unlink(eve_path)
+
+    async def test_tls_event_passes_default_filter(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"tls","tls":{"sni":"example.com"}}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert len(events) == 1
+            assert events[0]["event_type"] == "tls"
+        finally:
+            os.unlink(eve_path)
+
+    # ── Default filter: non-allowlisted types are dropped ────────────────────
+
+    async def test_flow_event_filtered_out_by_default(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"flow","src_ip":"10.0.0.1"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert events == []
+        finally:
+            os.unlink(eve_path)
+
+    async def test_stats_event_filtered_out_by_default(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"stats","uptime":3600}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert events == []
+        finally:
+            os.unlink(eve_path)
+
+    async def test_fileinfo_event_filtered_out_by_default(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"fileinfo","filename":"evil.exe"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert events == []
+        finally:
+            os.unlink(eve_path)
+
+    # ── Custom event_types configuration ──────────────────────────────────────
+
+    async def test_custom_event_types_overrides_default(self) -> None:
+        """Setting event_types=["alert"] passes only alert, not dns/http/tls."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert"}\n')
+            f.write('{"event_type":"dns"}\n')
+            f.write('{"event_type":"http"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path, event_types=["alert"]),
+                InMemoryQueue(),
+            )
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert len(events) == 1
+            assert events[0]["event_type"] == "alert"
+        finally:
+            os.unlink(eve_path)
+
+    async def test_single_type_filter_dns(self) -> None:
+        """event_types=["dns"] passes only dns events."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert"}\n')
+            f.write('{"event_type":"dns","query":"example.com"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path, event_types=["dns"]),
+                InMemoryQueue(),
+            )
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert len(events) == 1
+            assert events[0]["event_type"] == "dns"
+        finally:
+            os.unlink(eve_path)
+
+    async def test_all_four_default_types_pass_when_all_configured(self) -> None:
+        """All four default types pass when explicitly configured together."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert"}\n')
+            f.write('{"event_type":"dns"}\n')
+            f.write('{"event_type":"http"}\n')
+            f.write('{"event_type":"tls"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path, event_types=["alert", "dns", "http", "tls"]),
+                InMemoryQueue(),
+            )
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert len(events) == 4
+            yielded_types = {e["event_type"] for e in events}
+            assert yielded_types == {"alert", "dns", "http", "tls"}
+        finally:
+            os.unlink(eve_path)
+
+    async def test_empty_event_types_blocks_all_events(self) -> None:
+        """An empty event_types list acts as a block-all filter."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert"}\n')
+            f.write('{"event_type":"dns"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path, event_types=[]),
+                InMemoryQueue(),
+            )
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert events == []
+        finally:
+            os.unlink(eve_path)
+
+    async def test_custom_types_can_include_non_default_type(self) -> None:
+        """Users may extend the filter to include types like flow."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert"}\n')
+            f.write('{"event_type":"flow"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(
+                _make_config(eve_file=eve_path, event_types=["alert", "flow"]),
+                InMemoryQueue(),
+            )
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert len(events) == 2
+            yielded_types = {e["event_type"] for e in events}
+            assert yielded_types == {"alert", "flow"}
+        finally:
+            os.unlink(eve_path)
+
+    # ── Edge cases ────────────────────────────────────────────────────────────
+
+    async def test_event_without_event_type_field_is_filtered(self) -> None:
+        """Events that have no event_type key are silently dropped."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"src_ip":"10.0.0.1","dest_ip":"8.8.8.8"}\n')
+            f.write('{"event_type":"alert"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert len(events) == 1
+            assert events[0]["event_type"] == "alert"
+        finally:
+            os.unlink(eve_path)
+
+    async def test_mixed_events_only_allowed_types_pass(self) -> None:
+        """alert and dns pass; flow and stats are dropped."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"alert","src_ip":"1.1.1.1"}\n')
+            f.write('{"event_type":"flow","src_ip":"2.2.2.2"}\n')
+            f.write('{"event_type":"dns","query":"evil.com"}\n')
+            f.write('{"event_type":"stats","uptime":100}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert len(events) == 2
+            yielded_types = {e["event_type"] for e in events}
+            assert yielded_types == {"alert", "dns"}
+        finally:
+            os.unlink(eve_path)
+
+    async def test_file_position_advances_even_when_all_filtered(self) -> None:
+        """File position must advance to EOF even if every event is filtered."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"flow"}\n')
+            f.write('{"event_type":"stats"}\n')
+            eve_path = f.name
+        try:
+            expected_size = os.path.getsize(eve_path)
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert events == []
+            assert conn._file_position == expected_size
+        finally:
+            os.unlink(eve_path)
+
+    async def test_filter_is_case_sensitive(self) -> None:
+        """event_type matching is case-sensitive: 'ALERT' does not match 'alert'."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"ALERT"}\n')
+            f.write('{"event_type":"Alert"}\n')
+            f.write('{"event_type":"alert"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            events = await _collect(conn)
+            assert len(events) == 1
+            assert events[0]["event_type"] == "alert"
+        finally:
+            os.unlink(eve_path)
+
+    async def test_second_call_does_not_reprocess_filtered_events(self) -> None:
+        """Events filtered on the first call are not re-processed on a second call."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write('{"event_type":"flow"}\n')
+            eve_path = f.name
+        try:
+            conn = SuricataConnector(_make_config(eve_file=eve_path), InMemoryQueue())
+            conn._file_position = 0
+            first = await _collect(conn)
+            assert first == []
+            second = await _collect(conn)
+            assert second == []
+        finally:
+            os.unlink(eve_path)
