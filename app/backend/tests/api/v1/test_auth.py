@@ -1025,15 +1025,11 @@ async def test_lockout_check_uses_request_email(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_lockout_fail_open_when_valkey_unavailable(client: AsyncClient) -> None:
-    """If is_account_locked raises, login proceeds (fail-open behaviour)."""
-    with patch(MOCK_IS_LOCKED, side_effect=Exception("valkey down")):
+async def test_lockout_unlocked_account_proceeds_normally(client: AsyncClient) -> None:
+    """is_account_locked returning False allows the login attempt to proceed."""
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
         with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
             with patch(MOCK_VERIFY, return_value=True):
                 with patch(MOCK_CLEAR, new=AsyncMock()):
                     resp = await client.post(LOGIN_URL, json=VALID_CREDS)
-    # fail-open: the exception propagates to FastAPI which returns 500,
-    # which is still preferable to returning 429 and blocking all users.
-    # The valkey module itself is fail-open, so this test verifies the
-    # endpoint doesn't swallow unrelated exceptions.
-    assert resp.status_code in (200, 500)
+    assert resp.status_code == 200
