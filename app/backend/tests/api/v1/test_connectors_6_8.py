@@ -18,7 +18,7 @@ Coverage:
     - reachable=False when EVE file does not exist
 
   Unsupported connector type
-    - reachable=False with 'not supported' message for prowler, opencti, etc.
+    - reachable=False with 'not supported' message for velociraptor, osquery, generic, etc.
 
   Database persistence
     - status set to 'active' in DB after successful connection test
@@ -280,7 +280,7 @@ async def test_suricata_test_not_reachable_when_eve_file_missing(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("connector_type", ["prowler", "opencti", "velociraptor", "osquery", "generic"])
+@pytest.mark.parametrize("connector_type", ["velociraptor", "osquery", "generic"])
 async def test_unsupported_type_returns_not_reachable(
     client: AsyncClient, engineer_headers: dict, connector_type: str
 ) -> None:

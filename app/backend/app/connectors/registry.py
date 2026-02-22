@@ -297,17 +297,39 @@ async def start_connectors_from_db(
     session: AsyncSession,
     queue: MessageQueue,
 ) -> dict[str, BaseConnector]:
-    """Load enabled connectors from DB and return {connector_id: connector} mapping."""
+    """Load enabled connectors from DB and return {connector_id: connector} mapping.
+
+    Feature 6.24: Each connector is loaded independently — an error building one
+    connector is logged and skipped so that remaining connectors still start.
+    """
     result = await session.execute(
         select(Connector).where(Connector.enabled == True)
     )
     db_connectors = result.scalars().all()
 
     connectors: dict[str, BaseConnector] = {}
+    skipped = 0
     for db_conn in db_connectors:
-        conn = build_connector(db_conn, queue)
-        if conn:
-            connectors[db_conn.id] = conn
-            logger.info("Registered connector name=%s type=%s", db_conn.name, db_conn.connector_type)
+        try:
+            conn = build_connector(db_conn, queue)
+            if conn:
+                connectors[db_conn.id] = conn
+                logger.info(
+                    "Registered connector name=%s type=%s",
+                    db_conn.name,
+                    db_conn.connector_type,
+                )
+            else:
+                skipped += 1
+        except Exception:
+            skipped += 1
+            logger.exception(
+                "Failed to load connector name=%s type=%s — skipping",
+                db_conn.name,
+                db_conn.connector_type,
+            )
+
+    if skipped:
+        logger.warning("Skipped %d connector(s) due to errors or unknown type", skipped)
 
     return connectors

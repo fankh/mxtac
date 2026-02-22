@@ -351,6 +351,7 @@ async def on_startup() -> None:
     app.state.alert_webhook_sender = None
     app.state.alert_email_sender = None
     app.state.duckdb_store = None
+    app.state.notification_dispatcher = None
 
     # 0. Auto-migrate when running in SQLite single-binary mode (feature 20.8)
     if settings.sqlite_mode or settings.database_url.startswith("sqlite"):
@@ -440,10 +441,20 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("Sigma consumer start failed")
 
-    # 7. Wire alert manager — subscribes to mxtac.alerts, deduplicates, scores, enriches
+    # 7. Wire notification dispatcher — sends enriched alerts to configured channels
+    try:
+        from .services.notification_dispatcher import NotificationDispatcher
+        notification_dispatcher = NotificationDispatcher()
+        app.state.notification_dispatcher = notification_dispatcher
+        logger.info("Notification dispatcher started")
+    except Exception:
+        logger.exception("Notification dispatcher start failed")
+        notification_dispatcher = None
+
+    # 7.1. Wire alert manager — subscribes to mxtac.alerts, deduplicates, scores, enriches
     try:
         from .services.alert_manager import AlertManager
-        alert_mgr = AlertManager(queue)
+        alert_mgr = AlertManager(queue, dispatcher=notification_dispatcher)
         await queue.subscribe(Topic.ALERTS, "alert-manager", alert_mgr.process)
         app.state.alert_mgr = alert_mgr
         logger.info("Alert manager consumer started")
@@ -682,6 +693,14 @@ async def on_shutdown() -> None:
             await aem.close()
     except Exception:
         logger.exception("AlertEmailSender close failed")
+
+    # Close notification dispatcher (release HTTP connection pool)
+    try:
+        nd = getattr(app.state, "notification_dispatcher", None)
+        if nd is not None:
+            await nd.close()
+    except Exception:
+        logger.exception("NotificationDispatcher close failed")
 
     # Close OpenSearch client
     try:

@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import valkey.asyncio as aioredis
 
@@ -28,6 +28,9 @@ from ..core.logging import get_logger
 from ..core.metrics import alerts_deduplicated, alerts_processed, pipeline_latency
 from ..engine.sigma_engine import SigmaAlert, LEVEL_SEVERITY
 from ..pipeline.queue import MessageQueue, Topic
+
+if TYPE_CHECKING:
+    from .notification_dispatcher import NotificationDispatcher
 
 logger = get_logger(__name__)
 
@@ -53,8 +56,13 @@ DEFAULT_ASSET_CRITICALITY: dict[str, float] = {
 
 
 class AlertManager:
-    def __init__(self, queue: MessageQueue) -> None:
+    def __init__(
+        self,
+        queue: MessageQueue,
+        dispatcher: NotificationDispatcher | None = None,
+    ) -> None:
         self._queue = queue
+        self._dispatcher = dispatcher
         # Valkey client for distributed deduplication
         self._valkey: aioredis.Valkey = aioredis.from_url(
             settings.valkey_url, decode_responses=True
@@ -95,6 +103,17 @@ class AlertManager:
                 "AlertManager published rule_id=%s host=%s score=%.1f",
                 alert.rule_id, alert.host, scored.get("score", 0),
             )
+
+            # Dispatch notifications — after enrichment, before storage (non-fatal)
+            if self._dispatcher is not None:
+                try:
+                    await self._dispatcher.dispatch(scored)
+                except Exception:
+                    logger.exception(
+                        "AlertManager notification dispatch failed (non-fatal) id=%s",
+                        scored.get("id"),
+                    )
+
             await self._persist_to_db(scored)
         except Exception:
             logger.exception("AlertManager process error")
