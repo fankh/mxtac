@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { Task, TaskStatus } from "@/lib/types";
 import { StatusBadge } from "./StatusBadge";
 import { TestBadge } from "./TestBadge";
+import { VerificationBadge } from "./VerificationBadge";
 
 interface TaskTableProps {
   tasks: Task[];
@@ -112,6 +113,7 @@ export function TaskTable({ tasks, total, phases, githubRepoUrl, onFilter }: Tas
               <th className="py-2 px-3">Retries</th>
               <th className="py-2 px-3">Commit</th>
               <th className="py-2 px-3">Test</th>
+              <th className="py-2 px-3">Verify</th>
               <th className="py-2 px-3">Updated</th>
             </tr>
           </thead>
@@ -165,6 +167,9 @@ export function TaskTable({ tasks, total, phases, githubRepoUrl, onFilter }: Tas
                 <td className="py-2 px-3">
                   <TestBadge status={task.test_status} />
                 </td>
+                <td className="py-2 px-3">
+                  <VerificationBadge status={task.verification_status} />
+                </td>
                 <td className="py-2 px-3 text-gray-500 text-xs">
                   {task.updated_at
                     ? new Date(task.updated_at).toLocaleString()
@@ -174,7 +179,7 @@ export function TaskTable({ tasks, total, phases, githubRepoUrl, onFilter }: Tas
             ))}
             {tasks.length === 0 && (
               <tr>
-                <td colSpan={9} className="py-8 text-center text-gray-500">
+                <td colSpan={10} className="py-8 text-center text-gray-500">
                   No tasks found
                 </td>
               </tr>

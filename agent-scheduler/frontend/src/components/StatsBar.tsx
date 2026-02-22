@@ -111,6 +111,39 @@ export function StatsBar({
         </span>
       </div>
 
+      {/* Quality counts */}
+      {stats.quality && (
+        <div className="mt-3 pt-3 border-t border-gray-700">
+          <div className="text-xs text-gray-500 mb-2 font-medium">Quality</div>
+          <div className="grid grid-cols-4 gap-3">
+            <div className="text-center">
+              <div className="text-lg font-bold text-green-400">
+                {stats.quality.test_passed}
+              </div>
+              <div className="text-xs text-gray-500">Tests Passed</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold text-red-400">
+                {stats.quality.test_failed}
+              </div>
+              <div className="text-xs text-gray-500">Tests Failed</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold text-green-400">
+                {stats.quality.verification_passed}
+              </div>
+              <div className="text-xs text-gray-500">Verified</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold text-red-400">
+                {stats.quality.verification_failed}
+              </div>
+              <div className="text-xs text-gray-500">Verify Failed</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Phase progress */}
       {phases.length > 1 && (
         <div className="mt-4 pt-3 border-t border-gray-700">

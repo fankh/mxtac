@@ -78,6 +78,12 @@ export interface Stats {
   total_tasks: number;
   status_counts: Record<string, number>;
   phase_counts: Record<string, Record<string, number>>;
+  quality: {
+    test_passed: number;
+    test_failed: number;
+    verification_passed: number;
+    verification_failed: number;
+  };
   scheduler: {
     running: boolean;
     paused: boolean;

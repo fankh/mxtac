@@ -59,10 +59,27 @@ async def get_stats(session: AsyncSession = Depends(get_session)):
         phase_counts[p]["total"] += 1
         phase_counts[p][s] = phase_counts[p].get(s, 0) + 1
 
+    quality = {
+        "test_passed": 0,
+        "test_failed": 0,
+        "verification_passed": 0,
+        "verification_failed": 0,
+    }
+    for t in tasks:
+        if t.test_status == "passed":
+            quality["test_passed"] += 1
+        elif t.test_status == "failed":
+            quality["test_failed"] += 1
+        if t.verification_status == "passed":
+            quality["verification_passed"] += 1
+        elif t.verification_status == "failed":
+            quality["verification_failed"] += 1
+
     return {
         "total_tasks": len(tasks),
         "status_counts": status_counts,
         "phase_counts": phase_counts,
+        "quality": quality,
         "scheduler": {
             "running": scheduler.is_running,
             "paused": scheduler.is_paused,
