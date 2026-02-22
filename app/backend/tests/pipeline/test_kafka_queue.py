@@ -958,7 +958,8 @@ class TestKafkaQueueIntegration:
 
         with patch.dict(sys.modules, {"aiokafka": aiokafka}):
             await q.subscribe(Topic.ALERTS, "sigma-consumer", handler)
-            await asyncio.sleep(0.05)
+            # Wait for the finite consumer task to complete (more deterministic than sleep)
+            await asyncio.gather(*q._tasks, return_exceptions=True)
 
         assert received == [expected]
         await q.stop()
@@ -990,7 +991,8 @@ class TestKafkaQueueIntegration:
         with patch.dict(sys.modules, {"aiokafka": aiokafka}):
             await q.subscribe(Topic.RAW_WAZUH, "wazuh-grp", wazuh_handler)
             await q.subscribe(Topic.RAW_ZEEK, "zeek-grp", zeek_handler)
-            await asyncio.sleep(0.05)
+            # Wait for both finite consumer tasks to complete
+            await asyncio.gather(*q._tasks, return_exceptions=True)
 
         assert received_wazuh == [wazuh_payload]
         assert received_zeek == [zeek_payload]
@@ -1009,7 +1011,8 @@ class TestKafkaQueueIntegration:
 
         with patch.dict(sys.modules, {"aiokafka": aiokafka}):
             await q.subscribe(Topic.ENRICHED, "alert-manager", handler)
-            await asyncio.sleep(0.05)
+            # Wait for the finite consumer task to complete
+            await asyncio.gather(*q._tasks, return_exceptions=True)
 
         assert received == payloads
         await q.stop()
