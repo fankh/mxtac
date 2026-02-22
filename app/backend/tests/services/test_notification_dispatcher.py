@@ -1,4 +1,4 @@
-"""Tests for NotificationDispatcher — feature 27.2 / 27.3.
+"""Tests for NotificationDispatcher — feature 27.2 / 27.3 / 27.4.
 
 Coverage:
   dispatch():
@@ -10,10 +10,17 @@ Coverage:
     - non-fatal when a channel send raises an exception
     - no-op when no channels are enabled
 
-  _send_slack():
-    - POSTs formatted JSON payload to webhook_url
+  _send_slack() — Block Kit (27.4):
+    - POSTs formatted Block Kit JSON payload to webhook_url
+    - payload contains header, section, and context blocks
+    - header block includes severity emoji for each level (🔴🟠🟡⚪)
+    - section block includes host, rule name, tactic, and technique
+    - context block includes timestamp and score
+    - attachment color sidebar matches severity (red/orange/yellow/gray)
+    - channel and username are set in payload when configured
+    - channel and username keys absent when not configured
     - skips and logs warning when webhook_url is empty
-    - logs warning on non-2xx response
+    - logs warning on non-2xx response (no retry on 400)
 
   _send_webhook():
     - POSTs alert JSON to configured url
@@ -320,6 +327,190 @@ async def test_send_slack_logs_warning_on_4xx():
             mock_logger.warning.assert_called()
 
     await dispatcher.close()
+
+
+@pytest.mark.asyncio
+async def test_send_slack_block_kit_structure():
+    """_send_slack() payload must contain header, section, and context blocks."""
+    dispatcher = NotificationDispatcher()
+    config = {"webhook_url": "https://hooks.slack.com/test"}
+
+    captured: list[dict] = []
+
+    async def mock_post(url, *, content, **kwargs):
+        captured.append(json.loads(content))
+        return _ok_response(200)
+
+    with patch.object(dispatcher._client, "post", side_effect=mock_post):
+        await dispatcher._send_slack(config, _make_alert(level="high"))
+
+    await dispatcher.close()
+    body = captured[0]
+    assert "attachments" in body
+    attachment = body["attachments"][0]
+    assert "blocks" in attachment
+    block_types = [b["type"] for b in attachment["blocks"]]
+    assert "header" in block_types
+    assert "section" in block_types
+    assert "context" in block_types
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "level, emoji",
+    [
+        ("critical", "\U0001f534"),  # 🔴
+        ("high",     "\U0001f7e0"),  # 🟠
+        ("medium",   "\U0001f7e1"),  # 🟡
+        ("low",      "\u26aa"),      # ⚪
+    ],
+)
+async def test_send_slack_severity_emojis(level: str, emoji: str):
+    """_send_slack() header block must include the correct severity emoji."""
+    dispatcher = NotificationDispatcher()
+    config = {"webhook_url": "https://hooks.slack.com/test"}
+
+    captured: list[dict] = []
+
+    async def mock_post(url, *, content, **kwargs):
+        captured.append(json.loads(content))
+        return _ok_response(200)
+
+    with patch.object(dispatcher._client, "post", side_effect=mock_post):
+        await dispatcher._send_slack(config, _make_alert(level=level))
+
+    await dispatcher.close()
+    header = captured[0]["attachments"][0]["blocks"][0]
+    assert header["type"] == "header"
+    assert emoji in header["text"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_send_slack_section_contains_alert_fields():
+    """_send_slack() section block must include host, rule name, tactic, and technique."""
+    dispatcher = NotificationDispatcher()
+    config = {"webhook_url": "https://hooks.slack.com/test"}
+    alert = _make_alert(level="high", host="srv-db")
+    alert["rule_title"] = "Credential Access"
+    alert["tactic_ids"] = ["credential-access"]
+    alert["technique_ids"] = ["T1003"]
+
+    captured: list[dict] = []
+
+    async def mock_post(url, *, content, **kwargs):
+        captured.append(json.loads(content))
+        return _ok_response(200)
+
+    with patch.object(dispatcher._client, "post", side_effect=mock_post):
+        await dispatcher._send_slack(config, alert)
+
+    await dispatcher.close()
+    attachment = captured[0]["attachments"][0]
+    section = next(b for b in attachment["blocks"] if b["type"] == "section")
+    all_field_text = " ".join(f["text"] for f in section["fields"])
+    assert "srv-db" in all_field_text
+    assert "Credential Access" in all_field_text
+    assert "credential-access" in all_field_text
+    assert "T1003" in all_field_text
+
+
+@pytest.mark.asyncio
+async def test_send_slack_context_contains_timestamp_and_score():
+    """_send_slack() context block must include timestamp and score."""
+    dispatcher = NotificationDispatcher()
+    config = {"webhook_url": "https://hooks.slack.com/test"}
+    alert = _make_alert(level="medium", score=6.5)
+    alert["time"] = "2024-03-15T08:00:00Z"
+
+    captured: list[dict] = []
+
+    async def mock_post(url, *, content, **kwargs):
+        captured.append(json.loads(content))
+        return _ok_response(200)
+
+    with patch.object(dispatcher._client, "post", side_effect=mock_post):
+        await dispatcher._send_slack(config, alert)
+
+    await dispatcher.close()
+    attachment = captured[0]["attachments"][0]
+    context = next(b for b in attachment["blocks"] if b["type"] == "context")
+    context_text = " ".join(e["text"] for e in context["elements"])
+    assert "2024-03-15T08:00:00Z" in context_text
+    assert "6.5" in context_text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "level, expected_color",
+    [
+        ("critical", "#CC0000"),
+        ("high",     "#FF8C00"),
+        ("medium",   "#FFD700"),
+        ("low",      "#808080"),
+    ],
+)
+async def test_send_slack_color_sidebar_per_severity(level: str, expected_color: str):
+    """_send_slack() attachment color must match severity: red/orange/yellow/gray."""
+    dispatcher = NotificationDispatcher()
+    config = {"webhook_url": "https://hooks.slack.com/test"}
+
+    captured: list[dict] = []
+
+    async def mock_post(url, *, content, **kwargs):
+        captured.append(json.loads(content))
+        return _ok_response(200)
+
+    with patch.object(dispatcher._client, "post", side_effect=mock_post):
+        await dispatcher._send_slack(config, _make_alert(level=level))
+
+    await dispatcher.close()
+    assert captured[0]["attachments"][0]["color"] == expected_color
+
+
+@pytest.mark.asyncio
+async def test_send_slack_channel_and_username_override():
+    """_send_slack() must set channel and username in payload when configured."""
+    dispatcher = NotificationDispatcher()
+    config = {
+        "webhook_url": "https://hooks.slack.com/test",
+        "channel": "#security-ops",
+        "username": "MxTac-Bot",
+    }
+
+    captured: list[dict] = []
+
+    async def mock_post(url, *, content, **kwargs):
+        captured.append(json.loads(content))
+        return _ok_response(200)
+
+    with patch.object(dispatcher._client, "post", side_effect=mock_post):
+        await dispatcher._send_slack(config, _make_alert())
+
+    await dispatcher.close()
+    body = captured[0]
+    assert body["channel"] == "#security-ops"
+    assert body["username"] == "MxTac-Bot"
+
+
+@pytest.mark.asyncio
+async def test_send_slack_no_channel_key_when_not_configured():
+    """_send_slack() must omit channel and username keys when not set in config."""
+    dispatcher = NotificationDispatcher()
+    config = {"webhook_url": "https://hooks.slack.com/test"}
+
+    captured: list[dict] = []
+
+    async def mock_post(url, *, content, **kwargs):
+        captured.append(json.loads(content))
+        return _ok_response(200)
+
+    with patch.object(dispatcher._client, "post", side_effect=mock_post):
+        await dispatcher._send_slack(config, _make_alert())
+
+    await dispatcher.close()
+    body = captured[0]
+    assert "channel" not in body
+    assert "username" not in body
 
 
 # ---------------------------------------------------------------------------

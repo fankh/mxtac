@@ -137,13 +137,16 @@ class TestAgent(BaseAgent):
 
     async def _run_full_suite(self, root: Path) -> dict:
         """Run the full backend test suite."""
-        backend_tests = root / "app" / "backend" / "tests"
+        backend_dir = root / "app" / "backend"
+        backend_tests = backend_dir / "tests"
         if not backend_tests.exists():
             return {"type": "suite", "pass": True, "detail": "No test directory found"}
 
+        venv_python = backend_dir / ".venv" / "bin" / "python3"
+        pytest_cmd = f"{venv_python} -m pytest" if venv_python.exists() else "python3 -m pytest"
         rc, stdout, stderr = await self._run_subprocess(
-            "python3 -m pytest tests/ -v --tb=short",
-            cwd=str(root / "app" / "backend"),
+            f"{pytest_cmd} tests/ -v --tb=short",
+            cwd=str(backend_dir),
             timeout=settings.agent_test_timeout,
         )
 

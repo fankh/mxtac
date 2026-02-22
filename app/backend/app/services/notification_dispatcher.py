@@ -52,13 +52,22 @@ _RATE_CACHE_MAX = 10_000
 
 
 def _severity_color(level: str) -> str:
-    """Return a hex color for the given severity level (used in Slack attachments)."""
+    """Return a hex color for the given severity level (used in Slack attachment sidebar)."""
     return {
-        "critical": "#8B0000",
-        "high": "#FF4500",
-        "medium": "#FFA500",
-        "low": "#3AA3E3",
+        "critical": "#CC0000",  # red
+        "high": "#FF8C00",      # orange
+        "medium": "#FFD700",    # yellow
+        "low": "#808080",       # gray
     }.get(level.lower(), "#808080")
+
+
+# Severity emojis for Slack Block Kit header
+_SEVERITY_EMOJI: dict[str, str] = {
+    "critical": "🔴",
+    "high": "🟠",
+    "medium": "🟡",
+    "low": "⚪",
+}
 
 
 def _build_email_html(
@@ -356,45 +365,72 @@ class NotificationDispatcher:
         )
 
     async def _send_slack(self, config: dict[str, Any], alert: dict[str, Any]) -> None:
-        """POST a formatted message to a Slack incoming webhook URL."""
+        """POST a Block Kit message to a Slack incoming webhook URL.
+
+        Channel config keys:
+          webhook_url   Slack incoming webhook URL (required)
+          channel       Override the webhook's default channel (e.g. "#security-ops")
+          username      Override the bot display name (e.g. "MxTac-Bot")
+        """
         webhook_url = config.get("webhook_url", "")
         if not webhook_url:
             logger.warning("NotificationDispatcher: Slack channel missing webhook_url")
             return
 
-        channel_name = config.get("channel", "#mxtac-alerts")
-        username = config.get("username", "MxTac")
+        level = (alert.get("level") or "low").lower()
+        level_upper = level.upper()
+        emoji = _SEVERITY_EMOJI.get(level, "⚪")
 
-        level = alert.get("level", "unknown").upper()
-        host = alert.get("host", "unknown")
-        title = alert.get("rule_title", alert.get("rule_id", "Unknown Rule"))
+        title = alert.get("rule_title") or alert.get("rule_id") or "Unknown Rule"
+        host = alert.get("host") or "unknown"
+        tactic = ", ".join(alert.get("tactic_ids") or []) or "N/A"
+        technique = ", ".join(alert.get("technique_ids") or []) or "N/A"
+        timestamp = alert.get("time") or ""
         score = alert.get("score", 0)
-        technique_ids = ", ".join(alert.get("technique_ids") or [])
 
-        payload = {
-            "channel": channel_name,
-            "username": username,
-            "text": f":rotating_light: *[{level}] {title}*",
+        payload: dict[str, Any] = {
+            # Fallback text shown in push notifications / thread previews
+            "text": f"{emoji} *[{level_upper}] {title}*",
             "attachments": [
                 {
-                    "color": _severity_color(alert.get("level", "low")),
-                    "fields": [
-                        {"title": "Host", "value": host, "short": True},
-                        {"title": "Score", "value": str(score), "short": True},
+                    "color": _severity_color(level),
+                    "blocks": [
                         {
-                            "title": "Techniques",
-                            "value": technique_ids or "N/A",
-                            "short": False,
+                            "type": "header",
+                            "text": {
+                                "type": "plain_text",
+                                "text": f"{emoji} {title}",
+                                "emoji": True,
+                            },
                         },
                         {
-                            "title": "Time",
-                            "value": alert.get("time", ""),
-                            "short": True,
+                            "type": "section",
+                            "fields": [
+                                {"type": "mrkdwn", "text": f"*Host:*\n{host}"},
+                                {"type": "mrkdwn", "text": f"*Tactic:*\n{tactic}"},
+                                {"type": "mrkdwn", "text": f"*Technique:*\n{technique}"},
+                                {"type": "mrkdwn", "text": f"*Rule:*\n{title}"},
+                            ],
+                        },
+                        {
+                            "type": "context",
+                            "elements": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": f"*Time:* {timestamp}  |  *Score:* {score}",
+                                }
+                            ],
                         },
                     ],
                 }
             ],
         }
+
+        # Apply optional channel / username overrides from the channel config
+        if channel := config.get("channel"):
+            payload["channel"] = channel
+        if username := config.get("username"):
+            payload["username"] = username
 
         resp = await self._client.post(
             webhook_url, content=json.dumps(payload, default=str)
