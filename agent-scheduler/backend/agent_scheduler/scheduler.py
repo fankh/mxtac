@@ -42,6 +42,8 @@ class Scheduler:
         self._running = False
         self._paused = False
         self._task: asyncio.Task | None = None
+        self._last_action: datetime.datetime | None = None
+        self._action_count: int = 0
 
     @property
     def is_running(self) -> bool:
@@ -50,6 +52,24 @@ class Scheduler:
     @property
     def is_paused(self) -> bool:
         return self._paused
+
+    @property
+    def status(self) -> str:
+        if not self._running:
+            return "stopped"
+        if self._paused:
+            return "paused"
+        return "running"
+
+    def to_dict(self) -> dict:
+        return {
+            "name": "Scheduler",
+            "status": self.status,
+            "interval_seconds": 30,
+            "description": "Dispatches eligible tasks based on dependencies and priority",
+            "last_action": self._last_action.isoformat() if self._last_action else None,
+            "action_count": self._action_count,
+        }
 
     async def start(self):
         if self._running:
@@ -116,6 +136,8 @@ class Scheduler:
             try:
                 if not self._paused:
                     await self._dispatch_eligible_tasks()
+                self._last_action = datetime.datetime.utcnow()
+                self._action_count += 1
                 await asyncio.sleep(30)
             except asyncio.CancelledError:
                 break
@@ -469,6 +491,22 @@ class RetryAgent:
     def __init__(self):
         self._running = False
         self._task: asyncio.Task | None = None
+        self._last_action: datetime.datetime | None = None
+        self._action_count: int = 0
+
+    @property
+    def status(self) -> str:
+        return "running" if self._running else "stopped"
+
+    def to_dict(self) -> dict:
+        return {
+            "name": "RetryAgent",
+            "status": self.status,
+            "interval_seconds": self.INTERVAL_SECONDS,
+            "description": "Resets failed tasks back to pending for automatic retry",
+            "last_action": self._last_action.isoformat() if self._last_action else None,
+            "action_count": self._action_count,
+        }
 
     async def start(self):
         if self._running:
@@ -493,6 +531,8 @@ class RetryAgent:
             try:
                 await asyncio.sleep(self.INTERVAL_SECONDS)
                 await self._retry_failed_tasks()
+                self._last_action = datetime.datetime.utcnow()
+                self._action_count += 1
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -537,6 +577,22 @@ class WatchdogAgent:
     def __init__(self):
         self._running = False
         self._task: asyncio.Task | None = None
+        self._last_action: datetime.datetime | None = None
+        self._action_count: int = 0
+
+    @property
+    def status(self) -> str:
+        return "running" if self._running else "stopped"
+
+    def to_dict(self) -> dict:
+        return {
+            "name": "WatchdogAgent",
+            "status": self.status,
+            "interval_seconds": self.INTERVAL_SECONDS,
+            "description": "Monitors progress and auto-stops scheduler when all tasks finish",
+            "last_action": self._last_action.isoformat() if self._last_action else None,
+            "action_count": self._action_count,
+        }
 
     async def start(self):
         if self._running:
@@ -561,6 +617,8 @@ class WatchdogAgent:
             try:
                 await asyncio.sleep(self.INTERVAL_SECONDS)
                 await self._check_progress()
+                self._last_action = datetime.datetime.utcnow()
+                self._action_count += 1
             except asyncio.CancelledError:
                 break
             except Exception:
