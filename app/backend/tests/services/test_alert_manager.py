@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter + feature 21.7 mxtac_pipeline_latency_seconds histogram + feature 9.1 MD5(rule_id + host) dedup key + feature 9.2 dedup window — 5 minutes TTL + feature 9.4 risk score: severity × 0.60.
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter + feature 21.7 mxtac_pipeline_latency_seconds histogram + feature 9.1 MD5(rule_id + host) dedup key + feature 9.2 dedup window — 5 minutes TTL + feature 9.4 risk score: severity × 0.60 + feature 9.5 risk score: asset criticality × 0.25.
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -97,6 +97,7 @@ from app.pipeline.queue import InMemoryQueue, Topic
 from app.services.alert_manager import (
     AlertManager,
     DEDUP_WINDOW_SECONDS,
+    DEFAULT_ASSET_CRITICALITY,
     MAX_SCORE,
     W_ASSET,
     W_RECUR,
