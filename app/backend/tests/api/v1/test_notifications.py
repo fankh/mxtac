@@ -510,3 +510,251 @@ async def test_channel_test_failure_returns_sent_false(
     assert data["channel_id"] == ch_id
     assert data["sent"] is False
     assert "SMTP connection refused" in data["message"]
+
+
+# ---------------------------------------------------------------------------
+# routing_rules — create / update / read
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_channel_with_routing_rules(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """POST with routing_rules → 201 and rules persisted in response."""
+    payload = {
+        **_VALID_SLACK_PAYLOAD,
+        "name": "slack-lateral-only",
+        "routing_rules": [
+            {"field": "tactic", "operator": "eq", "value": "lateral-movement"}
+        ],
+    }
+    resp = await client.post(BASE_URL, headers=engineer_headers, json=payload)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["routing_rules"] == [
+        {"field": "tactic", "operator": "eq", "value": "lateral-movement"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_channel_invalid_routing_rule_field(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """POST with invalid routing rule field → 422."""
+    payload = {
+        **_VALID_SLACK_PAYLOAD,
+        "name": "slack-bad-field",
+        "routing_rules": [{"field": "not_a_field", "operator": "eq", "value": "x"}],
+    }
+    resp = await client.post(BASE_URL, headers=engineer_headers, json=payload)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_channel_invalid_routing_rule_operator(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """POST with invalid routing rule operator → 422."""
+    payload = {
+        **_VALID_SLACK_PAYLOAD,
+        "name": "slack-bad-op",
+        "routing_rules": [{"field": "severity", "operator": "startswith", "value": "hi"}],
+    }
+    resp = await client.post(BASE_URL, headers=engineer_headers, json=payload)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_channel_in_operator_requires_list(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """POST with 'in' operator and non-list value → 422."""
+    payload = {
+        **_VALID_SLACK_PAYLOAD,
+        "name": "slack-in-bad",
+        "routing_rules": [{"field": "severity", "operator": "in", "value": "high"}],
+    }
+    resp = await client.post(BASE_URL, headers=engineer_headers, json=payload)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_channel_empty_routing_rules(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """POST with empty routing_rules → 201 and empty list in response."""
+    payload = {**_VALID_SLACK_PAYLOAD, "name": "slack-no-rules", "routing_rules": []}
+    resp = await client.post(BASE_URL, headers=engineer_headers, json=payload)
+    assert resp.status_code == 201
+    assert resp.json()["routing_rules"] == []
+
+
+@pytest.mark.asyncio
+async def test_update_channel_routing_rules(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """PATCH routing_rules → rules updated in response."""
+    create_resp = await client.post(
+        BASE_URL, headers=engineer_headers, json=_VALID_SLACK_PAYLOAD
+    )
+    ch_id = create_resp.json()["id"]
+
+    patch_resp = await client.patch(
+        f"{BASE_URL}/{ch_id}",
+        headers=engineer_headers,
+        json={
+            "routing_rules": [
+                {"field": "severity", "operator": "in", "value": ["high", "critical"]}
+            ]
+        },
+    )
+    assert patch_resp.status_code == 200
+    data = patch_resp.json()
+    assert data["routing_rules"] == [
+        {"field": "severity", "operator": "in", "value": ["high", "critical"]}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_channel_includes_routing_rules(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """GET /{id} response includes routing_rules field."""
+    payload = {
+        **_VALID_WEBHOOK_PAYLOAD,
+        "name": "webhook-with-rules",
+        "routing_rules": [{"field": "host", "operator": "contains", "value": "prod"}],
+    }
+    create_resp = await client.post(BASE_URL, headers=engineer_headers, json=payload)
+    ch_id = create_resp.json()["id"]
+
+    resp = await client.get(f"{BASE_URL}/{ch_id}", headers=engineer_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "routing_rules" in data
+    assert data["routing_rules"] == [
+        {"field": "host", "operator": "contains", "value": "prod"}
+    ]
+
+
+# ---------------------------------------------------------------------------
+# GET /{id}/test-rule
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_test_rule_not_found(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """GET /test-rule for non-existent channel → 404."""
+    resp = await client.get(f"{BASE_URL}/999/test-rule", headers=engineer_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_test_rule_empty_rules_always_matched(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """GET /test-rule with empty routing_rules → matched=True."""
+    create_resp = await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={**_VALID_SLACK_PAYLOAD, "name": "slack-test-rule-empty"},
+    )
+    ch_id = create_resp.json()["id"]
+
+    resp = await client.get(f"{BASE_URL}/{ch_id}/test-rule", headers=engineer_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["matched"] is True
+    assert data["channel_id"] == ch_id
+    assert "routing_rules" in data
+    assert "sample_alert" in data
+
+
+@pytest.mark.asyncio
+async def test_test_rule_matches_when_rule_satisfied(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """GET /test-rule → matched=True when the tactic query param satisfies the rule."""
+    payload = {
+        **_VALID_SLACK_PAYLOAD,
+        "name": "slack-tactic-rule",
+        "routing_rules": [
+            {"field": "tactic", "operator": "eq", "value": "lateral-movement"}
+        ],
+    }
+    create_resp = await client.post(BASE_URL, headers=engineer_headers, json=payload)
+    ch_id = create_resp.json()["id"]
+
+    resp = await client.get(
+        f"{BASE_URL}/{ch_id}/test-rule",
+        headers=engineer_headers,
+        params={"tactic": "lateral-movement"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["matched"] is True
+
+
+@pytest.mark.asyncio
+async def test_test_rule_no_match_when_rule_not_satisfied(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """GET /test-rule → matched=False when the sample alert doesn't satisfy the rule."""
+    payload = {
+        **_VALID_SLACK_PAYLOAD,
+        "name": "slack-tactic-rule-2",
+        "routing_rules": [
+            {"field": "tactic", "operator": "eq", "value": "lateral-movement"}
+        ],
+    }
+    create_resp = await client.post(BASE_URL, headers=engineer_headers, json=payload)
+    ch_id = create_resp.json()["id"]
+
+    resp = await client.get(
+        f"{BASE_URL}/{ch_id}/test-rule",
+        headers=engineer_headers,
+        params={"tactic": "discovery"},  # does NOT match lateral-movement
+    )
+    assert resp.status_code == 200
+    assert resp.json()["matched"] is False
+
+
+@pytest.mark.asyncio
+async def test_test_rule_query_params_build_sample_alert(
+    client: AsyncClient, engineer_headers: dict
+) -> None:
+    """GET /test-rule query params are reflected in sample_alert."""
+    create_resp = await client.post(
+        BASE_URL,
+        headers=engineer_headers,
+        json={**_VALID_SLACK_PAYLOAD, "name": "slack-param-test"},
+    )
+    ch_id = create_resp.json()["id"]
+
+    resp = await client.get(
+        f"{BASE_URL}/{ch_id}/test-rule",
+        headers=engineer_headers,
+        params={
+            "severity": "critical",
+            "tactic": "impact",
+            "technique_id": "T1486",
+            "host": "prod-db-01",
+            "rule_name": "Ransomware Detected",
+        },
+    )
+    assert resp.status_code == 200
+    sample = resp.json()["sample_alert"]
+    assert sample["level"] == "critical"
+    assert sample["tactic_ids"] == ["impact"]
+    assert sample["technique_ids"] == ["T1486"]
+    assert sample["host"] == "prod-db-01"
+    assert sample["rule_title"] == "Ransomware Detected"
+
+
+@pytest.mark.asyncio
+async def test_test_rule_requires_auth(client: AsyncClient) -> None:
+    """GET /test-rule without auth → 401 or 403."""
+    resp = await client.get(f"{BASE_URL}/1/test-rule")
+    assert resp.status_code in (401, 403)

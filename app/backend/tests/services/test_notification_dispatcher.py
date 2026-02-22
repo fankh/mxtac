@@ -96,6 +96,7 @@ def _make_channel(
     config_json: str = '{"webhook_url": "https://hooks.slack.com/test"}',
     enabled: bool = True,
     min_severity: str = "high",
+    routing_rules: str = "[]",
 ) -> MagicMock:
     ch = MagicMock()
     ch.id = id
@@ -104,6 +105,7 @@ def _make_channel(
     ch.config_json = config_json
     ch.enabled = enabled
     ch.min_severity = min_severity
+    ch.routing_rules = routing_rules
     return ch
 
 
@@ -917,3 +919,281 @@ async def test_close_releases_http_client():
     ) as mock_aclose:
         await dispatcher.close()
         mock_aclose.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Section 8 — routing rules (_matches_routing_rules + dispatch integration)
+# ---------------------------------------------------------------------------
+
+
+from app.services.notification_dispatcher import (
+    _matches_routing_rules,
+    _get_alert_value,
+    _apply_operator,
+)
+
+
+# --- _matches_routing_rules unit tests ---
+
+
+def test_routing_rules_empty_matches_all():
+    """Empty rules list → always True (send-all mode)."""
+    alert = _make_alert(level="low")
+    assert _matches_routing_rules([], alert) is True
+
+
+def test_routing_rules_eq_severity_match():
+    """eq on severity → True when level matches."""
+    rules = [{"field": "severity", "operator": "eq", "value": "high"}]
+    assert _matches_routing_rules(rules, _make_alert(level="high")) is True
+
+
+def test_routing_rules_eq_severity_no_match():
+    """eq on severity → False when level doesn't match."""
+    rules = [{"field": "severity", "operator": "eq", "value": "critical"}]
+    assert _matches_routing_rules(rules, _make_alert(level="high")) is False
+
+
+def test_routing_rules_ne_severity_match():
+    """ne on severity → True when level differs from value."""
+    rules = [{"field": "severity", "operator": "ne", "value": "low"}]
+    assert _matches_routing_rules(rules, _make_alert(level="high")) is True
+
+
+def test_routing_rules_ne_severity_no_match():
+    """ne on severity → False when level equals value."""
+    rules = [{"field": "severity", "operator": "ne", "value": "high"}]
+    assert _matches_routing_rules(rules, _make_alert(level="high")) is False
+
+
+def test_routing_rules_in_severity_match():
+    """in on severity → True when level is in the value list."""
+    rules = [{"field": "severity", "operator": "in", "value": ["high", "critical"]}]
+    assert _matches_routing_rules(rules, _make_alert(level="high")) is True
+
+
+def test_routing_rules_in_severity_no_match():
+    """in on severity → False when level is not in the value list."""
+    rules = [{"field": "severity", "operator": "in", "value": ["critical"]}]
+    assert _matches_routing_rules(rules, _make_alert(level="high")) is False
+
+
+def test_routing_rules_contains_rule_name_match():
+    """contains on rule_name → True when title contains substring."""
+    alert = _make_alert()
+    alert["rule_title"] = "Command Shell Execution"
+    rules = [{"field": "rule_name", "operator": "contains", "value": "Shell"}]
+    assert _matches_routing_rules(rules, alert) is True
+
+
+def test_routing_rules_contains_rule_name_no_match():
+    """contains on rule_name → False when title does not contain substring."""
+    alert = _make_alert()
+    alert["rule_title"] = "Command Shell Execution"
+    rules = [{"field": "rule_name", "operator": "contains", "value": "Ransomware"}]
+    assert _matches_routing_rules(rules, alert) is False
+
+
+def test_routing_rules_regex_host_match():
+    """regex on host → True when host matches pattern."""
+    rules = [{"field": "host", "operator": "regex", "value": r"srv-\d+"}]
+    assert _matches_routing_rules(rules, _make_alert(host="srv-01")) is True
+
+
+def test_routing_rules_regex_host_no_match():
+    """regex on host → False when host doesn't match pattern."""
+    rules = [{"field": "host", "operator": "regex", "value": r"^db-"}]
+    assert _matches_routing_rules(rules, _make_alert(host="srv-01")) is False
+
+
+def test_routing_rules_invalid_regex_returns_false():
+    """Invalid regex pattern → treated as non-matching (no exception)."""
+    rules = [{"field": "host", "operator": "regex", "value": "[invalid("}]
+    assert _matches_routing_rules(rules, _make_alert()) is False
+
+
+def test_routing_rules_unknown_field_skipped():
+    """Unknown field → rule is skipped; no match returned."""
+    rules = [{"field": "not_a_field", "operator": "eq", "value": "x"}]
+    assert _matches_routing_rules(rules, _make_alert()) is False
+
+
+def test_routing_rules_unknown_operator_skipped():
+    """Unknown operator → rule is skipped; no match returned."""
+    rules = [{"field": "severity", "operator": "startswith", "value": "hi"}]
+    assert _matches_routing_rules(rules, _make_alert()) is False
+
+
+def test_routing_rules_or_logic_first_matches():
+    """OR logic: first matching rule → True (short-circuits)."""
+    rules = [
+        {"field": "severity", "operator": "eq", "value": "high"},
+        {"field": "severity", "operator": "eq", "value": "critical"},
+    ]
+    assert _matches_routing_rules(rules, _make_alert(level="high")) is True
+
+
+def test_routing_rules_or_logic_second_matches():
+    """OR logic: second rule matches when first doesn't → True."""
+    rules = [
+        {"field": "severity", "operator": "eq", "value": "critical"},
+        {"field": "host", "operator": "eq", "value": "srv-01"},
+    ]
+    assert _matches_routing_rules(rules, _make_alert(host="srv-01", level="high")) is True
+
+
+def test_routing_rules_or_logic_none_match():
+    """OR logic: no rule matches → False."""
+    rules = [
+        {"field": "severity", "operator": "eq", "value": "critical"},
+        {"field": "host", "operator": "eq", "value": "db-01"},
+    ]
+    assert _matches_routing_rules(rules, _make_alert(host="srv-01", level="high")) is False
+
+
+def test_routing_rules_tactic_multival_match():
+    """tactic is a multi-value field — any element matching is sufficient."""
+    alert = _make_alert()
+    alert["tactic_ids"] = ["discovery", "lateral-movement"]
+    rules = [{"field": "tactic", "operator": "eq", "value": "lateral-movement"}]
+    assert _matches_routing_rules(rules, alert) is True
+
+
+def test_routing_rules_tactic_multival_no_match():
+    """tactic multi-value — none of the elements match."""
+    alert = _make_alert()
+    alert["tactic_ids"] = ["discovery"]
+    rules = [{"field": "tactic", "operator": "eq", "value": "lateral-movement"}]
+    assert _matches_routing_rules(rules, alert) is False
+
+
+def test_routing_rules_technique_id_match():
+    """technique_id field — case-insensitive match."""
+    alert = _make_alert()
+    alert["technique_ids"] = ["T1059", "T1078"]
+    rules = [{"field": "technique_id", "operator": "eq", "value": "T1078"}]
+    assert _matches_routing_rules(rules, alert) is True
+
+
+def test_routing_rules_in_non_list_value_returns_false():
+    """in operator with a non-list value → False (no match)."""
+    rules = [{"field": "severity", "operator": "in", "value": "high"}]
+    assert _matches_routing_rules(rules, _make_alert(level="high")) is False
+
+
+# --- dispatch() integration with routing rules ---
+
+
+@pytest.mark.asyncio
+async def test_dispatch_skips_channel_routing_rules_no_match():
+    """dispatch() must skip channels whose routing rules don't match the alert."""
+    dispatcher = NotificationDispatcher()
+    channel = _make_channel(
+        channel_type="slack",
+        min_severity="low",
+    )
+    # Routing rules: only lateral-movement tactic
+    channel.routing_rules = json.dumps(
+        [{"field": "tactic", "operator": "eq", "value": "lateral-movement"}]
+    )
+
+    mock_post = AsyncMock(return_value=_ok_response(200))
+
+    alert = _make_alert(level="high")
+    alert["tactic_ids"] = ["execution"]  # does NOT match lateral-movement
+
+    with patch.object(dispatcher, "load_channels", new=AsyncMock(return_value=[channel])):
+        with patch.object(dispatcher._client, "post", mock_post):
+            await dispatcher.dispatch(alert)
+
+    await dispatcher.close()
+    mock_post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_sends_when_routing_rules_match():
+    """dispatch() must send to a channel whose routing rules match the alert."""
+    dispatcher = NotificationDispatcher()
+    channel = _make_channel(channel_type="slack", min_severity="low")
+    channel.routing_rules = json.dumps(
+        [{"field": "tactic", "operator": "eq", "value": "lateral-movement"}]
+    )
+
+    captured: list[dict] = []
+
+    async def mock_post(url, *, content, **kwargs):
+        captured.append({"url": url})
+        return _ok_response(200)
+
+    alert = _make_alert(level="high")
+    alert["tactic_ids"] = ["lateral-movement"]
+
+    with patch.object(dispatcher, "load_channels", new=AsyncMock(return_value=[channel])):
+        with patch.object(dispatcher._client, "post", side_effect=mock_post):
+            await dispatcher.dispatch(alert)
+
+    await dispatcher.close()
+    assert len(captured) == 1
+
+
+@pytest.mark.asyncio
+async def test_dispatch_sends_when_routing_rules_empty():
+    """dispatch() must send to a channel with empty routing_rules (no filter)."""
+    dispatcher = NotificationDispatcher()
+    channel = _make_channel(channel_type="slack", min_severity="low")
+    channel.routing_rules = "[]"
+
+    captured: list[dict] = []
+
+    async def mock_post(url, *, content, **kwargs):
+        captured.append({"url": url})
+        return _ok_response(200)
+
+    with patch.object(dispatcher, "load_channels", new=AsyncMock(return_value=[channel])):
+        with patch.object(dispatcher._client, "post", side_effect=mock_post):
+            await dispatcher.dispatch(_make_alert(level="high"))
+
+    await dispatcher.close()
+    assert len(captured) == 1
+
+
+@pytest.mark.asyncio
+async def test_dispatch_sends_when_routing_rules_none():
+    """dispatch() treats None routing_rules as empty (send-all)."""
+    dispatcher = NotificationDispatcher()
+    channel = _make_channel(channel_type="slack", min_severity="low")
+    channel.routing_rules = None
+
+    captured: list[dict] = []
+
+    async def mock_post(url, *, content, **kwargs):
+        captured.append({"url": url})
+        return _ok_response(200)
+
+    with patch.object(dispatcher, "load_channels", new=AsyncMock(return_value=[channel])):
+        with patch.object(dispatcher._client, "post", side_effect=mock_post):
+            await dispatcher.dispatch(_make_alert(level="high"))
+
+    await dispatcher.close()
+    assert len(captured) == 1
+
+
+@pytest.mark.asyncio
+async def test_dispatch_invalid_routing_rules_json_treated_as_empty():
+    """dispatch() must treat malformed routing_rules JSON as empty (send-all)."""
+    dispatcher = NotificationDispatcher()
+    channel = _make_channel(channel_type="slack", min_severity="low")
+    channel.routing_rules = "INVALID_JSON"
+
+    captured: list[dict] = []
+
+    async def mock_post(url, *, content, **kwargs):
+        captured.append({"url": url})
+        return _ok_response(200)
+
+    with patch.object(dispatcher, "load_channels", new=AsyncMock(return_value=[channel])):
+        with patch.object(dispatcher._client, "post", side_effect=mock_post):
+            await dispatcher.dispatch(_make_alert(level="high"))
+
+    await dispatcher.close()
+    assert len(captured) == 1

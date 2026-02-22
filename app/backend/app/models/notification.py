@@ -13,6 +13,12 @@ class NotificationChannel(Base, TimestampMixin):
       slack:   { webhook_url, channel, username }
       webhook: { url, method, headers{}, auth_token }
       msteams: { webhook_url }
+
+    routing_rules is a JSON array of rule objects (OR-combined).
+    Each rule: { "field": str, "operator": str, "value": any }
+    Fields: severity, tactic, technique_id, host, rule_name
+    Operators: eq, ne, in, contains, regex
+    Empty array → send all alerts (no routing filter, beyond min_severity).
     """
 
     __tablename__ = "notification_channels"
@@ -30,6 +36,9 @@ class NotificationChannel(Base, TimestampMixin):
         String(20), nullable=False, default="low", server_default="low"
     )
     # critical | high | medium | low
+
+    # Routing rules: JSON array — if non-empty, at least one rule must match
+    routing_rules: Mapped[str | None] = mapped_column(Text, nullable=True, default="[]")
 
     def __repr__(self) -> str:
         return f"<NotificationChannel {self.id} name={self.name!r} type={self.channel_type}>"

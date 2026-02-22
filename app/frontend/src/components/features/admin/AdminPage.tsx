@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { TopBar } from '../../layout/TopBar'
 import { apiClient, auditLogsApi, authApi } from '../../../lib/api'
 import type { AuditLogEntry } from '../../../types/api'
+import { NotificationsTab } from './NotificationsTab'
 
 interface User {
   id: string
@@ -51,7 +52,7 @@ async function fetchUsers(): Promise<User[]> {
 
 export function AdminPage() {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<'users' | 'audit'>('users')
+  const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'notifications'>('users')
 
   // Users tab state
   const { data: users = [], isLoading } = useQuery({ queryKey: ['users'], queryFn: fetchUsers })
@@ -100,17 +101,21 @@ export function AdminPage() {
 
         {/* Tabs */}
         <div className="flex gap-4 py-3 border-b border-border mb-4">
-          {(['users', 'audit'] as const).map((tab) => (
+          {([
+            { id: 'users',         label: 'Users & Roles' },
+            { id: 'audit',         label: 'Audit Log' },
+            { id: 'notifications', label: 'Notifications' },
+          ] as const).map(({ id, label }) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`text-[12px] capitalize pb-2 border-b-2 transition-colors ${
-                activeTab === tab
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`text-[12px] pb-2 border-b-2 transition-colors ${
+                activeTab === id
                   ? 'border-blue text-blue font-medium'
                   : 'border-transparent text-text-muted hover:text-text-secondary'
               }`}
             >
-              {tab === 'users' ? 'Users & Roles' : 'Audit Log'}
+              {label}
             </button>
           ))}
         </div>
@@ -215,6 +220,8 @@ export function AdminPage() {
             </div>
           </>
         )}
+
+        {activeTab === 'notifications' && <NotificationsTab />}
 
         {activeTab === 'audit' && (
           <div>

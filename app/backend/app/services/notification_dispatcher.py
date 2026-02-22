@@ -19,6 +19,7 @@ import asyncio
 import email.mime.multipart
 import email.mime.text
 import json
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -68,6 +69,90 @@ _SEVERITY_EMOJI: dict[str, str] = {
     "medium": "🟡",
     "low": "⚪",
 }
+
+# Valid routing rule fields and operators
+_RULE_FIELDS = {"severity", "tactic", "technique_id", "host", "rule_name"}
+_RULE_OPERATORS = {"eq", "ne", "in", "contains", "regex"}
+
+
+def _get_alert_value(field: str, alert: dict[str, Any]) -> list[str]:
+    """Return alert field value(s) as a list of lower-cased strings.
+
+    Multi-value fields (tactic, technique_id) return a list.
+    Single-value fields return a one-element list.
+    """
+    if field == "severity":
+        return [(alert.get("level") or "").lower()]
+    if field == "tactic":
+        return [(t or "").lower() for t in (alert.get("tactic_ids") or [])]
+    if field == "technique_id":
+        # Technique IDs are conventionally upper-cased (T1059) but normalise both sides
+        return [(t or "").upper() for t in (alert.get("technique_ids") or [])]
+    if field == "host":
+        return [(alert.get("host") or "").lower()]
+    if field == "rule_name":
+        name = alert.get("rule_title") or alert.get("rule_id") or ""
+        return [name.lower()]
+    return []
+
+
+def _apply_operator(operator: str, vals: list[str], rule_val: Any) -> bool:
+    """Evaluate *operator* against the alert field values (OR across list elements).
+
+    For ``ne``: returns True only if the rule_val matches NONE of the elements
+    (i.e. the alert has no element equal to rule_val).
+    For all other operators: returns True if ANY element satisfies the condition.
+    """
+    if operator == "eq":
+        rv = str(rule_val).lower()
+        # technique_id values are upper-cased — normalise rule_val the same way
+        return any(v == rv or v == str(rule_val).upper() for v in vals)
+    if operator == "ne":
+        rv = str(rule_val).lower()
+        return all(v != rv and v != str(rule_val).upper() for v in vals)
+    if operator == "in":
+        if not isinstance(rule_val, list):
+            return False
+        rule_set_lower = {str(r).lower() for r in rule_val}
+        rule_set_upper = {str(r).upper() for r in rule_val}
+        return any(v in rule_set_lower or v in rule_set_upper for v in vals)
+    if operator == "contains":
+        rv = str(rule_val).lower()
+        return any(rv in v for v in vals)
+    if operator == "regex":
+        try:
+            pattern = re.compile(str(rule_val), re.IGNORECASE)
+            return any(bool(pattern.search(v)) for v in vals)
+        except re.error:
+            return False
+    return False
+
+
+def _matches_routing_rules(rules: list[dict[str, Any]], alert: dict[str, Any]) -> bool:
+    """Return True if at least one routing rule matches the alert (OR logic).
+
+    An empty rule list means "match everything" — no routing filter applied.
+    Unknown fields or operators are silently skipped (non-matching).
+    """
+    if not rules:
+        return True
+
+    for rule in rules:
+        field = rule.get("field", "")
+        operator = rule.get("operator", "")
+        value = rule.get("value")
+
+        if field not in _RULE_FIELDS or operator not in _RULE_OPERATORS:
+            continue  # skip malformed rules
+
+        alert_vals = _get_alert_value(field, alert)
+        if not alert_vals:
+            continue
+
+        if _apply_operator(operator, alert_vals, value):
+            return True
+
+    return False
 
 
 def _build_email_html(
@@ -237,6 +322,19 @@ class NotificationDispatcher:
                     channel.name,
                     alert_severity,
                     channel.min_severity,
+                )
+                continue
+
+            # Evaluate routing rules — if non-empty, at least one must match
+            try:
+                rules: list[dict] = json.loads(channel.routing_rules or "[]")
+            except (json.JSONDecodeError, AttributeError):
+                rules = []
+            if not _matches_routing_rules(rules, alert):
+                logger.debug(
+                    "NotificationDispatcher: routing rules not matched channel=%r rule_id=%s",
+                    channel.name,
+                    alert.get("rule_id"),
                 )
                 continue
 

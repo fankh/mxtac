@@ -510,6 +510,41 @@ export interface AuditLogEntry {
   user_agent: string | null
 }
 
+// ── Notification Channels ─────────────────────────────────────────────────────
+
+export type NotificationChannelType = 'email' | 'slack' | 'webhook' | 'msteams'
+
+export interface NotificationChannel {
+  id: number
+  name: string
+  channel_type: NotificationChannelType
+  config: Record<string, unknown>
+  enabled: boolean
+  min_severity: SeverityLevel
+  created_at: string
+  updated_at: string
+}
+
+export interface NotificationChannelCreate {
+  name: string
+  channel_type: NotificationChannelType
+  config?: Record<string, unknown>
+  enabled?: boolean
+  min_severity?: SeverityLevel
+}
+
+export interface NotificationChannelUpdate {
+  enabled?: boolean
+  config?: Record<string, unknown>
+  min_severity?: SeverityLevel
+}
+
+export interface NotificationChannelTestResult {
+  channel_id: number
+  sent: boolean
+  message: string
+}
+
 // ── Hunting Suggestions ───────────────────────────────────────────────────────
 
 export interface SuggestedQuery {

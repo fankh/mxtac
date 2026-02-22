@@ -12,6 +12,7 @@ import type {
   Report, ReportGenerateRequest, ReportGenerateResponse,
   ReportSchedule, ReportScheduleCreate, ReportScheduleUpdate,
   HuntSuggestionsResponse,
+  NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelTestResult,
 } from '../types/api'
 
 const http = axios.create({
@@ -342,4 +343,26 @@ export const reportsApi = {
 
   deleteSchedule: (id: string): Promise<void> =>
     http.delete(`/reports/schedules/${id}`).then(r => r.data),
+}
+
+// ── Notification Channels ──────────────────────────────────────────────────────
+
+export const notificationChannelsApi = {
+  list: (params: { page?: number; page_size?: number } = {}): Promise<PaginatedResponse<NotificationChannel>> =>
+    http.get('/notifications/channels', { params }).then(r => r.data),
+
+  get: (id: number): Promise<NotificationChannel> =>
+    http.get(`/notifications/channels/${id}`).then(r => r.data),
+
+  create: (body: NotificationChannelCreate): Promise<NotificationChannel> =>
+    http.post('/notifications/channels', body).then(r => r.data),
+
+  update: (id: number, body: NotificationChannelUpdate): Promise<NotificationChannel> =>
+    http.patch(`/notifications/channels/${id}`, body).then(r => r.data),
+
+  delete: (id: number): Promise<void> =>
+    http.delete(`/notifications/channels/${id}`).then(r => r.data),
+
+  test: (id: number): Promise<NotificationChannelTestResult> =>
+    http.post(`/notifications/channels/${id}/test`).then(r => r.data),
 }
