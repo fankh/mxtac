@@ -196,6 +196,14 @@ class Settings(BaseSettings):
     # Set to 0 to disable time-based password expiry.
     password_expiry_days: int = 90
 
+    # GeoIP enrichment — feature 9.8
+    # Path to a MaxMind GeoLite2-City.mmdb or GeoIP2-City.mmdb database file.
+    # When None or the file is absent, GeoIP enrichment is silently disabled
+    # (fail-open: the pipeline continues without geo data).
+    geoip_db_path: str | None = None
+    # How long to cache GeoIP results in Valkey (seconds). Default: 24 hours.
+    geoip_cache_ttl: int = 86400
+
     # Alert-to-incident auto-correlation — feature 26.8
     # Group related alerts into incidents automatically after enrichment.
     # Correlation key: (host, tactic) within correlation_window_seconds.

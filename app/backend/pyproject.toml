@@ -48,6 +48,12 @@ dependencies = [
     "duckdb==1.4.4",
     "pytz==2025.2",
 
+    # ── GeoIP Enrichment ───────────────────────────────────────────────────────
+    # MaxMind GeoIP2 reader for offline mmdb lookups (feature 9.8).
+    # Requires a GeoLite2-City.mmdb or GeoIP2-City.mmdb file; configure via
+    # GEOIP_DB_PATH. Gracefully disabled when the file is absent.
+    "geoip2==4.8.1",
+
     # ── Metrics ────────────────────────────────────────────────────────────────
     "prometheus-fastapi-instrumentator==7.1.0",
     "prometheus-client==0.24.1",

@@ -17,6 +17,8 @@ Scoring formula:
 from __future__ import annotations
 
 import hashlib
+import ipaddress
+import json
 import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -28,6 +30,7 @@ from ..core.logging import get_logger
 from ..core.metrics import alerts_deduplicated, alerts_processed, pipeline_latency
 from ..engine.sigma_engine import SigmaAlert, LEVEL_SEVERITY
 from ..pipeline.queue import MessageQueue, Topic
+from .ioc_matcher import IOCMatcher
 
 if TYPE_CHECKING:
     from .notification_dispatcher import NotificationDispatcher
@@ -46,6 +49,12 @@ DEDUP_WINDOW_SECONDS = 300
 # Valkey key prefix for dedup entries
 _DEDUP_PREFIX = "mxtac:dedup:"
 
+# GeoIP enrichment — feature 9.8
+# Sentinel value set on _geoip_reader when the database is not configured or
+# the file cannot be opened. Avoids repeated failed load attempts.
+_GEOIP_NOT_AVAILABLE = object()
+_GEOIP_CACHE_PREFIX = "mxtac:geoip:"
+
 # Asset criticality defaults
 DEFAULT_ASSET_CRITICALITY: dict[str, float] = {
     "dc":  1.0,   # Domain Controller prefix
@@ -63,10 +72,19 @@ class AlertManager:
     ) -> None:
         self._queue = queue
         self._dispatcher = dispatcher
-        # Valkey client for distributed deduplication
+        # Valkey client for distributed deduplication (dedup-only, not shared)
         self._valkey: aioredis.Valkey = aioredis.from_url(
             settings.valkey_url, decode_responses=True
         )
+        # IOC matcher — separate Valkey client so IOC cache ops don't interfere
+        # with the dedup SET NX sequence expected by callers (feature 29.3)
+        self._ioc_valkey: aioredis.Valkey = aioredis.from_url(
+            settings.valkey_url, decode_responses=True
+        )
+        self._ioc_matcher = IOCMatcher(self._ioc_valkey)
+        # GeoIP mmdb reader — lazy-loaded on first lookup.
+        # Set to _GEOIP_NOT_AVAILABLE when the database is missing or not configured.
+        self._geoip_reader: Any = None
 
     async def process(self, alert_dict: dict[str, Any]) -> None:
         """Entry point -- called by queue consumer for each mxtac.alerts message."""
@@ -191,7 +209,28 @@ class AlertManager:
     # -- Enrichment --------------------------------------------------------
 
     async def _enrich(self, alert: SigmaAlert) -> dict[str, Any]:
-        """Add context that isn't in the raw alert. Extend with real CTI lookups."""
+        """Add context that isn't in the raw alert.
+
+        Threat intel enrichment (feature 29.3): IOCMatcher.match_event() looks
+        up active IOCs matching IPs, domains, hashes, and URLs extracted from
+        the alert.  Matched IOCs are stored in ``threat_intel.matched_iocs`` and
+        the score is boosted by +1.5 per match (capped at +3.0).
+        """
+        # IOC matching — in-memory + Valkey cache (feature 29.3)
+        matches = await self._ioc_matcher.match_event(
+            alert.host, alert.event_snapshot or {}
+        )
+        await self._ioc_matcher.update_hits(matches)
+
+        if matches:
+            threat_score_boost = round(min(len(matches) * 1.5, 3.0), 1)
+            threat_intel: dict[str, Any] | None = {
+                "matched_iocs": [m.to_dict() for m in matches],
+                "threat_score_boost": threat_score_boost,
+            }
+        else:
+            threat_intel = None
+
         d = {
             "id":            alert.id,
             "rule_id":       alert.rule_id,
@@ -206,103 +245,10 @@ class AlertManager:
             # Enrichment
             "asset_criticality":  self._asset_criticality(alert.host),
             "recurrence_count":   await self._get_recurrence_count(alert),
-            "threat_intel":       await self._lookup_threat_intel(alert),
-            "geo_ip":             None,   # TODO: GeoIP lookup
+            "threat_intel":       threat_intel,
+            "geo_ip":             await self._lookup_geoip(alert),
         }
         return d
-
-    async def _lookup_threat_intel(self, alert: SigmaAlert) -> dict[str, Any] | None:
-        """Look up IOC matches for the alert in the threat intelligence table.
-
-        Extracts candidate indicator values from the alert host and event_snapshot,
-        queries the IOC table for active matches, increments hit counts, and returns
-        a summary dict or None if no active IOCs match.
-
-        Fail-open: returns None when the database is unavailable so the pipeline
-        is not blocked by a CTI DB outage.
-        """
-        try:
-            # Collect candidate (ioc_type -> [values]) pairs from the alert.
-            candidates: dict[str, list[str]] = {}
-
-            def _add(ioc_type: str, value: str | None) -> None:
-                if value and isinstance(value, str):
-                    v = value.strip()
-                    if v:
-                        candidates.setdefault(ioc_type, []).append(v)
-
-            snap = alert.event_snapshot or {}
-
-            # Host can be an IP address or a hostname — try both types.
-            _add("ip", alert.host)
-            _add("domain", alert.host)
-
-            # Flat event fields (common across connectors)
-            _add("ip",         snap.get("src_ip"))
-            _add("ip",         snap.get("dst_ip"))
-            _add("domain",     snap.get("domain"))
-            _add("domain",     snap.get("hostname"))
-            _add("hash_md5",   snap.get("hash_md5"))
-            _add("hash_sha256", snap.get("hash_sha256"))
-
-            # OCSF nested fields
-            _add("ip", (snap.get("src") or {}).get("ip"))
-            _add("ip", (snap.get("dst") or {}).get("ip"))
-            _proc = snap.get("process") or {}
-            _file = _proc.get("file") or {}
-            _add("hash_md5",   _file.get("hash_md5"))
-            _add("hash_sha256", _file.get("hash_sha256"))
-
-            if not candidates:
-                return None
-
-            from ..core.database import AsyncSessionLocal
-            from ..repositories.ioc_repo import IOCRepo
-
-            matched: list[dict[str, Any]] = []
-
-            async with AsyncSessionLocal() as session:
-                for ioc_type, values in candidates.items():
-                    hits = await IOCRepo.bulk_lookup(session, ioc_type=ioc_type, values=values)
-                    for ioc in hits:
-                        if not ioc.is_active:
-                            continue
-                        matched.append({
-                            "ioc_id":      ioc.id,
-                            "ioc_type":    ioc.ioc_type,
-                            "value":       ioc.value,
-                            "severity":    ioc.severity,
-                            "confidence":  ioc.confidence,
-                            "source":      ioc.source,
-                            "tags":        ioc.tags or [],
-                            "description": ioc.description,
-                        })
-                        await IOCRepo.increment_hit(session, ioc.id)
-
-                if matched:
-                    await session.commit()
-
-            if not matched:
-                return None
-
-            _SEVERITY_ORDER = ["low", "medium", "high", "critical"]
-            highest = max(
-                matched,
-                key=lambda m: _SEVERITY_ORDER.index(m["severity"])
-                              if m["severity"] in _SEVERITY_ORDER else -1,
-            )
-            return {
-                "matched":          matched,
-                "ioc_count":        len(matched),
-                "highest_severity": highest["severity"],
-            }
-
-        except Exception:
-            logger.exception(
-                "AlertManager threat intel lookup failed (non-fatal) rule_id=%s host=%s",
-                alert.rule_id, alert.host,
-            )
-            return None
 
     async def _get_recurrence_count(self, alert: SigmaAlert) -> int:
         """Count recent detections for (rule_id, host) in the last 24 hours.
@@ -336,6 +282,174 @@ class AlertManager:
                 return crit
         return 0.5
 
+    # -- GeoIP enrichment (feature 9.8) ------------------------------------
+
+    def _load_geoip_reader(self) -> None:
+        """Attempt to open the MaxMind mmdb reader; set _GEOIP_NOT_AVAILABLE on failure.
+
+        Called at most once per AlertManager instance (lazy, on first lookup).
+        Sets ``self._geoip_reader`` to either a live ``geoip2.database.Reader``
+        or the ``_GEOIP_NOT_AVAILABLE`` sentinel so subsequent calls skip loading.
+        """
+        db_path = settings.geoip_db_path
+        if not db_path:
+            logger.debug("GeoIP database path not configured; GeoIP enrichment disabled")
+            self._geoip_reader = _GEOIP_NOT_AVAILABLE
+            return
+        try:
+            import geoip2.database  # noqa: PLC0415
+            self._geoip_reader = geoip2.database.Reader(db_path)
+            logger.info("GeoIP database loaded from %s", db_path)
+        except Exception:
+            logger.warning(
+                "GeoIP database could not be loaded from %s; GeoIP enrichment disabled",
+                db_path,
+            )
+            self._geoip_reader = _GEOIP_NOT_AVAILABLE
+
+    def _collect_public_ips(self, alert: SigmaAlert) -> list[str]:
+        """Extract unique globally-routable IPs from alert fields in priority order.
+
+        Checked fields:
+          - alert.host (direct host field)
+          - event_snapshot: src_ip, dst_ip (flat)
+          - event_snapshot: src.ip, dst.ip  (OCSF nested)
+
+        Returns a deduplicated list preserving insertion order. Private, loopback,
+        link-local, multicast, and reserved addresses are excluded.
+        """
+        seen: set[str] = set()
+        ips: list[str] = []
+
+        def _try(value: str | None) -> None:
+            if not value or not isinstance(value, str):
+                return
+            v = value.strip()
+            if not v or v in seen:
+                return
+            try:
+                addr = ipaddress.ip_address(v)
+            except ValueError:
+                return
+            if (
+                addr.is_private
+                or addr.is_loopback
+                or addr.is_link_local
+                or addr.is_multicast
+                or addr.is_unspecified
+                or addr.is_reserved
+            ):
+                return
+            seen.add(v)
+            ips.append(v)
+
+        snap = alert.event_snapshot or {}
+        _try(alert.host)
+        _try(snap.get("src_ip"))
+        _try(snap.get("dst_ip"))
+        _try((snap.get("src") or {}).get("ip"))
+        _try((snap.get("dst") or {}).get("ip"))
+        return ips
+
+    def _geoip_reader_lookup(self, ip: str) -> dict[str, Any] | None:
+        """Perform a synchronous mmdb city lookup for *ip*.
+
+        Returns a structured dict on success or None when the IP is not found
+        in the database (``AddressNotFoundError``) or any other error occurs.
+        """
+        try:
+            import geoip2.errors  # noqa: PLC0415
+            response = self._geoip_reader.city(ip)
+            region = (
+                response.subdivisions.most_specific.name
+                if response.subdivisions
+                else None
+            )
+            return {
+                "ip":           ip,
+                "country_code": response.country.iso_code or None,
+                "country":      response.country.name or None,
+                "region":       region or None,
+                "city":         response.city.name or None,
+                "latitude":     response.location.latitude,
+                "longitude":    response.location.longitude,
+            }
+        except Exception:
+            # AddressNotFoundError: IP not in database; others: library / reader errors.
+            return None
+
+    async def _geoip_for_ip(self, ip: str) -> dict[str, Any] | None:
+        """Return geo data for *ip*, using Valkey as a read-through cache.
+
+        Cache key: ``mxtac:geoip:{ip}``; TTL controlled by ``settings.geoip_cache_ttl``.
+        Cache read/write failures are silently ignored so a Valkey outage does not
+        block GeoIP enrichment.
+        """
+        cache_key = f"{_GEOIP_CACHE_PREFIX}{ip}"
+
+        # Cache read
+        try:
+            cached = await self._valkey.get(cache_key)
+            if cached is not None:
+                return json.loads(cached)
+        except Exception:
+            pass  # Cache unavailable — fall through to DB lookup
+
+        # mmdb lookup
+        result = self._geoip_reader_lookup(ip)
+
+        # Cache write (non-fatal)
+        if result is not None:
+            try:
+                await self._valkey.set(
+                    cache_key,
+                    json.dumps(result),
+                    ex=settings.geoip_cache_ttl,
+                )
+            except Exception:
+                pass
+
+        return result
+
+    async def _lookup_geoip(self, alert: SigmaAlert) -> dict[str, Any] | None:
+        """GeoIP enrichment for the first public IP found in the alert.
+
+        Extracts candidate IP addresses from the alert's host field and
+        event_snapshot, skips private/RFC1918 and loopback addresses, and
+        queries the MaxMind mmdb database (via Valkey cache) for the first
+        public IP that yields a result.
+
+        Returns a dict with ``ip``, ``country_code``, ``country``, ``region``,
+        ``city``, ``latitude``, ``longitude`` or ``None`` when no public IP is
+        found, the database is not configured, or the lookup fails.
+
+        Fail-open: returns None on any error so the pipeline is never blocked.
+        """
+        try:
+            # Lazy-load the mmdb reader exactly once per instance.
+            if self._geoip_reader is None:
+                self._load_geoip_reader()
+            if self._geoip_reader is _GEOIP_NOT_AVAILABLE:
+                return None
+
+            ips = self._collect_public_ips(alert)
+            if not ips:
+                return None
+
+            for ip in ips:
+                result = await self._geoip_for_ip(ip)
+                if result is not None:
+                    return result
+
+            return None
+        except Exception:
+            logger.exception(
+                "AlertManager GeoIP lookup failed (non-fatal) rule_id=%s host=%s",
+                alert.rule_id,
+                alert.host,
+            )
+            return None
+
     # -- Scoring -----------------------------------------------------------
 
     def _score(self, enriched: dict[str, Any]) -> dict[str, Any]:
@@ -345,6 +459,9 @@ class AlertManager:
             recur_bonus = min(recurrence_count / 10, 1.0)
         10 or more detections of the same (rule_id, host) in the last 24 hours
         yields the full 0.15 recurrence weight.
+
+        threat_score_boost (feature 29.3): +1.5 per matched IOC, capped at +3.0.
+        Added on top of the weighted base score before the MAX_SCORE cap.
         """
         severity_norm = (enriched["severity_id"] - 1) / 4   # 0-1
         asset_crit    = enriched.get("asset_criticality", 0.5)
@@ -357,7 +474,11 @@ class AlertManager:
             + recur_bonus * W_RECUR
         ) * MAX_SCORE
 
-        enriched["score"] = round(min(raw_score, MAX_SCORE), 1)
+        # IOC threat intel boost (feature 29.3)
+        ti = enriched.get("threat_intel")
+        threat_boost = ti["threat_score_boost"] if ti else 0.0
+
+        enriched["score"] = round(min(raw_score + threat_boost, MAX_SCORE), 1)
         return enriched
 
     # -- Persistence -------------------------------------------------------
@@ -476,6 +597,13 @@ class AlertManager:
     # -- Cleanup -----------------------------------------------------------
 
     async def close(self) -> None:
-        """Close the Valkey connection."""
+        """Close Valkey connections and GeoIP reader."""
         if self._valkey:
             await self._valkey.aclose()
+        if self._ioc_valkey:
+            await self._ioc_valkey.aclose()
+        if (
+            self._geoip_reader is not None
+            and self._geoip_reader is not _GEOIP_NOT_AVAILABLE
+        ):
+            self._geoip_reader.close()

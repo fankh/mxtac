@@ -52,6 +52,11 @@ opensearch-py[async]==3.1.0
 duckdb==1.4.4
 pytz==2025.2
 
+# ── GeoIP Enrichment ──────────────────────────────────────────────────────────
+# MaxMind GeoIP2 reader for offline mmdb lookups (feature 9.8).
+# Configure GEOIP_DB_PATH to point to a GeoLite2-City.mmdb file.
+geoip2==4.8.1
+
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest==8.3.4
 pytest-asyncio==0.24.0
