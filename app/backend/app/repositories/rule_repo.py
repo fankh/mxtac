@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.rule import Rule
@@ -105,6 +105,30 @@ class RuleRepo:
     async def count(session: AsyncSession) -> int:
         result = await session.scalar(select(func.count()).select_from(Rule))
         return result or 0
+
+    @staticmethod
+    async def increment_hit(session: AsyncSession, rule_id: str) -> None:
+        """Atomically increment hit_count and set last_hit_at for a rule.
+
+        Uses a single UPDATE statement — no prior SELECT required — so it
+        is safe to call from high-frequency event handlers without SELECT
+        overhead or optimistic-locking conflicts.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        await session.execute(
+            update(Rule)
+            .where(Rule.id == rule_id)
+            .values(hit_count=Rule.hit_count + 1, last_hit_at=now)
+        )
+
+    @staticmethod
+    async def increment_fp(session: AsyncSession, rule_id: str) -> None:
+        """Atomically increment fp_count for a rule (analyst-marked false positive)."""
+        await session.execute(
+            update(Rule)
+            .where(Rule.id == rule_id)
+            .values(fp_count=Rule.fp_count + 1)
+        )
 
     @staticmethod
     async def get_kpi_counts(session: AsyncSession, *, week_start: datetime) -> dict:

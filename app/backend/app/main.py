@@ -435,7 +435,7 @@ async def on_startup() -> None:
     # 6. Wire Sigma evaluation consumer — subscribes to mxtac.normalized, publishes alerts
     try:
         from .services.sigma_consumer import sigma_consumer
-        await sigma_consumer(queue, app.state.sigma_engine)
+        await sigma_consumer(queue, app.state.sigma_engine, session_factory=AsyncSessionLocal)
         logger.info("Sigma consumer started")
     except Exception:
         logger.exception("Sigma consumer start failed")
