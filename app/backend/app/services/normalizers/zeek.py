@@ -24,6 +24,16 @@ Feature 7.8 — Zeek http.log → HTTPActivity (class_uid 4002):
     trans_depth, version, orig_mime_types, username,
     orig_fuids, resp_fuids
   Endpoint ports captured from id.orig_p / id.resp_p.
+
+Feature 7.9 — Zeek ssl.log → NetworkActivity (class_uid 4001):
+  Extended TLS/SSL fields captured in network_traffic:
+    version, cipher, curve, server_name, established,
+    resumed, next_protocol, ssl_history,
+    cert_chain (cert_chain_fuids), client_cert_chain (client_cert_chain_fuids),
+    subject, issuer, not_valid_before, not_valid_after,
+    ja3, ja3s, validation_status
+  Endpoint ports captured from id.orig_p / id.resp_p.
+  server_name (SNI) maps to dst_endpoint.hostname.
 """
 
 from __future__ import annotations
@@ -194,6 +204,13 @@ class ZeekNormalizer:
         )
 
     def _normalize_ssl(self, raw: dict[str, Any]) -> OCSFEvent:
+        """Map Zeek ssl.log → OCSF NetworkActivity (class_uid 4001).
+
+        Feature 7.9: Extended TLS fields including endpoint ports, TLS curve,
+        session resumption, ALPN next protocol, SSL history flags,
+        certificate subject/issuer/validity, JA3/JA3S fingerprints,
+        certificate validation status, and client certificate chain.
+        """
         return OCSFEvent(
             class_uid=OCSFClass.NETWORK_ACTIVITY,
             class_name="Network Activity",
@@ -202,17 +219,33 @@ class ZeekNormalizer:
             severity_id=1,
             metadata_product="Zeek",
             metadata_uid=raw.get("uid"),
-            src_endpoint=Endpoint(ip=raw.get("id.orig_h")),
+            src_endpoint=Endpoint(
+                ip=raw.get("id.orig_h"),
+                port=self._safe_int(raw.get("id.orig_p")),
+            ),
             dst_endpoint=Endpoint(
                 ip=raw.get("id.resp_h"),
+                port=self._safe_int(raw.get("id.resp_p")),
                 hostname=raw.get("server_name"),
             ),
             network_traffic={
-                "version":     raw.get("version"),
-                "cipher":      raw.get("cipher"),
-                "server_name": raw.get("server_name"),
-                "established": raw.get("established"),
-                "cert_chain":  raw.get("cert_chain_fuids"),
+                "version":            raw.get("version"),
+                "cipher":             raw.get("cipher"),
+                "curve":              raw.get("curve"),
+                "server_name":        raw.get("server_name"),
+                "established":        raw.get("established"),
+                "resumed":            raw.get("resumed"),
+                "next_protocol":      raw.get("next_protocol"),
+                "ssl_history":        raw.get("ssl_history"),
+                "cert_chain":         raw.get("cert_chain_fuids"),
+                "client_cert_chain":  raw.get("client_cert_chain_fuids"),
+                "subject":            raw.get("subject"),
+                "issuer":             raw.get("issuer"),
+                "not_valid_before":   raw.get("not_valid_before"),
+                "not_valid_after":    raw.get("not_valid_after"),
+                "ja3":                raw.get("ja3"),
+                "ja3s":               raw.get("ja3s"),
+                "validation_status":  raw.get("validation_status"),
             },
             raw=raw,
         )

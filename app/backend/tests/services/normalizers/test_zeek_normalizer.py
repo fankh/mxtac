@@ -1,4 +1,4 @@
-"""Tests for ZeekNormalizer — Feature 7.6 + Feature 7.7 + Feature 28.12
+"""Tests for ZeekNormalizer — Feature 7.6 + Feature 7.7 + Feature 7.9 + Feature 28.12
 
 Coverage (Feature 7.6):
   - CONN_STATE_SEVERITY mapping: all documented states and default fallback
@@ -23,6 +23,16 @@ Coverage (Feature 7.7 — Zeek dns → DNSActivity (class_uid 4003)):
   - DNS flags: AA, TC, RD, RA, Z
   - TTLs list defaults to []
   - rejected boolean field
+  - Full round-trip: all extended fields → JSON-serializable OCSFEvent
+
+Coverage (Feature 7.9 — Zeek ssl → NetworkActivity (class_uid 4001)):
+  - Endpoint ports captured from id.orig_p / id.resp_p
+  - server_name (SNI) maps to dst_endpoint.hostname
+  - Extended TLS fields: curve, resumed, next_protocol, ssl_history
+  - Certificate fields: subject, issuer, not_valid_before, not_valid_after
+  - JA3/JA3S fingerprints: ja3, ja3s
+  - validation_status, client_cert_chain (client_cert_chain_fuids)
+  - Absent optional fields default to None
   - Full round-trip: all extended fields → JSON-serializable OCSFEvent
 
 Coverage (Feature 28.12 — Zeek conn → NetworkActivity):
