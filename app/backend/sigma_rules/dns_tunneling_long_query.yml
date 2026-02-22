@@ -7,7 +7,7 @@ logsource:
   category: dns_query
 detection:
   selection:
-    network_traffic.query|re: '.{50,}'
+    QueryName|re: '.{50,}'
   condition: selection
 tags:
   - attack.T1071.004

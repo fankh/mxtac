@@ -8,10 +8,10 @@ logsource:
   product: windows
 detection:
   selection:
-    dst_endpoint.port:
+    DestinationPort:
       - 445
       - 139
-    process.name|contains:
+    name|contains:
       - 'psexec'
       - 'smbexec'
       - 'wmiexec'
