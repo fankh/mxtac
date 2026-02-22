@@ -9,6 +9,16 @@ Feature 6.10: Byte offsets are persisted across restarts via an optional
 checkpoint_callback.  The registry supplies initial_positions (loaded from a
 state file) and a callback that writes the updated dict back to disk after
 every _fetch_events() cycle.
+
+Feature 6.11: JSON-format Zeek logs are parsed via _parse_json_line() which
+applies field type coercion for well-known Zeek fields:
+  - ts                              → float (Unix timestamp)
+  - id.orig_p, id.resp_p           → int   (port numbers)
+  - orig_bytes, resp_bytes          → int   (byte counters)
+  - orig_pkts, resp_pkts            → int   (packet counters)
+  - missed_bytes, orig_ip_bytes,
+    resp_ip_bytes                   → int   (extended counters)
+  - duration                        → float (connection duration)
 """
 
 from __future__ import annotations
@@ -114,15 +124,13 @@ class ZeekConnector(BaseConnector):
                     line = line.strip()
                     if not line or line.startswith("#"):
                         continue
-                    try:
-                        event = json.loads(line)
-                        event["_log_type"] = log_type
-                        yield event
-                    except json.JSONDecodeError:
+                    # Feature 6.11: attempt structured JSON parse first
+                    event = self._parse_json_line(line, log_type)
+                    if event is None:
                         # TSV format — parse fields
                         event = self._parse_tsv_line(line, log_type)
-                        if event:
-                            yield event
+                    if event:
+                        yield event
 
                 self._file_positions[str(path)] = f.tell()
 
@@ -130,6 +138,57 @@ class ZeekConnector(BaseConnector):
         # a restart resumes exactly where we left off.
         if self._checkpoint_callback is not None:
             await self._checkpoint_callback(dict(self._file_positions))
+
+    # ── JSON parsing (Feature 6.11) ──────────────────────────────────────────
+
+    # Fields coerced to int in all log types
+    _INT_FIELDS: frozenset[str] = frozenset({
+        "id.orig_p", "id.resp_p",
+        "orig_bytes", "resp_bytes",
+        "orig_pkts", "resp_pkts",
+        "missed_bytes", "orig_ip_bytes", "resp_ip_bytes",
+    })
+
+    def _parse_json_line(self, line: str, log_type: str) -> dict[str, Any] | None:
+        """Parse a Zeek JSON log line with field type coercion.
+
+        Returns the event dict (with _log_type set and well-known fields
+        coerced to their canonical Python types) or None if the line is not
+        valid JSON or not a JSON object.
+        """
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+
+        if not isinstance(event, dict):
+            return None
+
+        event["_log_type"] = log_type
+
+        # ts → float (Unix timestamp)
+        if "ts" in event:
+            try:
+                event["ts"] = float(event["ts"])
+            except (ValueError, TypeError):
+                pass
+
+        # duration → float
+        if "duration" in event:
+            try:
+                event["duration"] = float(event["duration"])
+            except (ValueError, TypeError):
+                pass
+
+        # Integer counter / port fields
+        for field in self._INT_FIELDS:
+            if field in event:
+                try:
+                    event[field] = int(event[field])
+                except (ValueError, TypeError):
+                    pass
+
+        return event
 
     def _parse_tsv_line(self, line: str, log_type: str) -> dict[str, Any] | None:
         """Basic TSV parser for non-JSON Zeek format. Returns None on failure."""

@@ -32,6 +32,17 @@ Feature 6.10 — Track file byte offset per log file — Survive restarts:
   - Log rotation: saved offset > file size → reset to 0, reads from beginning
   - No checkpoint_callback is a no-op (no error)
   - initial_positions=None is equivalent to empty dict
+
+Feature 6.11 — Parse JSON-format Zeek logs:
+  - _parse_json_line(): returns dict for valid JSON object, None for invalid JSON,
+    None for non-dict JSON (list/scalar), adds _log_type to event
+  - Type coercion: ts → float, duration → float
+  - Type coercion: id.orig_p / id.resp_p → int
+  - Type coercion: orig_bytes / resp_bytes / orig_pkts / resp_pkts /
+    missed_bytes / orig_ip_bytes / resp_ip_bytes → int
+  - Coercion is tolerant: missing fields are skipped, unconvertible values kept as-is
+  - _fetch_events() uses _parse_json_line() so yielded JSON events have coerced types
+  - TSV fallback still works when JSON parse fails
 """
 
 from __future__ import annotations
@@ -270,7 +281,8 @@ class TestZeekConnectorFetchEvents:
 
             second_batch = [e async for e in conn._fetch_events()]
             assert len(second_batch) == 1
-            assert second_batch[0]["ts"] == "2.0"
+            # ts is coerced to float by Feature 6.11
+            assert second_batch[0]["ts"] == pytest.approx(2.0)
 
     async def test_reads_from_multiple_log_type_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -949,3 +961,333 @@ class TestZeekConnectorOffsetPersistence:
             conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
             events = [e async for e in conn._fetch_events()]
             assert len(events) == 1  # normal operation
+
+
+# ── Feature 6.11: Parse JSON-format Zeek logs ─────────────────────────────────
+
+
+class TestZeekConnectorParseJsonLine:
+    """Unit tests for _parse_json_line() — Feature 6.11."""
+
+    def _conn(self) -> ZeekConnector:
+        return ZeekConnector(_make_config(), InMemoryQueue())
+
+    # ── Return value ──────────────────────────────────────────────────────────
+
+    def test_returns_dict_for_valid_json_object(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "uid": "abc"}', "conn")
+        assert isinstance(result, dict)
+
+    def test_returns_none_for_invalid_json(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line("not json at all", "conn")
+        assert result is None
+
+    def test_returns_none_for_json_list(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('["a", "b"]', "conn")
+        assert result is None
+
+    def test_returns_none_for_json_scalar_string(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('"just a string"', "conn")
+        assert result is None
+
+    def test_returns_none_for_json_null(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line("null", "conn")
+        assert result is None
+
+    def test_adds_log_type_to_event(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0"}', "conn")
+        assert result is not None
+        assert result["_log_type"] == "conn"
+
+    def test_log_type_reflects_argument(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "2.0"}', "dns")
+        assert result is not None
+        assert result["_log_type"] == "dns"
+
+    # ── ts coercion ───────────────────────────────────────────────────────────
+
+    def test_coerces_ts_string_to_float(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1590000000.123456"}', "conn")
+        assert result is not None
+        assert isinstance(result["ts"], float)
+        assert result["ts"] == pytest.approx(1590000000.123456)
+
+    def test_keeps_ts_already_float(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": 1590000000.5}', "conn")
+        assert result is not None
+        assert isinstance(result["ts"], float)
+        assert result["ts"] == pytest.approx(1590000000.5)
+
+    def test_ts_unconvertible_value_kept_as_is(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "not-a-number"}', "conn")
+        assert result is not None
+        assert result["ts"] == "not-a-number"  # unchanged on failure
+
+    def test_missing_ts_is_not_added(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"uid": "abc"}', "conn")
+        assert result is not None
+        assert "ts" not in result
+
+    # ── duration coercion ─────────────────────────────────────────────────────
+
+    def test_coerces_duration_string_to_float(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "duration": "0.05"}', "conn")
+        assert result is not None
+        assert isinstance(result["duration"], float)
+        assert result["duration"] == pytest.approx(0.05)
+
+    def test_keeps_duration_already_float(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "duration": 1.234}', "conn")
+        assert result is not None
+        assert isinstance(result["duration"], float)
+
+    def test_missing_duration_is_not_added(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0"}', "conn")
+        assert result is not None
+        assert "duration" not in result
+
+    # ── port coercion ─────────────────────────────────────────────────────────
+
+    def test_coerces_id_orig_p_string_to_int(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "id.orig_p": "12345"}', "conn")
+        assert result is not None
+        assert isinstance(result["id.orig_p"], int)
+        assert result["id.orig_p"] == 12345
+
+    def test_coerces_id_resp_p_string_to_int(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "id.resp_p": "443"}', "conn")
+        assert result is not None
+        assert isinstance(result["id.resp_p"], int)
+        assert result["id.resp_p"] == 443
+
+    def test_keeps_ports_already_int(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "id.orig_p": 80, "id.resp_p": 443}', "conn")
+        assert result is not None
+        assert result["id.orig_p"] == 80
+        assert result["id.resp_p"] == 443
+
+    # ── byte / packet counter coercion ────────────────────────────────────────
+
+    def test_coerces_orig_bytes_to_int(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "orig_bytes": "1024"}', "conn")
+        assert result is not None
+        assert isinstance(result["orig_bytes"], int)
+        assert result["orig_bytes"] == 1024
+
+    def test_coerces_resp_bytes_to_int(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "resp_bytes": "2048"}', "conn")
+        assert result is not None
+        assert isinstance(result["resp_bytes"], int)
+        assert result["resp_bytes"] == 2048
+
+    def test_coerces_orig_pkts_to_int(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "orig_pkts": "5"}', "conn")
+        assert result is not None
+        assert isinstance(result["orig_pkts"], int)
+        assert result["orig_pkts"] == 5
+
+    def test_coerces_resp_pkts_to_int(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "resp_pkts": "3"}', "conn")
+        assert result is not None
+        assert isinstance(result["resp_pkts"], int)
+        assert result["resp_pkts"] == 3
+
+    def test_coerces_missed_bytes_to_int(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "missed_bytes": "0"}', "conn")
+        assert result is not None
+        assert isinstance(result["missed_bytes"], int)
+        assert result["missed_bytes"] == 0
+
+    def test_coerces_orig_ip_bytes_to_int(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "orig_ip_bytes": "100"}', "conn")
+        assert result is not None
+        assert isinstance(result["orig_ip_bytes"], int)
+        assert result["orig_ip_bytes"] == 100
+
+    def test_coerces_resp_ip_bytes_to_int(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "resp_ip_bytes": "200"}', "conn")
+        assert result is not None
+        assert isinstance(result["resp_ip_bytes"], int)
+        assert result["resp_ip_bytes"] == 200
+
+    def test_counter_unconvertible_value_kept_as_is(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0", "orig_bytes": "-"}', "conn")
+        assert result is not None
+        assert result["orig_bytes"] == "-"  # unchanged on failure
+
+    def test_missing_counter_fields_are_not_added(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": "1.0"}', "conn")
+        assert result is not None
+        for field in ("orig_bytes", "resp_bytes", "orig_pkts", "resp_pkts",
+                      "missed_bytes", "orig_ip_bytes", "resp_ip_bytes"):
+            assert field not in result
+
+    # ── multiple fields coerced together ──────────────────────────────────────
+
+    def test_coerces_all_known_fields_in_one_event(self) -> None:
+        conn = self._conn()
+        line = json.dumps({
+            "ts": "1590000000.0",
+            "id.orig_p": "54321",
+            "id.resp_p": "443",
+            "duration": "1.5",
+            "orig_bytes": "512",
+            "resp_bytes": "1024",
+            "orig_pkts": "4",
+            "resp_pkts": "6",
+            "missed_bytes": "0",
+            "orig_ip_bytes": "600",
+            "resp_ip_bytes": "1200",
+        })
+        result = conn._parse_json_line(line, "conn")
+        assert result is not None
+        assert isinstance(result["ts"], float)
+        assert isinstance(result["id.orig_p"], int)
+        assert isinstance(result["id.resp_p"], int)
+        assert isinstance(result["duration"], float)
+        assert isinstance(result["orig_bytes"], int)
+        assert isinstance(result["resp_bytes"], int)
+        assert isinstance(result["orig_pkts"], int)
+        assert isinstance(result["resp_pkts"], int)
+        assert isinstance(result["missed_bytes"], int)
+        assert isinstance(result["orig_ip_bytes"], int)
+        assert isinstance(result["resp_ip_bytes"], int)
+
+    def test_non_coerced_fields_are_preserved_unchanged(self) -> None:
+        conn = self._conn()
+        line = json.dumps({
+            "ts": "1.0",
+            "uid": "CxAb12",
+            "id.orig_h": "10.0.0.1",
+            "id.resp_h": "8.8.8.8",
+            "proto": "udp",
+            "conn_state": "SF",
+            "answers": ["1.2.3.4"],
+        })
+        result = conn._parse_json_line(line, "conn")
+        assert result is not None
+        assert result["uid"] == "CxAb12"
+        assert result["id.orig_h"] == "10.0.0.1"
+        assert result["id.resp_h"] == "8.8.8.8"
+        assert result["proto"] == "udp"
+        assert result["conn_state"] == "SF"
+        assert result["answers"] == ["1.2.3.4"]
+
+    def test_null_ts_kept_as_none(self) -> None:
+        conn = self._conn()
+        result = conn._parse_json_line('{"ts": null}', "conn")
+        assert result is not None
+        assert result["ts"] is None  # null → None; float(None) fails → kept
+
+
+# ── Feature 6.11: _fetch_events() integration ─────────────────────────────────
+
+
+class TestZeekConnectorFetchEventsJsonCoercion:
+    """_fetch_events() must apply JSON coercion to events read from log files."""
+
+    async def test_fetch_events_coerces_ts_to_float(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            conn_log.write_text('{"ts": "1590000000.5", "uid": "abc"}\n')
+
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+
+            assert len(events) == 1
+            assert isinstance(events[0]["ts"], float)
+            assert events[0]["ts"] == pytest.approx(1590000000.5)
+
+    async def test_fetch_events_coerces_ports_to_int(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            line = json.dumps({
+                "ts": "1.0",
+                "id.orig_p": "54321",
+                "id.resp_p": "80",
+            })
+            conn_log.write_text(line + "\n")
+
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+
+            assert len(events) == 1
+            assert isinstance(events[0]["id.orig_p"], int)
+            assert isinstance(events[0]["id.resp_p"], int)
+            assert events[0]["id.orig_p"] == 54321
+            assert events[0]["id.resp_p"] == 80
+
+    async def test_fetch_events_coerces_byte_counters_to_int(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            line = json.dumps({
+                "ts": "1.0",
+                "orig_bytes": "512",
+                "resp_bytes": "1024",
+            })
+            conn_log.write_text(line + "\n")
+
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+
+            assert len(events) == 1
+            assert isinstance(events[0]["orig_bytes"], int)
+            assert isinstance(events[0]["resp_bytes"], int)
+
+    async def test_fetch_events_tsv_fallback_still_works(self) -> None:
+        """TSV lines are still parsed when JSON parse fails."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            tsv = "\t".join(["1.0", "Conn1", "10.0.0.1", "1234", "1.1.1.1", "80",
+                              "tcp", "http", "-", "-", "-", "S1"])
+            conn_log.write_text(tsv + "\n")
+
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+
+            assert len(events) == 1
+            assert events[0]["_log_type"] == "conn"
+            assert events[0]["id.orig_h"] == "10.0.0.1"
+
+    async def test_fetch_events_mixed_json_and_tsv_lines(self) -> None:
+        """A file with both JSON and TSV lines yields events from both."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn_log = Path(tmpdir) / "conn.log"
+            json_line = json.dumps({"ts": "1.0", "uid": "json_uid"})
+            tsv_line = "\t".join(["2.0", "tsv_uid", "10.0.0.2", "9999",
+                                   "1.1.1.1", "443", "tcp"])
+            conn_log.write_text(json_line + "\n" + tsv_line + "\n")
+
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+
+            assert len(events) == 2
+            uids = {e.get("uid") for e in events}
+            assert "json_uid" in uids
+            assert "tsv_uid" in uids
