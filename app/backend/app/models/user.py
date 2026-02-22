@@ -32,5 +32,11 @@ class User(Base, TimestampMixin):
     # First-login forced password change (feature 1.8)
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Password expiry — 90 days (feature 2.3)
+    # Set to now() whenever the password is changed; None means clock not yet started.
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
     def __repr__(self) -> str:
         return f"<User {self.email} role={self.role}>"

@@ -135,6 +135,18 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
         pc_token = create_password_change_token(str(user.id))
         return PasswordChangeRequiredResponse(password_change_token=pc_token)
 
+    # Feature 2.3 — Password expiry: require a change if the password is older
+    # than password_expiry_days.  Only applies when the setting is enabled (>0)
+    # and password_changed_at has been recorded (None means clock not yet started).
+    if (
+        settings.password_expiry_days > 0
+        and user.password_changed_at is not None
+    ):
+        cutoff = datetime.now(timezone.utc) - timedelta(days=settings.password_expiry_days)
+        if user.password_changed_at < cutoff:
+            pc_token = create_password_change_token(str(user.id))
+            return PasswordChangeRequiredResponse(password_change_token=pc_token)
+
     if user.mfa_enabled:
         mfa_token = create_mfa_token(str(user.id))
         return MfaLoginResponse(mfa_token=mfa_token)
@@ -388,6 +400,7 @@ async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depend
 
     user.hashed_password = hash_password(body.new_password)
     user.must_change_password = False
+    user.password_changed_at = datetime.now(timezone.utc)
     await db.flush()
 
     if user.mfa_enabled:

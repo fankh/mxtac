@@ -179,6 +179,11 @@ class Settings(BaseSettings):
     # Set to 0 to disable login-time inactivity checking (background task still respects this).
     account_inactivity_days: int = 90
 
+    # Password expiry — feature 2.3
+    # Passwords older than this many days are expired at login; user must change them.
+    # Set to 0 to disable time-based password expiry.
+    password_expiry_days: int = 90
+
     # Alert-to-incident auto-correlation — feature 26.8
     # Group related alerts into incidents automatically after enrichment.
     # Correlation key: (host, tactic) within correlation_window_seconds.
