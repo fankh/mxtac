@@ -1,4 +1,4 @@
-"""Tests for ZeekNormalizer — Feature 7.6 + Feature 28.12
+"""Tests for ZeekNormalizer — Feature 7.6 + Feature 7.7 + Feature 28.12
 
 Coverage (Feature 7.6):
   - CONN_STATE_SEVERITY mapping: all documented states and default fallback
@@ -13,6 +13,17 @@ Coverage (Feature 7.6):
   - _parse_ts(): Unix float timestamp, None, invalid string
   - _safe_int(): int, str-int, None, invalid string
   - Full round-trip: realistic conn.log event → OCSFEvent with all fields
+
+Coverage (Feature 7.7 — Zeek dns → DNSActivity (class_uid 4003)):
+  - Endpoint ports captured from id.orig_p / id.resp_p
+  - Extended DNS fields: trans_id, rtt
+  - QCLASS fields: qclass (numeric), qclass_name
+  - Query type: qtype (qtype_name), qtype_id (numeric qtype)
+  - Response code: rcode (rcode_name), rcode_id (numeric rcode)
+  - DNS flags: AA, TC, RD, RA, Z
+  - TTLs list defaults to []
+  - rejected boolean field
+  - Full round-trip: all extended fields → JSON-serializable OCSFEvent
 
 Coverage (Feature 28.12 — Zeek conn → NetworkActivity):
   - Extended conn fields: missed_bytes, history, orig_pkts, resp_pkts,
@@ -76,7 +87,9 @@ def dns_event() -> dict:
         "ts":          1708331400.0,
         "uid":         "Dns123456",
         "id.orig_h":   "10.0.0.5",
+        "id.orig_p":   "54321",
         "id.resp_h":   "8.8.8.8",
+        "id.resp_p":   "53",
         "query":       "evil.example.com",
         "qtype_name":  "A",
         "answers":     ["1.2.3.4"],
@@ -1467,3 +1480,600 @@ def test_normalize_http_missing_all_optional_fields(normalizer: ZeekNormalizer) 
     assert nt["username"] is None
     assert nt["orig_fuids"] == []
     assert nt["resp_fuids"] == []
+
+
+# ===========================================================================
+# Feature 7.7 — Zeek dns → DNSActivity (class_uid 4003): Extended Coverage
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# Full dns_event fixture with all Zeek dns.log fields
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def full_dns_event() -> dict:
+    """Realistic Zeek dns.log event with ALL fields populated."""
+    return {
+        "_log_type":    "dns",
+        "ts":           1708331400.0,
+        "uid":          "DnsFull001",
+        "id.orig_h":    "10.0.0.5",
+        "id.orig_p":    "54321",
+        "id.resp_h":    "8.8.8.8",
+        "id.resp_p":    "53",
+        "proto":        "udp",
+        "trans_id":     12345,
+        "rtt":          0.002345,
+        "query":        "malware.example.com",
+        "qclass":       1,
+        "qclass_name":  "C_INTERNET",
+        "qtype":        1,
+        "qtype_name":   "A",
+        "rcode":        0,
+        "rcode_name":   "NOERROR",
+        "AA":           False,
+        "TC":           False,
+        "RD":           True,
+        "RA":           True,
+        "Z":            0,
+        "answers":      ["1.2.3.4", "5.6.7.8"],
+        "TTLs":         [300.0, 300.0],
+        "rejected":     False,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: DNS endpoint port mapping
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dns_src_endpoint_port(
+    normalizer: ZeekNormalizer, dns_event: dict
+) -> None:
+    """DNS source port (id.orig_p) maps to src_endpoint.port."""
+    ocsf = normalizer.normalize(dns_event)
+    assert ocsf.src_endpoint.port == 54321
+
+
+def test_normalize_dns_dst_endpoint_port(
+    normalizer: ZeekNormalizer, dns_event: dict
+) -> None:
+    """DNS destination port (id.resp_p) maps to dst_endpoint.port."""
+    ocsf = normalizer.normalize(dns_event)
+    assert ocsf.dst_endpoint.port == 53
+
+
+def test_normalize_dns_port_as_string_cast(normalizer: ZeekNormalizer) -> None:
+    """String ports in DNS events are safely cast to int."""
+    event = {
+        "_log_type":  "dns",
+        "id.orig_p":  "12345",
+        "id.resp_p":  "53",
+    }
+    ocsf = normalizer.normalize(event)
+    assert ocsf.src_endpoint.port == 12345
+    assert ocsf.dst_endpoint.port == 53
+
+
+def test_normalize_dns_invalid_port_is_none(normalizer: ZeekNormalizer) -> None:
+    """Non-numeric DNS port string maps to None without raising."""
+    event = {"_log_type": "dns", "id.orig_p": "-", "id.resp_p": "N/A"}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.src_endpoint.port is None
+    assert ocsf.dst_endpoint.port is None
+
+
+def test_normalize_dns_missing_ports_are_none(normalizer: ZeekNormalizer) -> None:
+    """Absent port fields default to None in DNS events."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.src_endpoint.port is None
+    assert ocsf.dst_endpoint.port is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: trans_id and rtt
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dns_trans_id(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """DNS transaction ID (trans_id) is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["trans_id"] == 12345
+
+
+def test_normalize_dns_trans_id_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent trans_id defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["trans_id"] is None
+
+
+def test_normalize_dns_rtt(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """DNS round-trip time (rtt) is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["rtt"] == pytest.approx(0.002345)
+
+
+def test_normalize_dns_rtt_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent rtt defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["rtt"] is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: QCLASS fields
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dns_qclass_numeric(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """Numeric DNS class (qclass=1 for IN) is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["qclass"] == 1
+
+
+def test_normalize_dns_qclass_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent qclass defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["qclass"] is None
+
+
+def test_normalize_dns_qclass_name(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """DNS class name (qclass_name) is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["qclass_name"] == "C_INTERNET"
+
+
+def test_normalize_dns_qclass_name_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent qclass_name defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["qclass_name"] is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: Query type — qtype (name) and qtype_id (numeric)
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dns_qtype_id_numeric(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """Numeric DNS query type (qtype=1 for A) is captured as qtype_id."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["qtype_id"] == 1
+
+
+def test_normalize_dns_qtype_id_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent numeric qtype defaults to None in qtype_id."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["qtype_id"] is None
+
+
+@pytest.mark.parametrize("qtype,qtype_name", [
+    (1,  "A"),
+    (28, "AAAA"),
+    (15, "MX"),
+    (6,  "SOA"),
+    (2,  "NS"),
+    (16, "TXT"),
+    (5,  "CNAME"),
+    (12, "PTR"),
+])
+def test_normalize_dns_qtype_name_variants(
+    normalizer: ZeekNormalizer, qtype: int, qtype_name: str
+) -> None:
+    """Various DNS query types are captured in both qtype (name) and qtype_id."""
+    event = {"_log_type": "dns", "qtype": qtype, "qtype_name": qtype_name}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["qtype"] == qtype_name
+    assert ocsf.network_traffic["qtype_id"] == qtype
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: Response code — rcode (name) and rcode_id (numeric)
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dns_rcode_id_numeric(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """Numeric DNS response code (rcode=0 for NOERROR) is captured as rcode_id."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["rcode_id"] == 0
+
+
+def test_normalize_dns_rcode_id_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent numeric rcode defaults to None in rcode_id."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["rcode_id"] is None
+
+
+@pytest.mark.parametrize("rcode,rcode_name", [
+    (0,  "NOERROR"),
+    (1,  "FORMERR"),
+    (2,  "SERVFAIL"),
+    (3,  "NXDOMAIN"),
+    (5,  "REFUSED"),
+])
+def test_normalize_dns_rcode_variants(
+    normalizer: ZeekNormalizer, rcode: int, rcode_name: str
+) -> None:
+    """Various DNS response codes are captured in both rcode (name) and rcode_id."""
+    event = {"_log_type": "dns", "rcode": rcode, "rcode_name": rcode_name}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["rcode"] == rcode_name
+    assert ocsf.network_traffic["rcode_id"] == rcode
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: DNS flags — AA, TC, RD, RA, Z
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dns_AA_false(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """AA (authoritative answer) flag is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["AA"] is False
+
+
+def test_normalize_dns_AA_true(normalizer: ZeekNormalizer) -> None:
+    """AA=True (response from authoritative server) is preserved."""
+    event = {"_log_type": "dns", "AA": True}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["AA"] is True
+
+
+def test_normalize_dns_AA_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent AA flag defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["AA"] is None
+
+
+def test_normalize_dns_TC_false(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """TC (truncated) flag is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["TC"] is False
+
+
+def test_normalize_dns_TC_true(normalizer: ZeekNormalizer) -> None:
+    """TC=True (DNS message was truncated) is preserved."""
+    event = {"_log_type": "dns", "TC": True}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["TC"] is True
+
+
+def test_normalize_dns_TC_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent TC flag defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["TC"] is None
+
+
+def test_normalize_dns_RD_true(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """RD (recursion desired) flag is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["RD"] is True
+
+
+def test_normalize_dns_RD_false(normalizer: ZeekNormalizer) -> None:
+    """RD=False (iterative query) is preserved."""
+    event = {"_log_type": "dns", "RD": False}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["RD"] is False
+
+
+def test_normalize_dns_RD_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent RD flag defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["RD"] is None
+
+
+def test_normalize_dns_RA_true(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """RA (recursion available) flag is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["RA"] is True
+
+
+def test_normalize_dns_RA_false(normalizer: ZeekNormalizer) -> None:
+    """RA=False (server does not support recursion) is preserved."""
+    event = {"_log_type": "dns", "RA": False}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["RA"] is False
+
+
+def test_normalize_dns_RA_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent RA flag defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["RA"] is None
+
+
+def test_normalize_dns_Z_zero(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """Z (reserved DNS field) value is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["Z"] == 0
+
+
+def test_normalize_dns_Z_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent Z field defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["Z"] is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: TTLs list
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dns_TTLs(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """TTLs list is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["TTLs"] == [300.0, 300.0]
+
+
+def test_normalize_dns_TTLs_defaults_to_empty(normalizer: ZeekNormalizer) -> None:
+    """Absent TTLs defaults to []."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["TTLs"] == []
+
+
+def test_normalize_dns_TTLs_single_entry(normalizer: ZeekNormalizer) -> None:
+    """Single-answer TTL list is preserved."""
+    event = {"_log_type": "dns", "TTLs": [60.0]}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["TTLs"] == [60.0]
+
+
+def test_normalize_dns_TTLs_varied(normalizer: ZeekNormalizer) -> None:
+    """Varied TTL values (e.g., CNAME chains) are preserved."""
+    event = {"_log_type": "dns", "TTLs": [86400.0, 3600.0, 300.0]}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["TTLs"] == [86400.0, 3600.0, 300.0]
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: rejected field
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dns_rejected_false(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """rejected=False is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_dns_event)
+    assert ocsf.network_traffic["rejected"] is False
+
+
+def test_normalize_dns_rejected_true(normalizer: ZeekNormalizer) -> None:
+    """rejected=True (DNS reply rejected by client) is preserved."""
+    event = {"_log_type": "dns", "rejected": True}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["rejected"] is True
+
+
+def test_normalize_dns_rejected_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent rejected field defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.network_traffic["rejected"] is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: Multiple answers with matching TTLs
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dns_multiple_answers(normalizer: ZeekNormalizer) -> None:
+    """Multiple DNS answers are all preserved."""
+    event = {
+        "_log_type": "dns",
+        "answers": ["1.2.3.4", "5.6.7.8", "9.10.11.12"],
+        "TTLs":    [300.0, 300.0, 300.0],
+    }
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["answers"] == ["1.2.3.4", "5.6.7.8", "9.10.11.12"]
+    assert ocsf.network_traffic["TTLs"] == [300.0, 300.0, 300.0]
+
+
+def test_normalize_dns_answers_and_ttls_aligned(normalizer: ZeekNormalizer) -> None:
+    """answers and TTLs lists have the same length (one TTL per answer)."""
+    event = {
+        "_log_type": "dns",
+        "answers": ["ns1.example.com", "ns2.example.com"],
+        "TTLs":    [86400.0, 86400.0],
+    }
+    ocsf = normalizer.normalize(event)
+    assert len(ocsf.network_traffic["answers"]) == len(ocsf.network_traffic["TTLs"])
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: NXDOMAIN and SERVFAIL detection scenarios
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dns_nxdomain(normalizer: ZeekNormalizer) -> None:
+    """NXDOMAIN response (non-existent domain) is preserved with empty answers."""
+    event = {
+        "_log_type":    "dns",
+        "uid":          "DnsNx001",
+        "id.orig_h":    "10.0.0.5",
+        "id.resp_h":    "8.8.8.8",
+        "query":        "nonexistent.invalid",
+        "qtype_name":   "A",
+        "qtype":        1,
+        "rcode":        3,
+        "rcode_name":   "NXDOMAIN",
+        "answers":      [],
+        "TTLs":         [],
+        "RD":           True,
+        "RA":           True,
+    }
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["rcode"] == "NXDOMAIN"
+    assert ocsf.network_traffic["rcode_id"] == 3
+    assert ocsf.network_traffic["answers"] == []
+    assert ocsf.network_traffic["TTLs"] == []
+
+
+def test_normalize_dns_servfail(normalizer: ZeekNormalizer) -> None:
+    """SERVFAIL response (server failure) is correctly mapped."""
+    event = {
+        "_log_type":  "dns",
+        "query":      "example.com",
+        "qtype_name": "A",
+        "rcode":      2,
+        "rcode_name": "SERVFAIL",
+        "answers":    [],
+    }
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["rcode"] == "SERVFAIL"
+    assert ocsf.network_traffic["rcode_id"] == 2
+
+
+def test_normalize_dns_refused(normalizer: ZeekNormalizer) -> None:
+    """REFUSED response is correctly mapped."""
+    event = {
+        "_log_type":  "dns",
+        "query":      "internal.corp",
+        "rcode":      5,
+        "rcode_name": "REFUSED",
+    }
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["rcode"] == "REFUSED"
+    assert ocsf.network_traffic["rcode_id"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: All-fields-absent minimal event
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_dns_missing_all_extended_fields(normalizer: ZeekNormalizer) -> None:
+    """Minimal DNS event (only _log_type) produces valid OCSFEvent with defaults."""
+    ocsf = normalizer.normalize({"_log_type": "dns"})
+    assert ocsf.class_uid == 4003
+    assert ocsf.class_name == "DNS Activity"
+    assert ocsf.src_endpoint.ip is None
+    assert ocsf.src_endpoint.port is None
+    assert ocsf.dst_endpoint.ip is None
+    assert ocsf.dst_endpoint.port is None
+    nt = ocsf.network_traffic
+    assert nt["proto"] is None
+    assert nt["trans_id"] is None
+    assert nt["rtt"] is None
+    assert nt["query"] is None
+    assert nt["qclass"] is None
+    assert nt["qclass_name"] is None
+    assert nt["qtype"] is None
+    assert nt["qtype_id"] is None
+    assert nt["rcode"] is None
+    assert nt["rcode_id"] is None
+    assert nt["AA"] is None
+    assert nt["TC"] is None
+    assert nt["RD"] is None
+    assert nt["RA"] is None
+    assert nt["Z"] is None
+    assert nt["answers"] == []
+    assert nt["TTLs"] == []
+    assert nt["rejected"] is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.7: Full round-trip with all extended DNS fields
+# ---------------------------------------------------------------------------
+
+
+def test_full_dns_extended_round_trip(
+    normalizer: ZeekNormalizer, full_dns_event: dict
+) -> None:
+    """End-to-end: dns event with all extended fields → JSON-serializable OCSFEvent."""
+    ocsf = normalizer.normalize(full_dns_event)
+
+    # Core OCSF classification
+    assert ocsf.class_uid == 4003
+    assert ocsf.class_name == "DNS Activity"
+    assert ocsf.category_uid == 4
+    assert ocsf.metadata_product == "Zeek"
+    assert ocsf.metadata_uid == "DnsFull001"
+    assert ocsf.severity_id == 1
+
+    # Endpoints with ports
+    assert ocsf.src_endpoint.ip == "10.0.0.5"
+    assert ocsf.src_endpoint.port == 54321
+    assert ocsf.dst_endpoint.ip == "8.8.8.8"
+    assert ocsf.dst_endpoint.port == 53
+
+    nt = ocsf.network_traffic
+
+    # Connection
+    assert nt["proto"] == "udp"
+    assert nt["trans_id"] == 12345
+    assert nt["rtt"] == pytest.approx(0.002345)
+
+    # Query classification
+    assert nt["query"] == "malware.example.com"
+    assert nt["qclass"] == 1
+    assert nt["qclass_name"] == "C_INTERNET"
+    assert nt["qtype"] == "A"
+    assert nt["qtype_id"] == 1
+
+    # Response classification
+    assert nt["rcode"] == "NOERROR"
+    assert nt["rcode_id"] == 0
+
+    # DNS flags
+    assert nt["AA"] is False
+    assert nt["TC"] is False
+    assert nt["RD"] is True
+    assert nt["RA"] is True
+    assert nt["Z"] == 0
+
+    # Results
+    assert nt["answers"] == ["1.2.3.4", "5.6.7.8"]
+    assert nt["TTLs"] == [300.0, 300.0]
+    assert nt["rejected"] is False
+
+    # Raw preserved
+    assert ocsf.raw["uid"] == "DnsFull001"
+
+    # JSON serialisation must not raise
+    data = ocsf.model_dump(mode="json")
+    assert data["class_uid"] == 4003
+    assert data["class_name"] == "DNS Activity"
+    assert data["src_endpoint"]["port"] == 54321
+    assert data["dst_endpoint"]["port"] == 53
+    traffic = data["network_traffic"]
+    assert traffic["proto"] == "udp"
+    assert traffic["trans_id"] == 12345
+    assert traffic["query"] == "malware.example.com"
+    assert traffic["qclass"] == 1
+    assert traffic["qclass_name"] == "C_INTERNET"
+    assert traffic["qtype"] == "A"
+    assert traffic["qtype_id"] == 1
+    assert traffic["rcode"] == "NOERROR"
+    assert traffic["rcode_id"] == 0
+    assert traffic["AA"] is False
+    assert traffic["TC"] is False
+    assert traffic["RD"] is True
+    assert traffic["RA"] is True
+    assert traffic["Z"] == 0
+    assert traffic["answers"] == ["1.2.3.4", "5.6.7.8"]
+    assert traffic["TTLs"] == [300.0, 300.0]
+    assert traffic["rejected"] is False

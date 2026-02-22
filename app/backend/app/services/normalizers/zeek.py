@@ -7,6 +7,16 @@ Zeek conn.log TSV/JSON format:
   ts, uid, id.orig_h, id.orig_p, id.resp_h, id.resp_p, proto,
   service, duration, orig_bytes, resp_bytes, conn_state, ...
 
+Feature 7.7 — Zeek dns.log → DNSActivity (class_uid 4003):
+  Extended DNS fields captured in network_traffic:
+    proto, trans_id, rtt,
+    query, qclass, qclass_name,
+    qtype (qtype_name), qtype_id (numeric qtype),
+    rcode (rcode_name), rcode_id (numeric rcode),
+    AA, TC, RD, RA, Z,
+    answers, TTLs, rejected
+  Endpoint ports captured from id.orig_p / id.resp_p.
+
 Feature 7.8 — Zeek http.log → HTTPActivity (class_uid 4002):
   Extended HTTP fields captured in network_traffic:
     method, uri, status_code, status_msg, user_agent, referrer,
@@ -94,6 +104,12 @@ class ZeekNormalizer:
         )
 
     def _normalize_dns(self, raw: dict[str, Any]) -> OCSFEvent:
+        """Map Zeek dns.log → OCSF DNSActivity (class_uid 4003).
+
+        Feature 7.7: Extended DNS fields including ports, transaction ID,
+        RTT, DNS flags (AA/TC/RD/RA/Z), numeric codes, QCLASS, TTLs,
+        and rejection status.
+        """
         return OCSFEvent(
             class_uid=OCSFClass.DNS_ACTIVITY,
             class_name="DNS Activity",
@@ -102,14 +118,34 @@ class ZeekNormalizer:
             severity_id=1,
             metadata_product="Zeek",
             metadata_uid=raw.get("uid"),
-            src_endpoint=Endpoint(ip=raw.get("id.orig_h")),
-            dst_endpoint=Endpoint(ip=raw.get("id.resp_h")),
+            src_endpoint=Endpoint(
+                ip=raw.get("id.orig_h"),
+                port=self._safe_int(raw.get("id.orig_p")),
+            ),
+            dst_endpoint=Endpoint(
+                ip=raw.get("id.resp_h"),
+                port=self._safe_int(raw.get("id.resp_p")),
+            ),
             network_traffic={
-                "query":       raw.get("query"),
-                "qtype":       raw.get("qtype_name"),
-                "answers":     raw.get("answers", []),
-                "rcode":       raw.get("rcode_name"),
                 "proto":       raw.get("proto"),
+                "trans_id":    raw.get("trans_id"),
+                "rtt":         raw.get("rtt"),
+                "query":       raw.get("query"),
+                "qclass":      raw.get("qclass"),
+                "qclass_name": raw.get("qclass_name"),
+                # qtype/rcode: name fields kept for backward compat
+                "qtype":       raw.get("qtype_name"),
+                "qtype_id":    raw.get("qtype"),
+                "rcode":       raw.get("rcode_name"),
+                "rcode_id":    raw.get("rcode"),
+                "AA":          raw.get("AA"),
+                "TC":          raw.get("TC"),
+                "RD":          raw.get("RD"),
+                "RA":          raw.get("RA"),
+                "Z":           raw.get("Z"),
+                "answers":     raw.get("answers", []),
+                "TTLs":        raw.get("TTLs", []),
+                "rejected":    raw.get("rejected"),
             },
             raw=raw,
         )
