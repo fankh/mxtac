@@ -67,15 +67,44 @@ class MessageQueue(ABC):
 # ── In-process queue (single-process dev / testing) ─────────────────────────
 
 class InMemoryQueue(MessageQueue):
-    """Asyncio-based in-memory queue. No persistence, single process only."""
+    """Asyncio-based in-memory queue. No persistence, single process only.
 
-    def __init__(self) -> None:
-        self._queues: dict[str, asyncio.Queue] = defaultdict(asyncio.Queue)
+    Args:
+        maxsize: Maximum number of messages per topic queue.  0 (default) means
+                 unbounded — identical to previous behaviour.  A positive value
+                 enables back-pressure: publish() blocks when the queue is full,
+                 naturally slowing down the ingest producer until a consumer
+                 drains enough messages to free space (Feature 5.9).
+    """
+
+    def __init__(self, maxsize: int = 0) -> None:
+        self._maxsize = maxsize
+        self._queues: dict[str, asyncio.Queue] = defaultdict(
+            lambda: asyncio.Queue(maxsize=self._maxsize)
+        )
         self._tasks: list[asyncio.Task] = []
+        self._backpressure_events: int = 0
+
+    @property
+    def backpressure_count(self) -> int:
+        """Number of times publish() encountered a full queue and had to block."""
+        return self._backpressure_events
 
     async def publish(self, topic: str, message: dict[str, Any]) -> None:
-        await self._queues[topic].put(message)
-        logger.debug("InMemoryQueue publish topic=%s size=%d", topic, self._queues[topic].qsize())
+        q = self._queues[topic]
+        try:
+            q.put_nowait(message)
+        except asyncio.QueueFull:
+            self._backpressure_events += 1
+            logger.warning(
+                "InMemoryQueue back-pressure: topic=%s queue full (size=%d maxsize=%d)"
+                " — blocking publisher to slow ingest",
+                topic,
+                q.qsize(),
+                self._maxsize,
+            )
+            await q.put(message)  # block until a consumer frees space
+        logger.debug("InMemoryQueue publish topic=%s size=%d", topic, q.qsize())
 
     async def subscribe(
         self,
