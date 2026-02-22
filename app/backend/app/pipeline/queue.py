@@ -4,6 +4,7 @@ Topic naming convention: mxtac.{stage}.{source}
   - mxtac.raw.wazuh       — raw Wazuh JSON alerts
   - mxtac.raw.zeek        — raw Zeek log lines
   - mxtac.raw.suricata    — raw Suricata EVE JSON
+  - mxtac.raw.webhook     — raw generic webhook events (any JSON source)
   - mxtac.normalized      — OCSF-normalized events
   - mxtac.alerts          — matched Sigma alerts
   - mxtac.enriched        — enriched alerts
@@ -32,6 +33,7 @@ class Topic:
     RAW_SURICATA    = "mxtac.raw.suricata"
     RAW_PROWLER     = "mxtac.raw.prowler"
     RAW_OPENCTI     = "mxtac.raw.opencti"
+    RAW_WEBHOOK     = "mxtac.raw.webhook"
     NORMALIZED      = "mxtac.normalized"
     ALERTS          = "mxtac.alerts"
     ENRICHED        = "mxtac.enriched"

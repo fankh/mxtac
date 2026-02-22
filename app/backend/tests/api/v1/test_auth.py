@@ -4,6 +4,7 @@ Tests for token refresh — Feature 28.5
 Tests for refresh token rotation — Feature 1.2
 Tests for account lockout (5 failed attempts → 30 min) — Feature 1.6
 Tests for inactive account lock (90 days no login) — Feature 1.7
+Tests for password expiry (90 days) — Feature 2.3
 
 Coverage:
   - Happy path: status code, response schema, JWT claims
@@ -1513,3 +1514,197 @@ async def test_change_password_get_method_not_allowed(client: AsyncClient) -> No
     """GET /auth/change-password is not defined → 405 Method Not Allowed."""
     resp = await client.get(CHANGE_PASSWORD_URL)
     assert resp.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# Feature 2.3 — Password expiry (90 days)
+# ---------------------------------------------------------------------------
+
+_EXPIRY_USER_ID = "expiry-user-id-5678"
+
+
+def _user_with_password_age(days: int | None, mfa_enabled: bool = False) -> User:
+    """Return an active user whose password_changed_at is ``days`` days ago.
+
+    Pass ``days=None`` to simulate a user whose clock has not yet started
+    (password_changed_at is None — e.g., an account created before this
+    feature was deployed).
+    """
+    u = User(
+        email="analyst@mxtac.local",
+        hashed_password="$2b$12$placeholder_not_used_in_tests",
+        full_name="Test User",
+        role="analyst",
+        is_active=True,
+        must_change_password=False,
+    )
+    u.id = _EXPIRY_USER_ID
+    u.mfa_enabled = mfa_enabled
+    u.password_changed_at = (
+        datetime.now(timezone.utc) - timedelta(days=days) if days is not None else None
+    )
+    return u
+
+
+# --- Login with expired password ---
+
+
+@pytest.mark.asyncio
+async def test_expired_password_login_returns_200(client: AsyncClient) -> None:
+    """Password older than 90 days → 200 OK (forced change, not an error)."""
+    user = _user_with_password_age(days=91)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_expired_password_response_flag(client: AsyncClient) -> None:
+    """Expired password login response includes password_change_required=True."""
+    user = _user_with_password_age(days=91)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert resp.json().get("password_change_required") is True
+
+
+@pytest.mark.asyncio
+async def test_expired_password_response_has_token(client: AsyncClient) -> None:
+    """Expired password login response includes a non-empty password_change_token."""
+    user = _user_with_password_age(days=91)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    data = resp.json()
+    assert "password_change_token" in data
+    assert isinstance(data["password_change_token"], str)
+    assert data["password_change_token"]
+
+
+@pytest.mark.asyncio
+async def test_expired_password_no_access_token(client: AsyncClient) -> None:
+    """Expired password response must NOT include access_token or refresh_token."""
+    user = _user_with_password_age(days=91)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    data = resp.json()
+    assert "access_token" not in data
+    assert "refresh_token" not in data
+
+
+@pytest.mark.asyncio
+async def test_expired_password_token_has_correct_purpose(client: AsyncClient) -> None:
+    """The password_change_token JWT carries purpose='password_change'."""
+    user = _user_with_password_age(days=91)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    token = resp.json()["password_change_token"]
+    payload = _decode(token)
+    assert payload.get("purpose") == "password_change"
+
+
+# --- Recent password: still valid ---
+
+
+@pytest.mark.asyncio
+async def test_password_89_days_old_allows_login(client: AsyncClient) -> None:
+    """Password changed 89 days ago (within 90-day window) → normal login."""
+    user = _user_with_password_age(days=89)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    data = resp.json()
+    assert "access_token" in data
+    assert data.get("password_change_required") is None
+
+
+# --- password_changed_at is None (clock not started) ---
+
+
+@pytest.mark.asyncio
+async def test_null_password_changed_at_allows_login(client: AsyncClient) -> None:
+    """password_changed_at=None (clock not started) → normal login, no forced change."""
+    user = _user_with_password_age(days=None)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    data = resp.json()
+    assert "access_token" in data
+    assert data.get("password_change_required") is None
+
+
+# --- Disabled (password_expiry_days=0) ---
+
+
+@pytest.mark.asyncio
+async def test_expiry_disabled_skips_check(client: AsyncClient) -> None:
+    """When password_expiry_days=0, expiry check is skipped even for old passwords."""
+    user = _user_with_password_age(days=365)
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    with patch.object(settings, "password_expiry_days", 0):
+                        resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert "access_token" in resp.json()
+
+
+# --- change-password resets the expiry clock ---
+
+
+@pytest.mark.asyncio
+async def test_change_password_updates_password_changed_at(client: AsyncClient) -> None:
+    """Calling change-password sets password_changed_at to approximately now."""
+    user = _user_with_password_age(days=91)
+    token = create_password_change_token(_EXPIRY_USER_ID)
+    before = datetime.now(timezone.utc)
+    with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
+        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+            resp = await client.post(
+                CHANGE_PASSWORD_URL,
+                json={
+                    "password_change_token": token,
+                    "new_password": "NewSecure1!",
+                    "confirm_password": "NewSecure1!",
+                },
+            )
+    assert resp.status_code == 200
+    assert user.password_changed_at is not None
+    assert user.password_changed_at >= before
+
+
+@pytest.mark.asyncio
+async def test_change_password_for_expired_returns_access_token(client: AsyncClient) -> None:
+    """After a successful change-password (expiry case), access + refresh tokens are returned."""
+    user = _user_with_password_age(days=91)
+    token = create_password_change_token(_EXPIRY_USER_ID)
+    with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
+        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+            resp = await client.post(
+                CHANGE_PASSWORD_URL,
+                json={
+                    "password_change_token": token,
+                    "new_password": "NewSecure1!",
+                    "confirm_password": "NewSecure1!",
+                },
+            )
+    data = resp.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
