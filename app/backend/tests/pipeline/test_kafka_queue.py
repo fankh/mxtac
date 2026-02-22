@@ -78,7 +78,7 @@ def make_mock_consumer(messages: list[Any] | None = None) -> MagicMock:
         for msg in _messages:
             yield msg
 
-    consumer.__aiter__ = lambda: _aiter()
+    consumer.__aiter__ = lambda _: _aiter()
     return consumer
 
 
@@ -98,7 +98,7 @@ def make_blocking_consumer() -> tuple[MagicMock, asyncio.Event]:
         return
         yield  # make it an async generator
 
-    consumer.__aiter__ = lambda: _blocking_aiter()
+    consumer.__aiter__ = lambda _: _blocking_aiter()
     return consumer, unblock
 
 
