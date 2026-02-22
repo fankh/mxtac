@@ -671,6 +671,33 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("Alert auto-closer task start failed")
 
+    # 20. Start syslog receiver — inbound UDP/TCP listener on port 1514 (feature 35.4)
+    if settings.syslog_enabled:
+        try:
+            from .connectors.syslog_receiver import SyslogReceiver
+            syslog_receiver = SyslogReceiver(
+                queue,
+                host=settings.syslog_host,
+                port=settings.syslog_port,
+                protocol=settings.syslog_protocol,
+                max_message_size=settings.syslog_max_message_size,
+            )
+            await syslog_receiver.start()
+            app.state.syslog_receiver = syslog_receiver
+            logger.info(
+                "Syslog receiver started host=%s port=%d protocol=%s",
+                settings.syslog_host,
+                settings.syslog_port,
+                settings.syslog_protocol,
+            )
+        except Exception:
+            logger.exception("Syslog receiver start failed")
+    else:
+        logger.info(
+            "Syslog receiver disabled (set SYSLOG_ENABLED=true to enable, port=%d)",
+            settings.syslog_port,
+        )
+
     logger.info("MxTac API startup complete")
 
 
@@ -764,6 +791,14 @@ async def on_shutdown() -> None:
             await duckdb_store.close()
     except Exception:
         logger.exception("DuckDB close failed")
+
+    # Close syslog receiver (feature 35.4)
+    try:
+        syslog_receiver = getattr(app.state, "syslog_receiver", None)
+        if syslog_receiver is not None:
+            await syslog_receiver.stop()
+    except Exception:
+        logger.exception("SyslogReceiver stop failed")
 
     logger.info("MxTac API shutdown complete")
 
