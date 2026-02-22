@@ -111,6 +111,53 @@ async def check_ingest_rate_limit(
         return True  # fail-open: prefer availability over strict enforcement
 
 
+# ── Account lockout ───────────────────────────────────────────────────────────
+LOCKOUT_MAX_ATTEMPTS = 5
+LOCKOUT_WINDOW_SECONDS = 1800  # 30 minutes
+
+
+async def is_account_locked(email: str) -> bool:
+    """Return True if the account has exceeded the failed login attempt threshold.
+
+    Fails open (returns False) when Valkey is unreachable so that a Valkey
+    outage does not lock out all users.
+    """
+    try:
+        client = await get_valkey_client()
+        value = await client.get(f"login_attempts:{email}")
+        return value is not None and int(value) >= LOCKOUT_MAX_ATTEMPTS
+    except Exception:
+        logger.debug("Valkey unavailable — skipping lockout check for %s", email)
+        return False  # fail-open
+
+
+async def increment_login_attempts(email: str) -> int:
+    """Increment and return the failed login count for the given email.
+
+    Key auto-expires in 1800 seconds (30 minutes). Returns 0 on Valkey failure
+    (fail-open: prefer availability over strict enforcement).
+    """
+    try:
+        client = await get_valkey_client()
+        key = f"login_attempts:{email}"
+        count = await client.incr(key)
+        if count == 1:
+            await client.expire(key, LOCKOUT_WINDOW_SECONDS)
+        return int(count)
+    except Exception:
+        logger.debug("Valkey unavailable — skipping login attempt tracking for %s", email)
+        return 0  # fail-open
+
+
+async def clear_login_attempts(email: str) -> None:
+    """Clear the failed login counter after a successful authentication."""
+    try:
+        client = await get_valkey_client()
+        await client.delete(f"login_attempts:{email}")
+    except Exception:
+        logger.debug("Valkey unavailable — could not clear login attempts for %s", email)
+
+
 # ── Rule-change pub/sub ───────────────────────────────────────────────────────
 RULE_RELOAD_CHANNEL = "mxtac:rules:reload"
 

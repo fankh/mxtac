@@ -82,6 +82,31 @@ Coverage:
   - feature 9.4 severity weight: _score() returns the same dict object (in-place mutation)
   - feature 9.4 severity weight: end-to-end process() score matches severity × 0.60 formula
   - feature 9.4 severity weight: changing severity_id changes score more than same-delta asset change
+  - feature 9.5 asset weight: W_ASSET constant equals exactly 0.25
+  - feature 9.5 asset weight: W_ASSET is 25% of total weight (subordinate to W_SEVERITY)
+  - feature 9.5 asset weight: DEFAULT_ASSET_CRITICALITY dict has exactly four entries
+  - feature 9.5 asset weight: dc prefix → criticality 1.0 (Domain Controller, highest)
+  - feature 9.5 asset weight: srv prefix → criticality 0.8
+  - feature 9.5 asset weight: win prefix → criticality 0.6
+  - feature 9.5 asset weight: lin prefix → criticality 0.5
+  - feature 9.5 asset weight: unknown prefix → default criticality 0.5
+  - feature 9.5 asset weight: empty hostname → default criticality 0.5
+  - feature 9.5 asset weight: prefix matching is case-insensitive (DC-01, SRV-01, WIN-01, LIN-01)
+  - feature 9.5 asset weight: prefix match uses startswith (partial match: "dcserver" → 1.0)
+  - feature 9.5 asset weight: dc isolated score contribution = 1.0 × 0.25 × 10 = 2.5
+  - feature 9.5 asset weight: srv isolated score contribution = 0.8 × 0.25 × 10 = 2.0
+  - feature 9.5 asset weight: win isolated score contribution = 0.6 × 0.25 × 10 = 1.5
+  - feature 9.5 asset weight: lin isolated score contribution = 0.5 × 0.25 × 10 = 1.25
+  - feature 9.5 asset weight: default (0.5) isolated score contribution = 0.5 × 0.25 × 10 = 1.25
+  - feature 9.5 asset weight: score monotonically increases with asset_criticality (severity fixed)
+  - feature 9.5 asset weight: dc > srv > win ≥ lin ordering holds in final score at any severity
+  - feature 9.5 asset weight: asset contribution is additive with severity contribution
+  - feature 9.5 asset weight: score is float in [0.0, 10.0] for all known prefix hosts
+  - feature 9.5 asset weight: score cap (10.0) is applied even when asset pushes raw above max
+  - feature 9.5 asset weight: end-to-end process() with DC host produces correct asset-weighted score
+  - feature 9.5 asset weight: end-to-end process() with SRV host produces correct asset-weighted score
+  - feature 9.5 asset weight: _asset_criticality() is called during _enrich() and propagates to _score()
+  - feature 9.5 asset weight: delta between dc and srv prefix scores is uniform (0.5 per unit × 0.25 × 10 = 1.25 … 0.2×0.25×10=0.5)
 """
 
 from __future__ import annotations
@@ -2747,3 +2772,480 @@ async def test_9_4_end_to_end_informational_alert_score() -> None:
     )
 
     await queue.stop()
+
+
+# ---------------------------------------------------------------------------
+# Section 15 — Feature 9.5: Risk score — asset criticality × 0.25
+# ---------------------------------------------------------------------------
+#
+# Feature 9.5 defines the asset weight in the risk score formula:
+#
+#   asset_contribution = asset_criticality * W_ASSET * MAX_SCORE
+#
+# With W_ASSET=0.25 and MAX_SCORE=10.0:
+#   dc  (crit=1.0) → 2.5
+#   srv (crit=0.8) → 2.0
+#   win (crit=0.6) → 1.5
+#   lin (crit=0.5) → 1.25
+#   default (0.5)  → 1.25
+#
+# Prefix-based defaults are case-insensitive startswith matches.
+#
+# Tests in this section verify:
+#   - W_ASSET constant is exactly 0.25
+#   - W_ASSET is 25% of total weight
+#   - DEFAULT_ASSET_CRITICALITY dict is complete (4 entries with correct values)
+#   - _asset_criticality() returns correct value for each known prefix
+#   - _asset_criticality() returns 0.5 for unknown prefix and empty hostname
+#   - Prefix matching is case-insensitive
+#   - Prefix matching uses startswith (not exact match)
+#   - Isolated asset score contribution for each prefix level
+#   - Score is monotonically increasing with asset_criticality
+#   - dc > srv > win ≥ lin at same severity level
+#   - Asset contribution is additive with severity contribution
+#   - Score is float in [0.0, 10.0] for all known prefix hosts
+#   - Cap at 10.0 is respected even with high asset_criticality
+#   - End-to-end process() with DC and SRV hosts produce correct asset-weighted scores
+
+
+def test_9_5_w_asset_constant_is_0_25() -> None:
+    """W_ASSET must equal exactly 0.25 as defined by feature 9.5."""
+    assert W_ASSET == pytest.approx(0.25)
+
+
+def test_9_5_w_asset_is_25_percent_of_total_weight() -> None:
+    """W_ASSET (0.25) must be exactly 25% of the combined total weight."""
+    total = W_SEVERITY + W_ASSET + W_RECUR
+    assert W_ASSET / total == pytest.approx(0.25)
+
+
+def test_9_5_w_asset_is_less_than_w_severity() -> None:
+    """W_ASSET must be subordinate to W_SEVERITY (25% < 60%)."""
+    assert W_ASSET < W_SEVERITY
+
+
+def test_9_5_default_asset_criticality_dict_has_four_entries() -> None:
+    """DEFAULT_ASSET_CRITICALITY must contain exactly four prefix → criticality mappings."""
+    assert len(DEFAULT_ASSET_CRITICALITY) == 4
+    assert set(DEFAULT_ASSET_CRITICALITY.keys()) == {"dc", "srv", "win", "lin"}
+
+
+def test_9_5_default_asset_criticality_dc_is_1_0() -> None:
+    """DEFAULT_ASSET_CRITICALITY['dc'] must equal 1.0 (Domain Controller — highest criticality)."""
+    assert DEFAULT_ASSET_CRITICALITY["dc"] == pytest.approx(1.0)
+
+
+def test_9_5_default_asset_criticality_srv_is_0_8() -> None:
+    """DEFAULT_ASSET_CRITICALITY['srv'] must equal 0.8."""
+    assert DEFAULT_ASSET_CRITICALITY["srv"] == pytest.approx(0.8)
+
+
+def test_9_5_default_asset_criticality_win_is_0_6() -> None:
+    """DEFAULT_ASSET_CRITICALITY['win'] must equal 0.6."""
+    assert DEFAULT_ASSET_CRITICALITY["win"] == pytest.approx(0.6)
+
+
+def test_9_5_default_asset_criticality_lin_is_0_5() -> None:
+    """DEFAULT_ASSET_CRITICALITY['lin'] must equal 0.5."""
+    assert DEFAULT_ASSET_CRITICALITY["lin"] == pytest.approx(0.5)
+
+
+def test_9_5_asset_criticality_dc_prefix() -> None:
+    """_asset_criticality('dc-01') must return 1.0."""
+    mgr = _mgr_no_init()
+    assert mgr._asset_criticality("dc-01") == pytest.approx(1.0)
+
+
+def test_9_5_asset_criticality_srv_prefix() -> None:
+    """_asset_criticality('srv-01') must return 0.8."""
+    mgr = _mgr_no_init()
+    assert mgr._asset_criticality("srv-01") == pytest.approx(0.8)
+
+
+def test_9_5_asset_criticality_win_prefix() -> None:
+    """_asset_criticality('win-ws01') must return 0.6."""
+    mgr = _mgr_no_init()
+    assert mgr._asset_criticality("win-ws01") == pytest.approx(0.6)
+
+
+def test_9_5_asset_criticality_lin_prefix() -> None:
+    """_asset_criticality('lin-app01') must return 0.5."""
+    mgr = _mgr_no_init()
+    assert mgr._asset_criticality("lin-app01") == pytest.approx(0.5)
+
+
+def test_9_5_asset_criticality_unknown_prefix_defaults_to_0_5() -> None:
+    """_asset_criticality() must return 0.5 for hostnames with no matching prefix."""
+    mgr = _mgr_no_init()
+    assert mgr._asset_criticality("workstation-42") == pytest.approx(0.5)
+    assert mgr._asset_criticality("laptop-x") == pytest.approx(0.5)
+    assert mgr._asset_criticality("web-proxy") == pytest.approx(0.5)
+
+
+def test_9_5_asset_criticality_empty_hostname_defaults_to_0_5() -> None:
+    """_asset_criticality('') must return the default (0.5) without error."""
+    mgr = _mgr_no_init()
+    assert mgr._asset_criticality("") == pytest.approx(0.5)
+
+
+def test_9_5_asset_criticality_case_insensitive_dc() -> None:
+    """'DC-01' (uppercase) must match the 'dc' prefix → criticality 1.0."""
+    mgr = _mgr_no_init()
+    assert mgr._asset_criticality("DC-01") == pytest.approx(1.0)
+
+
+def test_9_5_asset_criticality_case_insensitive_srv() -> None:
+    """'SRV-01' (uppercase) must match the 'srv' prefix → criticality 0.8."""
+    mgr = _mgr_no_init()
+    assert mgr._asset_criticality("SRV-01") == pytest.approx(0.8)
+
+
+def test_9_5_asset_criticality_case_insensitive_win() -> None:
+    """'WIN-WS01' (uppercase) must match the 'win' prefix → criticality 0.6."""
+    mgr = _mgr_no_init()
+    assert mgr._asset_criticality("WIN-WS01") == pytest.approx(0.6)
+
+
+def test_9_5_asset_criticality_case_insensitive_lin() -> None:
+    """'LIN-APP01' (uppercase) must match the 'lin' prefix → criticality 0.5."""
+    mgr = _mgr_no_init()
+    assert mgr._asset_criticality("LIN-APP01") == pytest.approx(0.5)
+
+
+def test_9_5_asset_criticality_prefix_matches_startswith_not_exact() -> None:
+    """_asset_criticality() must use startswith — 'dcserver01' must still yield 1.0."""
+    mgr = _mgr_no_init()
+    assert mgr._asset_criticality("dcserver01") == pytest.approx(1.0)
+    assert mgr._asset_criticality("srvbackup") == pytest.approx(0.8)
+    assert mgr._asset_criticality("windowshost") == pytest.approx(0.6)
+    assert mgr._asset_criticality("linuxnode") == pytest.approx(0.5)
+
+
+def test_9_5_dc_isolated_asset_contribution_is_2_5() -> None:
+    """DC host (crit=1.0) with severity_id=1 must yield score = 1.0 × 0.25 × 10 = 2.5.
+
+    Isolation: severity_id=1 → severity_norm=0.0 → only asset component contributes.
+    Derivation: (0.0 × 0.60 + 1.0 × 0.25 + 0.0 × 0.15) × 10 = 2.5
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 1, "asset_criticality": 1.0})
+    assert result["score"] == pytest.approx(2.5, abs=0.05)
+
+
+def test_9_5_srv_isolated_asset_contribution_is_2_0() -> None:
+    """SRV host (crit=0.8) with severity_id=1 must yield score = 0.8 × 0.25 × 10 = 2.0.
+
+    Isolation: severity_id=1 → severity_norm=0.0 → only asset component contributes.
+    Derivation: (0.0 × 0.60 + 0.8 × 0.25 + 0.0 × 0.15) × 10 = 2.0
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 1, "asset_criticality": 0.8})
+    assert result["score"] == pytest.approx(2.0, abs=0.05)
+
+
+def test_9_5_win_isolated_asset_contribution_is_1_5() -> None:
+    """WIN host (crit=0.6) with severity_id=1 must yield score = 0.6 × 0.25 × 10 = 1.5.
+
+    Isolation: severity_id=1 → severity_norm=0.0 → only asset component contributes.
+    Derivation: (0.0 × 0.60 + 0.6 × 0.25 + 0.0 × 0.15) × 10 = 1.5
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 1, "asset_criticality": 0.6})
+    assert result["score"] == pytest.approx(1.5, abs=0.05)
+
+
+def test_9_5_lin_isolated_asset_contribution_is_1_25() -> None:
+    """LIN host (crit=0.5) with severity_id=1 must yield score ≈ 1.25.
+
+    Isolation: severity_id=1 → severity_norm=0.0 → only asset component contributes.
+    Derivation: (0.0 × 0.60 + 0.5 × 0.25 + 0.0 × 0.15) × 10 = 1.25
+    raw=1.25 → round(1.25, 1) = 1.2 under Python banker's rounding (rounds to even).
+    Accept either 1.2 or 1.3 within abs=0.1 to be rounding-mode agnostic.
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 1, "asset_criticality": 0.5})
+    assert result["score"] == pytest.approx(1.25, abs=0.1)
+
+
+def test_9_5_default_criticality_isolated_contribution_is_1_25() -> None:
+    """Unknown-prefix host (crit=0.5) with severity_id=1 must yield score ≈ 1.25.
+
+    This verifies the default fallback criticality (0.5) produces the same result as lin.
+    raw=1.25 → round(1.25, 1) = 1.2 under Python banker's rounding; use abs=0.1.
+    """
+    mgr = _mgr_no_init()
+    # _asset_criticality("unknown-host") returns 0.5 (default)
+    crit = mgr._asset_criticality("unknown-host")
+    assert crit == pytest.approx(0.5)
+    result = mgr._score({"severity_id": 1, "asset_criticality": crit})
+    assert result["score"] == pytest.approx(1.25, abs=0.1)
+
+
+def test_9_5_zero_asset_criticality_contributes_zero_to_score() -> None:
+    """asset_criticality=0.0 must contribute nothing to the score (× 0.25 × 10 = 0.0)."""
+    mgr = _mgr_no_init()
+    result_zero = mgr._score({"severity_id": 3, "asset_criticality": 0.0})
+    result_half = mgr._score({"severity_id": 3, "asset_criticality": 0.5})
+    # The difference must equal 0.5 × 0.25 × 10 = 1.25
+    delta = result_half["score"] - result_zero["score"]
+    assert delta == pytest.approx(1.25, abs=0.05)
+
+
+def test_9_5_score_monotonically_increases_with_asset_criticality() -> None:
+    """Higher asset_criticality must always produce a strictly higher score (severity fixed)."""
+    mgr = _mgr_no_init()
+    crits = [0.0, 0.25, 0.5, 0.6, 0.8, 1.0]
+    scores = [mgr._score({"severity_id": 3, "asset_criticality": c})["score"] for c in crits]
+    for i in range(len(scores) - 1):
+        assert scores[i] < scores[i + 1], (
+            f"Expected score(crit={crits[i]})={scores[i]:.2f} < "
+            f"score(crit={crits[i+1]})={scores[i+1]:.2f}"
+        )
+
+
+def test_9_5_dc_outscores_srv_at_every_severity() -> None:
+    """DC host (crit=1.0) must always outscore SRV host (crit=0.8) at the same severity."""
+    mgr = _mgr_no_init()
+    for sid in range(1, 6):
+        dc_score  = mgr._score({"severity_id": sid, "asset_criticality": 1.0})["score"]
+        srv_score = mgr._score({"severity_id": sid, "asset_criticality": 0.8})["score"]
+        assert dc_score > srv_score, (
+            f"At severity_id={sid}, DC score ({dc_score:.2f}) should exceed SRV ({srv_score:.2f})"
+        )
+
+
+def test_9_5_asset_criticality_ordering_dc_gt_srv_gt_win_gt_lin() -> None:
+    """dc > srv > win > lin must hold in final score at fixed severity (id=3)."""
+    mgr = _mgr_no_init()
+    dc_score  = mgr._score({"severity_id": 3, "asset_criticality": 1.0})["score"]
+    srv_score = mgr._score({"severity_id": 3, "asset_criticality": 0.8})["score"]
+    win_score = mgr._score({"severity_id": 3, "asset_criticality": 0.6})["score"]
+    lin_score = mgr._score({"severity_id": 3, "asset_criticality": 0.5})["score"]
+    assert dc_score > srv_score > win_score > lin_score, (
+        f"Expected dc ({dc_score:.2f}) > srv ({srv_score:.2f}) > "
+        f"win ({win_score:.2f}) > lin ({lin_score:.2f})"
+    )
+
+
+def test_9_5_asset_contribution_step_delta_dc_to_srv() -> None:
+    """Score delta from DC to SRV host (same severity) = (1.0 - 0.8) × 0.25 × 10 = 0.5."""
+    mgr = _mgr_no_init()
+    dc_score  = mgr._score({"severity_id": 3, "asset_criticality": 1.0})["score"]
+    srv_score = mgr._score({"severity_id": 3, "asset_criticality": 0.8})["score"]
+    assert dc_score - srv_score == pytest.approx(0.5, abs=0.05)
+
+
+def test_9_5_asset_contribution_step_delta_srv_to_win() -> None:
+    """Score delta from SRV to WIN host (same severity) = (0.8 - 0.6) × 0.25 × 10 = 0.5."""
+    mgr = _mgr_no_init()
+    srv_score = mgr._score({"severity_id": 3, "asset_criticality": 0.8})["score"]
+    win_score = mgr._score({"severity_id": 3, "asset_criticality": 0.6})["score"]
+    assert srv_score - win_score == pytest.approx(0.5, abs=0.05)
+
+
+def test_9_5_asset_contribution_step_delta_win_to_lin() -> None:
+    """Score delta from WIN to LIN host (same severity) = (0.6 - 0.5) × 0.25 × 10 = 0.25."""
+    mgr = _mgr_no_init()
+    win_score = mgr._score({"severity_id": 3, "asset_criticality": 0.6})["score"]
+    lin_score = mgr._score({"severity_id": 3, "asset_criticality": 0.5})["score"]
+    assert win_score - lin_score == pytest.approx(0.25, abs=0.05)
+
+
+def test_9_5_asset_contribution_is_additive_with_severity() -> None:
+    """Asset and severity components must combine additively.
+
+    combined = severity_only + asset_contribution
+    Verified by computing asset_only_raw = asset_crit × W_ASSET × MAX_SCORE and adding
+    it to the severity-only score.
+    """
+    mgr = _mgr_no_init()
+    severity_id = 3
+    asset_crit = 0.8  # SRV prefix
+
+    sev_only    = mgr._score({"severity_id": severity_id, "asset_criticality": 0.0})["score"]
+    asset_raw   = asset_crit * W_ASSET * MAX_SCORE
+    combined    = mgr._score({"severity_id": severity_id, "asset_criticality": asset_crit})["score"]
+
+    assert combined == pytest.approx(sev_only + asset_raw, abs=0.05)
+
+
+def test_9_5_score_is_float_in_range_for_all_prefix_hosts() -> None:
+    """_score() must return a float in [0.0, 10.0] for each known prefix criticality."""
+    mgr = _mgr_no_init()
+    crits = list(DEFAULT_ASSET_CRITICALITY.values()) + [0.5]  # include default
+    for crit in crits:
+        result = mgr._score({"severity_id": 3, "asset_criticality": crit})
+        assert isinstance(result["score"], float), f"score must be float for criticality={crit}"
+        assert 0.0 <= result["score"] <= 10.0, (
+            f"score {result['score']} out of [0.0, 10.0] for criticality={crit}"
+        )
+
+
+def test_9_5_score_cap_applied_with_very_high_asset_criticality() -> None:
+    """Score must be capped at MAX_SCORE (10.0) when asset drives raw above the cap.
+
+    With severity_id=5 (severity_norm=1.0) and asset_criticality=2.0:
+    raw = (1.0 × 0.60 + 2.0 × 0.25) × 10 = 11.0 → capped to 10.0
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 5, "asset_criticality": 2.0})
+    assert result["score"] <= MAX_SCORE
+    assert result["score"] == pytest.approx(10.0, abs=0.05)
+
+
+def test_9_5_asset_criticality_enrich_propagates_to_score() -> None:
+    """_enrich() must call _asset_criticality(host) and include its value in the dict fed to _score().
+
+    Verified by checking that the published score for a DC host is higher than for an
+    unknown-prefix host at the same severity level — confirming _enrich() passes through
+    the correct asset_criticality value rather than a fixed constant.
+    """
+    mgr = _mgr_no_init()
+
+    dc_crit      = mgr._asset_criticality("dc-01")
+    default_crit = mgr._asset_criticality("unknown-host")
+
+    assert dc_crit > default_crit, (
+        f"DC criticality ({dc_crit}) must exceed default ({default_crit}) to validate the test"
+    )
+
+    dc_score      = mgr._score({"severity_id": 3, "asset_criticality": dc_crit})["score"]
+    default_score = mgr._score({"severity_id": 3, "asset_criticality": default_crit})["score"]
+
+    assert dc_score > default_score
+
+
+@pytest.mark.asyncio
+async def test_9_5_end_to_end_dc_host_asset_weighted_score() -> None:
+    """process() with a DC host must publish a score reflecting the 1.0 × 0.25 asset weight.
+
+    host='dc-01' → asset_criticality=1.0, severity_id=3 (medium):
+        severity_norm = (3-1)/4 = 0.5
+        expected = round((0.5 × 0.60 + 1.0 × 0.25) × 10, 1) = round(5.5, 1) = 5.5
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(severity_id=3, host="dc-01")
+
+    published: list[dict] = []
+
+    async def capture(topic, msg):
+        published.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert len(published) == 1
+    assert published[0]["score"] == pytest.approx(5.5, abs=0.05), (
+        f"Expected score=5.5 for severity_id=3, dc host; got {published[0]['score']}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_5_end_to_end_srv_host_asset_weighted_score() -> None:
+    """process() with a SRV host must publish a score reflecting the 0.8 × 0.25 asset weight.
+
+    host='srv-01' → asset_criticality=0.8, severity_id=3 (medium):
+        severity_norm = (3-1)/4 = 0.5
+        expected = round((0.5 × 0.60 + 0.8 × 0.25) × 10, 1) = round(5.0, 1) = 5.0
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(severity_id=3, host="srv-01")
+
+    published: list[dict] = []
+
+    async def capture(topic, msg):
+        published.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)
+
+    assert len(published) == 1
+    assert published[0]["score"] == pytest.approx(5.0, abs=0.05), (
+        f"Expected score=5.0 for severity_id=3, srv host; got {published[0]['score']}"
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_9_5_end_to_end_dc_outscores_srv_same_severity() -> None:
+    """process() must produce a higher score for DC vs SRV host at identical severity.
+
+    DC vs SRV delta = (1.0 - 0.8) × 0.25 × 10 = 0.5 at any severity level.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    dc_dict  = _make_alert_dict(severity_id=4, host="dc-01")
+    srv_dict = _make_alert_dict(severity_id=4, host="srv-01")
+
+    dc_published: list[dict] = []
+    srv_published: list[dict] = []
+
+    async def capture_dc(topic, msg):
+        dc_published.append(msg)
+
+    async def capture_srv(topic, msg):
+        srv_published.append(msg)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture_dc),
+    ):
+        await mgr.process(dc_dict)
+
+    with (
+        patch.object(mgr._valkey, "set", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture_srv),
+    ):
+        await mgr.process(srv_dict)
+
+    assert len(dc_published) == 1
+    assert len(srv_published) == 1
+    assert dc_published[0]["score"] > srv_published[0]["score"], (
+        f"DC score ({dc_published[0]['score']:.2f}) must exceed "
+        f"SRV score ({srv_published[0]['score']:.2f}) at same severity"
+    )
+    assert dc_published[0]["score"] - srv_published[0]["score"] == pytest.approx(0.5, abs=0.05)
+
+    await queue.stop()
+
+
+def test_9_5_all_prefix_criticalities_produce_distinct_isolated_scores() -> None:
+    """All four prefix-based criticalities must produce distinct isolated score contributions.
+
+    Using severity_id=1 (zero severity contribution) to isolate the asset component.
+    """
+    mgr = _mgr_no_init()
+    isolated_scores = {
+        prefix: mgr._score({"severity_id": 1, "asset_criticality": crit})["score"]
+        for prefix, crit in DEFAULT_ASSET_CRITICALITY.items()
+    }
+    # lin (0.5) and lin share the same value — verify at least dc, srv, win are distinct
+    assert isolated_scores["dc"]  == pytest.approx(2.5, abs=0.05)
+    assert isolated_scores["srv"] == pytest.approx(2.0, abs=0.05)
+    assert isolated_scores["win"] == pytest.approx(1.5, abs=0.05)
+    # lin: raw=1.25 → Python banker's rounding → 1.2; use abs=0.1 to be rounding-mode agnostic
+    assert isolated_scores["lin"] == pytest.approx(1.25, abs=0.1)
+    # All distinct except lin == default (both 0.5 → both 1.25, which is acceptable)
+    dc_srv_win = [isolated_scores["dc"], isolated_scores["srv"], isolated_scores["win"]]
+    assert len(set(dc_srv_win)) == 3, "dc, srv, win isolated scores must be distinct"

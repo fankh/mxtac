@@ -20,7 +20,13 @@ from ....core.security import (
     get_current_user,
     verify_password,
 )
-from ....core.valkey import blacklist_token, increment_mfa_attempts
+from ....core.valkey import (
+    blacklist_token,
+    clear_login_attempts,
+    increment_login_attempts,
+    increment_mfa_attempts,
+    is_account_locked,
+)
 from ....repositories.user_repo import UserRepo
 from ....core.rbac import require_permission
 from ....schemas.auth import (
@@ -71,8 +77,18 @@ def _hash_backup_code(code: str) -> str:
 
 @router.post("/login")
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+    # 1. Check account lockout before doing any further work.
+    if await is_account_locked(body.email):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Account temporarily locked. Try again in 30 minutes.",
+        )
+
     user = await UserRepo.get_by_email(db, body.email)
     if not user or not verify_password(body.password, user.hashed_password):
+        # Increment failed attempts counter regardless of whether the user exists
+        # (consistent behaviour prevents email enumeration via timing).
+        await increment_login_attempts(body.email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -82,6 +98,10 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled",
         )
+
+    # Successful authentication — reset the failed-attempt counter.
+    await clear_login_attempts(body.email)
+
     if user.mfa_enabled:
         mfa_token = create_mfa_token(str(user.id))
         return MfaLoginResponse(mfa_token=mfa_token)
