@@ -12,7 +12,9 @@ Coverage:
   - _score(): severity_id normalised from 1→0.0 to 5→1.0 (zero-indexed, /4 range)
   - _score(): score capped at MAX_SCORE (10.0) when raw exceeds it
   - _score(): missing asset_criticality defaults to 0.5
-  - _score(): recurrence bonus is currently 0.0 (placeholder)
+  - _score(): recurrence bonus 0 occurrences → recur_bonus=0.0 (no history)
+  - _score(): recurrence bonus 5 occurrences → recur_bonus=0.5 (half weight)
+  - _score(): recurrence bonus 10+ occurrences → recur_bonus=1.0 (full weight, capped)
   - _asset_criticality(): correct prefix-based lookup
   - _is_duplicate(): returns False for new alert (Valkey SET succeeds)
   - _is_duplicate(): returns True for seen alert within 5 min (Valkey SET returns None)
@@ -936,18 +938,39 @@ def test_score_formula_missing_asset_criticality_defaults_to_half():
     assert result_default["score"] == pytest.approx(5.75, abs=0.05)
 
 
-def test_score_formula_recurrence_bonus_is_currently_zero():
-    """Recurrence bonus must currently contribute 0.0 (placeholder — not yet implemented).
+def test_score_formula_recurrence_bonus_zero_occurrences():
+    """recurrence_count=0 (no prior history) → recur_bonus=0.0, no change to score.
 
-    Verified by matching score against formula with recur_bonus=0.0.
+    Derivation: ((4-1)/4 × 0.60 + 0.8 × 0.25 + 0.0 × 0.15) × 10 = 6.5
     """
     mgr = _mgr_no_init()
-    # High severity + SRV: expected 6.5 (verified in test_score_formula_high_severity_srv_host)
-    result = mgr._score({"severity_id": 4, "asset_criticality": 0.8})
-    # If recur bonus were active (e.g. recur_bonus=1.0, W_RECUR=0.15):
-    #   raw would be (0.45 + 0.20 + 0.15) × 10 = 8.0 ≠ 6.5
-    # Confirming it's 6.5 validates the bonus is 0.0
+    result = mgr._score({"severity_id": 4, "asset_criticality": 0.8, "recurrence_count": 0})
     assert result["score"] == pytest.approx(6.5, abs=0.05)
+
+
+def test_score_formula_recurrence_bonus_five_occurrences():
+    """recurrence_count=5 → recur_bonus=0.5, adds half the recurrence weight.
+
+    Derivation: ((4-1)/4 × 0.60 + 0.8 × 0.25 + 0.5 × 0.15) × 10
+              = (0.45 + 0.20 + 0.075) × 10 = 7.25
+    """
+    mgr = _mgr_no_init()
+    result = mgr._score({"severity_id": 4, "asset_criticality": 0.8, "recurrence_count": 5})
+    assert result["score"] == pytest.approx(7.25, abs=0.05)
+
+
+def test_score_formula_recurrence_bonus_capped_at_ten_occurrences():
+    """recurrence_count≥10 → recur_bonus=1.0 (capped), adds full recurrence weight.
+
+    Derivation: ((4-1)/4 × 0.60 + 0.8 × 0.25 + 1.0 × 0.15) × 10
+              = (0.45 + 0.20 + 0.15) × 10 = 8.0
+    Also verify recurrence_count=20 yields the same score (cap enforced).
+    """
+    mgr = _mgr_no_init()
+    result_10 = mgr._score({"severity_id": 4, "asset_criticality": 0.8, "recurrence_count": 10})
+    result_20 = mgr._score({"severity_id": 4, "asset_criticality": 0.8, "recurrence_count": 20})
+    assert result_10["score"] == pytest.approx(8.0, abs=0.05)
+    assert result_20["score"] == pytest.approx(8.0, abs=0.05)
 
 
 # ---------------------------------------------------------------------------

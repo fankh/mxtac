@@ -199,7 +199,7 @@
 | 9.3 | Distributed dedup — Valkey SETEX NX | `[x]` | `[T]` | P1 | Task 3.2 |
 | 9.4 | Risk score: severity × 0.60 | `[x]` | `[ ]` | P0 | |
 | 9.5 | Risk score: asset criticality × 0.25 | `[x]` | `[ ]` | P0 | Prefix-based defaults |
-| 9.6 | Risk score: recurrence bonus × 0.15 | `[~]` | `[ ]` | P1 | Placeholder, always 0 |
+| 9.6 | Risk score: recurrence bonus × 0.15 | `[x]` | `[ ]` | P1 | min(count_24h/10, 1.0) × W_RECUR |
 | 9.7 | Enrichment: threat intel (OpenCTI lookup) | `[ ]` | `[ ]` | P2 | Stub in `_enrich()` |
 | 9.8 | Enrichment: GeoIP lookup | `[ ]` | `[ ]` | P2 | Stub in `_enrich()` |
 | 9.9 | Enrichment: asset criticality from CMDB | `[ ]` | `[ ]` | P2 | Stub, currently hardcoded |

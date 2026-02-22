@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from math import ceil
 
 from sqlalchemy import case, func, select, update as sa_update
@@ -392,6 +392,30 @@ class DetectionRepo:
             }
             for row in result.all()
         ]
+
+    @staticmethod
+    async def count_recent_by_rule_host(
+        session: AsyncSession,
+        *,
+        rule_name: str,
+        host: str,
+        window_seconds: int = 86400,
+    ) -> int:
+        """Count detections with the same rule_name and host within the last window_seconds.
+
+        Used by the recurrence bonus scoring (feature 9.6): a higher occurrence count
+        in the lookback window drives a higher recurrence_bonus (capped at 1.0 for 10+
+        occurrences).
+        """
+        from_time = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+        result = await session.scalar(
+            select(func.count())
+            .select_from(Detection)
+            .where(Detection.rule_name == rule_name)
+            .where(Detection.host == host)
+            .where(Detection.time >= from_time)
+        )
+        return int(result or 0)
 
     @staticmethod
     async def get_timeline(

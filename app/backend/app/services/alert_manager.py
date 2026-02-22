@@ -164,11 +164,34 @@ class AlertManager:
             "time":          alert.time.isoformat(),
             "event_snapshot": alert.event_snapshot,
             # Enrichment placeholders (extend with real lookups)
-            "asset_criticality": self._asset_criticality(alert.host),
-            "threat_intel":      None,   # TODO: OpenCTI lookup
-            "geo_ip":            None,   # TODO: GeoIP lookup
+            "asset_criticality":  self._asset_criticality(alert.host),
+            "recurrence_count":   await self._get_recurrence_count(alert),
+            "threat_intel":       None,   # TODO: OpenCTI lookup
+            "geo_ip":             None,   # TODO: GeoIP lookup
         }
         return d
+
+    async def _get_recurrence_count(self, alert: SigmaAlert) -> int:
+        """Count recent detections for (rule_id, host) in the last 24 hours.
+
+        Non-fatal: returns 0 when the DB is unavailable so scoring degrades
+        gracefully rather than blocking the pipeline.
+        """
+        try:
+            from ..core.database import AsyncSessionLocal
+            from ..repositories.detection_repo import DetectionRepo
+            async with AsyncSessionLocal() as session:
+                return await DetectionRepo.count_recent_by_rule_host(
+                    session,
+                    rule_name=alert.rule_id,
+                    host=alert.host,
+                )
+        except Exception:
+            logger.exception(
+                "AlertManager recurrence count query failed (non-fatal) rule_id=%s host=%s",
+                alert.rule_id, alert.host,
+            )
+            return 0
 
     def _asset_criticality(self, hostname: str) -> float:
         """Simple prefix-based criticality -- replace with CMDB lookup."""
@@ -183,10 +206,17 @@ class AlertManager:
     # -- Scoring -----------------------------------------------------------
 
     def _score(self, enriched: dict[str, Any]) -> dict[str, Any]:
-        """Compute a 0-10 risk score and attach to the enriched alert."""
+        """Compute a 0-10 risk score and attach to the enriched alert.
+
+        recurrence_bonus is normalized to [0, 1] by capping at 10 occurrences:
+            recur_bonus = min(recurrence_count / 10, 1.0)
+        10 or more detections of the same (rule_id, host) in the last 24 hours
+        yields the full 0.15 recurrence weight.
+        """
         severity_norm = (enriched["severity_id"] - 1) / 4   # 0-1
         asset_crit    = enriched.get("asset_criticality", 0.5)
-        recur_bonus   = 0.0   # TODO: increment if seen multiple times
+        recur_count   = enriched.get("recurrence_count", 0)
+        recur_bonus   = min(recur_count / 10.0, 1.0)        # 0-1
 
         raw_score = (
             severity_norm * W_SEVERITY
