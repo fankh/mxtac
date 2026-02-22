@@ -93,7 +93,9 @@ def http_event() -> dict:
         "ts":               1708331400.0,
         "uid":              "Http789",
         "id.orig_h":        "10.0.0.20",
+        "id.orig_p":        "60000",
         "id.resp_h":        "203.0.113.1",
+        "id.resp_p":        "80",
         "host":             "www.example.com",
         "method":           "GET",
         "uri":              "/path/to/resource",
@@ -1055,3 +1057,413 @@ def test_full_conn_extended_round_trip(
     assert traffic["local_resp"] is False
     assert traffic["tunnel_parents"] == []
     assert traffic["vlan"] == 100
+
+
+# ===========================================================================
+# Feature 7.8 — Zeek http → HTTPActivity (class_uid 4002): Extended Coverage
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# Extended http_event fixture with all Zeek http.log fields
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def full_http_event() -> dict:
+    """Realistic Zeek http.log event with ALL fields populated."""
+    return {
+        "_log_type":           "http",
+        "ts":                  1708331400.0,
+        "uid":                 "HttpFull001",
+        "id.orig_h":           "10.0.0.20",
+        "id.orig_p":           "60001",
+        "id.resp_h":           "203.0.113.50",
+        "id.resp_p":           "8080",
+        "host":                "api.example.com",
+        "method":              "POST",
+        "uri":                 "/api/v1/login",
+        "version":             "1.1",
+        "referrer":            "https://example.com/login",
+        "user_agent":          "Mozilla/5.0 (compatible; scanner/1.0)",
+        "request_body_len":    256,
+        "response_body_len":   1024,
+        "status_code":         200,
+        "status_msg":          "OK",
+        "trans_depth":         1,
+        "orig_mime_types":     ["application/json"],
+        "resp_mime_types":     ["application/json"],
+        "username":            "admin",
+        "orig_fuids":          ["ForigA1", "ForigA2"],
+        "resp_fuids":          ["FrespB1"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.8: HTTP endpoint port mapping
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_http_src_endpoint_port(
+    normalizer: ZeekNormalizer, http_event: dict
+) -> None:
+    """HTTP source port (id.orig_p) maps to src_endpoint.port."""
+    ocsf = normalizer.normalize(http_event)
+    assert ocsf.src_endpoint.port == 60000
+
+
+def test_normalize_http_dst_endpoint_port(
+    normalizer: ZeekNormalizer, http_event: dict
+) -> None:
+    """HTTP destination port (id.resp_p) maps to dst_endpoint.port."""
+    ocsf = normalizer.normalize(http_event)
+    assert ocsf.dst_endpoint.port == 80
+
+
+def test_normalize_http_port_as_string_cast(normalizer: ZeekNormalizer) -> None:
+    """String ports in HTTP events are safely cast to int."""
+    event = {
+        "_log_type":  "http",
+        "id.orig_p":  "54321",
+        "id.resp_p":  "443",
+    }
+    ocsf = normalizer.normalize(event)
+    assert ocsf.src_endpoint.port == 54321
+    assert ocsf.dst_endpoint.port == 443
+
+
+def test_normalize_http_invalid_port_is_none(normalizer: ZeekNormalizer) -> None:
+    """Non-numeric HTTP port string maps to None without raising."""
+    event = {"_log_type": "http", "id.orig_p": "-", "id.resp_p": "N/A"}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.src_endpoint.port is None
+    assert ocsf.dst_endpoint.port is None
+
+
+def test_normalize_http_missing_ports_are_none(normalizer: ZeekNormalizer) -> None:
+    """Absent port fields default to None in HTTP events."""
+    ocsf = normalizer.normalize({"_log_type": "http"})
+    assert ocsf.src_endpoint.port is None
+    assert ocsf.dst_endpoint.port is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.8: Extended HTTP fields
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_http_version(
+    normalizer: ZeekNormalizer, full_http_event: dict
+) -> None:
+    """HTTP version string is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_http_event)
+    assert ocsf.network_traffic["version"] == "1.1"
+
+
+def test_normalize_http_version_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent version field defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "http"})
+    assert ocsf.network_traffic["version"] is None
+
+
+def test_normalize_http_status_msg(
+    normalizer: ZeekNormalizer, full_http_event: dict
+) -> None:
+    """HTTP status_msg (e.g., 'OK') is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_http_event)
+    assert ocsf.network_traffic["status_msg"] == "OK"
+
+
+def test_normalize_http_status_msg_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent status_msg defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "http"})
+    assert ocsf.network_traffic["status_msg"] is None
+
+
+@pytest.mark.parametrize("status_msg", ["OK", "Not Found", "Forbidden", "Internal Server Error"])
+def test_normalize_http_status_msg_variants(
+    normalizer: ZeekNormalizer, status_msg: str
+) -> None:
+    """Various HTTP status messages are preserved verbatim."""
+    event = {"_log_type": "http", "status_msg": status_msg}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["status_msg"] == status_msg
+
+
+def test_normalize_http_request_body_len(
+    normalizer: ZeekNormalizer, full_http_event: dict
+) -> None:
+    """request_body_len (HTTP request body bytes) is captured."""
+    ocsf = normalizer.normalize(full_http_event)
+    assert ocsf.network_traffic["request_body_len"] == 256
+
+
+def test_normalize_http_request_body_len_zero(normalizer: ZeekNormalizer) -> None:
+    """request_body_len=0 (GET request, no body) is preserved."""
+    event = {"_log_type": "http", "request_body_len": 0}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["request_body_len"] == 0
+
+
+def test_normalize_http_request_body_len_none_when_absent(
+    normalizer: ZeekNormalizer,
+) -> None:
+    """Absent request_body_len defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "http"})
+    assert ocsf.network_traffic["request_body_len"] is None
+
+
+def test_normalize_http_response_body_len(
+    normalizer: ZeekNormalizer, full_http_event: dict
+) -> None:
+    """response_body_len (HTTP response body bytes) is captured."""
+    ocsf = normalizer.normalize(full_http_event)
+    assert ocsf.network_traffic["response_body_len"] == 1024
+
+
+def test_normalize_http_response_body_len_zero(normalizer: ZeekNormalizer) -> None:
+    """response_body_len=0 (HEAD/empty responses) is preserved."""
+    event = {"_log_type": "http", "response_body_len": 0}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["response_body_len"] == 0
+
+
+def test_normalize_http_response_body_len_none_when_absent(
+    normalizer: ZeekNormalizer,
+) -> None:
+    """Absent response_body_len defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "http"})
+    assert ocsf.network_traffic["response_body_len"] is None
+
+
+def test_normalize_http_trans_depth(
+    normalizer: ZeekNormalizer, full_http_event: dict
+) -> None:
+    """HTTP pipeline depth (trans_depth) is captured."""
+    ocsf = normalizer.normalize(full_http_event)
+    assert ocsf.network_traffic["trans_depth"] == 1
+
+
+def test_normalize_http_trans_depth_pipelined(normalizer: ZeekNormalizer) -> None:
+    """HTTP pipelined requests (trans_depth > 1) are preserved."""
+    event = {"_log_type": "http", "trans_depth": 5}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["trans_depth"] == 5
+
+
+def test_normalize_http_trans_depth_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent trans_depth defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "http"})
+    assert ocsf.network_traffic["trans_depth"] is None
+
+
+def test_normalize_http_orig_mime_types(
+    normalizer: ZeekNormalizer, full_http_event: dict
+) -> None:
+    """Request MIME types (orig_mime_types) are captured."""
+    ocsf = normalizer.normalize(full_http_event)
+    assert ocsf.network_traffic["orig_mime_types"] == ["application/json"]
+
+
+def test_normalize_http_orig_mime_types_none_when_absent(
+    normalizer: ZeekNormalizer,
+) -> None:
+    """Absent orig_mime_types defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "http"})
+    assert ocsf.network_traffic["orig_mime_types"] is None
+
+
+def test_normalize_http_username(
+    normalizer: ZeekNormalizer, full_http_event: dict
+) -> None:
+    """HTTP auth username is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_http_event)
+    assert ocsf.network_traffic["username"] == "admin"
+
+
+def test_normalize_http_username_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent username defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "http"})
+    assert ocsf.network_traffic["username"] is None
+
+
+def test_normalize_http_orig_fuids(
+    normalizer: ZeekNormalizer, full_http_event: dict
+) -> None:
+    """Originator file UIDs (orig_fuids) are captured."""
+    ocsf = normalizer.normalize(full_http_event)
+    assert ocsf.network_traffic["orig_fuids"] == ["ForigA1", "ForigA2"]
+
+
+def test_normalize_http_orig_fuids_defaults_to_empty(normalizer: ZeekNormalizer) -> None:
+    """Absent orig_fuids defaults to [] (not None)."""
+    ocsf = normalizer.normalize({"_log_type": "http"})
+    assert ocsf.network_traffic["orig_fuids"] == []
+
+
+def test_normalize_http_resp_fuids(
+    normalizer: ZeekNormalizer, full_http_event: dict
+) -> None:
+    """Response file UIDs (resp_fuids) are captured."""
+    ocsf = normalizer.normalize(full_http_event)
+    assert ocsf.network_traffic["resp_fuids"] == ["FrespB1"]
+
+
+def test_normalize_http_resp_fuids_defaults_to_empty(normalizer: ZeekNormalizer) -> None:
+    """Absent resp_fuids defaults to [] (not None)."""
+    ocsf = normalizer.normalize({"_log_type": "http"})
+    assert ocsf.network_traffic["resp_fuids"] == []
+
+
+def test_normalize_http_resp_fuids_multiple(normalizer: ZeekNormalizer) -> None:
+    """Multiple resp_fuids (e.g., inline images) are preserved."""
+    event = {"_log_type": "http", "resp_fuids": ["FA", "FB", "FC"]}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["resp_fuids"] == ["FA", "FB", "FC"]
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.8: Full round-trip with all extended HTTP fields
+# ---------------------------------------------------------------------------
+
+
+def test_full_http_extended_round_trip(
+    normalizer: ZeekNormalizer, full_http_event: dict
+) -> None:
+    """End-to-end: http event with all extended fields → JSON-serializable OCSFEvent."""
+    ocsf = normalizer.normalize(full_http_event)
+
+    # Core OCSF classification
+    assert ocsf.class_uid == 4002
+    assert ocsf.class_name == "HTTP Activity"
+    assert ocsf.category_uid == 4
+    assert ocsf.metadata_product == "Zeek"
+    assert ocsf.metadata_uid == "HttpFull001"
+    assert ocsf.severity_id == 1
+
+    # Endpoints with ports
+    assert ocsf.src_endpoint.ip == "10.0.0.20"
+    assert ocsf.src_endpoint.port == 60001
+    assert ocsf.dst_endpoint.ip == "203.0.113.50"
+    assert ocsf.dst_endpoint.port == 8080
+    assert ocsf.dst_endpoint.hostname == "api.example.com"
+
+    nt = ocsf.network_traffic
+
+    # Core HTTP fields
+    assert nt["method"] == "POST"
+    assert nt["uri"] == "/api/v1/login"
+    assert nt["status_code"] == 200
+    assert nt["user_agent"] == "Mozilla/5.0 (compatible; scanner/1.0)"
+    assert nt["referrer"] == "https://example.com/login"
+    assert nt["resp_mime"] == ["application/json"]
+
+    # Extended fields
+    assert nt["version"] == "1.1"
+    assert nt["status_msg"] == "OK"
+    assert nt["request_body_len"] == 256
+    assert nt["response_body_len"] == 1024
+    assert nt["trans_depth"] == 1
+    assert nt["orig_mime_types"] == ["application/json"]
+    assert nt["username"] == "admin"
+    assert nt["orig_fuids"] == ["ForigA1", "ForigA2"]
+    assert nt["resp_fuids"] == ["FrespB1"]
+
+    # Raw preserved
+    assert ocsf.raw["uid"] == "HttpFull001"
+
+    # JSON serialisation must not raise
+    data = ocsf.model_dump(mode="json")
+    assert data["class_uid"] == 4002
+    assert data["class_name"] == "HTTP Activity"
+    traffic = data["network_traffic"]
+    assert traffic["method"] == "POST"
+    assert traffic["uri"] == "/api/v1/login"
+    assert traffic["status_code"] == 200
+    assert traffic["status_msg"] == "OK"
+    assert traffic["version"] == "1.1"
+    assert traffic["request_body_len"] == 256
+    assert traffic["response_body_len"] == 1024
+    assert traffic["trans_depth"] == 1
+    assert traffic["orig_mime_types"] == ["application/json"]
+    assert traffic["username"] == "admin"
+    assert traffic["orig_fuids"] == ["ForigA1", "ForigA2"]
+    assert traffic["resp_fuids"] == ["FrespB1"]
+    assert data["src_endpoint"]["port"] == 60001
+    assert data["dst_endpoint"]["port"] == 8080
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.8: HTTP-specific status code scenarios
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("method", ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+def test_normalize_http_method_variants(
+    normalizer: ZeekNormalizer, method: str
+) -> None:
+    """All standard HTTP methods are preserved verbatim."""
+    event = {"_log_type": "http", "method": method}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["method"] == method
+
+
+@pytest.mark.parametrize("status_code,status_msg", [
+    (200, "OK"),
+    (201, "Created"),
+    (301, "Moved Permanently"),
+    (400, "Bad Request"),
+    (401, "Unauthorized"),
+    (403, "Forbidden"),
+    (404, "Not Found"),
+    (500, "Internal Server Error"),
+])
+def test_normalize_http_status_code_and_msg_pairs(
+    normalizer: ZeekNormalizer, status_code: int, status_msg: str
+) -> None:
+    """Status code and message pairs are both captured correctly."""
+    event = {"_log_type": "http", "status_code": status_code, "status_msg": status_msg}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["status_code"] == status_code
+    assert ocsf.network_traffic["status_msg"] == status_msg
+
+
+def test_normalize_http_large_body_sizes(normalizer: ZeekNormalizer) -> None:
+    """Large request/response body sizes (multi-MB) are stored without truncation."""
+    large = 50 * 1024 * 1024  # 50 MiB
+    event = {
+        "_log_type":          "http",
+        "request_body_len":   large,
+        "response_body_len":  large * 2,
+    }
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["request_body_len"] == large
+    assert ocsf.network_traffic["response_body_len"] == large * 2
+
+
+def test_normalize_http_missing_all_optional_fields(normalizer: ZeekNormalizer) -> None:
+    """Minimal HTTP event (only _log_type) produces valid OCSFEvent with None defaults."""
+    ocsf = normalizer.normalize({"_log_type": "http"})
+    assert ocsf.class_uid == 4002
+    assert ocsf.class_name == "HTTP Activity"
+    assert ocsf.src_endpoint.ip is None
+    assert ocsf.src_endpoint.port is None
+    assert ocsf.dst_endpoint.ip is None
+    assert ocsf.dst_endpoint.port is None
+    assert ocsf.dst_endpoint.hostname is None
+    nt = ocsf.network_traffic
+    assert nt["method"] is None
+    assert nt["uri"] is None
+    assert nt["version"] is None
+    assert nt["status_code"] is None
+    assert nt["status_msg"] is None
+    assert nt["user_agent"] is None
+    assert nt["referrer"] is None
+    assert nt["request_body_len"] is None
+    assert nt["response_body_len"] is None
+    assert nt["trans_depth"] is None
+    assert nt["orig_mime_types"] is None
+    assert nt["resp_mime"] is None
+    assert nt["username"] is None
+    assert nt["orig_fuids"] == []
+    assert nt["resp_fuids"] == []

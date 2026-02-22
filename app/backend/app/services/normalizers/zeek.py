@@ -6,6 +6,14 @@ Supports: conn.log, dns.log, http.log, ssl.log
 Zeek conn.log TSV/JSON format:
   ts, uid, id.orig_h, id.orig_p, id.resp_h, id.resp_p, proto,
   service, duration, orig_bytes, resp_bytes, conn_state, ...
+
+Feature 7.8 — Zeek http.log → HTTPActivity (class_uid 4002):
+  Extended HTTP fields captured in network_traffic:
+    method, uri, status_code, status_msg, user_agent, referrer,
+    resp_mime (resp_mime_types), request_body_len, response_body_len,
+    trans_depth, version, orig_mime_types, username,
+    orig_fuids, resp_fuids
+  Endpoint ports captured from id.orig_p / id.resp_p.
 """
 
 from __future__ import annotations
@@ -107,27 +115,44 @@ class ZeekNormalizer:
         )
 
     def _normalize_http(self, raw: dict[str, Any]) -> OCSFEvent:
-        from .ocsf import OCSFClass as C
+        """Map Zeek http.log → OCSF HTTPActivity (class_uid 4002).
+
+        Feature 7.8: Extended HTTP fields including body sizes, status text,
+        pipeline depth, MIME types, auth username, and file UIDs.
+        """
         return OCSFEvent(
-            class_uid=C.HTTP_ACTIVITY,
+            class_uid=OCSFClass.HTTP_ACTIVITY,
             class_name="HTTP Activity",
             category_uid=OCSFCategory.NETWORK,
             time=self._parse_ts(raw.get("ts")),
             severity_id=1,
             metadata_product="Zeek",
             metadata_uid=raw.get("uid"),
-            src_endpoint=Endpoint(ip=raw.get("id.orig_h")),
+            src_endpoint=Endpoint(
+                ip=raw.get("id.orig_h"),
+                port=self._safe_int(raw.get("id.orig_p")),
+            ),
             dst_endpoint=Endpoint(
                 ip=raw.get("id.resp_h"),
+                port=self._safe_int(raw.get("id.resp_p")),
                 hostname=raw.get("host"),
             ),
             network_traffic={
-                "method":      raw.get("method"),
-                "uri":         raw.get("uri"),
-                "status_code": raw.get("status_code"),
-                "user_agent":  raw.get("user_agent"),
-                "referrer":    raw.get("referrer"),
-                "resp_mime":   raw.get("resp_mime_types"),
+                "method":              raw.get("method"),
+                "uri":                 raw.get("uri"),
+                "version":             raw.get("version"),
+                "status_code":         raw.get("status_code"),
+                "status_msg":          raw.get("status_msg"),
+                "user_agent":          raw.get("user_agent"),
+                "referrer":            raw.get("referrer"),
+                "request_body_len":    raw.get("request_body_len"),
+                "response_body_len":   raw.get("response_body_len"),
+                "trans_depth":         raw.get("trans_depth"),
+                "orig_mime_types":     raw.get("orig_mime_types"),
+                "resp_mime":           raw.get("resp_mime_types"),
+                "username":            raw.get("username"),
+                "orig_fuids":          raw.get("orig_fuids", []),
+                "resp_fuids":          raw.get("resp_fuids", []),
             },
             raw=raw,
         )
