@@ -1,11 +1,12 @@
 """Shared input validation helpers for MxTac.
 
 Provides:
-- escape_like()         — escape SQL LIKE wildcard characters
-- validate_ip_address() — IPv4 / IPv6 validation
-- validate_cidr()       — CIDR notation validation
-- validate_hostname()   — RFC 952 / 1123 hostname validation
-- EMAIL_MAX_LENGTH      — RFC 5321 maximum email address length
+- escape_like()                 — escape SQL LIKE wildcard characters
+- validate_ip_address()         — IPv4 / IPv6 validation
+- validate_cidr()               — CIDR notation validation
+- validate_hostname()           — RFC 952 / 1123 hostname validation
+- validate_password_complexity() — min 8 chars + 3 of 4 character types (feature 2.1)
+- EMAIL_MAX_LENGTH              — RFC 5321 maximum email address length
 - PASSWORD_MIN_LENGTH / PASSWORD_MAX_LENGTH — password length bounds
 """
 
@@ -60,6 +61,37 @@ def validate_cidr(v: str) -> str:
         ipaddress.ip_network(v, strict=False)
     except ValueError:
         raise ValueError(f"Invalid CIDR notation: {v!r}")
+    return v
+
+
+# ── Password complexity validator ─────────────────────────────────────────────
+
+# Feature 2.1 — Password policy: min 8 chars, at least 3 of 4 character types.
+# Character types: uppercase letters, lowercase letters, digits, special chars.
+_CHAR_TYPE_CHECKS = [
+    (re.compile(r"[A-Z]"), "uppercase letters"),
+    (re.compile(r"[a-z]"), "lowercase letters"),
+    (re.compile(r"[0-9]"), "digits"),
+    (re.compile(r"[^A-Za-z0-9]"), "special characters"),
+]
+_PASSWORD_COMPLEXITY_MIN_TYPES = 3
+
+
+def validate_password_complexity(v: str) -> str:
+    """Return *v* if it satisfies the password complexity policy, else raise ValueError.
+
+    Policy (feature 2.1): password must contain characters from at least 3 of
+    the following 4 categories: uppercase letters, lowercase letters, digits,
+    special characters (any character that is not alphanumeric).
+
+    Length is enforced separately via Pydantic field min_length / max_length.
+    """
+    matched = sum(1 for pattern, _ in _CHAR_TYPE_CHECKS if pattern.search(v))
+    if matched < _PASSWORD_COMPLEXITY_MIN_TYPES:
+        raise ValueError(
+            "Password must contain at least 3 of the following character types: "
+            "uppercase letters, lowercase letters, digits, special characters"
+        )
     return v
 
 

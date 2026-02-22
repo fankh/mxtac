@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ....core.database import get_db
 from ....core.rbac import require_permission
 from ....core.security import hash_password
-from ....core.validators import EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH
+from ....core.validators import EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validate_password_complexity
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -33,6 +33,11 @@ class UserCreate(BaseModel):
         if not _EMAIL_RE.match(v):
             raise ValueError("value is not a valid email address")
         return v
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_policy(cls, v: str) -> str:
+        return validate_password_complexity(v)
 
 
 class UserUpdate(BaseModel):
