@@ -106,7 +106,7 @@
 | 6.5 | Exponential backoff on failure | `[ ]` | `[ ]` | P1 | Max 60s |
 | 6.6 | Update connector status in DB (`last_seen_at`, `error_message`) | `[ ]` | `[ ]` | P1 | |
 | 6.7 | Publish raw events to `mxtac.raw.wazuh` | `[ ]` | `[ ]` | P0 | |
-| 6.8 | Health check endpoint `POST /connectors/{id}/test` | `[~]` | `[ ]` | P1 | |
+| 6.8 | Health check endpoint `POST /connectors/{id}/test` | `[x]` | `[x]` | P1 | |
 
 ### 6b. Zeek Connector
 | # | Feature | Impl | Test | Priority | Notes |
