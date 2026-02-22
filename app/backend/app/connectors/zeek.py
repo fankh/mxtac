@@ -19,6 +19,11 @@ applies field type coercion for well-known Zeek fields:
   - missed_bytes, orig_ip_bytes,
     resp_ip_bytes                   → int   (extended counters)
   - duration                        → float (connection duration)
+
+Feature 6.13: Every event yielded by _fetch_events() carries a ``_path``
+field set to the stem of the source log file (e.g. "conn" for conn.log,
+"dns" for dns.log).  The normalizer uses this field to determine which
+OCSF mapping to apply.
 """
 
 from __future__ import annotations
@@ -130,6 +135,9 @@ class ZeekConnector(BaseConnector):
                         # TSV format — parse fields
                         event = self._parse_tsv_line(line, log_type)
                     if event:
+                        # Feature 6.13: record source filename stem so the
+                        # normalizer knows which OCSF mapping to apply.
+                        event["_path"] = path.stem
                         yield event
 
                 self._file_positions[str(path)] = f.tell()

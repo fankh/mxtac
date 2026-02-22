@@ -43,6 +43,13 @@ Feature 6.11 — Parse JSON-format Zeek logs:
   - Coercion is tolerant: missing fields are skipped, unconvertible values kept as-is
   - _fetch_events() uses _parse_json_line() so yielded JSON events have coerced types
   - TSV fallback still works when JSON parse fails
+
+Feature 6.13 — Add `_path` field from filename stem:
+  - JSON events include _path set to the log file stem (e.g. "conn" for conn.log)
+  - TSV events include _path set to the log file stem
+  - _path is correct for each supported log type (conn, dns, http, ssl)
+  - _path reflects the physical filename stem, not the logical log_type
+  - events from multiple log types each carry the correct _path
 """
 
 from __future__ import annotations
@@ -1291,3 +1298,85 @@ class TestZeekConnectorFetchEventsJsonCoercion:
             uids = {e.get("uid") for e in events}
             assert "json_uid" in uids
             assert "tsv_uid" in uids
+
+
+# ── Feature 6.13: _path field from filename stem ──────────────────────────────
+
+
+class TestZeekConnectorPathField:
+    """Feature 6.13 — Every yielded event carries a ``_path`` field equal to
+    the stem of the source log file (e.g. "conn" for conn.log)."""
+
+    async def test_json_event_has_path_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "conn.log").write_text('{"ts": "1.0"}\n')
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+            assert "_path" in events[0]
+
+    async def test_json_event_path_is_conn_stem(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "conn.log").write_text('{"ts": "1.0"}\n')
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+            assert events[0]["_path"] == "conn"
+
+    async def test_tsv_event_has_path_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tsv = "\t".join(["1.0", "uid1", "10.0.0.1", "1234", "1.1.1.1", "80",
+                              "tcp", "http", "-", "-", "-", "S1"])
+            (Path(tmpdir) / "conn.log").write_text(tsv + "\n")
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+            assert "_path" in events[0]
+
+    async def test_tsv_event_path_is_conn_stem(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tsv = "\t".join(["1.0", "uid1", "10.0.0.1", "1234", "1.1.1.1", "80",
+                              "tcp", "http", "-", "-", "-", "S1"])
+            (Path(tmpdir) / "conn.log").write_text(tsv + "\n")
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+            assert events[0]["_path"] == "conn"
+
+    async def test_path_is_dns_for_dns_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "dns.log").write_text('{"ts": "1.0", "query": "example.com"}\n')
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+            assert events[0]["_path"] == "dns"
+
+    async def test_path_is_http_for_http_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "http.log").write_text('{"ts": "1.0", "method": "GET"}\n')
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+            assert events[0]["_path"] == "http"
+
+    async def test_path_is_ssl_for_ssl_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "ssl.log").write_text('{"ts": "1.0", "server_name": "example.com"}\n')
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+            assert events[0]["_path"] == "ssl"
+
+    async def test_each_event_carries_its_own_log_stem(self) -> None:
+        """Events from different log files each have the correct _path."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "conn.log").write_text('{"ts": "1.0", "uid": "c1"}\n')
+            (Path(tmpdir) / "dns.log").write_text('{"ts": "2.0", "uid": "d1"}\n')
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+
+            path_by_uid = {e["uid"]: e["_path"] for e in events}
+            assert path_by_uid["c1"] == "conn"
+            assert path_by_uid["d1"] == "dns"
+
+    async def test_path_field_present_on_all_events_in_file(self) -> None:
+        """Every event in a multi-line file gets _path."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lines = [json.dumps({"ts": str(i), "uid": f"u{i}"}) for i in range(4)]
+            (Path(tmpdir) / "conn.log").write_text("\n".join(lines) + "\n")
+            conn = ZeekConnector(_make_config(tmpdir), InMemoryQueue())
+            events = [e async for e in conn._fetch_events()]
+            assert all(e["_path"] == "conn" for e in events)
