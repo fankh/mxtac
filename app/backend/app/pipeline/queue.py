@@ -29,17 +29,18 @@ logger = get_logger(__name__)
 # ── Topic constants ──────────────────────────────────────────────────────────
 
 class Topic:
-    RAW_WAZUH       = "mxtac.raw.wazuh"
-    RAW_ZEEK        = "mxtac.raw.zeek"
-    RAW_SURICATA    = "mxtac.raw.suricata"
-    RAW_PROWLER     = "mxtac.raw.prowler"
-    RAW_OPENCTI     = "mxtac.raw.opencti"
-    RAW_SYSLOG      = "mxtac.raw.syslog"
-    RAW_WEBHOOK     = "mxtac.raw.webhook"
-    NORMALIZED      = "mxtac.normalized"
-    ALERTS          = "mxtac.alerts"
-    ENRICHED        = "mxtac.enriched"
-    DLQ             = "mxtac.dlq"
+    RAW_WAZUH           = "mxtac.raw.wazuh"
+    RAW_ZEEK            = "mxtac.raw.zeek"
+    RAW_SURICATA        = "mxtac.raw.suricata"
+    RAW_PROWLER         = "mxtac.raw.prowler"
+    RAW_OPENCTI         = "mxtac.raw.opencti"
+    RAW_SYSLOG          = "mxtac.raw.syslog"
+    RAW_WEBHOOK         = "mxtac.raw.webhook"
+    RAW_VELOCIRAPTOR    = "mxtac.raw.velociraptor"
+    NORMALIZED          = "mxtac.normalized"
+    ALERTS              = "mxtac.alerts"
+    ENRICHED            = "mxtac.enriched"
+    DLQ                 = "mxtac.dlq"
 
 
 # ── Abstract base ────────────────────────────────────────────────────────────

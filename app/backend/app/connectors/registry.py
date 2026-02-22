@@ -22,6 +22,7 @@ from .suricata import SuricataConnector
 from .prowler import ProwlerConnector
 from .opencti import OpenCTIConnector
 from .syslog import SyslogUDPConnector
+from .velociraptor import VelociraptorConnector
 
 logger = get_logger(__name__)
 
@@ -32,6 +33,7 @@ CONNECTOR_TYPES: dict[str, type[BaseConnector]] = {
     "prowler": ProwlerConnector,
     "opencti": OpenCTIConnector,
     "syslog": SyslogUDPConnector,
+    "velociraptor": VelociraptorConnector,
 }
 
 # ── Feature 6.10 / 6.17: connector offset state file helpers ──────────────────
@@ -158,6 +160,37 @@ def _save_opencti_timestamp(state_file: Path, ts: datetime) -> None:
         tmp.rename(state_file)
     except Exception as exc:
         logger.warning("Failed to save OpenCTI state file=%s err=%s", state_file, exc)
+
+
+# ── Feature 6.23: Velociraptor timestamp state file helpers ───────────────────
+
+
+def _velociraptor_state_file(connector_name: str) -> Path:
+    """Return the path of the JSON state file for a Velociraptor connector."""
+    return _STATE_DIR / f"velociraptor_timestamp_{connector_name}.json"
+
+
+def _load_velociraptor_timestamp(state_file: Path) -> datetime | None:
+    """Load persisted ISO timestamp from *state_file*. Returns None on any error."""
+    try:
+        if state_file.exists():
+            data = json.loads(state_file.read_text())
+            if isinstance(data, str):
+                return datetime.fromisoformat(data)
+    except Exception as exc:
+        logger.warning("Failed to load Velociraptor state file=%s err=%s", state_file, exc)
+    return None
+
+
+def _save_velociraptor_timestamp(state_file: Path, ts: datetime) -> None:
+    """Atomically write *ts* ISO string to *state_file* (write-then-rename)."""
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = state_file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(ts.isoformat()))
+        tmp.rename(state_file)
+    except Exception as exc:
+        logger.warning("Failed to save Velociraptor state file=%s err=%s", state_file, exc)
 
 
 def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | None:
