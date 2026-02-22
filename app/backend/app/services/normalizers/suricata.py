@@ -31,9 +31,67 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .ocsf import (
-    Analytic, AttackInfo, AttackTechnique, Endpoint,
+    Analytic, AttackInfo, AttackTactic, AttackTechnique, Endpoint,
     FindingInfo, OCSFCategory, OCSFClass, OCSFEvent, UserInfo,
 )
+
+# MITRE ATT&CK technique lookup: uid → (name, primary_tactic_uid, primary_tactic_name)
+# Covers techniques commonly referenced in Suricata / Emerging Threats rules.
+# Unknown UIDs fall back to using the UID string as the name with no tactic.
+_MITRE_TECH: dict[str, tuple[str, str, str]] = {
+    # Initial Access (TA0001)
+    "T1190":     ("Exploit Public-Facing Application",                         "TA0001", "Initial Access"),
+    "T1566":     ("Phishing",                                                  "TA0001", "Initial Access"),
+    "T1566.001": ("Phishing: Spearphishing Attachment",                        "TA0001", "Initial Access"),
+    "T1566.002": ("Phishing: Spearphishing Link",                              "TA0001", "Initial Access"),
+    # Execution (TA0002)
+    "T1059":     ("Command and Scripting Interpreter",                         "TA0002", "Execution"),
+    "T1059.001": ("Command and Scripting Interpreter: PowerShell",             "TA0002", "Execution"),
+    "T1059.003": ("Command and Scripting Interpreter: Windows Command Shell",  "TA0002", "Execution"),
+    "T1059.007": ("Command and Scripting Interpreter: JavaScript",             "TA0002", "Execution"),
+    "T1203":     ("Exploitation for Client Execution",                         "TA0002", "Execution"),
+    # Persistence (TA0003)
+    "T1053":     ("Scheduled Task/Job",                                        "TA0003", "Persistence"),
+    "T1053.005": ("Scheduled Task/Job: Scheduled Task",                        "TA0003", "Persistence"),
+    # Credential Access (TA0006)
+    "T1003":     ("OS Credential Dumping",                                     "TA0006", "Credential Access"),
+    "T1003.001": ("OS Credential Dumping: LSASS Memory",                      "TA0006", "Credential Access"),
+    "T1110":     ("Brute Force",                                               "TA0006", "Credential Access"),
+    "T1110.001": ("Brute Force: Password Guessing",                            "TA0006", "Credential Access"),
+    # Discovery (TA0007)
+    "T1046":     ("Network Service Discovery",                                 "TA0007", "Discovery"),
+    "T1082":     ("System Information Discovery",                              "TA0007", "Discovery"),
+    "T1083":     ("File and Directory Discovery",                              "TA0007", "Discovery"),
+    # Lateral Movement (TA0008)
+    "T1021":     ("Remote Services",                                           "TA0008", "Lateral Movement"),
+    "T1021.001": ("Remote Services: Remote Desktop Protocol",                  "TA0008", "Lateral Movement"),
+    "T1021.006": ("Remote Services: Windows Remote Management",               "TA0008", "Lateral Movement"),
+    # Collection (TA0009)
+    "T1005":     ("Data from Local System",                                    "TA0009", "Collection"),
+    "T1560":     ("Archive Collected Data",                                    "TA0009", "Collection"),
+    # Exfiltration (TA0010)
+    "T1041":     ("Exfiltration Over C2 Channel",                             "TA0010", "Exfiltration"),
+    "T1048":     ("Exfiltration Over Alternative Protocol",                    "TA0010", "Exfiltration"),
+    "T1048.003": ("Exfiltration Over Alternative Protocol: Unencrypted",       "TA0010", "Exfiltration"),
+    # Command and Control (TA0011)
+    "T1071":     ("Application Layer Protocol",                                "TA0011", "Command and Control"),
+    "T1071.001": ("Application Layer Protocol: Web Protocols",                 "TA0011", "Command and Control"),
+    "T1071.004": ("Application Layer Protocol: DNS",                           "TA0011", "Command and Control"),
+    "T1090":     ("Proxy",                                                     "TA0011", "Command and Control"),
+    "T1090.001": ("Proxy: Internal Proxy",                                     "TA0011", "Command and Control"),
+    "T1090.003": ("Proxy: Multi-hop Proxy",                                    "TA0011", "Command and Control"),
+    "T1095":     ("Non-Application Layer Protocol",                            "TA0011", "Command and Control"),
+    "T1102":     ("Web Service",                                               "TA0011", "Command and Control"),
+    "T1105":     ("Ingress Tool Transfer",                                     "TA0011", "Command and Control"),
+    "T1571":     ("Non-Standard Port",                                         "TA0011", "Command and Control"),
+    "T1573":     ("Encrypted Channel",                                         "TA0011", "Command and Control"),
+    "T1573.001": ("Encrypted Channel: Symmetric Cryptography",                 "TA0011", "Command and Control"),
+    "T1573.002": ("Encrypted Channel: Asymmetric Cryptography",                "TA0011", "Command and Control"),
+    # Impact (TA0040)
+    "T1486":     ("Data Encrypted for Impact",                                 "TA0040", "Impact"),
+    "T1489":     ("Service Stop",                                              "TA0040", "Impact"),
+    "T1498":     ("Network Denial of Service",                                 "TA0040", "Impact"),
+}
 
 # Suricata alert severity (1=high, 2=medium, 3=low, 4=info) → OCSF severity_id
 SURICATA_SEV_MAP: dict[int, int] = {
@@ -145,9 +203,20 @@ class SuricataNormalizer:
     def _build_attacks(self, metadata: dict) -> list[AttackInfo]:
         attacks = []
         for tech_id in metadata.get("mitre_technique_id", []):
-            attacks.append(AttackInfo(
-                technique=AttackTechnique(uid=tech_id, name=tech_id),
-            ))
+            tech_id = tech_id.strip()
+            entry = _MITRE_TECH.get(tech_id)
+            if entry:
+                tech_name, tac_uid, tac_name = entry
+                sub = tech_id.split(".", 1)[1] if "." in tech_id else None
+                attacks.append(AttackInfo(
+                    technique=AttackTechnique(uid=tech_id, name=tech_name, sub_technique=sub),
+                    tactic=AttackTactic(uid=tac_uid, name=tac_name),
+                ))
+            else:
+                # Unknown technique: preserve UID as fallback name, no tactic
+                attacks.append(AttackInfo(
+                    technique=AttackTechnique(uid=tech_id, name=tech_id),
+                ))
         return attacks
 
     def _parse_time(self, ts: str | None) -> datetime:

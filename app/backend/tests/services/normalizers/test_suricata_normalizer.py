@@ -442,6 +442,113 @@ def test_normalize_alert_missing_metadata(
 
 
 # ---------------------------------------------------------------------------
+# _build_attacks() — Feature 7.11: MITRE metadata → attacks[] enrichment
+# ---------------------------------------------------------------------------
+
+
+def test_build_attacks_known_technique_name(
+    normalizer: SuricataNormalizer, alert_event: dict
+) -> None:
+    """Known technique UID populates a human-readable technique name."""
+    ocsf = normalizer.normalize(alert_event)
+    attack = ocsf.finding_info.attacks[0]
+    assert attack.technique.name == "Application Layer Protocol: Web Protocols"
+
+
+def test_build_attacks_known_technique_tactic_uid(
+    normalizer: SuricataNormalizer, alert_event: dict
+) -> None:
+    """Known technique populates the primary tactic UID."""
+    ocsf = normalizer.normalize(alert_event)
+    attack = ocsf.finding_info.attacks[0]
+    assert attack.tactic is not None
+    assert attack.tactic.uid == "TA0011"
+
+
+def test_build_attacks_known_technique_tactic_name(
+    normalizer: SuricataNormalizer, alert_event: dict
+) -> None:
+    """Known technique populates the primary tactic name."""
+    ocsf = normalizer.normalize(alert_event)
+    attack = ocsf.finding_info.attacks[0]
+    assert attack.tactic.name == "Command and Control"
+
+
+def test_build_attacks_sub_technique_parsed(
+    normalizer: SuricataNormalizer, alert_event: dict
+) -> None:
+    """Sub-technique ID (e.g. T1071.001) yields sub_technique='001'."""
+    ocsf = normalizer.normalize(alert_event)
+    attack = ocsf.finding_info.attacks[0]
+    assert attack.technique.sub_technique == "001"
+
+
+def test_build_attacks_parent_technique_no_sub(
+    normalizer: SuricataNormalizer, alert_event: dict
+) -> None:
+    """Parent technique (no dot) yields sub_technique=None."""
+    alert_event["alert"]["metadata"]["mitre_technique_id"] = ["T1003"]
+    ocsf = normalizer.normalize(alert_event)
+    attack = ocsf.finding_info.attacks[0]
+    assert attack.technique.uid == "T1003"
+    assert attack.technique.name == "OS Credential Dumping"
+    assert attack.technique.sub_technique is None
+    assert attack.tactic is not None
+    assert attack.tactic.uid == "TA0006"
+    assert attack.tactic.name == "Credential Access"
+
+
+def test_build_attacks_unknown_technique_falls_back_to_uid_name(
+    normalizer: SuricataNormalizer, alert_event: dict
+) -> None:
+    """Unknown technique UID falls back gracefully: name=uid, tactic=None."""
+    alert_event["alert"]["metadata"]["mitre_technique_id"] = ["T9999.999"]
+    ocsf = normalizer.normalize(alert_event)
+    assert len(ocsf.finding_info.attacks) == 1
+    attack = ocsf.finding_info.attacks[0]
+    assert attack.technique.uid == "T9999.999"
+    assert attack.technique.name == "T9999.999"
+    assert attack.tactic is None
+
+
+def test_build_attacks_multiple_techniques_with_enrichment(
+    normalizer: SuricataNormalizer, alert_event: dict
+) -> None:
+    """Multiple technique IDs each get their own names and tactics."""
+    alert_event["alert"]["metadata"]["mitre_technique_id"] = [
+        "T1071.001", "T1059.001", "T1003"
+    ]
+    ocsf = normalizer.normalize(alert_event)
+    assert len(ocsf.finding_info.attacks) == 3
+    by_uid = {a.technique.uid: a for a in ocsf.finding_info.attacks}
+
+    assert by_uid["T1071.001"].technique.name == "Application Layer Protocol: Web Protocols"
+    assert by_uid["T1071.001"].tactic.uid == "TA0011"
+
+    assert by_uid["T1059.001"].technique.name == "Command and Scripting Interpreter: PowerShell"
+    assert by_uid["T1059.001"].tactic.uid == "TA0002"
+
+    assert by_uid["T1003"].technique.name == "OS Credential Dumping"
+    assert by_uid["T1003"].tactic.uid == "TA0006"
+
+
+def test_build_attacks_serialization_includes_tactic(
+    normalizer: SuricataNormalizer, alert_event: dict
+) -> None:
+    """Pydantic model_dump round-trip preserves tactic fields."""
+    ocsf = normalizer.normalize(alert_event)
+    data = ocsf.model_dump(mode="json")
+    attacks = data["finding_info"]["attacks"]
+    assert len(attacks) == 1
+    attack = attacks[0]
+    assert attack["technique"]["uid"] == "T1071.001"
+    assert attack["technique"]["name"] == "Application Layer Protocol: Web Protocols"
+    assert attack["technique"]["sub_technique"] == "001"
+    assert attack["tactic"]["uid"] == "TA0011"
+    assert attack["tactic"]["name"] == "Command and Control"
+
+
+# ---------------------------------------------------------------------------
 # _normalize_alert() — missing optional fields
 # ---------------------------------------------------------------------------
 
