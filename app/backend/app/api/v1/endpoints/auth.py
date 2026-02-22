@@ -398,6 +398,20 @@ async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depend
             detail="Invalid password change token",
         )
 
+    # Feature 2.4 — Password history: cannot reuse last 2 passwords.
+    # "Last 2" = current password + 1 previous (stored in password_history).
+    history = list(user.password_history or [])
+    candidates = [user.hashed_password] + history
+    for old_hash in candidates:
+        if verify_password(body.new_password, old_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot reuse one of your last 2 passwords",
+            )
+
+    # Rotate history: move current hash in; keep the 1 most-recent previous entry.
+    user.password_history = [user.hashed_password]
+
     user.hashed_password = hash_password(body.new_password)
     user.must_change_password = False
     user.password_changed_at = datetime.now(timezone.utc)

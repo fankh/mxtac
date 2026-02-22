@@ -38,5 +38,10 @@ class User(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True, default=None
     )
 
+    # Password history — cannot reuse last 2 (feature 2.4)
+    # Stores up to 1 previous hashed password (the one before the current).
+    # Together with the current hashed_password, this enforces a "last 2" no-reuse window.
+    password_history: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+
     def __repr__(self) -> str:
         return f"<User {self.email} role={self.role}>"
