@@ -31,6 +31,7 @@ class Topic:
     RAW_ZEEK        = "mxtac.raw.zeek"
     RAW_SURICATA    = "mxtac.raw.suricata"
     RAW_PROWLER     = "mxtac.raw.prowler"
+    RAW_OPENCTI     = "mxtac.raw.opencti"
     NORMALIZED      = "mxtac.normalized"
     ALERTS          = "mxtac.alerts"
     ENRICHED        = "mxtac.enriched"

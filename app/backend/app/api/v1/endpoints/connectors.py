@@ -223,11 +223,52 @@ async def _test_prowler_connection(config: dict) -> tuple[bool, str]:
         return False, f"Connection test failed: {exc}"
 
 
+async def _test_opencti_connection(config: dict) -> tuple[bool, str]:
+    """Verify OpenCTI API connectivity by probing the GraphQL health endpoint."""
+    api_url = config.get("api_url", "").rstrip("/")
+    api_token = config.get("api_token", "")
+    verify_ssl = config.get("verify_ssl", True)
+
+    if not api_url:
+        return False, "Missing required config key: api_url"
+    if not api_token:
+        return False, "Missing required config key: api_token"
+
+    try:
+        async with httpx.AsyncClient(
+            verify=verify_ssl,
+            timeout=10,
+            follow_redirects=True,
+        ) as client:
+            resp = await client.post(
+                f"{api_url}/graphql",
+                json={"query": "{ about { version } }"},
+                headers={
+                    "Authorization": f"Bearer {api_token}",
+                    "Content-Type": "application/json",
+                },
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            if "errors" in data:
+                return False, f"OpenCTI GraphQL error: {data['errors']}"
+            version = data.get("data", {}).get("about", {}).get("version", "unknown")
+            return True, f"OpenCTI API reachable (version: {version})"
+        if resp.status_code == 401:
+            return False, "OpenCTI API reachable but API token is invalid"
+        return False, f"OpenCTI API returned unexpected status {resp.status_code}"
+    except httpx.ConnectError as exc:
+        return False, f"Cannot connect to OpenCTI API: {exc}"
+    except Exception as exc:
+        return False, f"Connection test failed: {exc}"
+
+
 _CONNECTION_TESTERS: dict[str, Any] = {
     "wazuh":    _test_wazuh_connection,
     "zeek":     _test_zeek_connection,
     "suricata": _test_suricata_connection,
     "prowler":  _test_prowler_connection,
+    "opencti":  _test_opencti_connection,
 }
 
 

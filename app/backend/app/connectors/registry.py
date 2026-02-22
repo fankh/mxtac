@@ -20,6 +20,7 @@ from .wazuh import WazuhConnector
 from .zeek import ZeekConnector
 from .suricata import SuricataConnector
 from .prowler import ProwlerConnector
+from .opencti import OpenCTIConnector
 
 logger = get_logger(__name__)
 
@@ -28,6 +29,7 @@ CONNECTOR_TYPES: dict[str, type[BaseConnector]] = {
     "zeek": ZeekConnector,
     "suricata": SuricataConnector,
     "prowler": ProwlerConnector,
+    "opencti": OpenCTIConnector,
 }
 
 # ── Feature 6.10 / 6.17: connector offset state file helpers ──────────────────
@@ -123,6 +125,37 @@ def _save_prowler_timestamp(state_file: Path, ts: datetime) -> None:
         tmp.rename(state_file)
     except Exception as exc:
         logger.warning("Failed to save Prowler state file=%s err=%s", state_file, exc)
+
+
+# ── Feature 6.20: OpenCTI timestamp state file helpers ────────────────────────
+
+
+def _opencti_state_file(connector_name: str) -> Path:
+    """Return the path of the JSON state file for an OpenCTI connector."""
+    return _STATE_DIR / f"opencti_timestamp_{connector_name}.json"
+
+
+def _load_opencti_timestamp(state_file: Path) -> datetime | None:
+    """Load persisted ISO timestamp from *state_file*. Returns None on any error."""
+    try:
+        if state_file.exists():
+            data = json.loads(state_file.read_text())
+            if isinstance(data, str):
+                return datetime.fromisoformat(data)
+    except Exception as exc:
+        logger.warning("Failed to load OpenCTI state file=%s err=%s", state_file, exc)
+    return None
+
+
+def _save_opencti_timestamp(state_file: Path, ts: datetime) -> None:
+    """Atomically write *ts* ISO string to *state_file* (write-then-rename)."""
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = state_file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(ts.isoformat()))
+        tmp.rename(state_file)
+    except Exception as exc:
+        logger.warning("Failed to save OpenCTI state file=%s err=%s", state_file, exc)
 
 
 def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | None:
@@ -235,6 +268,25 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
             queue,
             initial_last_fetched_at=initial_ts,
             checkpoint_callback=_prowler_checkpoint,
+            status_callback=_status_cb,
+        )
+
+    if cls is OpenCTIConnector:
+        # Feature 6.20: persist fetch timestamp so restarts do not re-ingest objects
+        state_file = _opencti_state_file(db_conn.name)
+        initial_ts = _load_opencti_timestamp(state_file)
+
+        async def _opencti_checkpoint(
+            ts: datetime,
+            _sf: Path = state_file,
+        ) -> None:
+            _save_opencti_timestamp(_sf, ts)
+
+        return OpenCTIConnector(
+            config,
+            queue,
+            initial_last_fetched_at=initial_ts,
+            checkpoint_callback=_opencti_checkpoint,
             status_callback=_status_cb,
         )
 
