@@ -16,6 +16,17 @@ Feature 6.3 — Track last-seen timestamp:
   - checkpoint_callback: called after each fetch cycle with the new timestamp,
     not called when None, receives the updated _last_fetched_at value
 
+Feature 6.5 — Exponential backoff on failure (max 60s):
+  - _backoff_delay starts at BACKOFF_BASE on init
+  - BACKOFF_MAX is exactly 60.0 seconds
+  - after a fetch error, _backoff_delay doubles
+  - doubling from a value that exceeds BACKOFF_MAX is capped at BACKOFF_MAX
+  - when already at BACKOFF_MAX, another error keeps it at BACKOFF_MAX
+  - a successful fetch cycle resets _backoff_delay to BACKOFF_BASE
+  - an error does NOT reset _backoff_delay to BACKOFF_BASE (only doubles)
+  - backoff sleep uses _backoff_delay timeout, not poll_interval_seconds
+  - success after a previous failure resets backoff to base
+
 Feature 6.4 — Token refresh on 401:
   - _refresh_token(): clears _token to None before calling _connect(), calls _connect(),
     logs a warning with the connector name
@@ -994,3 +1005,194 @@ class TestWazuhConnectorPublish:
 
         assert len(published_topics) == 10
         assert all(t == Topic.RAW_WAZUH for t in published_topics)
+
+
+# ── Feature 6.5 — Exponential backoff on failure ───────────────────────────────
+
+
+class TestWazuhConnectorBackoff:
+    """
+    Feature 6.5 — Exponential backoff on failure (max 60s).
+
+    Each test sets conn._stop_event inside the mock generator so the loop exits
+    cleanly after the iteration under test without sleeping through real delays.
+    """
+
+    # ── Constants ──────────────────────────────────────────────────────────────
+
+    def test_initial_backoff_delay_equals_backoff_base(self) -> None:
+        from app.connectors.wazuh import BACKOFF_BASE
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        assert conn._backoff_delay == BACKOFF_BASE
+
+    def test_backoff_max_is_60_seconds(self) -> None:
+        from app.connectors.wazuh import BACKOFF_MAX
+
+        assert BACKOFF_MAX == 60.0
+
+    def test_backoff_base_is_positive(self) -> None:
+        from app.connectors.wazuh import BACKOFF_BASE
+
+        assert BACKOFF_BASE > 0
+
+    # ── Doubling on error ──────────────────────────────────────────────────────
+
+    async def test_backoff_doubles_after_first_error(self) -> None:
+        """_backoff_delay is doubled after a fetch failure."""
+        from app.connectors.wazuh import BACKOFF_BASE
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            raise RuntimeError("network error")
+            yield  # noqa: unreachable — makes async generator
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+        await conn._poll_loop()
+
+        assert conn._backoff_delay == BACKOFF_BASE * 2
+
+    async def test_backoff_doubles_from_any_current_delay(self) -> None:
+        """Doubling applies to the current _backoff_delay, not always from base."""
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        conn._backoff_delay = 4.0
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            raise RuntimeError("error")
+            yield  # noqa: unreachable
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+        await conn._poll_loop()
+
+        assert conn._backoff_delay == 8.0
+
+    # ── Capping at BACKOFF_MAX ─────────────────────────────────────────────────
+
+    async def test_backoff_capped_at_max_when_doubled_past_max(self) -> None:
+        """32 * 2 = 64 exceeds BACKOFF_MAX (60), so delay is clamped to 60."""
+        from app.connectors.wazuh import BACKOFF_MAX
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        conn._backoff_delay = 32.0  # 32 * 2 = 64 > 60
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            raise RuntimeError("error")
+            yield  # noqa: unreachable
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+        await conn._poll_loop()
+
+        assert conn._backoff_delay == BACKOFF_MAX
+
+    async def test_backoff_stays_at_max_when_already_at_max(self) -> None:
+        """An error when _backoff_delay is already BACKOFF_MAX keeps it at max."""
+        from app.connectors.wazuh import BACKOFF_MAX
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        conn._backoff_delay = BACKOFF_MAX
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            raise RuntimeError("error")
+            yield  # noqa: unreachable
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+        await conn._poll_loop()
+
+        assert conn._backoff_delay == BACKOFF_MAX
+
+    # ── Reset on success ───────────────────────────────────────────────────────
+
+    async def test_backoff_resets_to_base_after_successful_cycle(self) -> None:
+        """A successful (non-raising) fetch cycle resets _backoff_delay to BACKOFF_BASE."""
+        from app.connectors.wazuh import BACKOFF_BASE
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        conn._backoff_delay = 32.0  # simulate elevated backoff from prior errors
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            return
+            yield  # noqa: unreachable
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+        await conn._poll_loop()
+
+        assert conn._backoff_delay == BACKOFF_BASE
+
+    async def test_error_does_not_reset_backoff_to_base(self) -> None:
+        """After a failure the delay doubles, not resets to base."""
+        from app.connectors.wazuh import BACKOFF_BASE
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        conn._backoff_delay = 16.0
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            raise RuntimeError("error")
+            yield  # noqa: unreachable
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+        await conn._poll_loop()
+
+        assert conn._backoff_delay != BACKOFF_BASE
+
+    async def test_success_after_elevated_backoff_resets_to_base(self) -> None:
+        """
+        A successful cycle following a prior failure resets the backoff.
+        Two iterations: first raises (stop_event NOT set), second succeeds.
+        """
+        from app.connectors.wazuh import BACKOFF_BASE
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        call_count = 0
+
+        async def mock_fetch():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("transient error")
+            # Second call: succeed and stop
+            conn._stop_event.set()
+            return
+            yield  # noqa: unreachable
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+        await conn._poll_loop()
+
+        assert call_count == 2
+        assert conn._backoff_delay == BACKOFF_BASE
+
+    # ── Backoff sleep uses _backoff_delay ──────────────────────────────────────
+
+    async def test_backoff_sleep_timeout_uses_backoff_delay_not_poll_interval(self) -> None:
+        """The timeout passed to asyncio.wait_for during error recovery equals _backoff_delay."""
+        import asyncio as _asyncio
+
+        conn = WazuhConnector(_make_config(), InMemoryQueue())
+        conn._backoff_delay = 5.0
+        captured_timeouts: list[float] = []
+
+        original_wait_for = _asyncio.wait_for
+
+        async def spy_wait_for(coro, timeout):
+            captured_timeouts.append(timeout)
+            return await original_wait_for(coro, timeout=timeout)
+
+        async def mock_fetch():
+            conn._stop_event.set()
+            raise RuntimeError("error")
+            yield  # noqa: unreachable
+
+        conn._fetch_events = mock_fetch  # type: ignore[method-assign]
+
+        with patch("asyncio.wait_for", side_effect=spy_wait_for):
+            await conn._poll_loop()
+
+        # The first wait_for call in the error path must use 5.0 (backoff), not poll_interval
+        assert 5.0 in captured_timeouts
+        assert conn.config.poll_interval_seconds not in captured_timeouts

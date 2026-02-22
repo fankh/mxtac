@@ -24,6 +24,8 @@ from .base import BaseConnector, ConnectorConfig
 logger = get_logger(__name__)
 
 DEFAULT_PAGE_SIZE = 100
+BACKOFF_BASE = 1.0    # seconds — initial delay after a failure
+BACKOFF_MAX  = 60.0   # seconds — maximum backoff delay (feature 6.5)
 
 
 class WazuhConnector(BaseConnector):
@@ -46,6 +48,7 @@ class WazuhConnector(BaseConnector):
             else datetime.now(timezone.utc) - timedelta(minutes=5)
         )
         self._checkpoint_callback = checkpoint_callback
+        self._backoff_delay: float = BACKOFF_BASE
 
     @property
     def topic(self) -> str:
@@ -131,6 +134,56 @@ class WazuhConnector(BaseConnector):
         self._last_fetched_at = datetime.now(timezone.utc)
         if self._checkpoint_callback is not None:
             await self._checkpoint_callback(self._last_fetched_at)
+
+    # ── Poll loop (feature 6.5 — exponential backoff) ────────────────────────
+
+    async def _poll_loop(self) -> None:
+        """Poll loop with exponential backoff on failure.
+
+        A successful fetch cycle resets the backoff to BACKOFF_BASE.
+        A failed cycle sleeps for the current _backoff_delay, then doubles it
+        (capped at BACKOFF_MAX), before the next attempt.  The normal
+        poll_interval_seconds sleep is only applied after a *successful* cycle.
+        """
+        while not self._stop_event.is_set():
+            try:
+                async for event in self._fetch_events():
+                    await self.queue.publish(self.topic, event)
+                    self.health.events_total += 1
+                    self.health.last_event_at = datetime.now(timezone.utc)
+                # Success — reset backoff to base
+                self._backoff_delay = BACKOFF_BASE
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                self.health.errors_total += 1
+                self.health.error_message = str(exc)
+                logger.error(
+                    "WazuhConnector fetch error name=%s err=%s backoff=%.1fs",
+                    self.config.name,
+                    exc,
+                    self._backoff_delay,
+                )
+                # Sleep for the current backoff delay before retrying
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(self._stop_event.wait()),
+                        timeout=self._backoff_delay,
+                    )
+                except asyncio.TimeoutError:
+                    pass
+                # Increase backoff for the next failure, capped at maximum
+                self._backoff_delay = min(self._backoff_delay * 2, BACKOFF_MAX)
+                continue  # skip the normal inter-poll sleep
+
+            # Normal inter-poll sleep (success path only)
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(self._stop_event.wait()),
+                    timeout=self.config.poll_interval_seconds,
+                )
+            except asyncio.TimeoutError:
+                pass
 
     # ── Cleanup ──────────────────────────────────────────────────────────────
 
