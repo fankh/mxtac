@@ -95,6 +95,13 @@ class AlertManager:
                 logger.debug("AlertManager deduplicated rule_id=%s host=%s", alert.rule_id, alert.host)
                 return
 
+            if await self._is_suppressed(alert):
+                logger.info(
+                    "AlertManager suppressed rule_id=%s host=%s",
+                    alert.rule_id, alert.host,
+                )
+                return
+
             enriched = await self._enrich(alert)
             scored   = self._score(enriched)
 
@@ -147,6 +154,39 @@ class AlertManager:
         raw = f"{alert.rule_id}|{alert.host}".encode()
         digest = hashlib.md5(raw).hexdigest()  # noqa: S324 (non-crypto use)
         return f"{_DEDUP_PREFIX}{digest}"
+
+    # -- Suppression (whitelist/tuning) ------------------------------------
+
+    async def _is_suppressed(self, alert: SigmaAlert) -> bool:
+        """Return True if a matching active suppression rule exists in the DB.
+
+        Fail-open: if the DB is unreachable the alert is allowed through so
+        that the pipeline remains available even when PostgreSQL is down.
+        """
+        try:
+            from ..core.database import AsyncSessionLocal
+            from ..repositories.suppression_repo import SuppressionRepo
+            technique_id = alert.technique_ids[0] if alert.technique_ids else ""
+            tactic = alert.tactic_ids[0] if alert.tactic_ids else ""
+            async with AsyncSessionLocal() as session:
+                matched = await SuppressionRepo.match(
+                    session,
+                    rule_id_val=alert.rule_id,
+                    host_val=alert.host,
+                    technique_id_val=technique_id,
+                    tactic_val=tactic,
+                    severity_val=alert.level,
+                )
+                if matched:
+                    await session.commit()
+                    return True
+            return False
+        except Exception:
+            logger.exception(
+                "AlertManager suppression check failed (fail-open) rule_id=%s host=%s",
+                alert.rule_id, alert.host,
+            )
+            return False
 
     # -- Enrichment --------------------------------------------------------
 

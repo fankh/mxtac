@@ -54,6 +54,8 @@ PERMISSIONS: dict[str, set[str]] = {
     "reports:delete":     {"analyst", "hunter", "engineer", "admin"},
     "notifications:read":  {"engineer", "admin"},
     "notifications:write": {"engineer", "admin"},
+    "suppression_rules:read":  {"analyst", "hunter", "engineer", "admin"},
+    "suppression_rules:write": {"engineer", "admin"},
 }
 
 # ── Role → permissions (inverse map) ──────────────────────────────────────────
