@@ -1,4 +1,4 @@
-"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter + feature 21.7 mxtac_pipeline_latency_seconds histogram + feature 9.1 MD5(rule_id + host) dedup key.
+"""Tests for AlertManager — feature 17.5 DB persistence + feature 28.23 dedup + feature 28.24 TTL expiry + feature 28.25 risk score formula + feature 28.26 distributed dedup (two instances) + feature 21.4 mxtac_alerts_processed_total{severity} counter + feature 21.5 mxtac_alerts_deduplicated_total counter + feature 21.7 mxtac_pipeline_latency_seconds histogram + feature 9.1 MD5(rule_id + host) dedup key + feature 9.2 dedup window — 5 minutes TTL.
 
 Coverage:
   - process(): publishes enriched+scored alert to mxtac.enriched topic
@@ -57,6 +57,17 @@ Coverage:
   - feature 9.1 MD5 key: all-distinct keys for five different hosts with the same rule_id
   - feature 9.1 MD5 key: _is_duplicate() passes the exact dedup key as Valkey SET argument
   - feature 9.1 MD5 key: Valkey key argument starts with "mxtac:dedup:" in end-to-end process()
+  - feature 9.2 dedup window: DEDUP_WINDOW_SECONDS equals 5 * 60 (five minutes exactly)
+  - feature 9.2 dedup window: Valkey SET receives ex=DEDUP_WINDOW_SECONDS (not a hardcoded literal)
+  - feature 9.2 dedup window: Valkey SET uses nx=True and value "1" as presence marker
+  - feature 9.2 dedup window: all duplicates within the 5-min window are blocked
+  - feature 9.2 dedup window: independent window per (rule_id, host) — different rules on same host do not interfere
+  - feature 9.2 dedup window: independent window per (rule_id, host) — different hosts with same rule do not interfere
+  - feature 9.2 dedup window: multiple distinct pairs each get independent windows and are all published
+  - feature 9.2 dedup window: new 5-minute window starts fresh after expiry (restarts correctly)
+  - feature 9.2 dedup window: blocked duplicate skips enrichment, scoring, publish, and persist
+  - feature 9.2 dedup window: fail-open is stateless — subsequent successful Valkey calls are unaffected
+  - feature 9.2 dedup window: close() calls aclose() on the Valkey client to release the connection
 """
 
 from __future__ import annotations
