@@ -2,7 +2,7 @@
 
 Coverage:
   - List: unauthenticated → 401; non-admin → 403; empty DB → []
-  - GET by ID: 404 when not found
+  - GET by ID: 200 with correct fields; 404 when not found
   - POST create: 422 on invalid role; 201 on valid payload; 409 on duplicate email
   - PATCH update: 404 when not found; 422 on invalid role
   - DELETE: 404 when not found; 204 on success
@@ -73,6 +73,26 @@ async def test_list_users_empty(client: AsyncClient, admin_headers: dict) -> Non
 # ---------------------------------------------------------------------------
 # GET single user
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_user_success(client: AsyncClient, admin_headers: dict) -> None:
+    """GET /users/{id} for existing user → 200 with correct fields."""
+    with patch(_MOCK_HASH, return_value=_HASHED_PW):
+        create_resp = await client.post(BASE_URL, headers=admin_headers, json=_VALID_PAYLOAD)
+    assert create_resp.status_code == 201
+    user_id = create_resp.json()["id"]
+
+    resp = await client.get(f"{BASE_URL}/{user_id}", headers=admin_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == user_id
+    assert data["email"] == _VALID_PAYLOAD["email"]
+    assert data["full_name"] == _VALID_PAYLOAD["full_name"]
+    assert data["role"] == _VALID_PAYLOAD["role"]
+    assert data["is_active"] is True
+    assert "hashed_password" not in data
 
 
 @pytest.mark.asyncio
