@@ -11,7 +11,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [2.0.0-alpha] — 2026-02-21
+## [2.0.0-alpha] — 2026-02-23
 
 Initial alpha release of the MxTac platform (Matrix + Tactic). This release
 establishes the core backend, frontend, detection engine, and CI/CD foundation.
@@ -21,7 +21,12 @@ establishes the core backend, frontend, detection engine, and CI/CD foundation.
 #### Backend (FastAPI / Python 3.13)
 - FastAPI application with versioned API under `/api/v1/`
 - JWT authentication (access + refresh tokens) with key-version invalidation
-- Role-based access control (RBAC) — `admin`, `analyst`, `viewer` roles
+- Role-based access control (RBAC) — `admin`, `analyst`, `hunter` roles
+- Account lockout after 5 failed attempts (30-minute window)
+- Inactive account auto-lock after 90 days
+- Password history — cannot reuse last 2 passwords; 90-day expiry policy
+- First-login forced password change
+- SSO via OIDC (Keycloak, Okta, Azure AD) and SAML 2.0
 - SQLAlchemy 2.x async ORM with Alembic migrations
 - PostgreSQL primary datastore; SQLite single-binary fallback mode
 - Pydantic v2 request/response schemas with strict validation
@@ -30,9 +35,24 @@ establishes the core backend, frontend, detection engine, and CI/CD foundation.
 - Sigma detection engine — native rule loading, evaluation, ATT&CK tagging
 - Event ingestion pipeline with in-memory and Redis/Valkey queue backends
 - Kafka queue backend (optional, configurable via `QUEUE_BACKEND`)
-- OpenSearch integration for event storage and full-text search
-- Alert output sinks: file (JSON Lines, rotating) and webhook (POST, retry)
-- Connectors: Wazuh, Zeek, Suricata (base connector ABC + implementations)
+- OpenSearch integration for event storage, full-text search, and ILM retention
+- DuckDB embedded event store — local analytics without OpenSearch
+- Asset auto-discovery from ingested events (CMDB upsert, RFC 1918 only)
+- OpenSearch snapshot management with configurable retention
+- Alert output sinks: file (JSON Lines, rotating), webhook (POST, retry), syslog, and email (SMTP)
+- Alert enrichment — GeoIP (MaxMind), OpenCTI threat intel, IOC matching
+- Alert deduplication — MD5(rule_id + host) key with 5-minute Valkey TTL window
+- Risk scoring — severity × 0.60 + asset criticality × 0.25 + recurrence × 0.15
+- Alert-to-incident auto-correlation — group by (host, tactic) within 1-hour window
+- Escalation policy — auto-escalate unacknowledged critical/high alerts after 30 minutes
+- Notification senders — email (SMTP + STARTTLS) and Slack (webhook)
+- Dead letter queue — failed events routed for inspection and replay
+- Back-pressure handling — slow ingest when queue is full
+- Connectors: Wazuh, Zeek, Suricata, Prowler, Velociraptor, OpenCTI (base connector ABC + implementations)
+- Custom field mapping config per connector
+- `POST /connectors/{id}/test` — health check endpoint
+- API key management — create keys with scoped access (read / write / admin)
+- `POST /users/invite` — send email invitations to new users
 - Rate limiting middleware (configurable per-minute threshold)
 - CORS middleware with explicit origin allowlist
 - `/health` and `/ready` liveness/readiness probes
@@ -87,6 +107,11 @@ establishes the core backend, frontend, detection engine, and CI/CD foundation.
 - `ENV-REFERENCE.md` — complete environment variable reference
 - API versioning strategy documented in `06-API-SPECIFICATION.md`
 
+### Fixed
+
+- Soft-delete users: set `is_active=False` instead of hard delete to preserve audit trail
+- Scheduler: corrected GitHub repository URL for agent task runner
+
 ### Security
 
 - Passwords hashed with Argon2id (via `passlib`)
@@ -99,5 +124,5 @@ establishes the core backend, frontend, detection engine, and CI/CD foundation.
 
 ---
 
-[Unreleased]: https://github.com/mxtac/mxtac/compare/v2.0.0-alpha...HEAD
-[2.0.0-alpha]: https://github.com/mxtac/mxtac/releases/tag/v2.0.0-alpha
+[Unreleased]: https://github.com/fankh/mxtac/compare/v2.0.0-alpha...HEAD
+[2.0.0-alpha]: https://github.com/fankh/mxtac/releases/tag/v2.0.0-alpha

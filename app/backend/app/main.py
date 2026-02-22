@@ -647,6 +647,17 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("Escalation task start failed")
 
+    # 18. Start scheduled report task — cron-based automated report generation (feature 31.4)
+    try:
+        from .services.report_scheduler import report_scheduler_task
+        asyncio.create_task(
+            report_scheduler_task(dispatcher=notification_dispatcher),
+            name="report-scheduler-task",
+        )
+        logger.info("Report scheduler task started (check_interval=60s)")
+    except Exception:
+        logger.exception("Report scheduler task start failed")
+
     logger.info("MxTac API startup complete")
 
 

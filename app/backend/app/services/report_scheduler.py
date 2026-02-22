@@ -29,6 +29,10 @@ from typing import TYPE_CHECKING, Any
 from ..core.database import AsyncSessionLocal
 from ..core.logging import get_logger
 from ..models.base import new_uuid
+from ..repositories.notification_channel_repo import NotificationChannelRepo
+from ..repositories.report_repo import ReportRepo
+from ..repositories.scheduled_report_repo import ScheduledReportRepo
+from ..services.report_engine import ReportEngine
 
 if TYPE_CHECKING:
     from ..models.scheduled_report import ScheduledReport
@@ -97,10 +101,6 @@ async def _run_one_schedule(
     Opens its own DB session to stay independent of the outer session that
     loaded the schedule list.
     """
-    from ..repositories.report_repo import ReportRepo
-    from ..repositories.scheduled_report_repo import ScheduledReportRepo
-    from ..services.report_engine import ReportEngine
-
     now = datetime.now(timezone.utc)
 
     # Compute the time window: look back ``period_days`` days (default 7)
@@ -192,8 +192,6 @@ async def _run_one_schedule(
         return
 
     try:
-        from ..repositories.notification_channel_repo import NotificationChannelRepo
-
         async with AsyncSessionLocal() as nc_session:
             channel = await NotificationChannelRepo.get_by_id(
                 nc_session, sr.notification_channel_id
@@ -239,8 +237,6 @@ async def _run_scheduler_cycle(
     dispatcher: "NotificationDispatcher | None",
 ) -> None:
     """Check for due schedules and run each one."""
-    from ..repositories.scheduled_report_repo import ScheduledReportRepo
-
     async with AsyncSessionLocal() as session:
         due = await ScheduledReportRepo.find_due(session)
 

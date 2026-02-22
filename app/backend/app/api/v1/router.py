@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .endpoints import admin, agents, assets, audit_logs, auth, compliance, connectors, coverage, detections, events, hunting, incidents, notifications, overview, permission_sets, reports, rules, saml, saved_queries, sso, suppression_rules, threat_intel, users, websocket, webhook_ingest
+from .endpoints import admin, agents, assets, audit_logs, auth, compliance, connectors, coverage, detections, events, hunting, incidents, notifications, overview, permission_sets, reports, rules, saml, saved_queries, scheduled_reports, sso, suppression_rules, threat_intel, users, websocket, webhook_ingest
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
@@ -22,6 +22,9 @@ api_router.include_router(threat_intel.router)
 api_router.include_router(assets.router)
 api_router.include_router(audit_logs.router)
 api_router.include_router(agents.router)
+# scheduled_reports must be registered BEFORE reports so /reports/scheduled
+# is not shadowed by the /reports/{report_id} path-parameter route.
+api_router.include_router(scheduled_reports.router)
 api_router.include_router(reports.router)
 api_router.include_router(compliance.router)
 api_router.include_router(webhook_ingest.router)
