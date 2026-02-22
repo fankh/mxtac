@@ -421,6 +421,14 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("Normalizer pipeline start failed")
 
+    # 5.8. Wire DLQ consumer — logs and meters events that failed normalization
+    try:
+        from .services.dlq_consumer import dlq_consumer
+        await dlq_consumer(queue)
+        logger.info("DLQ consumer started")
+    except Exception:
+        logger.exception("DLQ consumer start failed")
+
     # 5.1. Wire event persister — triple-write to PostgreSQL + DuckDB + OpenSearch
     try:
         from .services.event_persister import event_persister

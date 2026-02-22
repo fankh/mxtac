@@ -142,3 +142,13 @@ retention_deleted = Counter(
     "Total records hard-deleted by the data retention background task",
     ["type"],  # "detection", "incident", "ioc"
 )
+
+# ---------------------------------------------------------------------------
+# Dead Letter Queue — feature 5.8
+# ---------------------------------------------------------------------------
+
+dlq_events_total = Counter(
+    "mxtac_dlq_events_total",
+    "Total events rejected to the dead letter queue, partitioned by source and error type",
+    ["source", "error_type"],
+)

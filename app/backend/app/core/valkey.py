@@ -158,6 +158,41 @@ async def clear_login_attempts(email: str) -> None:
         logger.debug("Valkey unavailable — could not clear login attempts for %s", email)
 
 
+# ── OIDC state (CSRF) ────────────────────────────────────────────────────────
+# State tokens are short-lived and stored in Valkey with a 10-minute TTL.
+# An in-memory dict acts as a fail-safe when Valkey is unavailable.
+_oidc_state_store: dict[str, str] = {}
+OIDC_STATE_TTL = 600  # 10 minutes
+
+
+async def store_oidc_state(state: str, provider_name: str) -> None:
+    """Persist an OIDC state token mapped to its provider_name."""
+    try:
+        client = await get_valkey_client()
+        await client.setex(f"oidc:state:{state}", OIDC_STATE_TTL, provider_name)
+    except Exception:
+        logger.debug("Valkey unavailable — storing OIDC state in-memory")
+        _oidc_state_store[state] = provider_name
+
+
+async def validate_and_consume_oidc_state(state: str) -> str | None:
+    """Return the provider_name for *state* and delete it (one-time use).
+
+    Returns None if the state is unknown or expired.
+    """
+    try:
+        client = await get_valkey_client()
+        key = f"oidc:state:{state}"
+        value = await client.getdel(key)
+        if value is not None:
+            return value
+        # Fall through to in-memory store on cache miss (Valkey was down when stored)
+    except Exception:
+        logger.debug("Valkey unavailable — checking in-memory OIDC state store")
+
+    return _oidc_state_store.pop(state, None)
+
+
 # ── Rule-change pub/sub ───────────────────────────────────────────────────────
 RULE_RELOAD_CHANNEL = "mxtac:rules:reload"
 

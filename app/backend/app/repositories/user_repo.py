@@ -12,7 +12,9 @@ class UserRepo:
 
     @staticmethod
     async def list(session: AsyncSession) -> list[User]:
-        result = await session.execute(select(User).order_by(User.email))
+        result = await session.execute(
+            select(User).where(User.is_active.is_(True)).order_by(User.email)
+        )
         return list(result.scalars().all())
 
     @staticmethod
