@@ -109,6 +109,14 @@ class Settings(BaseSettings):
     alert_webhook_timeout: int = 5  # seconds per request
     alert_webhook_retry_count: int = 3  # retries on timeout / 5xx
 
+    # Syslog receiver — inbound UDP/TCP listener (feature 35.4)
+    # Listens on a non-privileged port (default 1514); map 514→1514 in Docker.
+    syslog_enabled: bool = False
+    syslog_host: str = "0.0.0.0"
+    syslog_port: int = 1514
+    syslog_protocol: str = "udp"  # "udp" | "tcp" | "both"
+    syslog_max_message_size: int = 65535
+
     # Alert syslog output — emit enriched alerts to a syslog destination
     alert_syslog_output_enabled: bool = False
     alert_syslog_host: str = "localhost"  # hostname, IP, or /dev/log for Unix socket
@@ -246,6 +254,13 @@ class Settings(BaseSettings):
         "172.16.0.0/12",
         "192.168.0.0/16",
     ]
+
+    # Alert auto-close — feature 9.12
+    # Auto-close active detections when no new detection with the same
+    # (rule_name, host) has been observed for this many hours.
+    # Set to 0 to disable time-based auto-close.
+    alert_auto_close_enabled: bool = True
+    alert_auto_close_no_recurrence_hours: int = 24
 
     # Rate limiting
     rate_limit_per_minute: int = 300

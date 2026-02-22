@@ -352,6 +352,7 @@ async def on_startup() -> None:
     app.state.alert_email_sender = None
     app.state.duckdb_store = None
     app.state.notification_dispatcher = None
+    app.state.syslog_receiver = None
 
     # 0. Auto-migrate when running in SQLite single-binary mode (feature 20.8)
     if settings.sqlite_mode or settings.database_url.startswith("sqlite"):
@@ -657,6 +658,18 @@ async def on_startup() -> None:
         logger.info("Report scheduler task started (check_interval=60s)")
     except Exception:
         logger.exception("Report scheduler task start failed")
+
+    # 19. Start alert auto-closer task — close detections with no recurrence in N hours (feature 9.12)
+    try:
+        from .services.alert_auto_closer import alert_auto_closer_task
+        asyncio.create_task(alert_auto_closer_task(), name="alert-auto-closer-task")
+        logger.info(
+            "Alert auto-closer task started (enabled=%s, window=%dh)",
+            settings.alert_auto_close_enabled,
+            settings.alert_auto_close_no_recurrence_hours,
+        )
+    except Exception:
+        logger.exception("Alert auto-closer task start failed")
 
     logger.info("MxTac API startup complete")
 

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from math import ceil
 
 from sqlalchemy import case, func, select, update as sa_update
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.validators import escape_like
@@ -416,6 +417,64 @@ class DetectionRepo:
             .where(Detection.time >= from_time)
         )
         return int(result or 0)
+
+    @staticmethod
+    async def find_stale_active_detections(
+        session: AsyncSession,
+        no_recurrence_hours: int,
+    ) -> list[Detection]:
+        """Return active detections where no detection with the same (rule_name, host)
+        has occurred within the last *no_recurrence_hours*.
+
+        A detection is eligible for auto-close when the entire (rule_name, host)
+        cluster has gone quiet — i.e. the most-recent detection for that pair is
+        older than the configured window.  Detections with a NULL rule_name are
+        excluded because they cannot be meaningfully grouped.
+
+        Used by the alert auto-closer background task (feature 9.12).
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=no_recurrence_hours)
+
+        # Correlated subquery: does any detection with the same (rule_name, host)
+        # have a time >= cutoff?  If yes, the cluster is still active.
+        D2 = aliased(Detection, name="d2")
+        has_recent = (
+            select(D2.id)
+            .where(D2.rule_name == Detection.rule_name)
+            .where(D2.host == Detection.host)
+            .where(D2.time >= cutoff)
+            .correlate(Detection)
+            .exists()
+        )
+
+        q = (
+            select(Detection)
+            .where(Detection.status == "active")
+            .where(Detection.rule_name.is_not(None))
+            .where(~has_recent)
+        )
+        result = await session.execute(q)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def auto_close_by_ids(
+        session: AsyncSession,
+        ids: list[str],
+    ) -> int:
+        """Bulk-set status='closed' for the given detection IDs.
+
+        Returns the number of detections updated.  Uses a single UPDATE statement
+        for efficiency.  Callers are responsible for committing the session.
+        """
+        if not ids:
+            return 0
+        await session.execute(
+            sa_update(Detection)
+            .where(Detection.id.in_(ids))
+            .values(status="closed")
+        )
+        await session.flush()
+        return len(ids)
 
     @staticmethod
     async def get_timeline(
