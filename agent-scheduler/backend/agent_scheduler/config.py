@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     scheduler_test_timeout: int = 300  # 5 minutes
 
     # GitHub
-    github_repo_url: str = "https://github.com/fankh/new-research"
+    github_repo_url: str = "https://github.com/fankh/mxtac"
 
     # Claude CLI
     claude_model: str = "sonnet"
