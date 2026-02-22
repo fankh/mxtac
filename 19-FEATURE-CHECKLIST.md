@@ -151,7 +151,7 @@
 | 7.7 | Zeek → OCSF: `dns` → `DNSActivity` (class 4003) | `[ ]` | `[ ]` | P0 | |
 | 7.8 | Zeek → OCSF: `http` → `HTTPActivity` (class 4002) | `[ ]` | `[ ]` | P0 | |
 | 7.9 | Zeek → OCSF: `ssl` → `NetworkActivity` | `[ ]` | `[ ]` | P0 | |
-| 7.10 | Suricata → OCSF: alert `severity` → `severity_id` | `[~]` | `[ ]` | P0 | |
+| 7.10 | Suricata → OCSF: alert `severity` → `severity_id` | `[x]` | `[x]` | P0 | `SURICATA_SEV_MAP`: 1→4, 2→3, 3→2, 4→1; default 3 |
 | 7.11 | Suricata → OCSF: MITRE metadata → `attacks[]` | `[ ]` | `[ ]` | P0 | |
 | 7.12 | Suricata → OCSF: IPs/ports → `src/dst_endpoint` | `[ ]` | `[ ]` | P0 | |
 | 7.13 | `NormalizerPipeline` — subscribe + route + publish | `[ ]` | `[ ]` | P0 | Task 2.1 |
@@ -539,7 +539,7 @@
 | 28.10 | Normalizer: Wazuh level 14 → severity_id 5 | `[x]` | `[x]` | P0 | `test_level_14_maps_to_severity_5` |
 | 28.11 | Normalizer: Wazuh MITRE tags → attacks[] | `[x]` | `[x]` | P0 | `test_wazuh_mitre_attacks.py` — 29 tests |
 | 28.12 | Normalizer: Zeek conn → NetworkActivity | `[ ]` | `[ ]` | P0 | |
-| 28.13 | Normalizer: Suricata severity 1 → severity_id 4 | `[ ]` | `[ ]` | P0 | |
+| 28.13 | Normalizer: Suricata severity 1 → severity_id 4 | `[x]` | `[x]` | P0 | 72 tests — `test_suricata_normalizer.py` |
 | 28.14 | Sigma: rule loads from valid YAML | `[ ]` | `[ ]` | P0 | |
 | 28.15 | Sigma: `contains` modifier matches | `[ ]` | `[ ]` | P0 | |
 | 28.16 | Sigma: `startswith` modifier matches | `[ ]` | `[ ]` | P0 | |
