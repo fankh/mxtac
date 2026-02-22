@@ -15,9 +15,11 @@ from ....core.database import get_db
 from ....core.security import (
     create_access_token,
     create_mfa_token,
+    create_password_change_token,
     create_refresh_token,
     decode_token,
     get_current_user,
+    hash_password,
     verify_password,
 )
 from ....core.valkey import (
@@ -30,6 +32,7 @@ from ....core.valkey import (
 from ....repositories.user_repo import UserRepo
 from ....core.rbac import require_permission
 from ....schemas.auth import (
+    ChangePasswordRequest,
     LoginRequest,
     LogoutResponse,
     MeResponse,
@@ -39,6 +42,7 @@ from ....schemas.auth import (
     MfaVerifyLoginRequest,
     MfaVerifyRequest,
     MfaVerifyResponse,
+    PasswordChangeRequiredResponse,
     RefreshRequest,
     TokenResponse,
 )
@@ -122,6 +126,14 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     # Record the successful login timestamp (feature 1.7).
     user.last_login_at = datetime.now(timezone.utc)
     await db.flush()
+
+    # Feature 1.8 — Forced password change on first login.
+    # Issued before the MFA check so that new accounts without MFA are handled
+    # cleanly.  If MFA is also enabled the user will be required to go through
+    # MFA again after the password change.
+    if user.must_change_password:
+        pc_token = create_password_change_token(str(user.id))
+        return PasswordChangeRequiredResponse(password_change_token=pc_token)
 
     if user.mfa_enabled:
         mfa_token = create_mfa_token(str(user.id))
@@ -338,3 +350,54 @@ async def mfa_disable(
     await db.flush()
 
     return MfaVerifyResponse(message="MFA disabled")
+
+
+# ---------------------------------------------------------------------------
+# Feature 1.8 — First-login forced password change
+# ---------------------------------------------------------------------------
+
+
+@router.post("/change-password")
+async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Complete a forced first-login password change.
+
+    Accepts the ``password_change_token`` issued by POST /auth/login when
+    ``must_change_password=True``.  On success clears the flag and returns
+    full access + refresh tokens (or an MFA token if MFA is also enabled).
+    """
+    payload = decode_token(body.password_change_token)
+    if payload.get("purpose") != "password_change":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid password change token",
+        )
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid password change token",
+        )
+
+    user = await UserRepo.get_by_id(db, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid password change token",
+        )
+
+    user.hashed_password = hash_password(body.new_password)
+    user.must_change_password = False
+    await db.flush()
+
+    if user.mfa_enabled:
+        mfa_token = create_mfa_token(str(user.id))
+        return MfaLoginResponse(mfa_token=mfa_token)
+
+    token = create_access_token({"sub": user.email, "role": user.role})
+    refresh = create_refresh_token({"sub": user.email})
+    return TokenResponse(
+        access_token=token,
+        refresh_token=refresh,
+        expires_in=settings.access_token_expire_minutes * 60,
+    )

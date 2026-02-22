@@ -25,6 +25,7 @@ class UserCreate(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
     role: str = "analyst"
     password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
+    must_change_password: bool = True
 
     @field_validator("email")
     @classmethod
@@ -47,6 +48,7 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
     mfa_enabled: bool
+    must_change_password: bool
 
 
 def _user_to_response(u) -> dict:
@@ -57,6 +59,7 @@ def _user_to_response(u) -> dict:
         "role": u.role,
         "is_active": u.is_active,
         "mfa_enabled": u.mfa_enabled,
+        "must_change_password": u.must_change_password,
     }
 
 
@@ -101,6 +104,7 @@ async def create_user(
         full_name=body.full_name,
         role=body.role,
         hashed_password=hash_password(body.password),
+        must_change_password=body.must_change_password,
     )
     return _user_to_response(user)
 

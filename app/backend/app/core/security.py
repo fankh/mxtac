@@ -40,6 +40,22 @@ def create_mfa_token(user_id: str) -> str:
     return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
 
 
+def create_password_change_token(user_id: str) -> str:
+    """Create a short-lived password-change token (15-minute TTL).
+
+    Claims: sub=user_id, purpose="password_change", jti, kvr, exp.
+    Used for first-login forced password change flow (feature 1.8).
+    """
+    to_encode = {
+        "sub": user_id,
+        "purpose": "password_change",
+        "jti": str(uuid4()),
+        "kvr": settings.jwt_key_version,
+        "exp": datetime.utcnow() + timedelta(minutes=15),
+    }
+    return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
+
+
 def create_refresh_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)

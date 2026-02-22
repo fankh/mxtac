@@ -29,5 +29,8 @@ class User(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True, default=None
     )
 
+    # First-login forced password change (feature 1.8)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     def __repr__(self) -> str:
         return f"<User {self.email} role={self.role}>"

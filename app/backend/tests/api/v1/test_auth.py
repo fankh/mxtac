@@ -1168,3 +1168,348 @@ async def test_successful_login_updates_last_login_at(client: AsyncClient) -> No
     assert resp.status_code == 200
     assert user.last_login_at is not None
     assert user.last_login_at >= before
+
+
+# ---------------------------------------------------------------------------
+# Feature 1.8 — First-login forced password change
+# ---------------------------------------------------------------------------
+
+from app.core.security import create_password_change_token  # noqa: E402
+
+CHANGE_PASSWORD_URL = "/api/v1/auth/change-password"
+MOCK_REPO_BY_ID = "app.api.v1.endpoints.auth.UserRepo.get_by_id"
+MOCK_HASH = "app.api.v1.endpoints.auth.hash_password"
+
+_FORCED_USER_ID = "forced-user-id-1234"
+
+
+def _user_must_change_password(mfa_enabled: bool = False) -> User:
+    """Return an active user with must_change_password=True."""
+    u = User(
+        email="newuser@mxtac.local",
+        hashed_password="$2b$12$placeholder_not_used_in_tests",
+        full_name="New User",
+        role="analyst",
+        is_active=True,
+        must_change_password=True,
+    )
+    u.id = _FORCED_USER_ID
+    u.mfa_enabled = mfa_enabled
+    return u
+
+
+# --- Login with must_change_password=True ---
+
+
+@pytest.mark.asyncio
+async def test_must_change_password_login_returns_200(client: AsyncClient) -> None:
+    """Login with must_change_password=True → 200 OK (not 401/403)."""
+    user = _user_must_change_password()
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_must_change_password_login_response_flag(client: AsyncClient) -> None:
+    """Response contains password_change_required=True."""
+    user = _user_must_change_password()
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    data = resp.json()
+    assert data.get("password_change_required") is True
+
+
+@pytest.mark.asyncio
+async def test_must_change_password_login_response_has_token(client: AsyncClient) -> None:
+    """Response contains a non-empty password_change_token string."""
+    user = _user_must_change_password()
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    data = resp.json()
+    assert "password_change_token" in data
+    assert isinstance(data["password_change_token"], str)
+    assert data["password_change_token"]
+
+
+@pytest.mark.asyncio
+async def test_must_change_password_login_no_access_token(client: AsyncClient) -> None:
+    """Response must NOT contain access_token or refresh_token."""
+    user = _user_must_change_password()
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    data = resp.json()
+    assert "access_token" not in data
+    assert "refresh_token" not in data
+
+
+@pytest.mark.asyncio
+async def test_must_change_password_token_has_correct_purpose(client: AsyncClient) -> None:
+    """The password_change_token JWT carries purpose='password_change'."""
+    user = _user_must_change_password()
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    token = resp.json()["password_change_token"]
+    payload = _decode(token)
+    assert payload.get("purpose") == "password_change"
+
+
+@pytest.mark.asyncio
+async def test_must_change_password_token_sub_is_user_id(client: AsyncClient) -> None:
+    """The password_change_token sub claim equals the user's id."""
+    user = _user_must_change_password()
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    token = resp.json()["password_change_token"]
+    payload = _decode(token)
+    assert payload["sub"] == _FORCED_USER_ID
+
+
+@pytest.mark.asyncio
+async def test_normal_user_login_unaffected_by_flag(client: AsyncClient) -> None:
+    """Users with must_change_password=False get normal token response."""
+    user = _active_user()  # must_change_password defaults to False
+    with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
+        with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+            with patch(MOCK_VERIFY, return_value=True):
+                with patch(MOCK_CLEAR, new=AsyncMock()):
+                    resp = await client.post(LOGIN_URL, json=VALID_CREDS)
+    data = resp.json()
+    assert resp.status_code == 200
+    assert "access_token" in data
+    assert "password_change_required" not in data
+
+
+# --- POST /auth/change-password ---
+
+
+@pytest.mark.asyncio
+async def test_change_password_success_returns_200(client: AsyncClient) -> None:
+    """Valid password_change_token + matching passwords → 200 OK."""
+    token = create_password_change_token(_FORCED_USER_ID)
+    user = _user_must_change_password()
+    with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
+        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+            resp = await client.post(
+                CHANGE_PASSWORD_URL,
+                json={
+                    "password_change_token": token,
+                    "new_password": "NewSecure1!",
+                    "confirm_password": "NewSecure1!",
+                },
+            )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_change_password_returns_access_token(client: AsyncClient) -> None:
+    """Successful change returns access_token."""
+    token = create_password_change_token(_FORCED_USER_ID)
+    user = _user_must_change_password()
+    with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
+        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+            resp = await client.post(
+                CHANGE_PASSWORD_URL,
+                json={
+                    "password_change_token": token,
+                    "new_password": "NewSecure1!",
+                    "confirm_password": "NewSecure1!",
+                },
+            )
+    data = resp.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+
+
+@pytest.mark.asyncio
+async def test_change_password_clears_must_change_flag(client: AsyncClient) -> None:
+    """After successful change, must_change_password is False on the user object."""
+    token = create_password_change_token(_FORCED_USER_ID)
+    user = _user_must_change_password()
+    with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
+        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+            await client.post(
+                CHANGE_PASSWORD_URL,
+                json={
+                    "password_change_token": token,
+                    "new_password": "NewSecure1!",
+                    "confirm_password": "NewSecure1!",
+                },
+            )
+    assert user.must_change_password is False
+
+
+@pytest.mark.asyncio
+async def test_change_password_updates_hashed_password(client: AsyncClient) -> None:
+    """After successful change, user.hashed_password is updated to the new hash."""
+    token = create_password_change_token(_FORCED_USER_ID)
+    user = _user_must_change_password()
+    with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
+        with patch(MOCK_HASH, return_value="$2b$12$newhash") as mock_h:
+            await client.post(
+                CHANGE_PASSWORD_URL,
+                json={
+                    "password_change_token": token,
+                    "new_password": "NewSecure1!",
+                    "confirm_password": "NewSecure1!",
+                },
+            )
+    mock_h.assert_called_once_with("NewSecure1!")
+    assert user.hashed_password == "$2b$12$newhash"
+
+
+@pytest.mark.asyncio
+async def test_change_password_invalid_token_returns_401(client: AsyncClient) -> None:
+    """Garbage token string → 401."""
+    resp = await client.post(
+        CHANGE_PASSWORD_URL,
+        json={
+            "password_change_token": "not.a.valid.jwt",
+            "new_password": "NewSecure1!",
+            "confirm_password": "NewSecure1!",
+        },
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_change_password_wrong_purpose_token_returns_401(client: AsyncClient) -> None:
+    """An access token (purpose != 'password_change') → 401."""
+    from app.core.security import create_access_token as _cat
+    access_token = _cat({"sub": "analyst@mxtac.local", "role": "analyst"})
+    resp = await client.post(
+        CHANGE_PASSWORD_URL,
+        json={
+            "password_change_token": access_token,
+            "new_password": "NewSecure1!",
+            "confirm_password": "NewSecure1!",
+        },
+    )
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Invalid password change token"
+
+
+@pytest.mark.asyncio
+async def test_change_password_mismatched_passwords_returns_422(client: AsyncClient) -> None:
+    """new_password != confirm_password → 422 Unprocessable Entity."""
+    token = create_password_change_token(_FORCED_USER_ID)
+    resp = await client.post(
+        CHANGE_PASSWORD_URL,
+        json={
+            "password_change_token": token,
+            "new_password": "NewSecure1!",
+            "confirm_password": "DifferentPass!",
+        },
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_change_password_too_short_returns_422(client: AsyncClient) -> None:
+    """new_password below minimum length → 422 Unprocessable Entity."""
+    token = create_password_change_token(_FORCED_USER_ID)
+    resp = await client.post(
+        CHANGE_PASSWORD_URL,
+        json={
+            "password_change_token": token,
+            "new_password": "short",
+            "confirm_password": "short",
+        },
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_change_password_inactive_user_returns_401(client: AsyncClient) -> None:
+    """Valid token but user is inactive → 401."""
+    token = create_password_change_token(_FORCED_USER_ID)
+    inactive = User(
+        email="newuser@mxtac.local",
+        hashed_password="$2b$12$placeholder_not_used_in_tests",
+        role="analyst",
+        is_active=False,
+        must_change_password=True,
+    )
+    with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=inactive)):
+        resp = await client.post(
+            CHANGE_PASSWORD_URL,
+            json={
+                "password_change_token": token,
+                "new_password": "NewSecure1!",
+                "confirm_password": "NewSecure1!",
+            },
+        )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_change_password_unknown_user_returns_401(client: AsyncClient) -> None:
+    """Valid token but user not found in DB → 401."""
+    token = create_password_change_token(_FORCED_USER_ID)
+    with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=None)):
+        resp = await client.post(
+            CHANGE_PASSWORD_URL,
+            json={
+                "password_change_token": token,
+                "new_password": "NewSecure1!",
+                "confirm_password": "NewSecure1!",
+            },
+        )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_change_password_with_mfa_enabled_returns_mfa_token(client: AsyncClient) -> None:
+    """When user also has MFA enabled, change-password returns mfa_required + mfa_token."""
+    token = create_password_change_token(_FORCED_USER_ID)
+    user = _user_must_change_password(mfa_enabled=True)
+    with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
+        with patch(MOCK_HASH, return_value="$2b$12$newhash"):
+            resp = await client.post(
+                CHANGE_PASSWORD_URL,
+                json={
+                    "password_change_token": token,
+                    "new_password": "NewSecure1!",
+                    "confirm_password": "NewSecure1!",
+                },
+            )
+    data = resp.json()
+    assert resp.status_code == 200
+    assert data.get("mfa_required") is True
+    assert "mfa_token" in data
+
+
+@pytest.mark.asyncio
+async def test_change_password_missing_fields_returns_422(client: AsyncClient) -> None:
+    """Missing required fields → 422 Unprocessable Entity."""
+    token = create_password_change_token(_FORCED_USER_ID)
+    resp = await client.post(
+        CHANGE_PASSWORD_URL,
+        json={"password_change_token": token},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_change_password_get_method_not_allowed(client: AsyncClient) -> None:
+    """GET /auth/change-password is not defined → 405 Method Not Allowed."""
+    resp = await client.get(CHANGE_PASSWORD_URL)
+    assert resp.status_code == 405
