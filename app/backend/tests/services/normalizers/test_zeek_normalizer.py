@@ -2087,3 +2087,486 @@ def test_full_dns_extended_round_trip(
     assert traffic["answers"] == ["1.2.3.4", "5.6.7.8"]
     assert traffic["TTLs"] == [300.0, 300.0]
     assert traffic["rejected"] is False
+
+
+# ===========================================================================
+# Feature 7.9 — Zeek ssl → NetworkActivity (class_uid 4001): Extended Coverage
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# Full ssl_event fixture with all Zeek ssl.log fields
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def full_ssl_event() -> dict:
+    """Realistic Zeek ssl.log event with ALL fields populated."""
+    return {
+        "_log_type":                "ssl",
+        "ts":                       1708331400.0,
+        "uid":                      "SslFull001",
+        "id.orig_h":                "10.0.0.5",
+        "id.orig_p":                "54321",
+        "id.resp_h":                "203.0.113.50",
+        "id.resp_p":                "443",
+        "version":                  "TLSv13",
+        "cipher":                   "TLS_AES_256_GCM_SHA384",
+        "curve":                    "x25519",
+        "server_name":              "secure.example.com",
+        "resumed":                  False,
+        "next_protocol":            "h2",
+        "established":              True,
+        "ssl_history":              "Cc",
+        "cert_chain_fuids":         ["FuuidA", "FuuidB"],
+        "client_cert_chain_fuids":  ["FclientA"],
+        "subject":                  "CN=secure.example.com,O=Example Corp,C=US",
+        "issuer":                   "CN=Example CA,O=Example Corp,C=US",
+        "not_valid_before":         1700000000.0,
+        "not_valid_after":          1731535999.0,
+        "ja3":                      "abc123def456",
+        "ja3s":                     "789xyz012uvw",
+        "validation_status":        "ok",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: SSL endpoint port mapping
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ssl_src_endpoint_port(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """SSL source port (id.orig_p) maps to src_endpoint.port."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.src_endpoint.port == 54321
+
+
+def test_normalize_ssl_dst_endpoint_port(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """SSL destination port (id.resp_p) maps to dst_endpoint.port."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.dst_endpoint.port == 443
+
+
+def test_normalize_ssl_port_as_string_cast(normalizer: ZeekNormalizer) -> None:
+    """String ports in SSL events are safely cast to int."""
+    event = {
+        "_log_type":  "ssl",
+        "id.orig_p":  "12345",
+        "id.resp_p":  "443",
+    }
+    ocsf = normalizer.normalize(event)
+    assert ocsf.src_endpoint.port == 12345
+    assert ocsf.dst_endpoint.port == 443
+
+
+def test_normalize_ssl_invalid_port_is_none(normalizer: ZeekNormalizer) -> None:
+    """Non-numeric SSL port string maps to None without raising."""
+    event = {"_log_type": "ssl", "id.orig_p": "-", "id.resp_p": "N/A"}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.src_endpoint.port is None
+    assert ocsf.dst_endpoint.port is None
+
+
+def test_normalize_ssl_missing_ports_are_none(normalizer: ZeekNormalizer) -> None:
+    """Absent port fields default to None in SSL events."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.src_endpoint.port is None
+    assert ocsf.dst_endpoint.port is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: TLS curve
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ssl_curve(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """TLS elliptic curve (curve) is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["curve"] == "x25519"
+
+
+def test_normalize_ssl_curve_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent curve field defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["curve"] is None
+
+
+@pytest.mark.parametrize("curve", ["secp256r1", "secp384r1", "x25519", "x448"])
+def test_normalize_ssl_curve_variants(
+    normalizer: ZeekNormalizer, curve: str
+) -> None:
+    """Various TLS curves are preserved verbatim."""
+    event = {"_log_type": "ssl", "curve": curve}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["curve"] == curve
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: Session resumption
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ssl_resumed_false(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """resumed=False (new TLS session) is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["resumed"] is False
+
+
+def test_normalize_ssl_resumed_true(normalizer: ZeekNormalizer) -> None:
+    """resumed=True (session ticket/ID reuse) is preserved."""
+    event = {"_log_type": "ssl", "resumed": True}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["resumed"] is True
+
+
+def test_normalize_ssl_resumed_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent resumed field defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["resumed"] is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: ALPN next protocol
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ssl_next_protocol(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """next_protocol (ALPN) is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["next_protocol"] == "h2"
+
+
+def test_normalize_ssl_next_protocol_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent next_protocol defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["next_protocol"] is None
+
+
+@pytest.mark.parametrize("proto", ["h2", "http/1.1", "ftp", "smtp"])
+def test_normalize_ssl_next_protocol_variants(
+    normalizer: ZeekNormalizer, proto: str
+) -> None:
+    """Various ALPN protocols are preserved verbatim."""
+    event = {"_log_type": "ssl", "next_protocol": proto}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["next_protocol"] == proto
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: SSL history flags
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ssl_history(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """ssl_history flags are captured in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["ssl_history"] == "Cc"
+
+
+def test_normalize_ssl_history_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent ssl_history defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["ssl_history"] is None
+
+
+@pytest.mark.parametrize("history", ["Cc", "CcDd", "Ff", ""])
+def test_normalize_ssl_history_variants(
+    normalizer: ZeekNormalizer, history: str
+) -> None:
+    """Various ssl_history flag strings are stored verbatim."""
+    event = {"_log_type": "ssl", "ssl_history": history}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["ssl_history"] == history
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: Client certificate chain
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ssl_client_cert_chain(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """client_cert_chain_fuids maps to client_cert_chain in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["client_cert_chain"] == ["FclientA"]
+
+
+def test_normalize_ssl_client_cert_chain_none_when_absent(
+    normalizer: ZeekNormalizer,
+) -> None:
+    """Absent client_cert_chain_fuids defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["client_cert_chain"] is None
+
+
+def test_normalize_ssl_client_cert_chain_multiple(normalizer: ZeekNormalizer) -> None:
+    """Multiple client cert UIDs are preserved."""
+    event = {"_log_type": "ssl", "client_cert_chain_fuids": ["FA", "FB", "FC"]}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["client_cert_chain"] == ["FA", "FB", "FC"]
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: Certificate subject and issuer
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ssl_subject(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """Certificate subject DN is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["subject"] == "CN=secure.example.com,O=Example Corp,C=US"
+
+
+def test_normalize_ssl_subject_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent subject field defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["subject"] is None
+
+
+def test_normalize_ssl_issuer(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """Certificate issuer DN is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["issuer"] == "CN=Example CA,O=Example Corp,C=US"
+
+
+def test_normalize_ssl_issuer_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent issuer field defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["issuer"] is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: Certificate validity timestamps
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ssl_not_valid_before(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """Certificate not_valid_before timestamp is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["not_valid_before"] == 1700000000.0
+
+
+def test_normalize_ssl_not_valid_before_none_when_absent(
+    normalizer: ZeekNormalizer,
+) -> None:
+    """Absent not_valid_before defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["not_valid_before"] is None
+
+
+def test_normalize_ssl_not_valid_after(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """Certificate not_valid_after timestamp is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["not_valid_after"] == 1731535999.0
+
+
+def test_normalize_ssl_not_valid_after_none_when_absent(
+    normalizer: ZeekNormalizer,
+) -> None:
+    """Absent not_valid_after defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["not_valid_after"] is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: JA3 / JA3S fingerprints
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ssl_ja3(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """JA3 client fingerprint is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["ja3"] == "abc123def456"
+
+
+def test_normalize_ssl_ja3_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent ja3 defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["ja3"] is None
+
+
+def test_normalize_ssl_ja3s(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """JA3S server fingerprint is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["ja3s"] == "789xyz012uvw"
+
+
+def test_normalize_ssl_ja3s_none_when_absent(normalizer: ZeekNormalizer) -> None:
+    """Absent ja3s defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["ja3s"] is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: Certificate validation status
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ssl_validation_status_ok(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """validation_status='ok' is captured in network_traffic."""
+    ocsf = normalizer.normalize(full_ssl_event)
+    assert ocsf.network_traffic["validation_status"] == "ok"
+
+
+def test_normalize_ssl_validation_status_none_when_absent(
+    normalizer: ZeekNormalizer,
+) -> None:
+    """Absent validation_status defaults to None."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.network_traffic["validation_status"] is None
+
+
+@pytest.mark.parametrize("status", [
+    "ok",
+    "self signed certificate",
+    "certificate has expired",
+    "unable to get local issuer certificate",
+])
+def test_normalize_ssl_validation_status_variants(
+    normalizer: ZeekNormalizer, status: str
+) -> None:
+    """Various validation_status strings are preserved verbatim."""
+    event = {"_log_type": "ssl", "validation_status": status}
+    ocsf = normalizer.normalize(event)
+    assert ocsf.network_traffic["validation_status"] == status
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: Minimal SSL event — all optional fields absent
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_ssl_missing_all_optional_fields(normalizer: ZeekNormalizer) -> None:
+    """Minimal SSL event (only _log_type) produces valid OCSFEvent with None defaults."""
+    ocsf = normalizer.normalize({"_log_type": "ssl"})
+    assert ocsf.class_uid == 4001
+    assert ocsf.class_name == "Network Activity"
+    assert ocsf.src_endpoint.ip is None
+    assert ocsf.src_endpoint.port is None
+    assert ocsf.dst_endpoint.ip is None
+    assert ocsf.dst_endpoint.port is None
+    assert ocsf.dst_endpoint.hostname is None
+    nt = ocsf.network_traffic
+    assert nt["version"] is None
+    assert nt["cipher"] is None
+    assert nt["curve"] is None
+    assert nt["server_name"] is None
+    assert nt["established"] is None
+    assert nt["resumed"] is None
+    assert nt["next_protocol"] is None
+    assert nt["ssl_history"] is None
+    assert nt["cert_chain"] is None
+    assert nt["client_cert_chain"] is None
+    assert nt["subject"] is None
+    assert nt["issuer"] is None
+    assert nt["not_valid_before"] is None
+    assert nt["not_valid_after"] is None
+    assert nt["ja3"] is None
+    assert nt["ja3s"] is None
+    assert nt["validation_status"] is None
+
+
+# ---------------------------------------------------------------------------
+# Feature 7.9: Full round-trip with all extended TLS fields
+# ---------------------------------------------------------------------------
+
+
+def test_full_ssl_extended_round_trip(
+    normalizer: ZeekNormalizer, full_ssl_event: dict
+) -> None:
+    """End-to-end: ssl event with all extended fields → JSON-serializable OCSFEvent."""
+    ocsf = normalizer.normalize(full_ssl_event)
+
+    # Core OCSF classification
+    assert ocsf.class_uid == 4001
+    assert ocsf.class_name == "Network Activity"
+    assert ocsf.category_uid == 4
+    assert ocsf.metadata_product == "Zeek"
+    assert ocsf.metadata_uid == "SslFull001"
+    assert ocsf.severity_id == 1
+
+    # Endpoints with ports
+    assert ocsf.src_endpoint.ip == "10.0.0.5"
+    assert ocsf.src_endpoint.port == 54321
+    assert ocsf.dst_endpoint.ip == "203.0.113.50"
+    assert ocsf.dst_endpoint.port == 443
+    assert ocsf.dst_endpoint.hostname == "secure.example.com"
+
+    nt = ocsf.network_traffic
+
+    # Core TLS fields
+    assert nt["version"] == "TLSv13"
+    assert nt["cipher"] == "TLS_AES_256_GCM_SHA384"
+    assert nt["server_name"] == "secure.example.com"
+    assert nt["established"] is True
+
+    # Extended TLS fields
+    assert nt["curve"] == "x25519"
+    assert nt["resumed"] is False
+    assert nt["next_protocol"] == "h2"
+    assert nt["ssl_history"] == "Cc"
+    assert nt["cert_chain"] == ["FuuidA", "FuuidB"]
+    assert nt["client_cert_chain"] == ["FclientA"]
+    assert nt["subject"] == "CN=secure.example.com,O=Example Corp,C=US"
+    assert nt["issuer"] == "CN=Example CA,O=Example Corp,C=US"
+    assert nt["not_valid_before"] == 1700000000.0
+    assert nt["not_valid_after"] == 1731535999.0
+    assert nt["ja3"] == "abc123def456"
+    assert nt["ja3s"] == "789xyz012uvw"
+    assert nt["validation_status"] == "ok"
+
+    # Raw preserved
+    assert ocsf.raw["uid"] == "SslFull001"
+
+    # JSON serialisation must not raise
+    data = ocsf.model_dump(mode="json")
+    assert data["class_uid"] == 4001
+    assert data["class_name"] == "Network Activity"
+    assert data["src_endpoint"]["port"] == 54321
+    assert data["dst_endpoint"]["port"] == 443
+    assert data["dst_endpoint"]["hostname"] == "secure.example.com"
+    traffic = data["network_traffic"]
+    assert traffic["version"] == "TLSv13"
+    assert traffic["cipher"] == "TLS_AES_256_GCM_SHA384"
+    assert traffic["curve"] == "x25519"
+    assert traffic["server_name"] == "secure.example.com"
+    assert traffic["established"] is True
+    assert traffic["resumed"] is False
+    assert traffic["next_protocol"] == "h2"
+    assert traffic["ssl_history"] == "Cc"
+    assert traffic["cert_chain"] == ["FuuidA", "FuuidB"]
+    assert traffic["client_cert_chain"] == ["FclientA"]
+    assert traffic["subject"] == "CN=secure.example.com,O=Example Corp,C=US"
+    assert traffic["issuer"] == "CN=Example CA,O=Example Corp,C=US"
+    assert traffic["not_valid_before"] == 1700000000.0
+    assert traffic["not_valid_after"] == 1731535999.0
+    assert traffic["ja3"] == "abc123def456"
+    assert traffic["ja3s"] == "789xyz012uvw"
+    assert traffic["validation_status"] == "ok"
