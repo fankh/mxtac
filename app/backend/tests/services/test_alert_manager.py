@@ -2014,3 +2014,409 @@ async def test_process_same_host_different_rules_use_different_valkey_keys() -> 
     )
 
     await queue.stop()
+
+
+# ---------------------------------------------------------------------------
+# Section 13 — Feature 9.2: Dedup window — 5 minutes TTL (single instance)
+# ---------------------------------------------------------------------------
+#
+# Feature 9.2 defines the dedup window: the same (rule_id, host) pair is
+# suppressed for exactly 5 minutes (300 seconds) after its first occurrence.
+#
+# Implementation uses Valkey SET NX EX DEDUP_WINDOW_SECONDS.  In single-
+# instance deployments the Valkey keyspace acts as an in-process TTL dict:
+# the key is created on first alert, evicted automatically after 300 s, and
+# the next identical alert then starts a fresh 5-minute window.
+#
+# Tests in this section verify:
+#   - Window duration is exactly 5 minutes (5 * 60 seconds)
+#   - Valkey SET arguments: nx=True, ex=DEDUP_WINDOW_SECONDS, value="1"
+#   - All duplicates within the window are blocked (not just the second)
+#   - Windows are independent per (rule_id, host) pair — no cross-pair bleed
+#   - A new 5-minute window starts cleanly after the previous one expires
+#   - Blocked duplicates skip enrichment, scoring, publish, and persist
+#   - Fail-open on Valkey error is stateless (next call proceeds normally)
+#   - close() releases the Valkey connection to avoid resource leaks
+
+
+def test_dedup_window_constant_equals_five_times_sixty() -> None:
+    """DEDUP_WINDOW_SECONDS must equal 5 * 60 — exactly five minutes in seconds."""
+    assert DEDUP_WINDOW_SECONDS == 5 * 60
+
+
+@pytest.mark.asyncio
+async def test_dedup_window_valkey_set_uses_dedup_window_seconds_constant() -> None:
+    """_is_duplicate() must pass ex=DEDUP_WINDOW_SECONDS to Valkey SET.
+
+    The TTL argument must use the named constant — not a hardcoded integer —
+    so that a single constant change propagates to all SET calls automatically.
+    """
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+    sigma_alert = _make_sigma_alert()
+
+    captured_ex: list[int | None] = []
+
+    async def spy_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        captured_ex.append(ex)
+        return True
+
+    with patch.object(mgr._valkey, "set", side_effect=spy_set):
+        await mgr._is_duplicate(sigma_alert)
+
+    assert len(captured_ex) == 1
+    assert captured_ex[0] == DEDUP_WINDOW_SECONDS, (
+        f"Valkey SET ex= must equal DEDUP_WINDOW_SECONDS ({DEDUP_WINDOW_SECONDS}); "
+        f"got {captured_ex[0]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_dedup_window_valkey_set_uses_nx_true_and_value_one() -> None:
+    """_is_duplicate() must call Valkey SET with nx=True and value '1'.
+
+    nx=True ensures the atomic set-if-not-exists semantics that make the
+    dedup window work correctly.  Value '1' is the conventional presence marker.
+    """
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+    sigma_alert = _make_sigma_alert()
+
+    captured: list[dict] = []
+
+    async def spy_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        captured.append({"key": key, "value": value, "nx": nx, "ex": ex})
+        return True
+
+    with patch.object(mgr._valkey, "set", side_effect=spy_set):
+        await mgr._is_duplicate(sigma_alert)
+
+    assert len(captured) == 1
+    assert captured[0]["nx"] is True, "_is_duplicate() must use nx=True for atomic semantics"
+    assert captured[0]["value"] == "1", "_is_duplicate() must use value='1' as presence marker"
+
+
+@pytest.mark.asyncio
+async def test_dedup_window_blocks_all_duplicates_within_window() -> None:
+    """All repeated calls with the same (rule_id, host) within the window are blocked.
+
+    Simulates one new alert followed by four duplicates within the 5-min window.
+    Only the first call must be published; the remaining four must be dropped.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="srv-01")
+
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    total_calls = 5
+    # First call: new → True; remaining four: duplicates → None
+    set_returns = [True] + [None] * (total_calls - 1)
+    call_index = 0
+
+    async def mock_set(*args, **kwargs):
+        nonlocal call_index
+        rv = set_returns[call_index]
+        call_index += 1
+        return rv
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=mock_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        for _ in range(total_calls):
+            await mgr.process(alert_dict)
+
+    assert len(published) == 1, (
+        f"Only the first alert must be published; "
+        f"all {total_calls - 1} duplicates within the 5-min window must be blocked. "
+        f"Got {len(published)} published."
+    )
+    assert published[0][0] == Topic.ENRICHED
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_dedup_window_isolation_different_rules_same_host() -> None:
+    """Different rules on the same host have independent 5-minute windows.
+
+    Blocking rule_A on srv-01 must not prevent rule_B on srv-01 from being
+    published.  Each (rule_id, host) pair has its own independent TTL entry.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    published_rules: list[str] = []
+
+    async def capture(topic, msg):
+        published_rules.append(msg["rule_id"])
+
+    store: dict[str, str] = {}
+
+    async def shared_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        if nx and key in store:
+            return None
+        store[key] = value
+        return True
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=shared_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1059", host="srv-01"))  # new → accepted
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1059", host="srv-01"))  # dup → blocked
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1003", host="srv-01"))  # different rule → accepted
+
+    assert len(published_rules) == 2, (
+        "rule_A (first) and rule_B must each be published independently; "
+        "only rule_A's duplicate must be blocked"
+    )
+    assert "sigma-T1059" in published_rules
+    assert "sigma-T1003" in published_rules
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_dedup_window_isolation_same_rule_different_hosts() -> None:
+    """The same rule on different hosts has independent 5-minute windows.
+
+    Blocking the alert on srv-01 must not prevent the alert on dc-01 from
+    being published, even though they share the same rule_id.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    published_hosts: list[str] = []
+
+    async def capture(topic, msg):
+        published_hosts.append(msg["host"])
+
+    store: dict[str, str] = {}
+
+    async def shared_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        if nx and key in store:
+            return None
+        store[key] = value
+        return True
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=shared_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1059", host="srv-01"))  # new → accepted
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1059", host="srv-01"))  # dup → blocked
+        await mgr.process(_make_alert_dict(rule_id="sigma-T1059", host="dc-01"))   # different host → accepted
+
+    assert len(published_hosts) == 2, (
+        "srv-01 (first) and dc-01 must each be published; "
+        "only srv-01's duplicate must be blocked"
+    )
+    assert "srv-01" in published_hosts
+    assert "dc-01" in published_hosts
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_dedup_window_multiple_pairs_no_cross_interference() -> None:
+    """Three distinct (rule_id, host) pairs each get an independent window.
+
+    All three first occurrences must be published; none of their windows
+    interferes with the others.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    published_pairs: list[tuple[str, str]] = []
+
+    async def capture(topic, msg):
+        published_pairs.append((msg["rule_id"], msg["host"]))
+
+    store: dict[str, str] = {}
+
+    async def shared_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
+        if nx and key in store:
+            return None
+        store[key] = value
+        return True
+
+    pairs = [
+        ("sigma-T1059", "srv-01"),
+        ("sigma-T1003", "dc-01"),
+        ("sigma-T1566", "win-ws-01"),
+    ]
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=shared_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        for rule_id, host in pairs:
+            await mgr.process(_make_alert_dict(rule_id=rule_id, host=host))
+
+    assert len(published_pairs) == 3, (
+        "All three distinct (rule_id, host) pairs must be published with independent windows"
+    )
+    for pair in pairs:
+        assert pair in published_pairs, f"Pair {pair} was not published"
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_dedup_window_new_window_starts_fresh_after_expiry() -> None:
+    """After expiry a new independent 5-minute window starts from scratch.
+
+    Sequence:
+      #1 → new (window 1 starts)       → published
+      #2 → dup (within window 1)        → blocked
+      #3 → post-expiry (window 2 starts) → published
+      #4 → dup (within window 2)         → blocked
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict()
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    # window 1: new, dup; window 2: new, dup
+    set_returns = [True, None, True, None]
+    call_index = 0
+
+    async def mock_set(*args, **kwargs):
+        nonlocal call_index
+        rv = set_returns[call_index]
+        call_index += 1
+        return rv
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=mock_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)   # window 1: new → published
+        await mgr.process(alert_dict)   # window 1: dup → blocked
+        await mgr.process(alert_dict)   # window 2: new → published
+        await mgr.process(alert_dict)   # window 2: dup → blocked
+
+    assert len(published) == 2, (
+        "Calls #1 and #3 (start of each window) must be published; "
+        "calls #2 and #4 (duplicates within each window) must be blocked. "
+        f"Got {len(published)} published."
+    )
+    assert published[0][0] == Topic.ENRICHED
+    assert published[1][0] == Topic.ENRICHED
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_dedup_window_blocked_alert_skips_enrich_score_publish_persist() -> None:
+    """A duplicate alert must skip enrichment, scoring, publish, and persist entirely.
+
+    When the dedup window is active, process() must return immediately after
+    detecting the duplicate — no downstream processing must occur.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict()
+
+    with (
+        patch.object(mgr, "_is_duplicate", new=AsyncMock(return_value=True)),
+        patch.object(mgr, "_enrich", new=AsyncMock()) as mock_enrich,
+        patch.object(mgr, "_score", new=MagicMock()) as mock_score,
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()) as mock_persist,
+        patch.object(queue, "publish", new=AsyncMock()) as mock_publish,
+    ):
+        await mgr.process(alert_dict)
+
+    mock_enrich.assert_not_awaited()
+    mock_score.assert_not_called()
+    mock_persist.assert_not_awaited()
+    mock_publish.assert_not_awaited()
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_dedup_window_fail_open_is_stateless() -> None:
+    """Fail-open on Valkey error does not corrupt state for the next call.
+
+    When Valkey raises, _is_duplicate() returns False (let alert through).
+    The failure must be stateless — the immediately following Valkey call
+    must proceed normally and correctly block or allow the alert.
+    """
+    queue = InMemoryQueue()
+    await queue.start()
+
+    mgr = AlertManager(queue)
+    alert_dict = _make_alert_dict()
+    published: list[tuple] = []
+
+    async def capture(topic, msg):
+        published.append((topic, msg))
+
+    # Call 1: Valkey error → fail-open → alert allowed
+    # Call 2: Valkey OK (True) → new → alert allowed
+    responses: list = [ConnectionError("Valkey down"), True]
+    call_index = 0
+
+    async def mock_set(*args, **kwargs):
+        nonlocal call_index
+        rv = responses[call_index]
+        call_index += 1
+        if isinstance(rv, Exception):
+            raise rv
+        return rv
+
+    with (
+        patch.object(mgr._valkey, "set", side_effect=mock_set),
+        patch.object(mgr, "_persist_to_db", new=AsyncMock()),
+        patch.object(queue, "publish", side_effect=capture),
+    ):
+        await mgr.process(alert_dict)   # Valkey error → fail-open → published
+        await mgr.process(alert_dict)   # Valkey OK → new key → published
+
+    assert len(published) == 2, (
+        "Both alerts must be published: #1 via fail-open, #2 via successful Valkey SET. "
+        f"Got {len(published)}."
+    )
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_dedup_window_close_releases_valkey_connection() -> None:
+    """close() must call aclose() on the Valkey client to release the connection.
+
+    In single-instance deployments the AlertManager holds one Valkey connection.
+    close() must release it on shutdown to avoid connection leaks.
+    """
+    queue = InMemoryQueue()
+    mgr = AlertManager(queue)
+
+    mock_aclose = AsyncMock()
+    mgr._valkey.aclose = mock_aclose
+
+    await mgr.close()
+
+    mock_aclose.assert_awaited_once()
