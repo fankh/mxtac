@@ -1037,3 +1037,85 @@ class TestKafkaQueueIntegration:
         producer_bs = aiokafka.AIOKafkaProducer.call_args.kwargs["bootstrap_servers"]
         consumer_bs = aiokafka.AIOKafkaConsumer.call_args.kwargs["bootstrap_servers"]
         assert producer_bs == consumer_bs == "shared-broker:9092"
+
+
+# ── Drain ─────────────────────────────────────────────────────────────────────
+
+
+class TestKafkaQueueDrain:
+    """Tests for KafkaQueue.drain() — flushes the producer before exit."""
+
+    async def test_drain_without_start_does_not_raise(self) -> None:
+        """drain() with _producer=None must return immediately without raising."""
+        q = KafkaQueue("broker:9092")
+        await q.drain()  # _producer is None — must not raise
+
+    async def test_drain_is_no_op_when_producer_is_none(self) -> None:
+        """drain() without start() must not call flush on anything."""
+        q = KafkaQueue("broker:9092")
+        # If this reached any producer method it would AttributeError — must not
+        await q.drain()
+
+    async def test_drain_calls_producer_flush(self) -> None:
+        """drain() must call flush() on the producer."""
+        aiokafka, producer, _ = make_mock_aiokafka()
+        producer.flush = AsyncMock()
+        q = KafkaQueue("broker:9092")
+        with patch.dict(sys.modules, {"aiokafka": aiokafka}):
+            await q.start()
+        await q.drain()
+        producer.flush.assert_called_once()
+
+    async def test_drain_does_not_raise_on_timeout(self) -> None:
+        """When flush() takes longer than the timeout, drain() must not raise."""
+        aiokafka, producer, _ = make_mock_aiokafka()
+
+        async def slow_flush() -> None:
+            await asyncio.sleep(100)  # much longer than the test timeout
+
+        producer.flush = slow_flush
+        q = KafkaQueue("broker:9092")
+        with patch.dict(sys.modules, {"aiokafka": aiokafka}):
+            await q.start()
+        await q.drain(timeout=0.001)  # 1 ms — will time out, must not raise
+
+    async def test_drain_does_not_raise_on_flush_exception(self) -> None:
+        """Any exception from flush() is caught and logged; drain() must not raise."""
+        aiokafka, producer, _ = make_mock_aiokafka()
+        producer.flush = AsyncMock(side_effect=RuntimeError("broker unavailable"))
+        q = KafkaQueue("broker:9092")
+        with patch.dict(sys.modules, {"aiokafka": aiokafka}):
+            await q.start()
+        await q.drain()  # RuntimeError from flush is caught, must not propagate
+
+    async def test_drain_with_custom_timeout_does_not_raise(self) -> None:
+        """drain(timeout=N) is accepted and enforced without raising."""
+        aiokafka, producer, _ = make_mock_aiokafka()
+        producer.flush = AsyncMock()
+        q = KafkaQueue("broker:9092")
+        with patch.dict(sys.modules, {"aiokafka": aiokafka}):
+            await q.start()
+        await q.drain(timeout=5.0)  # custom timeout, flush completes immediately
+        producer.flush.assert_called_once()
+
+    async def test_drain_called_multiple_times_does_not_raise(self) -> None:
+        """drain() can be called repeatedly without error."""
+        aiokafka, producer, _ = make_mock_aiokafka()
+        producer.flush = AsyncMock()
+        q = KafkaQueue("broker:9092")
+        with patch.dict(sys.modules, {"aiokafka": aiokafka}):
+            await q.start()
+        await q.drain()
+        await q.drain()
+        assert producer.flush.call_count == 2
+
+    async def test_drain_after_stop_does_not_raise(self) -> None:
+        """drain() after stop() is safe even though producer may be stopped."""
+        aiokafka, producer, _ = make_mock_aiokafka()
+        producer.flush = AsyncMock()
+        q = KafkaQueue("broker:9092")
+        with patch.dict(sys.modules, {"aiokafka": aiokafka}):
+            await q.start()
+        await q.stop()
+        # _producer still exists on the object; drain should still call flush
+        await q.drain()  # must not raise
