@@ -27,6 +27,13 @@ class ConnectorRepo:
         return result.scalar_one_or_none()
 
     @staticmethod
+    async def get_by_name(session: AsyncSession, name: str) -> Connector | None:
+        result = await session.execute(
+            select(Connector).where(Connector.name == name)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
     async def create(session: AsyncSession, **kwargs) -> Connector:
         conn = Connector(**kwargs)
         session.add(conn)

@@ -193,6 +193,35 @@ async def validate_and_consume_oidc_state(state: str) -> str | None:
     return _oidc_state_store.pop(state, None)
 
 
+# ── Webhook source rate limiting ──────────────────────────────────────────────
+
+
+async def check_webhook_source_rate_limit(
+    source_name: str,
+    limit: int = 100,
+    window_secs: int = 60,
+) -> bool:
+    """Return True if the webhook request is within the rate limit, False if exceeded.
+
+    Rate-limits by request count per source name (100 req/min by default).
+    Uses a Valkey fixed-window counter shared across all API replicas so the
+    limit is enforced consistently in a horizontally-scaled deployment.
+
+    Falls back to allowing requests (fail-open) when Valkey is unavailable —
+    availability is preferred over strict enforcement during a Valkey outage.
+    """
+    try:
+        client = await get_valkey_client()
+        key = f"rate_limit:webhook:{source_name}"
+        current = await client.eval(_RATE_LIMIT_LUA, 1, key, 1, window_secs)
+        return int(current) <= limit
+    except Exception:
+        logger.debug(
+            "Valkey unavailable — skipping webhook rate limit for source=%s", source_name
+        )
+        return True  # fail-open: prefer availability over strict enforcement
+
+
 # ── Rule-change pub/sub ───────────────────────────────────────────────────────
 RULE_RELOAD_CHANNEL = "mxtac:rules:reload"
 

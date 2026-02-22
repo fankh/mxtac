@@ -235,13 +235,14 @@ class TestNormalizerPipelineTopics:
         assert any(Topic.RAW_SURICATA in name for name in task_names)
         await q.stop()
 
-    async def test_start_creates_exactly_three_subscriptions(self) -> None:
+    async def test_start_creates_exactly_five_subscriptions(self) -> None:
+        # wazuh + zeek + suricata + prowler + velociraptor = 5 raw topic subscriptions
         q = InMemoryQueue()
         await q.start()
         pipeline = NormalizerPipeline(q)
         await pipeline.start()
 
-        assert len(q._tasks) == 3
+        assert len(q._tasks) == 5
         await q.stop()
 
     async def test_wazuh_raw_event_published_to_normalized(self) -> None:
