@@ -23,7 +23,7 @@ Coverage:
   - update(): not found → returns None without flush
   - update(): None kwarg values are skipped
   - update(): False value (is_active=False) is not skipped
-  - delete(): found → deletes, flushes, returns True
+  - delete(): found → sets is_active=False, flushes, returns True (soft delete — no session.delete)
   - delete(): not found → returns False without delete/flush
   - count(): returns scalar result; None result → 0
 """
@@ -395,7 +395,7 @@ class TestUserRepoUpdate:
 
 
 class TestUserRepoDelete:
-    """UserRepo.delete() removes an existing User or returns False."""
+    """UserRepo.delete() soft-deletes (is_active=False) an existing User or returns False."""
 
     @pytest.mark.asyncio
     async def test_returns_true_when_found(self) -> None:
@@ -408,14 +408,14 @@ class TestUserRepoDelete:
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_calls_session_delete_when_found(self) -> None:
-        user = _make_user()
+    async def test_sets_is_active_false_when_found(self) -> None:
+        user = _make_user(is_active=True)
         session = _make_session()
 
         with patch.object(UserRepo, "get_by_id", new=AsyncMock(return_value=user)):
             await UserRepo.delete(session, "user-1")
 
-        session.delete.assert_awaited_once_with(user)
+        assert user.is_active is False
 
     @pytest.mark.asyncio
     async def test_calls_session_flush_when_found(self) -> None:
@@ -426,6 +426,17 @@ class TestUserRepoDelete:
             await UserRepo.delete(session, "user-1")
 
         session.flush.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_does_not_hard_delete_record(self) -> None:
+        """Soft delete must NOT call session.delete — record stays in the DB."""
+        user = _make_user()
+        session = _make_session()
+
+        with patch.object(UserRepo, "get_by_id", new=AsyncMock(return_value=user)):
+            await UserRepo.delete(session, "user-1")
+
+        session.delete.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_returns_false_when_not_found(self) -> None:

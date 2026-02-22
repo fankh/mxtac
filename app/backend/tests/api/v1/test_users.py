@@ -219,3 +219,17 @@ async def test_delete_user_success(client: AsyncClient, admin_headers: dict) -> 
     user_id = create_resp.json()["id"]
     resp = await client.delete(f"{BASE_URL}/{user_id}", headers=admin_headers)
     assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_delete_user_soft_delete(client: AsyncClient, admin_headers: dict) -> None:
+    """DELETE /users/{id} deactivates the user — record is still retrievable with is_active=False."""
+    with patch(_MOCK_HASH, return_value=_HASHED_PW):
+        create_resp = await client.post(BASE_URL, headers=admin_headers, json=_VALID_PAYLOAD)
+    user_id = create_resp.json()["id"]
+
+    await client.delete(f"{BASE_URL}/{user_id}", headers=admin_headers)
+
+    get_resp = await client.get(f"{BASE_URL}/{user_id}", headers=admin_headers)
+    assert get_resp.status_code == 200
+    assert get_resp.json()["is_active"] is False

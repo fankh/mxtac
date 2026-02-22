@@ -45,10 +45,11 @@ class UserRepo:
 
     @staticmethod
     async def delete(session: AsyncSession, user_id: str) -> bool:
+        """Soft-delete: set is_active=False. The record is retained in the DB."""
         user = await UserRepo.get_by_id(session, user_id)
         if not user:
             return False
-        await session.delete(user)
+        user.is_active = False
         await session.flush()
         return True
 
