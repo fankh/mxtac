@@ -1,4 +1,4 @@
-import type { CategoryInfo, PhaseInfo, Run, RunListResponse, Stats, Task, TaskListResponse } from "./types";
+import type { AgentsResponse, CategoryInfo, PhaseInfo, Run, RunListResponse, Stats, Task, TaskListResponse } from "./types";
 
 const BASE = "/api";
 
@@ -52,6 +52,9 @@ export const login = async (password: string): Promise<{ token: string }> => {
 
 // Stats
 export const getStats = () => fetchJson<Stats>("/stats");
+
+// Agents
+export const getAgents = () => fetchJson<AgentsResponse>("/agents");
 
 // Tasks
 export const getTasks = (params?: {

@@ -1,8 +1,14 @@
 "use client";
 
-import type { Stats } from "@/lib/types";
+import type { AgentInfo, Stats } from "@/lib/types";
 
-export function StatsBar({ stats }: { stats: Stats | null }) {
+export function StatsBar({
+  stats,
+  agents,
+}: {
+  stats: Stats | null;
+  agents?: AgentInfo[];
+}) {
   if (!stats) return null;
 
   const completed = stats.status_counts.completed || 0;
@@ -41,18 +47,24 @@ export function StatsBar({ stats }: { stats: Stats | null }) {
           <span className="text-xs text-gray-500">
             Active: {stats.executor.running_count}
           </span>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400">Scheduler:</span>
-            <span
-              className={`text-sm font-medium ${stats.scheduler.running ? (stats.scheduler.paused ? "text-yellow-400" : "text-green-400") : "text-red-400"}`}
-            >
-              {stats.scheduler.running
-                ? stats.scheduler.paused
-                  ? "Paused"
-                  : "Running"
-                : "Stopped"}
-            </span>
-          </div>
+          {agents && agents.length > 0 && (
+            <div className="flex items-center gap-3">
+              {agents.map((agent) => (
+                <div key={agent.name} className="flex items-center gap-1.5">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      agent.status === "running"
+                        ? "bg-green-400"
+                        : agent.status === "paused"
+                          ? "bg-yellow-400"
+                          : "bg-red-400"
+                    }`}
+                  />
+                  <span className="text-xs text-gray-400">{agent.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

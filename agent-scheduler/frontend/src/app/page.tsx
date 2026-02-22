@@ -5,9 +5,9 @@ import { StatsBar } from "@/components/StatsBar";
 import { TaskTable } from "@/components/TaskTable";
 import { useApi } from "@/hooks/useApi";
 import { useSSE } from "@/hooks/useSSE";
-import { getSchedulerSettings, getStats, getTasks } from "@/lib/api";
+import { getAgents, getSchedulerSettings, getStats, getTasks } from "@/lib/api";
 import type { SchedulerSettings } from "@/lib/api";
-import type { Stats, TaskListResponse } from "@/lib/types";
+import type { AgentsResponse, Stats, TaskListResponse } from "@/lib/types";
 
 export default function DashboardPage() {
   const [filters, setFilters] = useState<{
@@ -25,6 +25,11 @@ export default function DashboardPage() {
     data: stats,
     refetch: refetchStats,
   } = useApi<Stats>(() => getStats(), []);
+
+  const {
+    data: agentsData,
+    refetch: refetchAgents,
+  } = useApi<AgentsResponse>(() => getAgents(), []);
 
   const {
     data: taskData,
@@ -46,9 +51,10 @@ export default function DashboardPage() {
       if (event === "task_update" || event === "scheduler") {
         refetchStats();
         refetchTasks();
+        refetchAgents();
       }
     },
-    [refetchStats, refetchTasks]
+    [refetchStats, refetchTasks, refetchAgents]
   );
 
   const { connected } = useSSE(handleSSE);
@@ -73,7 +79,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <StatsBar stats={stats} />
+      <StatsBar stats={stats} agents={agentsData?.agents} />
 
       <div className="bg-gray-800/50 rounded-lg p-4">
         <h2 className="text-lg font-semibold text-white mb-3">Tasks</h2>

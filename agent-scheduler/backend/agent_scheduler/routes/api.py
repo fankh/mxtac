@@ -12,7 +12,7 @@ from ..config import settings
 from ..database import get_session
 from ..models import Run, RunStatus, Task, TaskStatus
 from ..executor import executor
-from ..scheduler import scheduler
+from ..scheduler import scheduler, retry_agent, watchdog_agent
 from ..task_loader import load_tasks_into_db, parse_yaml_directory, parse_yaml_tasks
 
 router = APIRouter(prefix="/api")
@@ -69,6 +69,19 @@ async def get_stats(session: AsyncSession = Depends(get_session)):
         "executor": {
             "running_count": executor.running_count,
         },
+    }
+
+
+# --- Agents ---
+
+@router.get("/agents")
+async def get_agents():
+    return {
+        "agents": [
+            scheduler.to_dict(),
+            retry_agent.to_dict(),
+            watchdog_agent.to_dict(),
+        ]
     }
 
 

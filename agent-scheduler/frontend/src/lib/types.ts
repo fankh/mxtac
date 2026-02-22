@@ -97,6 +97,19 @@ export interface CategoryInfo {
   tasks: Task[];
 }
 
+export interface AgentInfo {
+  name: string;
+  status: "running" | "paused" | "stopped";
+  interval_seconds: number;
+  description: string;
+  last_action: string | null;
+  action_count: number;
+}
+
+export interface AgentsResponse {
+  agents: AgentInfo[];
+}
+
 export interface TaskListResponse {
   tasks: Task[];
   total: number;
