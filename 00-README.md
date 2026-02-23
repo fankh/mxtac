@@ -306,3 +306,13 @@ MxTac represents a **well-engineered, production-viable security platform** that
 
 *Feasibility analysis conducted: 2026-01-18*
 *This is a conceptual project specification. Development has not yet begun.*
+
+---
+
+## API Versioning
+
+MxTac uses URL path versioning for all API endpoints (e.g., `/api/v1/`). This
+makes the active version explicit in every request and allows older clients to
+continue working while a new version is developed in parallel. When a new major
+version is released, the previous version will be supported for a transition
+period before being retired.
