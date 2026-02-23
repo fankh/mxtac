@@ -1,15 +1,20 @@
-"""Tests for secret_key production validation — feature 33.4.
+"""Tests for secret_key production validation — feature 33.4 / feature 30.3.
 
 The model_validator in app/core/config.py raises ValueError (surfaced as a
 Pydantic ValidationError) when ``secret_key`` is the development default AND
 ``debug`` is False.  This prevents the app from starting in production with
 an insecure, well-known key.
 
-Coverage:
+Coverage (feature 33.4):
   scenario 1 — debug=False  + default key  → raises on startup (ValidationError)
   scenario 2 — debug=True   + default key  → no error (dev mode is fine)
   scenario 3 — debug=False  + custom key   → no error (key is properly set)
   scenario 4 — debug=True   + custom key   → no error (redundant guard)
+
+Coverage (feature 30.3 — warning behaviour):
+  scenario 1 — debug=False  + default key  → production security WARNING is logged
+  scenario 2 — debug=True   + default key  → no production security WARNING logged
+  scenario 3 — custom key   (any debug)    → no WARNING logged at all
 """
 
 from __future__ import annotations
@@ -236,3 +241,116 @@ class TestSensitiveFieldsNotInOpenAPISchema:
         if len(settings.secret_key) > 8:
             assert settings.secret_key not in body
         assert settings.database_url not in body
+
+
+# ---------------------------------------------------------------------------
+# Feature 30.3 — secret_key warning behaviour
+# ---------------------------------------------------------------------------
+
+# The production security WARNING message contains the substring below.
+# The softer dev-mode reminder does NOT contain it.
+_PROD_WARNING_MARKER = "production mode"
+
+
+class TestSecretKeyWarningBehaviour:
+    """Verify that the correct warning is (or is not) emitted for each scenario.
+
+    The model_validator in Settings._post_init emits two distinct messages:
+      - Production (debug=False): "... development default in production mode ..."
+        followed by a ValueError — this is the critical security warning.
+      - Dev (debug=True):         "... Set a unique SECRET_KEY before deploying ..."
+        (softer reminder, no error).
+
+    Feature 30.3 scenarios:
+      1. debug=False + default key  → production security WARNING is logged
+      2. debug=True  + default key  → production security WARNING is NOT logged
+      3. custom key  (any debug)    → no WARNING is logged at all
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_config(self) -> None:
+        yield
+        import app.core.config as config_module
+        importlib.reload(config_module)
+
+    def _reload(self, monkeypatch, *, secret_key: str, debug: bool) -> None:
+        monkeypatch.setenv("SECRET_KEY", secret_key)
+        monkeypatch.setenv("DEBUG", "true" if debug else "false")
+        import app.core.config as config_module
+        importlib.reload(config_module)
+
+    # ------------------------------------------------------------------
+    # Scenario 1 — debug=False + default key → production WARNING logged
+    # ------------------------------------------------------------------
+
+    def test_production_default_key_logs_security_warning(
+        self, monkeypatch, caplog
+    ) -> None:
+        """debug=False + default key → WARNING containing 'production mode' is emitted."""
+        import logging
+
+        with pytest.raises(Exception):
+            with caplog.at_level(logging.WARNING, logger=_CONFIG_LOGGER):
+                self._reload(monkeypatch, secret_key=_DEV_SECRET, debug=False)
+
+        assert any(
+            _PROD_WARNING_MARKER in r.message for r in caplog.records
+        ), "Expected a WARNING mentioning 'production mode'"
+
+    # ------------------------------------------------------------------
+    # Scenario 2 — debug=True + default key → no production WARNING
+    # ------------------------------------------------------------------
+
+    def test_debug_default_key_no_production_warning(
+        self, monkeypatch, caplog
+    ) -> None:
+        """debug=True + default key → production security WARNING is NOT logged.
+
+        A softer dev-mode reminder may be emitted, but the critical
+        'production mode' message must be absent and no error is raised.
+        """
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger=_CONFIG_LOGGER):
+            self._reload(monkeypatch, secret_key=_DEV_SECRET, debug=True)
+
+        prod_warnings = [
+            r for r in caplog.records if _PROD_WARNING_MARKER in r.message
+        ]
+        assert prod_warnings == [], (
+            "Production security WARNING must not be logged in debug mode"
+        )
+
+    # ------------------------------------------------------------------
+    # Scenario 3 — custom key → no WARNING regardless of debug mode
+    # ------------------------------------------------------------------
+
+    def test_custom_key_production_mode_no_warning(
+        self, monkeypatch, caplog
+    ) -> None:
+        """debug=False + custom key → no WARNING is logged."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger=_CONFIG_LOGGER):
+            self._reload(
+                monkeypatch,
+                secret_key="a-very-strong-unique-production-secret-xyz",
+                debug=False,
+            )
+
+        assert caplog.records == [], "No WARNING should be logged with a custom key"
+
+    def test_custom_key_debug_mode_no_warning(
+        self, monkeypatch, caplog
+    ) -> None:
+        """debug=True + custom key → no WARNING is logged."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger=_CONFIG_LOGGER):
+            self._reload(
+                monkeypatch,
+                secret_key="a-very-strong-unique-production-secret-xyz",
+                debug=True,
+            )
+
+        assert caplog.records == [], "No WARNING should be logged with a custom key"

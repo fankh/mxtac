@@ -393,6 +393,168 @@ async def test_list_incidents_pagination_page_two(
     assert data["pagination"]["page"] == 2
 
 
+@pytest.mark.asyncio
+async def test_list_incidents_default_sort_created_at(
+    client: AsyncClient, analyst_headers: dict, db_session: AsyncSession
+) -> None:
+    """Default sort (created_at desc) is accepted and returns all items in correct shape.
+
+    Exact order is not asserted here because in-memory SQLite may assign the same
+    created_at timestamp to rows inserted in rapid succession.  The sort=severity
+    and sort=status tests cover ordering semantics with clearly distinct keys.
+    """
+    await _create_incident(client, analyst_headers, title="Alpha Incident")
+    await _create_incident(client, analyst_headers, title="Beta Incident")
+    await _create_incident(client, analyst_headers, title="Gamma Incident")
+
+    resp = await client.get("/api/v1/incidents?sort=created_at", headers=analyst_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pagination"]["total"] == 3
+    assert len(data["items"]) == 3
+    titles = {item["title"] for item in data["items"]}
+    assert titles == {"Alpha Incident", "Beta Incident", "Gamma Incident"}
+
+
+@pytest.mark.asyncio
+async def test_list_incidents_sort_by_severity(
+    client: AsyncClient, analyst_headers: dict
+) -> None:
+    """sort=severity returns critical → high → medium → low order."""
+    await _create_incident(client, analyst_headers, title="Low", severity="low")
+    await _create_incident(client, analyst_headers, title="Medium", severity="medium")
+    await _create_incident(client, analyst_headers, title="High", severity="high")
+    await _create_incident(client, analyst_headers, title="Critical", severity="critical")
+
+    resp = await client.get("/api/v1/incidents?sort=severity", headers=analyst_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    severities = [item["severity"] for item in data["items"]]
+    assert severities.index("critical") < severities.index("high")
+    assert severities.index("high") < severities.index("medium")
+    assert severities.index("medium") < severities.index("low")
+
+
+@pytest.mark.asyncio
+async def test_list_incidents_sort_by_status(
+    client: AsyncClient, analyst_headers: dict
+) -> None:
+    """sort=status returns new → investigating → contained → resolved → closed order."""
+    # Create incident and advance to 'investigating'
+    inc_inv = await _create_incident(client, analyst_headers, title="Investigating")
+    await client.patch(
+        f"/api/v1/incidents/{inc_inv}",
+        json={"status": "investigating"},
+        headers=analyst_headers,
+    )
+    # Create a second incident that stays 'new'
+    await _create_incident(client, analyst_headers, title="New")
+    # Advance third incident to 'resolved'
+    inc_res = await _create_incident(client, analyst_headers, title="Resolved")
+    await client.patch(
+        f"/api/v1/incidents/{inc_res}",
+        json={"status": "resolved"},
+        headers=analyst_headers,
+    )
+
+    resp = await client.get("/api/v1/incidents?sort=status", headers=analyst_headers)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    statuses = [item["status"] for item in data["items"]]
+    assert statuses.index("new") < statuses.index("investigating")
+    assert statuses.index("investigating") < statuses.index("resolved")
+
+
+@pytest.mark.asyncio
+async def test_list_incidents_filter_multiple_severities(
+    client: AsyncClient, analyst_headers: dict
+) -> None:
+    """Multiple severity values are OR-combined (critical + high returns both)."""
+    await _create_incident(client, analyst_headers, severity="critical")
+    await _create_incident(client, analyst_headers, severity="high")
+    await _create_incident(client, analyst_headers, severity="low")
+
+    resp = await client.get(
+        "/api/v1/incidents?severity=critical&severity=high", headers=analyst_headers
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pagination"]["total"] == 2
+    returned_severities = {item["severity"] for item in data["items"]}
+    assert returned_severities == {"critical", "high"}
+
+
+@pytest.mark.asyncio
+async def test_list_incidents_filter_multiple_statuses(
+    client: AsyncClient, analyst_headers: dict
+) -> None:
+    """Multiple status values are OR-combined."""
+    inc1 = await _create_incident(client, analyst_headers, title="New Inc")
+    inc2 = await _create_incident(client, analyst_headers, title="Investigating Inc")
+    await client.patch(
+        f"/api/v1/incidents/{inc2}",
+        json={"status": "investigating"},
+        headers=analyst_headers,
+    )
+    inc3 = await _create_incident(client, analyst_headers, title="Resolved Inc")
+    await client.patch(
+        f"/api/v1/incidents/{inc3}",
+        json={"status": "resolved"},
+        headers=analyst_headers,
+    )
+
+    resp = await client.get(
+        "/api/v1/incidents?status=new&status=investigating", headers=analyst_headers
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pagination"]["total"] == 2
+    returned_statuses = {item["status"] for item in data["items"]}
+    assert returned_statuses == {"new", "investigating"}
+
+
+@pytest.mark.asyncio
+async def test_list_incidents_search_description(
+    client: AsyncClient, analyst_headers: dict
+) -> None:
+    """search parameter matches incident description (not only title)."""
+    await _create_incident(
+        client,
+        analyst_headers,
+        title="Generic Incident",
+        description="Lateral movement via pass-the-hash technique detected on DC.",
+    )
+    await _create_incident(
+        client, analyst_headers, title="Another Incident", description="Normal activity."
+    )
+
+    resp = await client.get(
+        "/api/v1/incidents?search=pass-the-hash", headers=analyst_headers
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pagination"]["total"] == 1
+    assert data["items"][0]["title"] == "Generic Incident"
+
+
+@pytest.mark.asyncio
+async def test_list_incidents_invalid_sort_returns_422(
+    client: AsyncClient, analyst_headers: dict
+) -> None:
+    """Invalid sort field value returns 422."""
+    resp = await client.get(
+        "/api/v1/incidents?sort=invalid_field", headers=analyst_headers
+    )
+
+    assert resp.status_code == 422
+
+
 # ============================================================================
 # GET /incidents/{id} — DETAIL
 # ============================================================================
