@@ -365,7 +365,7 @@
 | 19.1 | Replace Redis → Valkey (BSD license) | `[x]` | `[ ]` | P0 | Task 0.1 — Valkey 8, `valkey[libvalkey]` |
 | 19.2 | `RedisStreamQueue` uses Valkey Streams | `[x]` | `[ ]` | P1 | Coded, not default |
 | 19.3 | `DistributedConnectionManager` — Valkey pub/sub | `[ ]` | `[ ]` | P1 | Task 3.1 |
-| 19.4 | Dedup cache via Valkey SETEX NX (atomic) | `[ ]` | `[ ]` | P1 | Task 3.2 |
+| 19.4 | Dedup cache via Valkey SETEX NX (atomic) | `[x]` | `[T]` | P1 | Task 3.2 — implemented in `alert_manager.py` (feature 9.3); 12 dedicated tests in `test_alert_manager.py` §15 |
 | 19.5 | `QUEUE_BACKEND=redis` as production default | `[x]` | `[x]` | P1 | docker-compose env var |
 | 19.6 | `GET /ready` checks all dependencies | `[x]` | `[ ]` | P0 | Task 0.3 — PostgreSQL, Valkey, OpenSearch |
 | 19.7 | Docker Swarm stack manifest | `[ ]` | `[ ]` | P1 | Task 3.3 |
