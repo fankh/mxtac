@@ -12,12 +12,25 @@ vi.mock('../../lib/api', () => ({
   authApi: {
     mfaDisable: vi.fn(),
   },
+  notificationChannelsApi: {
+    list:   vi.fn(),
+    get:    vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    test:   vi.fn(),
+  },
 }))
 
 vi.mock('../../components/layout/TopBar', () => ({
   TopBar: ({ crumb }: { crumb: string }) => (
     <header data-testid="topbar">{crumb}</header>
   ),
+}))
+
+// Stub NotificationsTab so Notifications tab tests don't need full API setup
+vi.mock('../../components/features/admin/NotificationsTab', () => ({
+  NotificationsTab: () => <div data-testid="notifications-tab">Notifications Content</div>,
 }))
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -891,6 +904,42 @@ describe('AdminPage', () => {
       fireEvent.click(btn)
 
       await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2))
+    })
+  })
+
+  // =========================================================================
+  // Notifications tab
+  // =========================================================================
+  describe('notifications tab', () => {
+    it('renders the "Notifications" tab button', () => {
+      renderPage()
+      expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument()
+    })
+
+    it('"Notifications" tab is inactive by default', () => {
+      renderPage()
+      const tab = screen.getByRole('button', { name: 'Notifications' })
+      expect(tab).not.toHaveClass('border-blue')
+    })
+
+    it('clicking "Notifications" renders NotificationsTab', () => {
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+      expect(screen.getByTestId('notifications-tab')).toBeInTheDocument()
+    })
+
+    it('clicking "Notifications" hides the users table', async () => {
+      mockGet.mockResolvedValue({ data: [makeUser()] })
+      renderPage()
+      await waitFor(() => expect(screen.getByText('System Admin')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+      expect(screen.queryByText('System Admin')).not.toBeInTheDocument()
+    })
+
+    it('"Notifications" tab becomes active when clicked', () => {
+      renderPage()
+      fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+      expect(screen.getByRole('button', { name: 'Notifications' })).toHaveClass('border-blue')
     })
   })
 })
