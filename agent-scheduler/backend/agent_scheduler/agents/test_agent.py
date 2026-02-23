@@ -138,6 +138,9 @@ class TestAgent(BaseAgent):
                         ):
                             t.quality_retry_count = (t.quality_retry_count or 0) + 1
                             t.status = TaskStatus.FAILED
+                            # Extract first failure line from output
+                            error_hint = (stdout + stderr).strip().split("\n")[-1][:200]
+                            t.failure_reason = f"Test failed: {tf} — {error_hint}"
                         await session.commit()
                         await session.refresh(t)
                         await sse_broadcaster.broadcast("task_update", t.to_dict())

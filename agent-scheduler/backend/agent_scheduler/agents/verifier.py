@@ -112,6 +112,10 @@ class VerifierAgent(BaseAgent):
                     ):
                         t.quality_retry_count = (t.quality_retry_count or 0) + 1
                         t.status = TaskStatus.FAILED
+                        # Record why verification failed
+                        failed_checks = [c for c in checks if not c["pass"]]
+                        reason_parts = [f"{c['check']}: {c.get('detail', 'failed')[:100]}" for c in failed_checks]
+                        t.failure_reason = f"Verification failed — {'; '.join(reason_parts)}"
 
                     await session.commit()
                     await session.refresh(t)

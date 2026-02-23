@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     scheduler_retry_max: int = 5
     scheduler_retry_backoff: int = 60  # base backoff in seconds
     scheduler_auto_start: bool = False
-    scheduler_quality_retry_max: int = 2  # max quality-failure retries
+    scheduler_quality_retry_max: int = 10  # max quality-failure retries
     scheduler_test_command: str = ""  # empty = disabled
     scheduler_test_timeout: int = 300  # 5 minutes
 

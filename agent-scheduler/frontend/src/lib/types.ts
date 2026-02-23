@@ -36,6 +36,7 @@ export interface Task {
   test_output: string | null;
   verification_status: string | null;
   verification_output: string | null;
+  failure_reason: string | null;
   created_at: string | null;
   updated_at: string | null;
 }

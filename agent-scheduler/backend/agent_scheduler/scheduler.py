@@ -318,6 +318,15 @@ class Scheduler:
                     task.retry_count += 1
                     if task.retry_count >= task.max_retries:
                         task.status = TaskStatus.FAILED
+                        reason = f"Execution failed after {task.retry_count}/{task.max_retries} attempts"
+                        if result.timed_out:
+                            reason += " (last: timeout)"
+                        elif result.exit_code != 0:
+                            # Extract first meaningful line from stdout/stderr
+                            error_hint = (result.stderr or result.stdout or "").strip().split("\n")[0][:200]
+                            if error_hint:
+                                reason += f" (last: {error_hint})"
+                        task.failure_reason = reason
                         logger.warning(
                             f"Task {task_db_id} failed permanently after "
                             f"{task.retry_count}/{task.max_retries} attempts"
@@ -325,7 +334,7 @@ class Scheduler:
                         log2 = Log(
                             run_id=run.id if run else None,
                             level="ERROR",
-                            message=f"Task failed after {task.retry_count} attempts",
+                            message=reason,
                         )
                         session.add(log2)
                     else:
@@ -484,6 +493,7 @@ class Scheduler:
             task.test_status = None
             task.test_output = None
             task.git_commit_sha = None
+            task.failure_reason = None
             await session.commit()
 
         asyncio.create_task(self._run_task(task_db_id))
@@ -496,6 +506,7 @@ class Scheduler:
             if task is None:
                 return False
             task.status = TaskStatus.SKIPPED
+            task.failure_reason = None
             await session.commit()
             await session.refresh(task)
             await sse_broadcaster.broadcast("task_update", task.to_dict())
@@ -515,6 +526,7 @@ class Scheduler:
             task.test_status = None
             task.test_output = None
             task.git_commit_sha = None
+            task.failure_reason = None
             await session.commit()
             await session.refresh(task)
             await sse_broadcaster.broadcast("task_update", task.to_dict())
@@ -527,6 +539,7 @@ class Scheduler:
             task = await session.get(Task, task_db_id)
             if task:
                 task.status = TaskStatus.CANCELLED
+                task.failure_reason = "Manually cancelled"
                 await session.commit()
                 await session.refresh(task)
                 await sse_broadcaster.broadcast("task_update", task.to_dict())
@@ -609,6 +622,7 @@ class RetryAgent:
                 task.test_status = None
                 task.test_output = None
                 task.git_commit_sha = None
+                task.failure_reason = None
                 reset_tasks.append(task)
 
             await session.commit()

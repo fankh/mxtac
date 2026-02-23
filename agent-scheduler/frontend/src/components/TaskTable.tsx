@@ -122,6 +122,7 @@ export function TaskTable({ tasks, total, phases, githubRepoUrl, onFilter }: Tas
               <tr
                 key={task.id}
                 className="border-b border-gray-800 hover:bg-gray-800/50 transition-colors"
+                title={task.failure_reason || undefined}
               >
                 <td className="py-2 px-3 text-gray-500 font-mono text-xs">
                   {task.task_id}
@@ -133,6 +134,11 @@ export function TaskTable({ tasks, total, phases, githubRepoUrl, onFilter }: Tas
                   >
                     {task.title}
                   </Link>
+                  {task.failure_reason && (
+                    <div className="text-xs text-red-400 mt-0.5 truncate max-w-md">
+                      {task.failure_reason}
+                    </div>
+                  )}
                 </td>
                 <td className="py-2 px-3 text-gray-400 text-xs">
                   {task.category || "-"}

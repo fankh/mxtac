@@ -63,6 +63,7 @@ class Task(Base):
     test_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     verification_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     verification_output: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
@@ -112,6 +113,7 @@ class Task(Base):
             "test_output": self.test_output,
             "verification_status": self.verification_status,
             "verification_output": self.verification_output,
+            "failure_reason": self.failure_reason,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

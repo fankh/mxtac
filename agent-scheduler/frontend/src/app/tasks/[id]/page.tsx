@@ -134,6 +134,14 @@ export default function TaskDetailPage({
                 </dd>
               </div>
             )}
+            {task.failure_reason && (
+              <div>
+                <dt className="text-gray-500">Failure Reason</dt>
+                <dd className="text-red-400 text-sm whitespace-pre-wrap">
+                  {task.failure_reason}
+                </dd>
+              </div>
+            )}
             {task.acceptance_criteria && (
               <div>
                 <dt className="text-gray-500">Acceptance Criteria</dt>
