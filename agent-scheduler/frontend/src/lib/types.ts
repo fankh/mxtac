@@ -154,3 +154,10 @@ export interface AgentRunInfo {
   items_processed: number;
   items_found: number;
 }
+
+export interface AgentRunListResponse {
+  runs: AgentRunInfo[];
+  total: number;
+  limit: number;
+  offset: number;
+}

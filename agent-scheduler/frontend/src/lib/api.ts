@@ -1,4 +1,4 @@
-import type { AgentRunInfo, AgentsResponse, CategoryInfo, PhaseInfo, Run, RunListResponse, Stats, Task, TaskListResponse } from "./types";
+import type { AgentRunInfo, AgentRunListResponse, AgentsResponse, CategoryInfo, PhaseInfo, Run, RunListResponse, Stats, Task, TaskListResponse } from "./types";
 
 const BASE = "/api";
 
@@ -180,4 +180,19 @@ export const getRuns = (params?: {
   if (params?.offset) sp.set("offset", String(params.offset));
   const qs = sp.toString();
   return fetchJson<RunListResponse>(`/runs${qs ? `?${qs}` : ""}`);
+};
+
+export const getAgentRunsList = (params?: {
+  agent_name?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}) => {
+  const sp = new URLSearchParams();
+  if (params?.agent_name) sp.set("agent_name", params.agent_name);
+  if (params?.status) sp.set("status", params.status);
+  if (params?.limit) sp.set("limit", String(params.limit));
+  if (params?.offset) sp.set("offset", String(params.offset));
+  const qs = sp.toString();
+  return fetchJson<AgentRunListResponse>(`/agent-runs${qs ? `?${qs}` : ""}`);
 };

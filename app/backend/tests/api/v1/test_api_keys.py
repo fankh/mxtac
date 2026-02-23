@@ -505,7 +505,7 @@ async def test_get_api_key_expired_key_rejected(client: AsyncClient) -> None:
     # get_by_raw_key already rejects expired keys and returns None
     with patch.object(APIKeyRepo, "get_by_raw_key", new=AsyncMock(return_value=None)):
         resp = await client.post(
-            "/api/v1/ingest/test",
+            "/api/v1/events/ingest/test",
             headers={"X-API-Key": "mxtac_expired"},
         )
     assert resp.status_code == 403
@@ -520,7 +520,7 @@ async def test_get_api_key_updates_last_used_at(client: AsyncClient) -> None:
     with patch.object(APIKeyRepo, "get_by_raw_key", new=AsyncMock(return_value=valid_key)):
         with patch.object(APIKeyRepo, "update_last_used", mock_update):
             await client.post(
-                "/api/v1/ingest/test",
+                "/api/v1/events/ingest/test",
                 headers={"X-API-Key": "mxtac_valid"},
             )
     mock_update.assert_awaited_once()
@@ -541,10 +541,10 @@ async def test_require_api_key_scope_none_scopes_passes(client: AsyncClient) -> 
     with patch.object(APIKeyRepo, "get_by_raw_key", new=AsyncMock(return_value=unrestricted_key)):
         with patch.object(APIKeyRepo, "update_last_used", new=AsyncMock()):
             resp = await client.post(
-                "/api/v1/ingest/test",
+                "/api/v1/events/ingest/test",
                 headers={"X-API-Key": "mxtac_unrestricted"},
             )
-    # /ingest/test uses get_api_key (no specific scope required), so we just
+    # /events/ingest/test uses get_api_key (no specific scope required), so we just
     # validate the key passes validation at all.
     assert resp.status_code == 200
 

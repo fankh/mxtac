@@ -341,6 +341,34 @@ async def list_runs(
     return {"runs": items, "total": total, "limit": limit, "offset": offset}
 
 
+@router.get("/agent-runs")
+async def list_agent_runs(
+    agent_name: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_session),
+):
+    query = select(AgentRun)
+    count_query = select(func.count()).select_from(AgentRun)
+
+    if agent_name:
+        query = query.where(AgentRun.agent_name == agent_name)
+        count_query = count_query.where(AgentRun.agent_name == agent_name)
+    if status:
+        query = query.where(AgentRun.status == status)
+        count_query = count_query.where(AgentRun.status == status)
+
+    total_result = await session.execute(count_query)
+    total = total_result.scalar()
+
+    query = query.order_by(AgentRun.started_at.desc()).offset(offset).limit(limit)
+    result = await session.execute(query)
+    runs = result.scalars().all()
+
+    return {"runs": [r.to_dict() for r in runs], "total": total, "limit": limit, "offset": offset}
+
+
 # --- Task Actions ---
 
 @router.post("/tasks/{task_db_id}/trigger")
