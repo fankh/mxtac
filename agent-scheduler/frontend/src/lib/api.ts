@@ -119,6 +119,7 @@ export interface SchedulerSettings {
   test_command: string;
   test_timeout: number;
   quality_retry_max: number;
+  task_creator_interval: number;
 }
 
 export const getSchedulerSettings = () =>
@@ -141,6 +142,7 @@ export const updateSchedulerSettings = (settings: {
   test_command?: string;
   test_timeout?: number;
   quality_retry_max?: number;
+  task_creator_interval?: number;
 }) =>
   fetchJson("/scheduler/settings", {
     method: "PUT",

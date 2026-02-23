@@ -40,6 +40,7 @@ class SchedulerSettingsUpdate(BaseModel):
     test_command: Optional[str] = None
     test_timeout: Optional[int] = None
     quality_retry_max: Optional[int] = None
+    task_creator_interval: Optional[int] = None
 
 
 # --- Stats ---
@@ -339,6 +340,7 @@ async def get_scheduler_settings():
         "test_command": settings.scheduler_test_command,
         "test_timeout": settings.scheduler_test_timeout,
         "quality_retry_max": settings.scheduler_quality_retry_max,
+        "task_creator_interval": settings.agent_task_creator_interval,
     }
 
 
@@ -364,6 +366,8 @@ async def update_scheduler_settings(req: SchedulerSettingsUpdate):
         settings.scheduler_test_timeout = req.test_timeout
     if req.quality_retry_max is not None:
         settings.scheduler_quality_retry_max = req.quality_retry_max
+    if req.task_creator_interval is not None:
+        settings.agent_task_creator_interval = req.task_creator_interval
     return {"status": "updated"}
 
 

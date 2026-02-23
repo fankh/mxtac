@@ -45,7 +45,7 @@ class Settings(BaseSettings):
 
     # TaskCreatorAgent (P0)
     agent_task_creator_enabled: bool = True
-    agent_task_creator_interval: int = 3600  # 1 hour
+    agent_task_creator_interval: int = 300  # 5 minutes
     agent_task_creator_max_tasks_per_cycle: int = 20
     agent_task_creator_use_claude: bool = True
 
