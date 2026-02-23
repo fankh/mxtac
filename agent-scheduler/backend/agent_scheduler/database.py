@@ -37,6 +37,7 @@ async def _ensure_columns():
         ("tasks", "test_output", "TEXT"),
         ("tasks", "verification_status", "VARCHAR(20)"),
         ("tasks", "verification_output", "TEXT"),
+        ("tasks", "quality_retry_count", "INTEGER DEFAULT 0"),
     ]
     async with engine.begin() as conn:
         for table, column, col_type in migrations:

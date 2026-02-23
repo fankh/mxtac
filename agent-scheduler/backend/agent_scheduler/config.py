@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     scheduler_retry_max: int = 5
     scheduler_retry_backoff: int = 60  # base backoff in seconds
     scheduler_auto_start: bool = False
+    scheduler_quality_retry_max: int = 2  # max quality-failure retries
     scheduler_test_command: str = ""  # empty = disabled
     scheduler_test_timeout: int = 300  # 5 minutes
 
@@ -53,11 +54,12 @@ class Settings(BaseSettings):
     agent_verifier_interval: int = 180  # 3 minutes
     agent_verifier_max_per_cycle: int = 3
     agent_verifier_use_claude: bool = True
-    agent_verifier_fail_action: str = "mark"  # "mark" or "reset"
+    agent_verifier_fail_action: str = "reset"  # "mark" or "reset"
 
     # TestAgent (P1)
     agent_test_enabled: bool = False
     agent_test_interval: int = 300  # 5 minutes
+    agent_test_fail_action: str = "reset"  # "mark" or "reset"
     agent_test_full_suite_every: int = 6  # run full suite every Nth cycle
     agent_test_timeout: int = 300
 

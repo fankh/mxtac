@@ -129,6 +129,15 @@ class TestAgent(BaseAgent):
                     if t:
                         t.test_status = "passed" if passed else "failed"
                         t.test_output = (stdout + stderr)[-10000:]
+                        # If test failed and fail_action="reset", mark FAILED for RetryAgent
+                        # Only if task is still COMPLETED (not already FAILED by verifier)
+                        if (
+                            not passed
+                            and settings.agent_test_fail_action == "reset"
+                            and t.status == TaskStatus.COMPLETED
+                        ):
+                            t.quality_retry_count = (t.quality_retry_count or 0) + 1
+                            t.status = TaskStatus.FAILED
                         await session.commit()
                         await session.refresh(t)
                         await sse_broadcaster.broadcast("task_update", t.to_dict())

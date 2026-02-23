@@ -3,6 +3,8 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TestBadge } from "@/components/TestBadge";
+import { VerificationBadge } from "@/components/VerificationBadge";
 import { useApi } from "@/hooks/useApi";
 import { useSSE } from "@/hooks/useSSE";
 import { getRuns } from "@/lib/api";
@@ -107,6 +109,8 @@ export default function HistoryPage() {
                 <th className="px-4 py-3 font-medium">Task</th>
                 <th className="px-4 py-3 font-medium">Phase</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Verify</th>
+                <th className="px-4 py-3 font-medium">Test</th>
                 <th className="px-4 py-3 font-medium">Duration</th>
                 <th className="px-4 py-3 font-medium">Started</th>
                 <th className="px-4 py-3 font-medium">Exit</th>
@@ -144,6 +148,12 @@ export default function HistoryPage() {
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={run.status as RunStatus} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <VerificationBadge status={run.verification_status} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <TestBadge status={run.test_status} />
                   </td>
                   <td className="px-4 py-3 text-gray-400">
                     {run.duration_seconds != null

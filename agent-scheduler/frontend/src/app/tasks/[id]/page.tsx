@@ -126,6 +126,14 @@ export default function TaskDetailPage({
                 )}
               </dd>
             </div>
+            {task.quality_retry_count > 0 && (
+              <div>
+                <dt className="text-gray-500">Quality Retries</dt>
+                <dd className="text-yellow-400 font-medium">
+                  {task.quality_retry_count}
+                </dd>
+              </div>
+            )}
             {task.acceptance_criteria && (
               <div>
                 <dt className="text-gray-500">Acceptance Criteria</dt>

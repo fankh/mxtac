@@ -1,0 +1,148 @@
+tasks:
+  - task_id: mxtac-39.2a
+    title: "[P1] Project config files (TASK-0.5.2a)"
+    category: documentation
+    phase: "0.5"
+    priority: 3
+    prompt: |
+      You are implementing features for MxTac, a MITRE ATT&CK security platform.
+
+      Project root: /home/khchoi/development/new-research/mitre-attack/mxtac
+      Task: TASK-0.5.2a — Project Configuration Files
+
+      IMPORTANT: No changes to .github/ directory.
+
+      Steps:
+      1. Read these input files first:
+         - 00-README.md
+
+      2. Create .editorconfig at repo root with:
+         - root = true
+         - indent_style = space
+         - indent_size = 2 for ts, tsx, js, json, yaml, yml, html, css
+         - indent_size = 4 for py
+         - end_of_line = lf
+         - charset = utf-8
+         - trim_trailing_whitespace = true
+         - insert_final_newline = true
+
+      3. Create app/frontend/.prettierrc with sensible defaults:
+         - semi: true
+         - singleQuote: true
+         - trailingComma: "es5"
+         - printWidth: 100
+         - tabWidth: 2
+
+      Acceptance criteria:
+      - .editorconfig exists at repo root and enforces consistent formatting
+      - app/frontend/.prettierrc exists with valid JSON
+    working_directory: /home/khchoi/development/new-research/mitre-attack/mxtac
+    target_files: [".editorconfig", "app/frontend/.prettierrc"]
+    acceptance_criteria: ".editorconfig and .prettierrc exist with correct settings"
+    max_retries: 3
+
+  - task_id: mxtac-39.2b
+    title: "[P1] CHANGELOG and ENV reference docs (TASK-0.5.2b)"
+    category: documentation
+    phase: "0.5"
+    priority: 3
+    prompt: |
+      You are implementing features for MxTac, a MITRE ATT&CK security platform.
+
+      Project root: /home/khchoi/development/new-research/mitre-attack/mxtac
+      Task: TASK-0.5.2b — CHANGELOG and ENV Reference Documentation
+
+      IMPORTANT: No changes to .github/ directory.
+
+      Steps:
+      1. Read all .env.example files in the project to understand every environment variable.
+         Search recursively: find all files named .env.example or .env.sample
+
+      2. Create CHANGELOG.md at repo root using "Keep a Changelog" format:
+         - Header: "# Changelog"
+         - Format reference: https://keepachangelog.com/en/1.0.0/
+         - Add a single entry for v2.0.0-alpha with sections: Added, Changed
+         - Under "Added", list the major components: detection engine, agent scheduler, frontend dashboard
+         - Keep it concise (under 30 lines)
+
+      3. Create ENV-REFERENCE.md at repo root:
+         - Document every environment variable found across all components
+         - Group by component (backend, frontend, agent-scheduler, etc.)
+         - For each var: name, description, default value, required/optional
+         - Use a markdown table format
+
+      Acceptance criteria:
+      - CHANGELOG.md exists at repo root in Keep a Changelog format
+      - ENV-REFERENCE.md documents every env var in the project grouped by component
+    working_directory: /home/khchoi/development/new-research/mitre-attack/mxtac
+    target_files: ["CHANGELOG.md", "ENV-REFERENCE.md"]
+    acceptance_criteria: "CHANGELOG.md and ENV-REFERENCE.md exist and are comprehensive"
+    max_retries: 3
+
+  - task_id: mxtac-39.2c
+    title: "[P1] LICENSE file (TASK-0.5.2c)"
+    category: documentation
+    phase: "0.5"
+    priority: 3
+    prompt: |
+      You are implementing features for MxTac, a MITRE ATT&CK security platform.
+
+      Project root: /home/khchoi/development/new-research/mitre-attack/mxtac
+      Task: TASK-0.5.2c — Add LICENSE file
+
+      Create a LICENSE file at the repo root.
+      Use AGPL-3.0-or-later.
+
+      IMPORTANT: Do NOT write the full license text yourself. Instead, run this command
+      to download the official AGPL-3.0 text:
+
+      curl -sL https://www.gnu.org/licenses/agpl-3.0.txt > LICENSE
+
+      Then verify the file starts with "GNU AFFERO GENERAL PUBLIC LICENSE".
+
+      Update the copyright line at the top if present to:
+      Copyright (C) 2024-2026 MxTac Contributors
+
+      Acceptance criteria:
+      - LICENSE file exists at repo root
+      - Contains AGPL-3.0 text
+    working_directory: /home/khchoi/development/new-research/mitre-attack/mxtac
+    target_files: ["LICENSE"]
+    acceptance_criteria: "LICENSE file exists with AGPL-3.0 content"
+    max_retries: 3
+
+  - task_id: mxtac-39.2d
+    title: "[P1] Project governance readme (TASK-0.5.2d)"
+    category: documentation
+    phase: "0.5"
+    priority: 3
+    prompt: |
+      You are implementing features for MxTac, a MITRE ATT&CK security platform.
+
+      Project root: /home/khchoi/development/new-research/mitre-attack/mxtac
+      Task: TASK-0.5.2d — Project Governance Docs
+
+      IMPORTANT: No changes to .github/ directory.
+
+      Steps:
+      1. Read 00-README.md and 11-CONTRIBUTING.md first.
+
+      2. Create SECURITY.md at repo root. Keep it short and professional:
+         - Title: "# Reporting Issues"
+         - A short paragraph explaining how to report bugs or concerns
+         - Email: fankh111@gmail.com
+         - Supported versions table (v2.x = supported, v1.x = not supported)
+         - Do NOT include any technical exploitation details or vulnerability examples
+         - Keep the entire file under 30 lines
+
+      3. Add an "API Versioning" section to the existing docs (append to 00-README.md):
+         - Brief section explaining the API uses URL path versioning (/api/v1/)
+         - 3-4 sentences max
+
+      Acceptance criteria:
+      - SECURITY.md exists at repo root (short, professional)
+      - 00-README.md has API versioning section
+    working_directory: /home/khchoi/development/new-research/mitre-attack/mxtac
+    target_files: ["SECURITY.md", "00-README.md"]
+    acceptance_criteria: "SECURITY.md exists; 00-README.md has API versioning section"
+    max_retries: 3

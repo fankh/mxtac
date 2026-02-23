@@ -104,7 +104,13 @@ class VerifierAgent(BaseAgent):
                     t.verification_output = verification_output
 
                     # 4. If fail_action="reset" and verification fails, reset to FAILED
-                    if not all_pass and settings.agent_verifier_fail_action == "reset":
+                    # Only if task is still COMPLETED (not already FAILED by another agent)
+                    if (
+                        not all_pass
+                        and settings.agent_verifier_fail_action == "reset"
+                        and t.status == TaskStatus.COMPLETED
+                    ):
+                        t.quality_retry_count = (t.quality_retry_count or 0) + 1
                         t.status = TaskStatus.FAILED
 
                     await session.commit()

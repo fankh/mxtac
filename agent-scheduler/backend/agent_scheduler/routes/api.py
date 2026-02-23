@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ..agents import ALL_NEW_AGENTS, get_agent_by_name
+from ..agents import ALL_NEW_AGENTS, get_agent_by_name, get_enabled_agents
 from ..config import settings
 from ..database import get_session
 from ..models import AgentRun, Run, RunStatus, Task, TaskStatus
@@ -224,6 +224,9 @@ async def list_runs(
         d["task_title"] = r.task.title if r.task else ""
         d["task_task_id"] = r.task.task_id if r.task else ""
         d["task_phase"] = r.task.phase if r.task else ""
+        d["verification_status"] = r.task.verification_status if r.task else None
+        d["test_status"] = r.task.test_status if r.task else None
+        d["quality_retry_count"] = r.task.quality_retry_count if r.task else 0
         items.append(d)
 
     return {"runs": items, "total": total, "limit": limit, "offset": offset}
@@ -286,17 +289,25 @@ async def load_tasks(req: TaskLoadRequest):
 
 @router.post("/scheduler/control")
 async def scheduler_control(req: SchedulerControlRequest):
-    actions = {
-        "start": scheduler.start,
-        "stop": scheduler.stop,
-        "pause": scheduler.pause,
-        "resume": scheduler.resume,
-    }
-    action_fn = actions.get(req.action)
-    if action_fn is None:
+    if req.action == "start":
+        await scheduler.start()
+        await retry_agent.start()
+        await watchdog_agent.start()
+        for agent in get_enabled_agents():
+            await agent.start()
+    elif req.action == "stop":
+        await scheduler.stop()
+        await retry_agent.stop()
+        await watchdog_agent.stop()
+        for agent in ALL_NEW_AGENTS:
+            await agent.stop()
+    elif req.action == "pause":
+        await scheduler.pause()
+    elif req.action == "resume":
+        await scheduler.resume()
+    else:
         raise HTTPException(status_code=400, detail=f"Unknown action: {req.action}")
 
-    await action_fn()
     return {
         "status": "ok",
         "scheduler": {

@@ -478,6 +478,12 @@ class Scheduler:
                 return False
             task.status = TaskStatus.PENDING
             task.retry_count = 0
+            task.quality_retry_count = 0
+            task.verification_status = None
+            task.verification_output = None
+            task.test_status = None
+            task.test_output = None
+            task.git_commit_sha = None
             await session.commit()
 
         asyncio.create_task(self._run_task(task_db_id))
@@ -503,6 +509,12 @@ class Scheduler:
                 return False
             task.status = TaskStatus.PENDING
             task.retry_count = 0
+            task.quality_retry_count = 0
+            task.verification_status = None
+            task.verification_output = None
+            task.test_status = None
+            task.test_output = None
+            task.git_commit_sha = None
             await session.commit()
             await session.refresh(task)
             await sse_broadcaster.broadcast("task_update", task.to_dict())
@@ -586,17 +598,25 @@ class RetryAgent:
             if not failed_tasks:
                 return
 
-            count = 0
+            reset_tasks = []
             for task in failed_tasks:
+                if (task.quality_retry_count or 0) >= settings.scheduler_quality_retry_max:
+                    continue  # permanently failed, skip
                 task.status = TaskStatus.PENDING
                 task.retry_count = 0
-                count += 1
+                task.verification_status = None
+                task.verification_output = None
+                task.test_status = None
+                task.test_output = None
+                task.git_commit_sha = None
+                reset_tasks.append(task)
 
             await session.commit()
-            logger.info("RetryAgent reset %d failed tasks to PENDING", count)
+            if reset_tasks:
+                logger.info("RetryAgent reset %d failed tasks to PENDING", len(reset_tasks))
 
             # Broadcast updates so the frontend reflects the changes
-            for task in failed_tasks:
+            for task in reset_tasks:
                 await session.refresh(task)
                 await sse_broadcaster.broadcast("task_update", task.to_dict())
 
@@ -709,8 +729,20 @@ class WatchdogAgent:
             "percent": round(pct, 1),
         })
 
-        # Auto-stop when all work is finished (nothing pending or running)
-        if pending == 0 and running == 0:
+        # Check for retriable failed tasks and tasks mid-verification/testing
+        retriable_failed = sum(
+            1 for t in all_tasks
+            if t.status == TaskStatus.FAILED
+            and (t.quality_retry_count or 0) < settings.scheduler_quality_retry_max
+        )
+        mid_quality = sum(
+            1 for t in all_tasks
+            if t.verification_status == "verifying"
+            or t.test_status == "testing"
+        )
+
+        # Auto-stop when all work is finished (nothing pending, running, retriable, or mid-quality)
+        if pending == 0 and running == 0 and retriable_failed == 0 and mid_quality == 0:
             logger.info(
                 "Watchdog: All tasks finished (%d completed, %d failed, %d skipped, %d cancelled). "
                 "Stopping scheduler.",

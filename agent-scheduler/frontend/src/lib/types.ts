@@ -27,6 +27,7 @@ export interface Task {
   target_files: string[];
   acceptance_criteria: string;
   retry_count: number;
+  quality_retry_count: number;
   max_retries: number;
   git_commit_sha: string | null;
   model: string | null;
@@ -129,6 +130,9 @@ export interface RunWithTask extends Run {
   task_title: string;
   task_task_id: string;
   task_phase: string;
+  verification_status: string | null;
+  test_status: string | null;
+  quality_retry_count: number;
 }
 
 export interface RunListResponse {

@@ -54,6 +54,7 @@ class Task(Base):
     target_files: Mapped[str] = mapped_column(Text, default="[]")  # JSON list
     acceptance_criteria: Mapped[str] = mapped_column(Text, default="")
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    quality_retry_count: Mapped[int] = mapped_column(Integer, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, default=3)
     git_commit_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
     model: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -102,6 +103,7 @@ class Task(Base):
             "target_files": self.target_files_list,
             "acceptance_criteria": self.acceptance_criteria,
             "retry_count": self.retry_count,
+            "quality_retry_count": self.quality_retry_count,
             "max_retries": self.max_retries,
             "git_commit_sha": self.git_commit_sha,
             "model": self.model,
