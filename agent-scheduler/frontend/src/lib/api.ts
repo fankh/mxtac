@@ -59,6 +59,12 @@ export const getAgents = () => fetchJson<AgentsResponse>("/agents");
 export const triggerAgent = (name: string) =>
   fetchJson(`/agents/${name}/trigger`, { method: "POST" });
 
+export const updateAgentInterval = (name: string, interval: number) =>
+  fetchJson(`/agents/${name}/interval`, {
+    method: "PUT",
+    body: JSON.stringify({ interval }),
+  });
+
 export const getAgentRuns = (name: string, limit = 20) =>
   fetchJson<AgentRunInfo[]>(`/agents/${name}/runs?limit=${limit}`);
 
@@ -119,7 +125,6 @@ export interface SchedulerSettings {
   test_command: string;
   test_timeout: number;
   quality_retry_max: number;
-  task_creator_interval: number;
 }
 
 export const getSchedulerSettings = () =>
@@ -142,7 +147,6 @@ export const updateSchedulerSettings = (settings: {
   test_command?: string;
   test_timeout?: number;
   quality_retry_max?: number;
-  task_creator_interval?: number;
 }) =>
   fetchJson("/scheduler/settings", {
     method: "PUT",

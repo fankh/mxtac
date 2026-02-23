@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { useApi } from "@/hooks/useApi";
 import { useSSE } from "@/hooks/useSSE";
-import { getAgents, triggerAgent, getAgentRuns } from "@/lib/api";
+import { getAgents, triggerAgent, getAgentRuns, updateAgentInterval } from "@/lib/api";
 import type { AgentInfo, AgentRunInfo, AgentsResponse } from "@/lib/types";
 
 // New agents that support trigger + run history
@@ -68,6 +68,8 @@ export default function AgentsPage() {
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
   const [agentRuns, setAgentRuns] = useState<Record<string, AgentRunInfo[]>>({});
   const [loadingRuns, setLoadingRuns] = useState<string | null>(null);
+  const [editingInterval, setEditingInterval] = useState<string | null>(null);
+  const [intervalValue, setIntervalValue] = useState("");
 
   const handleSSE = useCallback(
     (event: string) => {
@@ -91,6 +93,18 @@ export default function AgentsPage() {
       setTriggering(null);
     }
   }, [refetch]);
+
+  const handleIntervalSave = useCallback(async (agentName: string) => {
+    const val = parseInt(intervalValue, 10);
+    if (isNaN(val) || val < 10) return;
+    try {
+      await updateAgentInterval(agentName, val);
+      refetch();
+    } catch (err) {
+      console.error("Failed to update interval:", err);
+    }
+    setEditingInterval(null);
+  }, [intervalValue, refetch]);
 
   const handleToggleRuns = useCallback(async (agentName: string) => {
     if (expandedAgent === agentName) {
@@ -156,11 +170,48 @@ export default function AgentsPage() {
 
               {/* Metrics */}
               <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-gray-500">Interval</span>
-                  <span className="text-gray-300">
-                    {agent.interval_seconds}s
-                  </span>
+                  {editingInterval === agent.name ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        value={intervalValue}
+                        onChange={(e) => setIntervalValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleIntervalSave(agent.name);
+                          if (e.key === "Escape") setEditingInterval(null);
+                        }}
+                        className="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-xs text-white w-20 focus:outline-none focus:border-blue-500"
+                        autoFocus
+                        min={10}
+                      />
+                      <span className="text-gray-500 text-xs">s</span>
+                      <button
+                        onClick={() => handleIntervalSave(agent.name)}
+                        className="text-green-400 hover:text-green-300 text-xs px-1"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingInterval(null)}
+                        className="text-gray-500 hover:text-gray-400 text-xs px-1"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <span
+                      className="text-gray-300 cursor-pointer hover:text-blue-400 transition-colors"
+                      onClick={() => {
+                        setEditingInterval(agent.name);
+                        setIntervalValue(String(agent.interval_seconds));
+                      }}
+                      title="Click to edit"
+                    >
+                      {agent.interval_seconds}s
+                    </span>
+                  )}
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Cycles</span>
