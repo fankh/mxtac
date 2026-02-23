@@ -63,13 +63,30 @@ class TestSecretKeyProductionEnforcement:
             self._reload(monkeypatch, secret_key=_DEV_SECRET, debug=False)
 
     # ------------------------------------------------------------------
-    # Scenario 2 — debug mode with the default key → no error
+    # Scenario 2 — debug mode with the default key → no error, but warns
     # ------------------------------------------------------------------
 
     def test_debug_mode_default_key_no_error(self, monkeypatch) -> None:
         """debug=True + default secret_key → no error (dev mode is intentional)."""
         # Should not raise
         self._reload(monkeypatch, secret_key=_DEV_SECRET, debug=True)
+
+    def test_debug_mode_default_key_emits_warning(self, monkeypatch, caplog) -> None:
+        """debug=True + default secret_key → WARNING is logged."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger=_CONFIG_LOGGER):
+            self._reload(monkeypatch, secret_key=_DEV_SECRET, debug=True)
+        assert any("SECRET_KEY" in r.message for r in caplog.records)
+
+    def test_production_default_key_emits_warning(self, monkeypatch, caplog) -> None:
+        """debug=False + default secret_key → WARNING is logged before the hard failure."""
+        import logging
+
+        with pytest.raises(Exception):
+            with caplog.at_level(logging.WARNING, logger=_CONFIG_LOGGER):
+                self._reload(monkeypatch, secret_key=_DEV_SECRET, debug=False)
+        assert any("SECRET_KEY" in r.message for r in caplog.records)
 
     # ------------------------------------------------------------------
     # Scenario 3 — custom key → no error regardless of debug flag

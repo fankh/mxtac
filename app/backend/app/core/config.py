@@ -271,14 +271,28 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _post_init(self) -> "Settings":
         """Enforce production security requirements and auto-configure SQLite mode."""
-        # Refuse to start in production when the secret key is the dev default.
-        # This prevents silent exposure of a well-known key in real deployments.
-        if not self.debug and self.secret_key == _DEV_SECRET:
-            raise ValueError(
-                "FATAL: SECRET_KEY is set to the development default. "
-                "Set a strong, unique SECRET_KEY via the SECRET_KEY environment "
-                "variable before running in production (DEBUG=False)."
-            )
+        # Warn (or hard-fail) when the well-known dev key is in use.
+        if self.secret_key == _DEV_SECRET:
+            if not self.debug:
+                # Production mode with the dev default is a critical security risk.
+                # Log the warning first so it appears in the service logs even when
+                # the process manager captures stderr before re-raising.
+                logger.warning(
+                    "SECURITY: SECRET_KEY is set to the development default in "
+                    "production mode (DEBUG=False). This is a critical security "
+                    "risk — set a strong, unique SECRET_KEY environment variable."
+                )
+                raise ValueError(
+                    "FATAL: SECRET_KEY is set to the development default. "
+                    "Set a strong, unique SECRET_KEY via the SECRET_KEY environment "
+                    "variable before running in production (DEBUG=False)."
+                )
+            else:
+                # Dev mode: warn but allow startup so local workflows are not blocked.
+                logger.warning(
+                    "SECRET_KEY is set to the development default. "
+                    "Set a unique SECRET_KEY before deploying to production."
+                )
 
         # Auto-configure SQLite URL when sqlite_mode is enabled.
         if self.sqlite_mode and not self.database_url.startswith("sqlite"):
