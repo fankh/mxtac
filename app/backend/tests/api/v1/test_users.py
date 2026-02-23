@@ -7,7 +7,12 @@ RBAC:
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
+
+_MOCK_HASH = "app.api.v1.endpoints.users.hash_password"
+_HASHED_PW = "$2b$12$test_placeholder_hash_not_real"
 
 
 _BASE = "/api/v1/users"
@@ -67,7 +72,8 @@ class TestCreateUserRBAC:
     }
 
     async def test_admin_can_create_user(self, client, admin_headers) -> None:
-        resp = await client.post(_BASE, json=self._payload, headers=admin_headers)
+        with patch(_MOCK_HASH, return_value=_HASHED_PW):
+            resp = await client.post(_BASE, json=self._payload, headers=admin_headers)
         # Success or conflict (if user exists); not a permission error
         assert resp.status_code not in (401, 403)
 

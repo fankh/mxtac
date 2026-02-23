@@ -84,7 +84,8 @@ class TestListDetectionsQueryParams:
         assert resp.status_code == 200
 
     async def test_filter_by_status(self, client, analyst_headers) -> None:
-        resp = await client.get(f"{_BASE}?status=open", headers=analyst_headers)
+        # Valid DetectionStatus values: active, investigating, resolved, false_positive
+        resp = await client.get(f"{_BASE}?status=active", headers=analyst_headers)
         assert resp.status_code == 200
 
     async def test_filter_by_page(self, client, analyst_headers) -> None:
@@ -126,7 +127,7 @@ class TestUpdateDetectionRBAC:
         """Analyst has detections:write — 404 for non-existent item, not 403."""
         resp = await client.patch(
             f"{_BASE}/00000000-0000-0000-0000-000000000000",
-            json={"status": "acknowledged"},
+            json={"status": "investigating"},  # valid DetectionStatus value
             headers=analyst_headers,
         )
         assert resp.status_code == 404
