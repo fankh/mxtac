@@ -135,9 +135,14 @@ class VerifierAgent(BaseAgent):
         if not target_files:
             return {"check": "files", "pass": True, "detail": "No target files specified"}
 
+        base = Path(task.working_directory or settings.mxtac_project_root)
         missing = []
         for f in target_files:
-            if not Path(f).exists():
+            p = Path(f)
+            # Resolve relative paths against task working directory
+            if not p.is_absolute():
+                p = base / p
+            if not p.exists():
                 missing.append(f)
 
         if missing:
