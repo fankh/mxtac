@@ -437,6 +437,43 @@ class TestSearchRequestValidation:
         assert req.size == 100
         assert req.from_ == 0
 
+    # --- Feature 33.3: time range injection prevention ---
+
+    def test_time_from_lucene_injection_raises(self):
+        """Lucene injection characters in time_from must be rejected."""
+        with pytest.raises(ValidationError, match="time_from"):
+            SearchRequest(time_from="now-7d] OR *:*")
+
+    def test_time_to_lucene_injection_raises(self):
+        with pytest.raises(ValidationError, match="time_to"):
+            SearchRequest(time_to="now} OR (*:*")
+
+    def test_time_from_space_injection_raises(self):
+        with pytest.raises(ValidationError, match="time_from"):
+            SearchRequest(time_from="now-7d AND field:injected")
+
+    def test_valid_relative_time_from(self):
+        req = SearchRequest(time_from="now-30d", time_to="now")
+        assert req.time_from == "now-30d"
+
+    def test_valid_iso8601_time(self):
+        req = SearchRequest(
+            time_from="2026-01-01T00:00:00Z",
+            time_to="2026-12-31T23:59:59Z",
+        )
+        assert req.time_from == "2026-01-01T00:00:00Z"
+
+    def test_valid_time_with_offset(self):
+        req = SearchRequest(
+            time_from="2026-01-01T00:00:00+00:00",
+            time_to="2026-12-31T23:59:59+05:30",
+        )
+        assert "+" in req.time_from
+
+    def test_valid_now_keyword(self):
+        req = SearchRequest(time_from="now", time_to="now")
+        assert req.time_from == "now"
+
 
 class TestAggregationRequestValidation:
     def test_invalid_agg_type_raises(self):
@@ -493,6 +530,22 @@ class TestConnectorCreateValidation:
     def test_valid(self):
         c = ConnectorCreate(name="My Wazuh", connector_type="wazuh", config={"url": "http://wazuh"})
         assert c.name == "My Wazuh"
+
+    # --- Feature 33.3: connector_type schema-level validation ---
+
+    def test_unknown_connector_type_raises(self):
+        with pytest.raises(ValidationError, match="Unknown connector type"):
+            ConnectorCreate(name="Test", connector_type="unknown_type", config={})
+
+    def test_sql_injection_connector_type_raises(self):
+        with pytest.raises(ValidationError, match="Unknown connector type"):
+            ConnectorCreate(name="Test", connector_type="wazuh'; DROP TABLE connectors;--", config={})
+
+    def test_all_valid_connector_types(self):
+        from app.api.v1.endpoints.connectors import CONNECTOR_TYPES
+        for ct in CONNECTOR_TYPES:
+            c = ConnectorCreate(name="Test", connector_type=ct, config={})
+            assert c.connector_type == ct
 
 
 from app.api.v1.endpoints.users import UserCreate
@@ -914,6 +967,63 @@ async def test_create_asset_invalid_hostname_returns_422(
             "hostname": "-invalid-hostname",
             "asset_type": "server",
         },
+        headers=engineer_headers,
+    )
+    assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Feature 33.3: time range injection prevention (HTTP level)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_event_search_time_from_injection_returns_422(
+    client: AsyncClient, hunter_headers: dict
+):
+    """SearchRequest.time_from with Lucene injection chars must return 422."""
+    resp = await client.post(
+        "/api/v1/events/search",
+        json={"time_from": "now-7d] OR *:*", "time_to": "now"},
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_event_search_time_to_injection_returns_422(
+    client: AsyncClient, hunter_headers: dict
+):
+    """SearchRequest.time_to with injection chars must return 422."""
+    resp = await client.post(
+        "/api/v1/events/search",
+        json={"time_from": "now-7d", "time_to": "now} AND *:*"},
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_event_aggregate_time_injection_returns_422(
+    client: AsyncClient, hunter_headers: dict
+):
+    """AggregationRequest.time_from with injection chars must return 422."""
+    resp = await client.post(
+        "/api/v1/events/aggregate",
+        json={"agg_type": "date_histogram", "time_from": "now-7d OR *"},
+        headers=hunter_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_connector_create_unknown_type_returns_422(
+    client: AsyncClient, engineer_headers: dict
+):
+    """ConnectorCreate with unknown connector_type must return 422 at schema level."""
+    resp = await client.post(
+        "/api/v1/connectors",
+        json={"name": "Test Connector", "connector_type": "unknown_type", "config": {}},
         headers=engineer_headers,
     )
     assert resp.status_code == 422

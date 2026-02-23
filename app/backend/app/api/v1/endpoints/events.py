@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
@@ -54,6 +55,22 @@ router = APIRouter(prefix="/events", tags=["events"])
 
 _RATE_LIMIT_EVENTS = 10_000   # max events per window
 _RATE_WINDOW_SECS  = 60       # window duration in seconds
+
+# ── Time range validation ─────────────────────────────────────────────────────
+# Whitelist of characters allowed in time_from / time_to to prevent Lucene
+# query-string injection via the time range clause (feature 33.3).
+# Allows: relative dates (now-7d, now/d), ISO 8601 (2026-01-01T00:00:00Z),
+#         and timezone offsets (+00:00).  Rejects ] [ { } * ? ( ) space etc.
+_SAFE_TIME_RE = re.compile(r'^[A-Za-z0-9+\-:.Z/]+$')
+
+
+def _validate_time_range(v: str) -> str:
+    if not _SAFE_TIME_RE.match(v):
+        raise ValueError(
+            "time_from / time_to must be a relative date (e.g. 'now-7d') "
+            "or ISO 8601 timestamp. Special characters are not allowed."
+        )
+    return v
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -101,6 +118,11 @@ class SearchRequest(BaseModel):
     size: int = Field(default=100, ge=1, le=1000)
     from_: int = Field(default=0, ge=0, le=100000)
 
+    @field_validator("time_from", "time_to")
+    @classmethod
+    def validate_time_range_format(cls, v: str) -> str:
+        return _validate_time_range(v)
+
 
 class AggregationRequest(BaseModel):
     field: str | None = Field(default=None, max_length=128)
@@ -109,6 +131,11 @@ class AggregationRequest(BaseModel):
     size: int = Field(default=10, ge=1, le=1000)
     time_from: str = Field(default="now-7d", max_length=50)
     time_to: str = Field(default="now", max_length=50)
+
+    @field_validator("time_from", "time_to")
+    @classmethod
+    def validate_time_range_format(cls, v: str) -> str:
+        return _validate_time_range(v)
 
 
 # ── Serialization ─────────────────────────────────────────────────────────────

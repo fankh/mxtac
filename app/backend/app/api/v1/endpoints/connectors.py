@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....connectors.registry import build_connector
@@ -27,6 +27,15 @@ class ConnectorCreate(BaseModel):
     connector_type: str
     config: dict[str, Any]
     enabled: bool = True
+
+    @field_validator("connector_type")
+    @classmethod
+    def validate_connector_type(cls, v: str) -> str:
+        if v not in CONNECTOR_TYPES:
+            raise ValueError(
+                f"Unknown connector type {v!r}. Must be one of: {CONNECTOR_TYPES}"
+            )
+        return v
 
 
 class ConnectorUpdate(BaseModel):
@@ -100,8 +109,6 @@ async def create_connector(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("connectors:write")),
 ):
-    if body.connector_type not in CONNECTOR_TYPES:
-        raise HTTPException(status_code=422, detail=f"Unknown connector type: {body.connector_type}")
     conn = await ConnectorRepo.create(
         db,
         name=body.name,

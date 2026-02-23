@@ -62,8 +62,8 @@ class TestFilterToLucene:
 
     def test_contains(self) -> None:
         result = _filter_to_lucene("hostname", "contains", "dc-")
-        # hostname → src_endpoint.hostname
-        assert result == "src_endpoint.hostname:*dc-*"
+        # hostname → src_endpoint.hostname; '-' is a Lucene special char so escaped
+        assert result == r"src_endpoint.hostname:*dc\-*"
 
     def test_contains_field_mapping(self) -> None:
         result = _filter_to_lucene("username", "contains", "admin")
@@ -135,6 +135,43 @@ class TestFilterToLucene:
         result = _filter_to_lucene("hostname", "contains", "srv*01")
         assert result == "src_endpoint.hostname:*srv*01*"
 
+    # --- Feature 33.3: Lucene injection prevention ---
+
+    def test_contains_escapes_closing_bracket(self) -> None:
+        """']' in contains value is escaped to prevent breaking range syntax."""
+        result = _filter_to_lucene("hostname", "contains", "test]malicious")
+        assert result is not None
+        assert r"\]" in result
+
+    def test_contains_escapes_parens(self) -> None:
+        """Parentheses in contains value are escaped to prevent grouping injection."""
+        result = _filter_to_lucene("hostname", "contains", "test(field)")
+        assert result is not None
+        assert r"\(" in result
+        assert r"\)" in result
+
+    def test_contains_escapes_colon(self) -> None:
+        """Colon in contains value is escaped to prevent field-level injection."""
+        result = _filter_to_lucene("hostname", "contains", "host:name")
+        assert result is not None
+        assert r"\:" in result
+
+    def test_range_gt_escapes_special_chars(self) -> None:
+        """gt operator escapes injection chars in value (defense-in-depth)."""
+        result = _filter_to_lucene("severity_id", "gt", "1}")
+        assert result is not None
+        # The injected } must be backslash-escaped in the output
+        assert r"\}" in result
+
+    def test_range_gte_numeric_unchanged(self) -> None:
+        """Pure numeric values in range operators are unaffected by escaping."""
+        result = _filter_to_lucene("severity_id", "gte", 3)
+        assert result == "severity_id:[3 TO *]"
+
+    def test_range_lte_numeric_unchanged(self) -> None:
+        result = _filter_to_lucene("severity_id", "lte", 5)
+        assert result == "severity_id:[* TO 5]"
+
 
 # ---------------------------------------------------------------------------
 # build_lucene_query — full query assembly
@@ -179,7 +216,7 @@ class TestBuildLuceneQuery:
     def test_single_filter_contains(self) -> None:
         filters = [_Filter("hostname", "contains", "dc-")]
         result = build_lucene_query(None, filters, "now-24h", "now")
-        assert result == "src_endpoint.hostname:*dc-* AND time:[now-24h TO now]"
+        assert result == r"src_endpoint.hostname:*dc\-* AND time:[now-24h TO now]"
 
     def test_multiple_filters_joined_with_and(self) -> None:
         filters = [

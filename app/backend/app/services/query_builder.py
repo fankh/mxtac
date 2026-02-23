@@ -123,21 +123,23 @@ def _filter_to_lucene(field: str, operator: str, value: Any) -> str | None:
         return f"NOT {lucene_field}:{_format_value(value)}"
 
     if operator == "contains":
-        # Wildcard query — pass the value through verbatim (mirrors OpenSearch
-        # wildcard query semantics; '-' and other chars inside *…* are literals).
-        return f"{lucene_field}:*{value}*"
+        # Wildcard query — escape Lucene special chars in value so that
+        # brackets, parens, and other metacharacters cannot break out of the
+        # wildcard context.  '*' is intentionally NOT in _LUCENE_SPECIAL_RE so
+        # user-supplied wildcards are still honoured inside the contains term.
+        return f"{lucene_field}:*{_escape_term(str(value))}*"
 
     if operator == "gt":
-        return f"{lucene_field}:{{{value} TO *}}"
+        return f"{lucene_field}:{{{_escape_term(str(value))} TO *}}"
 
     if operator == "lt":
-        return f"{lucene_field}:{{* TO {value}}}"
+        return f"{lucene_field}:{{* TO {_escape_term(str(value))}}}"
 
     if operator == "gte":
-        return f"{lucene_field}:[{value} TO *]"
+        return f"{lucene_field}:[{_escape_term(str(value))} TO *]"
 
     if operator == "lte":
-        return f"{lucene_field}:[* TO {value}]"
+        return f"{lucene_field}:[* TO {_escape_term(str(value))}]"
 
     return None
 
