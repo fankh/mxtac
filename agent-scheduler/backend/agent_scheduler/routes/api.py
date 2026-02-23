@@ -39,6 +39,7 @@ class SchedulerSettingsUpdate(BaseModel):
     github_repo_url: Optional[str] = None
     test_command: Optional[str] = None
     test_timeout: Optional[int] = None
+    quality_retry_max: Optional[int] = None
 
 
 # --- Stats ---
@@ -337,6 +338,7 @@ async def get_scheduler_settings():
         "github_repo_url": settings.github_repo_url,
         "test_command": settings.scheduler_test_command,
         "test_timeout": settings.scheduler_test_timeout,
+        "quality_retry_max": settings.scheduler_quality_retry_max,
     }
 
 
@@ -360,6 +362,8 @@ async def update_scheduler_settings(req: SchedulerSettingsUpdate):
         settings.scheduler_test_command = req.test_command
     if req.test_timeout is not None:
         settings.scheduler_test_timeout = req.test_timeout
+    if req.quality_retry_max is not None:
+        settings.scheduler_quality_retry_max = req.quality_retry_max
     return {"status": "updated"}
 
 

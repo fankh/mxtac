@@ -28,6 +28,7 @@ export default function SettingsPage() {
   const [githubRepoUrl, setGithubRepoUrl] = useState("");
   const [testCommand, setTestCommand] = useState("");
   const [testTimeout, setTestTimeout] = useState("");
+  const [qualityRetryMax, setQualityRetryMax] = useState("");
   const [taskPath, setTaskPath] = useState("");
   const [loadResult, setLoadResult] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -44,6 +45,7 @@ export default function SettingsPage() {
       setGithubRepoUrl(currentSettings.github_repo_url);
       setTestCommand(currentSettings.test_command);
       setTestTimeout(String(currentSettings.test_timeout));
+      setQualityRetryMax(String(currentSettings.quality_retry_max));
     }
   }, [currentSettings]);
 
@@ -79,6 +81,7 @@ export default function SettingsPage() {
         github_repo_url: githubRepoUrl,
         test_command: testCommand,
         test_timeout: parseInt(testTimeout, 10),
+        quality_retry_max: parseInt(qualityRetryMax, 10),
       });
       alert("Settings updated");
     } catch (e: unknown) {
@@ -275,6 +278,20 @@ export default function SettingsPage() {
               onChange={(e) => setTestTimeout(e.target.value)}
               className="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white w-32 focus:outline-none focus:border-blue-500"
             />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              Quality Retry Max
+            </label>
+            <input
+              type="number"
+              value={qualityRetryMax}
+              onChange={(e) => setQualityRetryMax(e.target.value)}
+              className="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white w-32 focus:outline-none focus:border-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Max retries after verification/test failure before permanently failed
+            </p>
           </div>
           <button
             onClick={handleSettingsUpdate}

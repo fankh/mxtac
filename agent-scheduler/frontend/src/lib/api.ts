@@ -118,6 +118,7 @@ export interface SchedulerSettings {
   github_repo_url: string;
   test_command: string;
   test_timeout: number;
+  quality_retry_max: number;
 }
 
 export const getSchedulerSettings = () =>
@@ -139,6 +140,7 @@ export const updateSchedulerSettings = (settings: {
   github_repo_url?: string;
   test_command?: string;
   test_timeout?: number;
+  quality_retry_max?: number;
 }) =>
   fetchJson("/scheduler/settings", {
     method: "PUT",

@@ -604,15 +604,30 @@ class RetryAgent:
 
     async def _retry_failed_tasks(self):
         async with async_session() as session:
+            # 1. Pick up tasks with status=FAILED
             result = await session.execute(
                 select(Task).where(Task.status == TaskStatus.FAILED)
             )
-            failed_tasks = result.scalars().all()
-            if not failed_tasks:
+            failed_tasks = list(result.scalars().all())
+
+            # 2. Also pick up stuck tasks: status=COMPLETED but verification/test failed
+            #    These got stuck because verifier marked verification_status='failed'
+            #    but didn't change status to FAILED (pre-fix or fail_action != 'reset')
+            stuck_result = await session.execute(
+                select(Task)
+                .where(Task.status == TaskStatus.COMPLETED)
+                .where(
+                    (Task.verification_status == "failed") | (Task.test_status == "failed")
+                )
+            )
+            stuck_tasks = list(stuck_result.scalars().all())
+
+            all_candidates = failed_tasks + stuck_tasks
+            if not all_candidates:
                 return
 
             reset_tasks = []
-            for task in failed_tasks:
+            for task in all_candidates:
                 if (task.quality_retry_count or 0) >= settings.scheduler_quality_retry_max:
                     continue  # permanently failed, skip
                 task.status = TaskStatus.PENDING
@@ -627,7 +642,11 @@ class RetryAgent:
 
             await session.commit()
             if reset_tasks:
-                logger.info("RetryAgent reset %d failed tasks to PENDING", len(reset_tasks))
+                stuck_count = len([t for t in reset_tasks if t in stuck_tasks])
+                logger.info(
+                    "RetryAgent reset %d tasks to PENDING (%d failed, %d stuck)",
+                    len(reset_tasks), len(reset_tasks) - stuck_count, stuck_count,
+                )
 
             # Broadcast updates so the frontend reflects the changes
             for task in reset_tasks:
