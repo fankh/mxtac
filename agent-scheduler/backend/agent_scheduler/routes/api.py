@@ -144,6 +144,87 @@ async def update_agent_interval(agent_name: str, req: AgentIntervalUpdate):
     return {"status": "updated", "interval": req.interval}
 
 
+# --- Per-agent config ---
+
+_AGENT_CONFIG_KEYS: dict[str, list[str]] = {
+    "TaskCreatorAgent": [
+        "agent_task_creator_enabled",
+        "agent_task_creator_interval",
+        "agent_task_creator_max_tasks_per_cycle",
+        "agent_task_creator_use_claude",
+    ],
+    "VerifierAgent": [
+        "agent_verifier_enabled",
+        "agent_verifier_interval",
+        "agent_verifier_max_per_cycle",
+        "agent_verifier_use_claude",
+        "agent_verifier_fail_action",
+    ],
+    "TestAgent": [
+        "agent_test_enabled",
+        "agent_test_interval",
+        "agent_test_fail_action",
+        "agent_test_full_suite_every",
+        "agent_test_timeout",
+    ],
+    "LintAgent": [
+        "agent_lint_enabled",
+        "agent_lint_interval",
+        "agent_lint_error_threshold",
+    ],
+    "IntegrationAgent": [
+        "agent_integration_enabled",
+        "agent_integration_interval",
+        "agent_integration_smoke_url",
+    ],
+    "SecurityAuditAgent": [
+        "agent_security_enabled",
+        "agent_security_interval",
+        "agent_security_bandit_skip",
+    ],
+}
+
+
+@router.get("/agents/{agent_name}/config")
+async def get_agent_config(agent_name: str):
+    keys = _AGENT_CONFIG_KEYS.get(agent_name)
+    if keys is None:
+        raise HTTPException(status_code=404, detail=f"No config for agent: {agent_name}")
+    return {k: getattr(settings, k) for k in keys}
+
+
+@router.put("/agents/{agent_name}/config")
+async def update_agent_config(agent_name: str, req: dict):
+    keys = _AGENT_CONFIG_KEYS.get(agent_name)
+    if keys is None:
+        raise HTTPException(status_code=404, detail=f"No config for agent: {agent_name}")
+    updated = {}
+    agent = get_agent_by_name(agent_name)
+    for k, v in req.items():
+        if k not in keys:
+            continue
+        current = getattr(settings, k)
+        # Type coerce
+        if isinstance(current, bool):
+            v = bool(v)
+        elif isinstance(current, int):
+            v = int(v)
+        setattr(settings, k, v)
+        updated[k] = v
+        # Live-update the agent interval if changed
+        if k.endswith("_interval") and agent:
+            agent._interval = v
+        # Live-update enabled state
+        if k.endswith("_enabled") and agent:
+            if v and not agent._running:
+                import asyncio
+                asyncio.create_task(agent.start())
+            elif not v and agent._running:
+                import asyncio
+                asyncio.create_task(agent.stop())
+    return {"status": "updated", "updated": updated}
+
+
 @router.get("/agents/{agent_name}/runs")
 async def get_agent_runs(
     agent_name: str,

@@ -65,6 +65,15 @@ export const updateAgentInterval = (name: string, interval: number) =>
     body: JSON.stringify({ interval }),
   });
 
+export const getAgentConfig = (name: string) =>
+  fetchJson<Record<string, unknown>>(`/agents/${name}/config`);
+
+export const updateAgentConfig = (name: string, config: Record<string, unknown>) =>
+  fetchJson(`/agents/${name}/config`, {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+
 export const getAgentRuns = (name: string, limit = 20) =>
   fetchJson<AgentRunInfo[]>(`/agents/${name}/runs?limit=${limit}`);
 

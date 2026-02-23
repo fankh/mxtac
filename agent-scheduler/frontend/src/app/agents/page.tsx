@@ -3,10 +3,17 @@
 import { useCallback, useState } from "react";
 import { useApi } from "@/hooks/useApi";
 import { useSSE } from "@/hooks/useSSE";
-import { getAgents, triggerAgent, getAgentRuns, updateAgentInterval } from "@/lib/api";
+import {
+  getAgents,
+  triggerAgent,
+  getAgentRuns,
+  updateAgentInterval,
+  getAgentConfig,
+  updateAgentConfig,
+} from "@/lib/api";
 import type { AgentInfo, AgentRunInfo, AgentsResponse } from "@/lib/types";
 
-// New agents that support trigger + run history
+// New agents that support trigger + run history + config
 const TRIGGERABLE_AGENTS = new Set([
   "TaskCreatorAgent",
   "VerifierAgent",
@@ -15,6 +22,33 @@ const TRIGGERABLE_AGENTS = new Set([
   "IntegrationAgent",
   "SecurityAuditAgent",
 ]);
+
+// Human-readable labels for config keys
+const CONFIG_LABELS: Record<string, string> = {
+  agent_task_creator_enabled: "Enabled",
+  agent_task_creator_interval: "Interval (s)",
+  agent_task_creator_max_tasks_per_cycle: "Max Tasks / Cycle",
+  agent_task_creator_use_claude: "Use Claude",
+  agent_verifier_enabled: "Enabled",
+  agent_verifier_interval: "Interval (s)",
+  agent_verifier_max_per_cycle: "Max / Cycle",
+  agent_verifier_use_claude: "Use Claude",
+  agent_verifier_fail_action: "Fail Action",
+  agent_test_enabled: "Enabled",
+  agent_test_interval: "Interval (s)",
+  agent_test_fail_action: "Fail Action",
+  agent_test_full_suite_every: "Full Suite Every N",
+  agent_test_timeout: "Timeout (s)",
+  agent_lint_enabled: "Enabled",
+  agent_lint_interval: "Interval (s)",
+  agent_lint_error_threshold: "Error Threshold",
+  agent_integration_enabled: "Enabled",
+  agent_integration_interval: "Interval (s)",
+  agent_integration_smoke_url: "Smoke URL",
+  agent_security_enabled: "Enabled",
+  agent_security_interval: "Interval (s)",
+  agent_security_bandit_skip: "Bandit Skip",
+};
 
 function statusColor(status: AgentInfo["status"]) {
   switch (status) {
@@ -66,14 +100,27 @@ export default function AgentsPage() {
 
   const [triggering, setTriggering] = useState<string | null>(null);
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
-  const [agentRuns, setAgentRuns] = useState<Record<string, AgentRunInfo[]>>({});
+  const [agentRuns, setAgentRuns] = useState<Record<string, AgentRunInfo[]>>(
+    {}
+  );
   const [loadingRuns, setLoadingRuns] = useState<string | null>(null);
   const [editingInterval, setEditingInterval] = useState<string | null>(null);
   const [intervalValue, setIntervalValue] = useState("");
 
+  // Config panel state
+  const [configAgent, setConfigAgent] = useState<string | null>(null);
+  const [configData, setConfigData] = useState<Record<string, unknown>>({});
+  const [configDraft, setConfigDraft] = useState<Record<string, unknown>>({});
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configSaving, setConfigSaving] = useState(false);
+
   const handleSSE = useCallback(
     (event: string) => {
-      if (event === "scheduler" || event === "agent_report" || event === "task_created") {
+      if (
+        event === "scheduler" ||
+        event === "agent_report" ||
+        event === "task_created"
+      ) {
         refetch();
       }
     },
@@ -82,46 +129,99 @@ export default function AgentsPage() {
 
   const { connected } = useSSE(handleSSE);
 
-  const handleTrigger = useCallback(async (agentName: string) => {
-    setTriggering(agentName);
-    try {
-      await triggerAgent(agentName);
-      refetch();
-    } catch (err) {
-      console.error("Failed to trigger agent:", err);
-    } finally {
-      setTriggering(null);
-    }
-  }, [refetch]);
+  const handleTrigger = useCallback(
+    async (agentName: string) => {
+      setTriggering(agentName);
+      try {
+        await triggerAgent(agentName);
+        refetch();
+      } catch (err) {
+        console.error("Failed to trigger agent:", err);
+      } finally {
+        setTriggering(null);
+      }
+    },
+    [refetch]
+  );
 
-  const handleIntervalSave = useCallback(async (agentName: string) => {
-    const val = parseInt(intervalValue, 10);
-    if (isNaN(val) || val < 10) return;
-    try {
-      await updateAgentInterval(agentName, val);
-      refetch();
-    } catch (err) {
-      console.error("Failed to update interval:", err);
-    }
-    setEditingInterval(null);
-  }, [intervalValue, refetch]);
+  const handleIntervalSave = useCallback(
+    async (agentName: string) => {
+      const val = parseInt(intervalValue, 10);
+      if (isNaN(val) || val < 10) return;
+      try {
+        await updateAgentInterval(agentName, val);
+        refetch();
+      } catch (err) {
+        console.error("Failed to update interval:", err);
+      }
+      setEditingInterval(null);
+    },
+    [intervalValue, refetch]
+  );
 
-  const handleToggleRuns = useCallback(async (agentName: string) => {
-    if (expandedAgent === agentName) {
-      setExpandedAgent(null);
-      return;
-    }
-    setExpandedAgent(agentName);
-    setLoadingRuns(agentName);
+  const handleToggleRuns = useCallback(
+    async (agentName: string) => {
+      if (expandedAgent === agentName) {
+        setExpandedAgent(null);
+        return;
+      }
+      setExpandedAgent(agentName);
+      setLoadingRuns(agentName);
+      try {
+        const runs = await getAgentRuns(agentName);
+        setAgentRuns((prev) => ({ ...prev, [agentName]: runs }));
+      } catch (err) {
+        console.error("Failed to fetch agent runs:", err);
+      } finally {
+        setLoadingRuns(null);
+      }
+    },
+    [expandedAgent]
+  );
+
+  const handleToggleConfig = useCallback(
+    async (agentName: string) => {
+      if (configAgent === agentName) {
+        setConfigAgent(null);
+        return;
+      }
+      setConfigAgent(agentName);
+      setConfigLoading(true);
+      try {
+        const data = await getAgentConfig(agentName);
+        setConfigData(data);
+        setConfigDraft({ ...data });
+      } catch (err) {
+        console.error("Failed to fetch agent config:", err);
+      } finally {
+        setConfigLoading(false);
+      }
+    },
+    [configAgent]
+  );
+
+  const handleConfigSave = useCallback(async () => {
+    if (!configAgent) return;
+    setConfigSaving(true);
     try {
-      const runs = await getAgentRuns(agentName);
-      setAgentRuns((prev) => ({ ...prev, [agentName]: runs }));
+      // Only send changed values
+      const changes: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(configDraft)) {
+        if (v !== configData[k]) {
+          changes[k] = v;
+        }
+      }
+      if (Object.keys(changes).length > 0) {
+        await updateAgentConfig(configAgent, changes);
+        setConfigData({ ...configDraft });
+        refetch();
+      }
     } catch (err) {
-      console.error("Failed to fetch agent runs:", err);
+      console.error("Failed to save agent config:", err);
     } finally {
-      setLoadingRuns(null);
+      setConfigSaving(false);
     }
-  }, [expandedAgent]);
+  }, [configAgent, configDraft, configData, refetch]);
 
   const agents = agentsData?.agents || [];
 
@@ -166,7 +266,9 @@ export default function AgentsPage() {
               </div>
 
               {/* Description */}
-              <p className="text-sm text-gray-400 mb-4">{agent.description}</p>
+              <p className="text-sm text-gray-400 mb-4">
+                {agent.description}
+              </p>
 
               {/* Metrics */}
               <div className="space-y-2 text-sm">
@@ -179,7 +281,8 @@ export default function AgentsPage() {
                         value={intervalValue}
                         onChange={(e) => setIntervalValue(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") handleIntervalSave(agent.name);
+                          if (e.key === "Enter")
+                            handleIntervalSave(agent.name);
                           if (e.key === "Escape") setEditingInterval(null);
                         }}
                         className="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-xs text-white w-20 focus:outline-none focus:border-blue-500"
@@ -225,7 +328,7 @@ export default function AgentsPage() {
                 </div>
               </div>
 
-              {/* Trigger + History buttons for new agents */}
+              {/* Action buttons for triggerable agents */}
               {TRIGGERABLE_AGENTS.has(agent.name) && (
                 <div className="mt-4 flex gap-2">
                   <button
@@ -236,11 +339,116 @@ export default function AgentsPage() {
                     {triggering === agent.name ? "Running..." : "Trigger"}
                   </button>
                   <button
-                    onClick={() => handleToggleRuns(agent.name)}
-                    className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+                    onClick={() => handleToggleConfig(agent.name)}
+                    className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                      configAgent === agent.name
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-700 hover:bg-gray-600 text-gray-300"
+                    }`}
                   >
-                    {expandedAgent === agent.name ? "Hide" : "History"}
+                    Config
                   </button>
+                  <button
+                    onClick={() => handleToggleRuns(agent.name)}
+                    className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                      expandedAgent === agent.name
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-700 hover:bg-gray-600 text-gray-300"
+                    }`}
+                  >
+                    History
+                  </button>
+                </div>
+              )}
+
+              {/* Config Panel */}
+              {configAgent === agent.name && (
+                <div className="mt-3 border-t border-gray-700 pt-3">
+                  {configLoading ? (
+                    <p className="text-xs text-gray-500">Loading config...</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {Object.entries(configDraft).map(([key, value]) => {
+                        const label = CONFIG_LABELS[key] || key;
+                        const isBool = typeof value === "boolean";
+                        const isSelect =
+                          key.endsWith("_fail_action");
+                        return (
+                          <div
+                            key={key}
+                            className="flex items-center justify-between gap-2"
+                          >
+                            <label className="text-xs text-gray-400 shrink-0">
+                              {label}
+                            </label>
+                            {isBool ? (
+                              <button
+                                onClick={() =>
+                                  setConfigDraft((d) => ({
+                                    ...d,
+                                    [key]: !value,
+                                  }))
+                                }
+                                className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                                  value
+                                    ? "bg-green-600 text-white"
+                                    : "bg-gray-600 text-gray-400"
+                                }`}
+                              >
+                                {value ? "ON" : "OFF"}
+                              </button>
+                            ) : isSelect ? (
+                              <select
+                                value={String(value)}
+                                onChange={(e) =>
+                                  setConfigDraft((d) => ({
+                                    ...d,
+                                    [key]: e.target.value,
+                                  }))
+                                }
+                                className="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-blue-500"
+                              >
+                                <option value="reset">reset</option>
+                                <option value="mark">mark</option>
+                              </select>
+                            ) : (
+                              <input
+                                type={
+                                  typeof value === "number" ? "number" : "text"
+                                }
+                                value={String(value)}
+                                onChange={(e) =>
+                                  setConfigDraft((d) => ({
+                                    ...d,
+                                    [key]:
+                                      typeof value === "number"
+                                        ? parseInt(e.target.value, 10) || 0
+                                        : e.target.value,
+                                  }))
+                                }
+                                className="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-xs text-white w-24 focus:outline-none focus:border-blue-500"
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={handleConfigSave}
+                          disabled={configSaving}
+                          className="flex-1 px-3 py-1 text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded transition-colors"
+                        >
+                          {configSaving ? "Saving..." : "Save Config"}
+                        </button>
+                        <button
+                          onClick={() => setConfigDraft({ ...configData })}
+                          className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
