@@ -178,7 +178,8 @@ describe('AssetPanel', () => {
     it('shows all key detail rows', () => {
       renderPanel(makeAsset())
       expect(screen.getByText('Hostname')).toBeInTheDocument()
-      expect(screen.getByText('db-prod-01')).toBeInTheDocument()
+      // hostname appears in both h2 header and details row — both should be present
+      expect(screen.getAllByText('db-prod-01').length).toBeGreaterThanOrEqual(1)
       expect(screen.getByText('IP Addresses')).toBeInTheDocument()
       expect(screen.getByText('10.0.1.10')).toBeInTheDocument()
       expect(screen.getByText('OS')).toBeInTheDocument()

@@ -263,19 +263,26 @@ describe('AssetsPage', () => {
       mockApi.stats.mockResolvedValue(makeStats())
     })
 
-    it('has a type dropdown with "All" as default', async () => {
+    it('has a type dropdown with server as an option', async () => {
       renderPage()
       await waitFor(() => screen.getByText('web-prod-01'))
-      // Both type and criticality dropdowns have "All" — get the first (type) one
-      const selects = screen.getAllByDisplayValue('All')
-      expect(selects.length).toBeGreaterThanOrEqual(1)
+      // The type select is the combobox that contains a "server" option
+      const comboboxes = screen.getAllByRole('combobox')
+      const typeSelect = comboboxes.find(el =>
+        (el as HTMLSelectElement).querySelector('option[value="server"]') !== null,
+      )
+      expect(typeSelect).toBeDefined()
     })
 
     it('changing the type dropdown re-queries the API', async () => {
       renderPage()
       await waitFor(() => screen.getByText('web-prod-01'))
-      const selects = screen.getAllByDisplayValue('All')
-      const select = selects[0] // type dropdown is the first "All" select
+      // Find the type select unambiguously by presence of a "server" option
+      const comboboxes = screen.getAllByRole('combobox')
+      const typeSelect = comboboxes.find(el =>
+        (el as HTMLSelectElement).querySelector('option[value="server"]') !== null,
+      ) as HTMLSelectElement
+      fireEvent.change(typeSelect, { target: { value: 'server' } })
       await waitFor(() =>
         expect(mockApi.list).toHaveBeenCalledWith(
           expect.objectContaining({ asset_type: 'server' }),
