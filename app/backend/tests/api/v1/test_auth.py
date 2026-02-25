@@ -1812,11 +1812,14 @@ async def test_mfa_setup_qr_code_uri_format(client: AsyncClient, analyst_headers
 
 @pytest.mark.asyncio
 async def test_mfa_setup_qr_code_uri_contains_user_email(client: AsyncClient, analyst_headers: dict) -> None:
-    """QR code URI contains the user's email address."""
+    """QR code URI contains the user's email address (handles URL percent-encoding of '@')."""
     user = _mfa_base_user()
     with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
         resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
-    assert _MFA_USER_EMAIL in resp.json()["qr_code_uri"]
+    uri = resp.json()["qr_code_uri"]
+    # pyotp percent-encodes '@' as '%40' in the path segment
+    encoded_email = _MFA_USER_EMAIL.replace("@", "%40")
+    assert encoded_email in uri or _MFA_USER_EMAIL in uri
 
 
 @pytest.mark.asyncio
