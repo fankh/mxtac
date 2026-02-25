@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.validators import escape_like
 from ..models.suppression_rule import SuppressionRule
 
 
@@ -44,10 +45,10 @@ class SuppressionRepo:
         if is_active is not None:
             q = q.where(SuppressionRule.is_active == is_active)
         if search:
-            pattern = f"%{search}%"
+            pattern = f"%{escape_like(search)}%"
             q = q.where(
-                SuppressionRule.name.ilike(pattern)
-                | SuppressionRule.reason.ilike(pattern)
+                SuppressionRule.name.ilike(pattern, escape="\\")
+                | SuppressionRule.reason.ilike(pattern, escape="\\")
             )
         q = q.order_by(SuppressionRule.id.desc())
 
