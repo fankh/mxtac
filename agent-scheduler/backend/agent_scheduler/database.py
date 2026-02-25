@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 engine = create_async_engine(
     settings.scheduler_db_url,
     echo=False,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
 )
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -25,6 +25,9 @@ async def init_db():
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     async with engine.begin() as conn:
+        # Enable WAL mode for concurrent read/write access
+        await conn.execute(text("PRAGMA journal_mode=WAL"))
+        await conn.execute(text("PRAGMA busy_timeout=30000"))
         await conn.run_sync(Base.metadata.create_all)
 
     await _ensure_columns()
