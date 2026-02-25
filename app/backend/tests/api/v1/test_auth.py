@@ -1715,3 +1715,240 @@ async def test_change_password_for_expired_returns_access_token(client: AsyncCli
     data = resp.json()
     assert "access_token" in data
     assert "refresh_token" in data
+
+
+# ---------------------------------------------------------------------------
+# Feature 32.1 — TOTP MFA setup
+# POST /api/v1/auth/mfa/setup
+# POST /api/v1/auth/mfa/verify-setup
+# ---------------------------------------------------------------------------
+
+import pyotp  # noqa: E402
+from app.api.v1.endpoints.auth import _encrypt_secret  # noqa: E402
+
+MFA_SETUP_URL = "/api/v1/auth/mfa/setup"
+MFA_VERIFY_SETUP_URL = "/api/v1/auth/mfa/verify-setup"
+
+_MFA_USER_EMAIL = "analyst@mxtac.local"
+
+
+def _mfa_base_user(
+    email: str = _MFA_USER_EMAIL,
+    mfa_secret: str | None = None,
+    mfa_enabled: bool = False,
+) -> User:
+    """Return an active User for MFA setup tests."""
+    u = User(
+        email=email,
+        hashed_password="$2b$12$placeholder_not_used_in_tests",
+        full_name="Analyst User",
+        role="analyst",
+        is_active=True,
+    )
+    u.mfa_secret = mfa_secret
+    u.mfa_enabled = mfa_enabled
+    return u
+
+
+def _mfa_user_with_secret(secret: str, email: str = _MFA_USER_EMAIL) -> User:
+    """Return an active User with an encrypted TOTP secret already stored."""
+    return _mfa_base_user(email=email, mfa_secret=_encrypt_secret(secret))
+
+
+# --- POST /auth/mfa/setup ---
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_returns_200(client: AsyncClient, analyst_headers: dict) -> None:
+    """Authenticated user gets 200 from the MFA setup endpoint."""
+    user = _mfa_base_user()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_response_has_secret(client: AsyncClient, analyst_headers: dict) -> None:
+    """Response contains a non-empty secret field."""
+    user = _mfa_base_user()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    data = resp.json()
+    assert "secret" in data
+    assert len(data["secret"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_secret_is_valid_base32(client: AsyncClient, analyst_headers: dict) -> None:
+    """The returned secret is a valid pyotp base32 string (generates a 6-digit code)."""
+    user = _mfa_base_user()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    secret = resp.json()["secret"]
+    code = pyotp.TOTP(secret).now()
+    assert len(code) == 6
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_response_has_qr_code_uri(client: AsyncClient, analyst_headers: dict) -> None:
+    """Response contains a non-empty qr_code_uri field."""
+    user = _mfa_base_user()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    data = resp.json()
+    assert "qr_code_uri" in data
+    assert len(data["qr_code_uri"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_qr_code_uri_format(client: AsyncClient, analyst_headers: dict) -> None:
+    """QR code URI uses the otpauth://totp/MxTac: scheme."""
+    user = _mfa_base_user()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    uri = resp.json()["qr_code_uri"]
+    assert uri.startswith("otpauth://totp/MxTac:")
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_qr_code_uri_contains_user_email(client: AsyncClient, analyst_headers: dict) -> None:
+    """QR code URI contains the user's email address."""
+    user = _mfa_base_user()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    assert _MFA_USER_EMAIL in resp.json()["qr_code_uri"]
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_qr_code_uri_contains_issuer(client: AsyncClient, analyst_headers: dict) -> None:
+    """QR code URI specifies MxTac as the issuer."""
+    user = _mfa_base_user()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    assert "issuer=MxTac" in resp.json()["qr_code_uri"]
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_returns_eight_backup_codes(client: AsyncClient, analyst_headers: dict) -> None:
+    """Response contains exactly 8 backup codes."""
+    user = _mfa_base_user()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    codes = resp.json()["backup_codes"]
+    assert len(codes) == 8
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_backup_codes_are_eight_chars(client: AsyncClient, analyst_headers: dict) -> None:
+    """Each backup code is exactly 8 alphanumeric characters."""
+    user = _mfa_base_user()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    for code in resp.json()["backup_codes"]:
+        assert len(code) == 8
+        assert code.isalnum()
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_secret_stored_on_user(client: AsyncClient, analyst_headers: dict) -> None:
+    """After setup, user.mfa_secret is set to an encrypted value (not the plain secret)."""
+    user = _mfa_base_user()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    plain_secret = resp.json()["secret"]
+    assert user.mfa_secret is not None
+    assert user.mfa_secret != plain_secret
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_does_not_enable_mfa(client: AsyncClient, analyst_headers: dict) -> None:
+    """Setup stores the secret but does not activate MFA — verify-setup must be called next."""
+    user = _mfa_base_user()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    assert user.mfa_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_unauthenticated_returns_401(client: AsyncClient) -> None:
+    """Request without an Authorization header returns 401."""
+    resp = await client.post(MFA_SETUP_URL)
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_mfa_setup_user_not_found_returns_404(client: AsyncClient, analyst_headers: dict) -> None:
+    """When the resolved user is not found in the DB, returns 404."""
+    with patch(MOCK_REPO, new=AsyncMock(return_value=None)):
+        resp = await client.post(MFA_SETUP_URL, headers=analyst_headers)
+    assert resp.status_code == 404
+
+
+# --- POST /auth/mfa/verify-setup ---
+
+
+@pytest.mark.asyncio
+async def test_mfa_verify_setup_valid_code_returns_200(client: AsyncClient, analyst_headers: dict) -> None:
+    """Correct TOTP code activates MFA and returns 200."""
+    secret = pyotp.random_base32()
+    user = _mfa_user_with_secret(secret)
+    code = pyotp.TOTP(secret).now()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_VERIFY_SETUP_URL, headers=analyst_headers, json={"code": code})
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_mfa_verify_setup_response_message(client: AsyncClient, analyst_headers: dict) -> None:
+    """Response body contains message='MFA enabled'."""
+    secret = pyotp.random_base32()
+    user = _mfa_user_with_secret(secret)
+    code = pyotp.TOTP(secret).now()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_VERIFY_SETUP_URL, headers=analyst_headers, json={"code": code})
+    assert resp.json()["message"] == "MFA enabled"
+
+
+@pytest.mark.asyncio
+async def test_mfa_verify_setup_enables_mfa_flag(client: AsyncClient, analyst_headers: dict) -> None:
+    """After successful verify-setup, user.mfa_enabled is set to True."""
+    secret = pyotp.random_base32()
+    user = _mfa_user_with_secret(secret)
+    code = pyotp.TOTP(secret).now()
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        await client.post(MFA_VERIFY_SETUP_URL, headers=analyst_headers, json={"code": code})
+    assert user.mfa_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_mfa_verify_setup_invalid_code_returns_400(client: AsyncClient, analyst_headers: dict) -> None:
+    """Wrong TOTP code returns 400 Bad Request."""
+    secret = pyotp.random_base32()
+    user = _mfa_user_with_secret(secret)
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_VERIFY_SETUP_URL, headers=analyst_headers, json={"code": "000000"})
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_mfa_verify_setup_no_secret_returns_400(client: AsyncClient, analyst_headers: dict) -> None:
+    """If MFA setup was never initiated (no mfa_secret stored), returns 400."""
+    user = _mfa_base_user(mfa_secret=None)
+    with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
+        resp = await client.post(MFA_VERIFY_SETUP_URL, headers=analyst_headers, json={"code": "123456"})
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_mfa_verify_setup_unauthenticated_returns_401(client: AsyncClient) -> None:
+    """Request without an Authorization header returns 401."""
+    resp = await client.post(MFA_VERIFY_SETUP_URL, json={"code": "123456"})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_mfa_verify_setup_user_not_found_returns_400(client: AsyncClient, analyst_headers: dict) -> None:
+    """When the user cannot be resolved, returns 400 (MFA setup not initiated path)."""
+    with patch(MOCK_REPO, new=AsyncMock(return_value=None)):
+        resp = await client.post(MFA_VERIFY_SETUP_URL, headers=analyst_headers, json={"code": "123456"})
+    assert resp.status_code == 400

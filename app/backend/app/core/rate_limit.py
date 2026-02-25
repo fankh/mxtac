@@ -30,10 +30,30 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+import valkey.asyncio as aioredis
+
+from .config import settings
 from .logging import get_logger
-from .valkey import get_valkey_client
 
 _logger = get_logger(__name__)
+
+# ── Valkey client ──────────────────────────────────────────────────────────────
+
+_valkey_client: aioredis.Valkey | None = None
+
+
+def get_valkey_client() -> aioredis.Valkey:
+    """Return (or lazily create) the Valkey client for rate limiting.
+
+    This is **synchronous** so that tests can patch it with
+    ``patch(return_value=mock_client)`` without needing an extra ``await``.
+    ``aioredis.from_url`` is itself synchronous — it only constructs the
+    connection pool; no I/O is performed until the first command.
+    """
+    global _valkey_client
+    if _valkey_client is None:
+        _valkey_client = aioredis.from_url(settings.valkey_url, decode_responses=True)
+    return _valkey_client
 
 # Lua: atomic INCR + conditional EXPIRE + TTL read — single round-trip.
 # Returns [count, ttl] where ttl is remaining seconds in the current window.
@@ -115,7 +135,7 @@ class RateLimiter:
     async def check(self, key: str, limit: int) -> tuple[bool, int, int]:
         """Increment counter and return (allowed, remaining, reset_at_epoch)."""
         try:
-            client = await get_valkey_client()
+            client = get_valkey_client()
             result = await client.eval(_RATE_LUA, 1, key, _WINDOW_SECS)
             count, ttl = int(result[0]), int(result[1])
             reset_at = int(time.time()) + max(ttl, 0)
