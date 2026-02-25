@@ -110,11 +110,10 @@ if $RUN_NODE; then
     NODE_EXIT=1
   else
     echo -e "${YELLOW}Known accepted vulnerabilities (dev-only, see SECURITY.md):${NC}"
-    echo "  - ajv < 6.14.0:         GHSA-2g4f-4pwh-qvx6 (moderate, ReDoS)"
-    echo "  - esbuild ≤ 0.24.2:     GHSA-67mh-4wv8-2f99 (moderate, dev-server only)"
-    echo "  - minimatch < 10.2.1:   GHSA-3ppc-4f35-3m26 (high, dev tooling only)"
-    echo "  All HIGH findings are in devDependencies (eslint, typescript-eslint, vitest)."
-    echo "  Fix requires breaking upgrades: eslint@10, vitest@4 — tracked in backlog."
+    echo "  - esbuild ≤ 0.24.2:  GHSA-67mh-4wv8-2f99 (moderate, dev-server only)"
+    echo "  All findings are in devDependencies (vitest, vite-node)."
+    echo "  Fix requires breaking upgrade: vitest@4 — tracked in backlog."
+    echo "  Production dependencies: 0 vulnerabilities."
     echo ""
 
     if $CI_MODE; then
