@@ -95,7 +95,7 @@ async def get_user(
 ):
     from ....repositories.user_repo import UserRepo
     user = await UserRepo.get_by_id(db, user_id)
-    if not user:
+    if not user or not user.is_active:
         raise HTTPException(status_code=404, detail="User not found")
     return _user_to_response(user)
 
