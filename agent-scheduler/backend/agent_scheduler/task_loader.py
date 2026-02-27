@@ -92,4 +92,10 @@ async def load_tasks_into_db(task_defs: list[dict]) -> tuple[int, int]:
         await session.commit()
 
     logger.info(f"Loaded tasks: {created} created, {skipped} skipped")
+
+    # Wake scheduler to dispatch newly loaded tasks immediately
+    if created > 0:
+        from .scheduler import scheduler
+        scheduler.notify()
+
     return created, skipped

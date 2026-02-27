@@ -44,6 +44,11 @@ class Scheduler:
         self._task: asyncio.Task | None = None
         self._last_action: datetime.datetime | None = None
         self._action_count: int = 0
+        self._wake_event: asyncio.Event = asyncio.Event()
+
+    def notify(self):
+        """Wake the scheduler loop immediately for event-driven dispatch."""
+        self._wake_event.set()
 
     @property
     def is_running(self) -> bool:
@@ -65,7 +70,7 @@ class Scheduler:
         return {
             "name": "Scheduler",
             "status": self.status,
-            "interval_seconds": 30,
+            "interval_seconds": 5,
             "description": "Dispatches eligible tasks based on dependencies and priority",
             "last_action": self._last_action.isoformat() if self._last_action else None,
             "action_count": self._action_count,
@@ -129,38 +134,51 @@ class Scheduler:
         self._paused = False
         logger.info("Scheduler resumed")
         await sse_broadcaster.broadcast("scheduler", {"status": "running"})
+        self.notify()
 
     async def _loop(self):
-        """Main scheduler loop — checks for eligible tasks every 30s."""
+        """Main scheduler loop — event-driven with 5s fallback poll."""
         while self._running:
             try:
                 if not self._paused:
                     await self._dispatch_eligible_tasks()
                 self._last_action = datetime.datetime.utcnow()
                 self._action_count += 1
-                await asyncio.sleep(30)
+                # Wait for wake event or timeout after 5s (fallback poll)
+                try:
+                    await asyncio.wait_for(self._wake_event.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    pass
+                self._wake_event.clear()
             except asyncio.CancelledError:
                 break
             except Exception:
                 logger.exception("Error in scheduler loop")
-                await asyncio.sleep(10)
+                await asyncio.sleep(5)
 
     async def _dispatch_eligible_tasks(self):
         """Find and dispatch tasks that are ready to run."""
         async with async_session() as session:
-            # Get all tasks
-            result = await session.execute(select(Task))
-            all_tasks = result.scalars().all()
+            # Query 1: Only PENDING tasks (candidates)
+            result = await session.execute(
+                select(Task).where(Task.status == TaskStatus.PENDING)
+            )
+            pending_tasks = result.scalars().all()
 
-            # Build status lookup
-            status_map = {t.task_id: t.status for t in all_tasks}
+            if not pending_tasks:
+                return
+
+            # Query 2: Terminal-status tasks for dependency checking
+            dep_result = await session.execute(
+                select(Task.task_id, Task.status).where(
+                    Task.status.in_([TaskStatus.COMPLETED, TaskStatus.SKIPPED, TaskStatus.FAILED])
+                )
+            )
+            status_map = {row.task_id: row.status for row in dep_result}
 
             # Find eligible tasks
             eligible = []
-            for task in all_tasks:
-                if task.status != TaskStatus.PENDING:
-                    continue
-
+            for task in pending_tasks:
                 # Check retry backoff
                 if task.retry_count > 0:
                     backoff = settings.scheduler_retry_backoff * (2 ** (task.retry_count - 1))
@@ -221,26 +239,21 @@ class Scheduler:
             if task is None or task.status != TaskStatus.PENDING:
                 return
 
-            # Mark as running
+            # Mark as running + create run + log start in a single commit
             task.status = TaskStatus.RUNNING
-            await session.commit()
-            await session.refresh(task)
-            logger.info(f"Task {task.id} ({task.task_id}) status -> RUNNING")
-            await sse_broadcaster.broadcast("task_update", task.to_dict())
-
-            # Create run record
             run = Run(
                 task_id=task.id,
                 attempt=task.retry_count + 1,
                 status=RunStatus.RUNNING,
             )
             session.add(run)
-            await session.commit()
-
-            # Log start
+            await session.flush()  # generates run.id
             log = Log(run_id=run.id, level="INFO", message=f"Starting task: {task.title}")
             session.add(log)
             await session.commit()
+            await session.refresh(task)
+            logger.info(f"Task {task.id} ({task.task_id}) status -> RUNNING")
+            await sse_broadcaster.broadcast("task_update", task.to_dict())
             await sse_broadcaster.broadcast("log", log.to_dict())
 
             # Save values before session closes
@@ -353,6 +366,8 @@ class Scheduler:
                 if task.status == TaskStatus.COMPLETED:
                     working_dir = task.working_directory
                     asyncio.create_task(self._run_auto_test(task_db_id, working_dir))
+                # Wake scheduler for dependents / retries
+                self.notify()
             if run:
                 await session.refresh(run)
                 await sse_broadcaster.broadcast("run_update", run.to_dict())
@@ -497,6 +512,7 @@ class Scheduler:
             await session.commit()
 
         asyncio.create_task(self._run_task(task_db_id))
+        self.notify()
         return True
 
     async def skip_task(self, task_db_id: int):
@@ -510,6 +526,7 @@ class Scheduler:
             await session.commit()
             await session.refresh(task)
             await sse_broadcaster.broadcast("task_update", task.to_dict())
+        self.notify()
         return True
 
     async def reset_task(self, task_db_id: int):
@@ -530,6 +547,7 @@ class Scheduler:
             await session.commit()
             await session.refresh(task)
             await sse_broadcaster.broadcast("task_update", task.to_dict())
+        self.notify()
         return True
 
     async def cancel_task(self, task_db_id: int):
@@ -652,6 +670,10 @@ class RetryAgent:
             for task in reset_tasks:
                 await session.refresh(task)
                 await sse_broadcaster.broadcast("task_update", task.to_dict())
+
+            # Wake scheduler to pick up reset tasks immediately
+            if reset_tasks:
+                scheduler.notify()
 
 
 class WatchdogAgent:
