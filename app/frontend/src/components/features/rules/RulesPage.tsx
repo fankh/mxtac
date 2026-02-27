@@ -18,6 +18,10 @@ interface Rule {
   fp_count: number
 }
 
+interface RuleDetail extends Rule {
+  content: string
+}
+
 interface TestResult {
   matched: boolean
   errors: string[]
@@ -79,9 +83,11 @@ function validateSigmaYaml(yaml: string): string[] {
   return errors
 }
 
-/** Map app theme to Monaco built-in theme name. */
+/** Map app theme to Monaco theme name. 'matrix' uses a custom theme registered via beforeMount. */
 function getMonacoTheme(theme: Theme): string {
-  return theme === 'light' ? 'vs' : 'vs-dark'
+  if (theme === 'light') return 'vs'
+  if (theme === 'matrix') return 'matrix'
+  return 'vs-dark'
 }
 
 /** Re-serialize YAML through js-yaml for consistent formatting. Returns original on parse error. */
@@ -110,6 +116,10 @@ export function RulesPage() {
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
+  // null = create mode, non-null = edit mode (holds the rule id being edited)
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null)
+  // tracks which row is loading so we can show a spinner on the row
+  const [loadingRuleId, setLoadingRuleId] = useState<string | null>(null)
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['rules'],
@@ -120,7 +130,12 @@ export function RulesPage() {
 
   const saveMutation = useMutation({
     mutationFn: async (yamlContent: string) => {
-      // Extract the title from YAML for the API payload
+      if (editingRuleId) {
+        // Edit mode: PATCH existing rule content
+        const resp = await apiClient.patch(`/rules/${editingRuleId}`, { content: yamlContent })
+        return resp.data
+      }
+      // Create mode: POST new rule
       const titleMatch = yamlContent.match(/^title:[ \t]*(.+)$/m)
       const title = titleMatch ? titleMatch[1].trim() : 'Untitled Rule'
       const resp = await apiClient.post('/rules', {
@@ -132,6 +147,7 @@ export function RulesPage() {
     },
     onSuccess: () => {
       setShowEditor(false)
+      setEditingRuleId(null)
       setEditorYaml(EXAMPLE_SIGMA)
       setValidationErrors([])
       setSaveError(null)
@@ -168,6 +184,34 @@ export function RulesPage() {
   })
 
   // ── Handlers ──────────────────────────────────────────────────────────────
+
+  // Register custom Monaco themes before the editor mounts so they can be referenced by name.
+  const handleBeforeMount = useCallback((monaco: Monaco) => {
+    monaco.editor.defineTheme('matrix', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: '',         foreground: '00FF41' },
+        { token: 'comment',  foreground: '005515' },
+        { token: 'string',   foreground: '33FF57' },
+        { token: 'keyword',  foreground: '00FF41', fontStyle: 'bold' },
+        { token: 'number',   foreground: '00CC33' },
+        { token: 'operator', foreground: '00BB30' },
+      ],
+      colors: {
+        'editor.background':                '#0A0A0A',
+        'editor.foreground':                '#00FF41',
+        'editorLineNumber.foreground':      '#005515',
+        'editorLineNumber.activeForeground':'#00FF41',
+        'editor.selectionBackground':       '#003311',
+        'editor.lineHighlightBackground':   '#0D1A0D',
+        'editorCursor.foreground':          '#00FF41',
+        'editor.inactiveSelectionBackground':'#002208',
+        'editorBracketMatch.background':    '#003311',
+        'editorBracketMatch.border':        '#00FF41',
+      },
+    })
+  }, [])
 
   const handleEditorMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor
@@ -256,8 +300,26 @@ export function RulesPage() {
     [],
   )
 
+  const handleRuleClick = useCallback(async (rule: Rule) => {
+    setLoadingRuleId(rule.id)
+    setValidationErrors([])
+    setSaveError(null)
+    setTestResult(null)
+    try {
+      const resp = await apiClient.get<RuleDetail>(`/rules/${rule.id}`)
+      setEditorYaml(resp.data.content)
+      setEditingRuleId(rule.id)
+      setShowEditor(true)
+    } catch {
+      // leave loadingRuleId cleared so the row is re-clickable
+    } finally {
+      setLoadingRuleId(null)
+    }
+  }, [])
+
   const handleEditorClose = useCallback(() => {
     setShowEditor(false)
+    setEditingRuleId(null)
     setValidationErrors([])
     setSaveError(null)
     setTestResult(null)
@@ -319,7 +381,7 @@ export function RulesPage() {
             Import YAML
           </button>
           <button
-            onClick={() => { setEditorYaml(EXAMPLE_SIGMA); setShowEditor(true); setValidationErrors([]); setSaveError(null); setTestResult(null) }}
+            onClick={() => { setEditingRuleId(null); setEditorYaml(EXAMPLE_SIGMA); setShowEditor(true); setValidationErrors([]); setSaveError(null); setTestResult(null) }}
             className="h-[28px] px-4 bg-blue text-white text-[12px] rounded-md hover:opacity-90"
           >
             + New Rule
@@ -353,7 +415,14 @@ export function RulesPage() {
           )}
 
           {visible.map((rule) => (
-            <div key={rule.id} className="grid grid-cols-[1fr_70px_100px_80px_80px_80px_60px] gap-2 px-3 py-[6px] border-b border-section items-center hover:bg-page">
+            <div
+              key={rule.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => void handleRuleClick(rule)}
+              onKeyDown={(e) => e.key === 'Enter' && void handleRuleClick(rule)}
+              className="grid grid-cols-[1fr_70px_100px_80px_80px_80px_60px] gap-2 px-3 py-[6px] border-b border-section items-center hover:bg-page cursor-pointer"
+            >
               <div className="min-w-0">
                 <div className="text-[11px] text-text-primary truncate font-medium">{rule.title}</div>
                 <div className="text-[10px] text-text-muted">{rule.id}</div>
@@ -373,7 +442,10 @@ export function RulesPage() {
               <span className="text-[11px] text-text-primary">{rule.hit_count.toLocaleString()}</span>
               <span className="text-[11px] text-text-muted">{rule.fp_count}</span>
               <div className="flex items-center">
-                <div className={`w-[6px] h-[6px] rounded-full ${rule.enabled ? 'bg-status-ok' : 'bg-border'}`} />
+                {loadingRuleId === rule.id
+                  ? <div className="w-[6px] h-[6px] rounded-full bg-blue animate-pulse" />
+                  : <div className={`w-[6px] h-[6px] rounded-full ${rule.enabled ? 'bg-status-ok' : 'bg-border'}`} />
+                }
               </div>
             </div>
           ))}
@@ -384,7 +456,9 @@ export function RulesPage() {
           <div className="fixed inset-0 bg-overlay z-50 flex items-center justify-center">
             <div className="bg-surface rounded-lg shadow-panel w-[800px] max-h-[85vh] flex flex-col">
               <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-                <h2 className="text-[13px] font-semibold text-text-primary">New Sigma Rule</h2>
+                <h2 className="text-[13px] font-semibold text-text-primary">
+                  {editingRuleId ? 'Edit Rule' : 'New Sigma Rule'}
+                </h2>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleFileImport}
@@ -392,7 +466,7 @@ export function RulesPage() {
                   >
                     Import file
                   </button>
-                  <button onClick={handleEditorClose} className="text-text-muted text-lg">x</button>
+                  <button onClick={handleEditorClose} className="text-text-muted text-lg leading-none">&times;</button>
                 </div>
               </div>
 
@@ -404,6 +478,7 @@ export function RulesPage() {
                     defaultLanguage="yaml"
                     value={editorYaml}
                     onChange={handleEditorChange}
+                    beforeMount={handleBeforeMount}
                     onMount={handleEditorMount}
                     theme={getMonacoTheme(theme)}
                     loading={

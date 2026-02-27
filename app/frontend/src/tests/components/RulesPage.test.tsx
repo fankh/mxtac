@@ -4,6 +4,7 @@ vi.mock('../../lib/api', () => ({
   apiClient: {
     get: vi.fn(),
     post: vi.fn(),
+    patch: vi.fn(),
   },
 }))
 
@@ -42,8 +43,9 @@ import { apiClient } from '../../lib/api'
 // Typed references to the mocked API
 // ---------------------------------------------------------------------------
 
-const mockGet  = apiClient.get  as ReturnType<typeof vi.fn>
-const mockPost = apiClient.post as ReturnType<typeof vi.fn>
+const mockGet   = apiClient.get   as ReturnType<typeof vi.fn>
+const mockPost  = apiClient.post  as ReturnType<typeof vi.fn>
+const mockPatch = apiClient.patch as ReturnType<typeof vi.fn>
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -655,7 +657,7 @@ describe('RulesPage', () => {
     it('closes the modal when the "x" button is clicked', async () => {
       renderPage()
       await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'x' }))
+      fireEvent.click(screen.getByRole('button', { name: '×' }))
       expect(screen.queryByText('New Sigma Rule')).not.toBeInTheDocument()
     })
 
@@ -1147,6 +1149,91 @@ describe('RulesPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
       fireEvent.click(screen.getByRole('button', { name: '+ New Rule' }))
       expect(screen.queryByText('✓ Matched')).not.toBeInTheDocument()
+    })
+  })
+
+  // =========================================================================
+  // Edit mode — click a rule row to open it in the Monaco editor
+  // =========================================================================
+
+  // YAML content that passes client-side validation (has title, detection, logsource)
+  const EDIT_YAML =
+    'title: Suspicious LSASS Memory Access\ndetection:\n  selection:\n    key: value\n  condition: selection\nlogsource:\n  product: windows\n'
+
+  const makeRuleDetail = () => ({
+    ...makeRule(),
+    content: EDIT_YAML,
+    description: 'Detects LSASS credential dump',
+  })
+
+  describe('edit mode', () => {
+    beforeEach(() => {
+      // Override the default "pending forever" mockGet set by the outer beforeEach.
+      // Distinguish list calls (/rules) from detail calls (/rules/<id>).
+      mockGet.mockImplementation((url: string) => {
+        if (url === '/rules') return Promise.resolve({ data: [makeRule()] })
+        if (/^\/rules\//.test(url)) return Promise.resolve({ data: makeRuleDetail() })
+        return Promise.reject(new Error(`Unexpected GET: ${url}`))
+      })
+      // Default: PATCH resolves immediately (overridden per-test as needed)
+      mockPatch.mockResolvedValue({ data: makeRule() })
+    })
+
+    it('clicking a rule row fetches rule detail and opens the editor', async () => {
+      renderPage()
+      const titleEl = await screen.findByText('Suspicious LSASS Memory Access')
+      fireEvent.click(titleEl)
+      await waitFor(() => expect(screen.getByText('Edit Rule')).toBeInTheDocument())
+      expect(mockGet).toHaveBeenCalledWith('/rules/rule-001')
+    })
+
+    it('editor is pre-filled with the rule YAML content in edit mode', async () => {
+      renderPage()
+      fireEvent.click(await screen.findByText('Suspicious LSASS Memory Access'))
+      await waitFor(() => screen.getByText('Edit Rule'))
+      expect(getEditorTextarea().value).toBe(EDIT_YAML)
+    })
+
+    it('shows "Edit Rule" as modal title and not "New Sigma Rule"', async () => {
+      renderPage()
+      fireEvent.click(await screen.findByText('Suspicious LSASS Memory Access'))
+      await waitFor(() => screen.getByText('Edit Rule'))
+      expect(screen.queryByText('New Sigma Rule')).not.toBeInTheDocument()
+    })
+
+    it('save in edit mode calls PATCH /rules/{id} and not POST /rules', async () => {
+      renderPage()
+      fireEvent.click(await screen.findByText('Suspicious LSASS Memory Access'))
+      await waitFor(() => screen.getByText('Edit Rule'))
+      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
+      await waitFor(() =>
+        expect(mockPatch).toHaveBeenCalledWith('/rules/rule-001', { content: EDIT_YAML }),
+      )
+      // POST /rules (create) must NOT have been called
+      expect(mockPost).not.toHaveBeenCalledWith(
+        '/rules',
+        expect.objectContaining({ content: expect.any(String) }),
+      )
+    })
+
+    it('modal closes after a successful PATCH', async () => {
+      renderPage()
+      fireEvent.click(await screen.findByText('Suspicious LSASS Memory Access'))
+      await waitFor(() => screen.getByText('Edit Rule'))
+      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
+      await waitFor(() => expect(screen.queryByText('Edit Rule')).not.toBeInTheDocument())
+    })
+
+    it('closing an edit modal then opening "+ New Rule" shows create mode title', async () => {
+      renderPage()
+      fireEvent.click(await screen.findByText('Suspicious LSASS Memory Access'))
+      await waitFor(() => screen.getByText('Edit Rule'))
+      // Close via Cancel
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      // Re-open in create mode
+      fireEvent.click(screen.getByRole('button', { name: '+ New Rule' }))
+      expect(screen.getByText('New Sigma Rule')).toBeInTheDocument()
+      expect(screen.queryByText('Edit Rule')).not.toBeInTheDocument()
     })
   })
 })
