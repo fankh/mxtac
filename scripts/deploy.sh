@@ -290,10 +290,15 @@ save_rollback_images() {
   PREV_BACKEND_TAG="$BACKEND_IMAGE_BASE:rollback"
   PREV_FRONTEND_TAG="$FRONTEND_IMAGE_BASE:rollback"
   # Tag currently deployed images as :rollback — silently skip if image absent
-  docker tag "$BACKEND_IMAGE_BASE:latest" "$PREV_BACKEND_TAG" 2>/dev/null \
-    && log_info "Saved backend rollback image: $PREV_BACKEND_TAG" || true
-  docker tag "$FRONTEND_IMAGE_BASE:latest" "$PREV_FRONTEND_TAG" 2>/dev/null \
-    && log_info "Saved frontend rollback image: $PREV_FRONTEND_TAG" || true
+  if $DRY_RUN; then
+    echo -e "${CYAN}[DRY-RUN]${NC} docker tag $BACKEND_IMAGE_BASE:latest $PREV_BACKEND_TAG"
+    echo -e "${CYAN}[DRY-RUN]${NC} docker tag $FRONTEND_IMAGE_BASE:latest $PREV_FRONTEND_TAG"
+  else
+    docker tag "$BACKEND_IMAGE_BASE:latest" "$PREV_BACKEND_TAG" 2>/dev/null \
+      && log_info "Saved backend rollback image: $PREV_BACKEND_TAG" || true
+    docker tag "$FRONTEND_IMAGE_BASE:latest" "$PREV_FRONTEND_TAG" 2>/dev/null \
+      && log_info "Saved frontend rollback image: $PREV_FRONTEND_TAG" || true
+  fi
 }
 
 pull_images() {
