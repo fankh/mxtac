@@ -574,8 +574,16 @@ class TestUserOrmModel:
         expected = {
             "id", "email", "hashed_password", "full_name", "role", "is_active",
             "created_at", "updated_at",
-            # MFA fields added in feature 32.1
+            # MFA fields added in migration 0010 (feature 32.1)
             "mfa_secret", "mfa_enabled", "mfa_backup_codes",
+            # Inactive account lock fields added in migration 0015 (feature 1.7)
+            "last_login_at", "inactive_locked_at",
+            # First-login forced password change added in migration 0016 (feature 1.8)
+            "must_change_password",
+            # Password expiry tracking added in migration 0017 (feature 2.3)
+            "password_changed_at",
+            # Password history added in migration 0018 (feature 2.4)
+            "password_history",
         }
         actual = {c.name for c in table.columns}
         assert expected == actual
