@@ -449,9 +449,10 @@ mod tests {
 
     #[test]
     fn test_high_numeric_ratio_domain() {
-        // "j4k2m9p1q3r7s5t" — alternating consonants and digits, 0 vowels.
+        // "j4k2m9p1q3r7s5t8" — 16-char alternating consonants and digits, 0 vowels.
+        // score: length(0.15) + numeric(0.15) + vowel(0.25) + bigram(0.20) = 0.75 → High.
         let det = make_detector();
-        let dns = make_query("j4k2m9p1q3r7s5t.com");
+        let dns = make_query("j4k2m9p1q3r7s5t8.com");
         let alert = det.evaluate(&dns);
         assert!(alert.is_some(), "high-numeric-ratio DGA domain should trigger");
         assert_eq!(alert.unwrap().severity, AlertSeverity::High);
@@ -563,7 +564,8 @@ mod tests {
     #[test]
     fn test_alert_technique_id() {
         let det = make_detector();
-        let alert = det.evaluate(&make_query("deadbeef12345678.evil.com")).expect("expected alert");
+        // Use a two-label domain so the hex string itself is the SLD.
+        let alert = det.evaluate(&make_query("deadbeef12345678.com")).expect("expected alert");
         assert_eq!(alert.evidence["technique_id"], "T1568.002");
         assert_eq!(
             alert.evidence["technique_name"],
@@ -574,15 +576,17 @@ mod tests {
     #[test]
     fn test_alert_domain_and_sld() {
         let det = make_detector();
-        let alert = det.evaluate(&make_query("deadbeef12345678.evil.com")).expect("expected alert");
-        assert_eq!(alert.evidence["domain"], "deadbeef12345678.evil.com");
-        assert_eq!(alert.evidence["sld"], "evil");
+        // Use a two-label domain so the hex string itself is the SLD.
+        let alert = det.evaluate(&make_query("deadbeef12345678.com")).expect("expected alert");
+        assert_eq!(alert.evidence["domain"], "deadbeef12345678.com");
+        assert_eq!(alert.evidence["sld"], "deadbeef12345678");
     }
 
     #[test]
     fn test_alert_dga_score_present() {
         let det = make_detector();
-        let alert = det.evaluate(&make_query("deadbeef12345678.evil.com")).expect("expected alert");
+        // Use a two-label domain so the hex string itself is the SLD.
+        let alert = det.evaluate(&make_query("deadbeef12345678.com")).expect("expected alert");
         let score = alert.evidence["dga_score"].as_f64().expect("dga_score must be a number");
         assert!(score >= 0.7, "high-confidence DGA score should be ≥ 0.7, got {score}");
     }

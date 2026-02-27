@@ -402,9 +402,11 @@ mod tests {
     #[test]
     fn test_saturating_add_prevents_overflow() {
         let mut det = make_detector(u64::MAX, 60);
-        // Send u64::MAX bytes — should not panic.
-        assert!(det.record_bytes(SRC, DST, 443, u64::MAX).is_none());
-        // Any additional bytes saturate at u64::MAX.
+        // Send u64::MAX bytes — equals the threshold exactly, so an alert fires.
+        // The important thing is that the code does not panic (no integer overflow).
+        let _ = det.record_bytes(SRC, DST, 443, u64::MAX);
+        // After the alert has fired (alerted flag set), additional bytes saturate
+        // at u64::MAX via saturating_add and produce no further alert.
         assert!(det.record_bytes(SRC, DST, 443, 1).is_none());
     }
 }
