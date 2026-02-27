@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 from pathlib import Path
 
 from sqlalchemy import select
@@ -23,18 +24,40 @@ class TaskCreatorAgent(BaseAgent):
     def __init__(self):
         super().__init__()
         self._interval = settings.agent_task_creator_interval
+        # Tier 2 rotation state
+        self._claude_scan_index: int = 0
+        self._spec_scan_index: int = 0
+        self._security_scan_index: int = 0
+        self._quality_scan_index: int = 0
+        self._scanned_files: dict[str, float] = {}  # path -> last-scanned timestamp
 
     async def run_cycle(self) -> dict:
         project_root = Path(settings.mxtac_project_root)
         gaps = []
 
-        # 1. Heuristic discovery
+        # Tier 0: Heuristic (free, always)
         gaps.extend(await self._scan_checklist(project_root))
         gaps.extend(await self._scan_implementation_plan(project_root))
         gaps.extend(await self._scan_test_gaps(project_root))
         gaps.extend(await self._scan_todos(project_root))
 
-        # 2. Dedup against existing tasks
+        # Tier 1: Structural cross-reference (free, always)
+        gaps.extend(await self._scan_architectural_gaps(project_root))
+        gaps.extend(await self._scan_stub_implementations(project_root))
+        gaps.extend(await self._scan_mock_data_dependencies(project_root))
+
+        # Tier 2: Claude semantic (1 of 3 per cycle, rotating)
+        if settings.agent_task_creator_use_claude:
+            idx = self._claude_scan_index % 3
+            if idx == 0:
+                gaps.extend(await self._scan_spec_compliance(project_root))
+            elif idx == 1:
+                gaps.extend(await self._scan_security_gaps(project_root))
+            else:
+                gaps.extend(await self._scan_code_quality(project_root))
+            self._claude_scan_index += 1
+
+        # Dedup against existing tasks
         gaps = await self._dedup_gaps(gaps)
 
         if not gaps:
@@ -197,6 +220,466 @@ class TaskCreatorAgent(BaseAgent):
                         })
 
         return gaps
+
+    # ── Tier 1: Structural cross-reference (no Claude API) ─────────────
+
+    async def _scan_architectural_gaps(self, root: Path) -> list[dict]:
+        """Cross-reference MxTac layers to find structural holes."""
+        gaps = []
+        backend = root / "app" / "backend" / "app"
+
+        # 1. Models without repositories
+        models_dir = backend / "models"
+        repos_dir = backend / "repositories"
+        if models_dir.exists() and repos_dir.exists():
+            repo_stems = {
+                p.stem.removesuffix("_repo")
+                for p in repos_dir.glob("*.py")
+                if not p.name.startswith("_")
+            }
+            for model_file in models_dir.glob("*.py"):
+                if model_file.name.startswith("_") or model_file.stem == "base":
+                    continue
+                if model_file.stem not in repo_stems:
+                    gaps.append({
+                        "id": f"auto-arch-missing-repo-{model_file.stem}",
+                        "source": "architectural-gap",
+                        "description": (
+                            f"Model '{model_file.stem}' has no repository — "
+                            f"expected repositories/{model_file.stem}_repo.py"
+                        ),
+                        "file": str(model_file),
+                    })
+
+        # 2. Services / repos / connectors / engine / pipeline without tests
+        test_root = root / "app" / "backend" / "tests"
+        scan_layers = [
+            ("repositories", "repositories"),
+            ("connectors", "connectors"),
+            ("engine", "engine"),
+            ("pipeline", "pipeline"),
+        ]
+        for layer, test_subdir in scan_layers:
+            src_dir = backend / layer
+            tst_dir = test_root / test_subdir
+            if not src_dir.exists():
+                continue
+            for src_file in src_dir.glob("*.py"):
+                if src_file.name.startswith("_"):
+                    continue
+                test_file = tst_dir / f"test_{src_file.name}" if tst_dir.exists() else None
+                if test_file is None or not test_file.exists():
+                    gaps.append({
+                        "id": f"auto-test-gap-{layer}-{src_file.stem}",
+                        "source": "test-gap",
+                        "description": f"Missing tests for {layer}/{src_file.name}",
+                        "file": str(src_file),
+                    })
+
+        # 3. Endpoints importing from mock_data
+        rc, stdout, _ = await self._run_subprocess(
+            r"grep -rn 'from.*mock_data import\|import.*mock_data' --include='*.py' .",
+            cwd=str(backend / "api" / "v1" / "endpoints") if (backend / "api" / "v1" / "endpoints").exists() else str(backend),
+            timeout=15,
+        )
+        if rc == 0 and stdout:
+            for line in stdout.strip().splitlines():
+                m = re.match(r"^(.+?):(\d+):", line)
+                if m:
+                    fpath = m.group(1).lstrip("./")
+                    gaps.append({
+                        "id": f"auto-arch-mock-import-{fpath.replace('/', '-').replace('.py', '')}",
+                        "source": "architectural-gap",
+                        "description": f"Endpoint {fpath} still imports mock_data — replace with real DB queries",
+                        "file": fpath,
+                        "line": int(m.group(2)),
+                    })
+
+        return gaps
+
+    async def _scan_stub_implementations(self, root: Path) -> list[dict]:
+        """Find functions whose body is only pass, ..., or raise NotImplementedError."""
+        gaps = []
+        backend = root / "app" / "backend" / "app"
+
+        scan_dirs = ["services", "connectors", "repositories", "engine", "pipeline"]
+        for dirname in scan_dirs:
+            src_dir = backend / dirname
+            if not src_dir.exists():
+                continue
+
+            # Use grep + awk to find stub functions:
+            # Match "def foo(...):" followed by a line that is only pass/Ellipsis/raise NotImplementedError
+            rc, stdout, _ = await self._run_subprocess(
+                r"""grep -rn -A1 '^\s*\(async \)\?def ' --include='*.py' . | """
+                r"""awk '/def /{fname=$0; next} """
+                r"""/^\s*(pass|\.\.\.|\.\.\.|raise NotImplementedError)\s*$/{print fname}'""",
+                cwd=str(src_dir),
+                timeout=30,
+            )
+            if rc == 0 and stdout:
+                for line in stdout.strip().splitlines():
+                    m = re.match(r"^(.+?)[:-](\d+)[:-]\s*(async\s+)?def\s+(\w+)", line)
+                    if m:
+                        fpath, lineno, _, func_name = m.groups()
+                        fpath = fpath.lstrip("./")
+                        slug = f"{dirname}-{fpath.replace('/', '-').replace('.py', '')}-{func_name}"
+                        gaps.append({
+                            "id": f"auto-stub-{slug}",
+                            "source": "stub-implementation",
+                            "description": (
+                                f"Stub function '{func_name}' in {dirname}/{fpath}:{lineno} "
+                                f"— body is pass/NotImplementedError"
+                            ),
+                            "file": str(src_dir / fpath),
+                            "line": int(lineno),
+                        })
+
+        return gaps
+
+    async def _scan_mock_data_dependencies(self, root: Path) -> list[dict]:
+        """Find every endpoint still relying on services/mock_data.py constants."""
+        gaps = []
+        mock_data_file = root / "app" / "backend" / "app" / "services" / "mock_data.py"
+        endpoints_dir = root / "app" / "backend" / "app" / "api" / "v1" / "endpoints"
+
+        if not mock_data_file.exists() or not endpoints_dir.exists():
+            return gaps
+
+        # Extract exported constant names from mock_data.py (uppercase identifiers at module level)
+        rc, stdout, _ = await self._run_subprocess(
+            r"grep -n '^[A-Z_][A-Z_0-9]*\s*[=:]' " + str(mock_data_file),
+            timeout=10,
+        )
+        if rc != 0 or not stdout:
+            return gaps
+
+        constants = []
+        for line in stdout.strip().splitlines():
+            m = re.match(r"^\d+:\s*([A-Z_][A-Z_0-9]*)", line)
+            if m:
+                constants.append(m.group(1))
+
+        if not constants:
+            return gaps
+
+        # For each endpoint file, check which constants are imported/used
+        for ep_file in endpoints_dir.glob("*.py"):
+            if ep_file.name.startswith("_"):
+                continue
+            try:
+                content = ep_file.read_text(errors="replace")
+            except Exception:
+                continue
+
+            for const in constants:
+                if const in content:
+                    ep_name = ep_file.stem
+                    gaps.append({
+                        "id": f"auto-mock-dep-{ep_name}-{const.lower()}",
+                        "source": "mock-data-dependency",
+                        "description": (
+                            f"Endpoint '{ep_name}' uses mock constant {const} — "
+                            f"replace with real DB/service call"
+                        ),
+                        "file": str(ep_file),
+                    })
+
+        return gaps
+
+    # ── Tier 2: Claude semantic analysis (rotates 1 per cycle) ───────
+
+    async def _scan_spec_compliance(self, root: Path) -> list[dict]:
+        """Compare API spec doc against actual endpoint implementations."""
+        gaps = []
+        spec_file = root / "docs" / "06-API-SPECIFICATION.md"
+        endpoints_dir = root / "app" / "backend" / "app" / "api" / "v1" / "endpoints"
+
+        if not spec_file.exists() or not endpoints_dir.exists():
+            return gaps
+
+        # Get list of endpoint files to scan (rotate through them)
+        ep_files = sorted(
+            [f for f in endpoints_dir.glob("*.py") if not f.name.startswith("_")],
+            key=lambda f: f.name,
+        )
+        if not ep_files:
+            return gaps
+
+        # Select batch of 5 based on rotation index
+        batch_size = 5
+        start = (self._spec_scan_index * batch_size) % len(ep_files)
+        batch = ep_files[start:start + batch_size]
+        self._spec_scan_index += 1
+
+        # Read spec (truncate to stay within token limits)
+        try:
+            spec_text = spec_file.read_text(errors="replace")[:12000]
+        except Exception:
+            return gaps
+
+        # Extract implemented routes from each file
+        for ep_file in batch:
+            try:
+                code = ep_file.read_text(errors="replace")
+            except Exception:
+                continue
+
+            # Extract route decorators for context
+            routes = re.findall(r'@router\.\w+\(["\']([^"\']+)', code)
+            if not routes:
+                continue
+
+            prompt = (
+                f"Compare this API specification excerpt against the endpoint implementation below.\n"
+                f"Identify SPECIFIC gaps: missing query parameters, missing response fields, "
+                f"pagination deviations, missing auth/permission checks, missing error responses.\n\n"
+                f"--- SPEC (excerpt) ---\n{spec_text[:6000]}\n\n"
+                f"--- ENDPOINT: {ep_file.name} (routes: {', '.join(routes)}) ---\n{code[:6000]}\n\n"
+                f"Respond with a JSON array of objects, each with:\n"
+                f'  {{"gap": "short description", "severity": "high|medium|low", "route": "/path"}}\n'
+                f"If no gaps found, return empty array []. JSON only, no markdown."
+            )
+
+            async with self._claude_semaphore:
+                rc, stdout = await self._call_claude(prompt, max_tokens=2048, timeout=90)
+
+            if rc == 0 and stdout.strip():
+                parsed = self._parse_json_array(stdout)
+                for item in parsed:
+                    desc = item.get("gap", "")
+                    route = item.get("route", "")
+                    severity = item.get("severity", "medium")
+                    slug = re.sub(r"[^a-z0-9]+", "-", desc.lower())[:40]
+                    gaps.append({
+                        "id": f"auto-spec-{ep_file.stem}-{slug}",
+                        "source": "spec-compliance",
+                        "description": f"[{severity}] {ep_file.stem} ({route}): {desc}",
+                        "file": str(ep_file),
+                    })
+
+        return gaps
+
+    async def _scan_security_gaps(self, root: Path) -> list[dict]:
+        """Cross-reference security implementation doc against code."""
+        gaps = []
+        sec_doc = root / "docs" / "12-BACKEND-SECURITY-IMPLEMENTATION.md"
+        backend = root / "app" / "backend" / "app"
+
+        if not sec_doc.exists():
+            return gaps
+
+        # Pre-scan: routes missing require_permission() or get_current_user
+        endpoints_dir = backend / "api" / "v1" / "endpoints"
+        unprotected = []
+        if endpoints_dir.exists():
+            for ep_file in sorted(endpoints_dir.glob("*.py")):
+                if ep_file.name.startswith("_"):
+                    continue
+                try:
+                    code = ep_file.read_text(errors="replace")
+                except Exception:
+                    continue
+                routes = re.findall(r'@router\.\w+\(["\']([^"\']+)', code)
+                has_auth = "get_current_user" in code or "require_permission" in code
+                has_post_patch = re.search(r"@router\.(post|put|patch)\(", code)
+                has_validator = "BaseModel" in code or "Body(" in code
+
+                if routes and not has_auth:
+                    unprotected.append((ep_file.stem, routes))
+                if has_post_patch and not has_validator:
+                    gaps.append({
+                        "id": f"auto-sec-no-validator-{ep_file.stem}",
+                        "source": "security-gap",
+                        "description": (
+                            f"Endpoint '{ep_file.stem}' has POST/PATCH routes "
+                            f"without Pydantic request validation"
+                        ),
+                        "file": str(ep_file),
+                    })
+
+            for ep_name, routes in unprotected:
+                gaps.append({
+                    "id": f"auto-sec-no-auth-{ep_name}",
+                    "source": "security-gap",
+                    "description": (
+                        f"Endpoint '{ep_name}' routes {routes[:3]} have no "
+                        f"auth check (require_permission / get_current_user)"
+                    ),
+                    "file": str(endpoints_dir / f"{ep_name}.py"),
+                })
+
+        # Claude-powered deep analysis: rotate through domains
+        domains = ["authentication", "rbac", "input-validation"]
+        domain = domains[self._security_scan_index % len(domains)]
+        self._security_scan_index += 1
+
+        try:
+            sec_text = sec_doc.read_text(errors="replace")[:8000]
+        except Exception:
+            return gaps
+
+        # Gather relevant code snippets based on domain
+        if domain == "authentication":
+            code_dir = backend / "core"
+            code_files = ["security.py", "api_key_auth.py"]
+        elif domain == "rbac":
+            code_dir = backend / "core"
+            code_files = ["rbac.py"]
+        else:
+            code_dir = backend / "schemas"
+            code_files = sorted(
+                [f.name for f in code_dir.glob("*.py") if not f.name.startswith("_")]
+            )[:3] if code_dir.exists() else []
+
+        code_snippets = []
+        if code_dir.exists():
+            for fname in code_files:
+                fpath = code_dir / fname
+                if fpath.exists():
+                    try:
+                        code_snippets.append(
+                            f"--- {fname} ---\n{fpath.read_text(errors='replace')[:4000]}"
+                        )
+                    except Exception:
+                        pass
+
+        if not code_snippets:
+            return gaps
+
+        prompt = (
+            f"Analyze the MxTac backend '{domain}' implementation for security gaps.\n"
+            f"Compare the security spec against the actual code.\n\n"
+            f"--- SECURITY SPEC (excerpt) ---\n{sec_text}\n\n"
+            f"--- CODE ---\n{''.join(code_snippets)}\n\n"
+            f"Identify SPECIFIC security gaps: missing checks, weak defaults, "
+            f"missing rate limiting, insecure patterns, missing audit logging.\n"
+            f"Respond with a JSON array of objects:\n"
+            f'  {{"gap": "description", "severity": "critical|high|medium|low", "file": "filename"}}\n'
+            f"JSON only, no markdown."
+        )
+
+        async with self._claude_semaphore:
+            rc, stdout = await self._call_claude(prompt, max_tokens=2048, timeout=90)
+
+        if rc == 0 and stdout.strip():
+            parsed = self._parse_json_array(stdout)
+            for item in parsed:
+                desc = item.get("gap", "")
+                severity = item.get("severity", "medium")
+                fname = item.get("file", "")
+                slug = re.sub(r"[^a-z0-9]+", "-", desc.lower())[:40]
+                gaps.append({
+                    "id": f"auto-sec-{domain}-{slug}",
+                    "source": "security-gap",
+                    "description": f"[{severity}] {domain}: {desc}",
+                    "file": fname,
+                })
+
+        return gaps
+
+    async def _scan_code_quality(self, root: Path) -> list[dict]:
+        """Claude-powered analysis of rotating file sample for quality issues."""
+        gaps = []
+        backend = root / "app" / "backend" / "app"
+        if not backend.exists():
+            return gaps
+
+        now_ts = time.time()
+        cooldown = 86400  # 24 hours
+
+        # Collect candidate files, prioritized
+        candidates: list[Path] = []
+        for dirname in ["services", "connectors", "repositories", "engine"]:
+            src_dir = backend / dirname
+            if src_dir.exists():
+                for f in src_dir.glob("*.py"):
+                    if f.name.startswith("_"):
+                        continue
+                    # Skip if scanned within cooldown
+                    last = self._scanned_files.get(str(f), 0)
+                    if now_ts - last < cooldown:
+                        continue
+                    candidates.append(f)
+
+        if not candidates:
+            return gaps
+
+        # Sort: larger files first (more likely to have issues)
+        candidates.sort(key=lambda f: f.stat().st_size, reverse=True)
+
+        sample_size = settings.agent_task_creator_quality_sample_size
+        sample = candidates[:sample_size]
+
+        for fpath in sample:
+            try:
+                code = fpath.read_text(errors="replace")
+            except Exception:
+                continue
+
+            # Truncate very large files
+            if len(code) > 8000:
+                code = code[:8000] + "\n... (truncated)"
+
+            rel_path = fpath.relative_to(backend)
+            prompt = (
+                f"Analyze this Python file from the MxTac security platform for code quality issues.\n"
+                f"File: {rel_path}\n\n"
+                f"```python\n{code}\n```\n\n"
+                f"Find SPECIFIC, actionable issues:\n"
+                f"- Stub functions (pass/NotImplementedError body)\n"
+                f"- Missing error handling for external calls\n"
+                f"- Hardcoded values that should be configurable\n"
+                f"- Mock data usage instead of real data sources\n"
+                f"- Missing logging for important operations\n"
+                f"- Functions that are defined but never complete their stated purpose\n\n"
+                f"Respond with a JSON array of objects:\n"
+                f'  {{"issue": "description", "severity": "high|medium|low", '
+                f'"line": 0, "function": "name_or_empty"}}\n'
+                f"If the file is well-implemented with no issues, return []. JSON only."
+            )
+
+            async with self._claude_semaphore:
+                rc, stdout = await self._call_claude(prompt, max_tokens=2048, timeout=90)
+
+            self._scanned_files[str(fpath)] = now_ts
+
+            if rc == 0 and stdout.strip():
+                parsed = self._parse_json_array(stdout)
+                for item in parsed:
+                    desc = item.get("issue", "")
+                    severity = item.get("severity", "medium")
+                    func_name = item.get("function", "")
+                    slug = re.sub(r"[^a-z0-9]+", "-", desc.lower())[:40]
+                    gap_id = f"auto-quality-{rel_path.stem}-{slug}"
+                    gaps.append({
+                        "id": gap_id,
+                        "source": "code-quality",
+                        "description": (
+                            f"[{severity}] {rel_path}"
+                            + (f" ({func_name})" if func_name else "")
+                            + f": {desc}"
+                        ),
+                        "file": str(fpath),
+                        "line": item.get("line", 0),
+                    })
+
+        return gaps
+
+    @staticmethod
+    def _parse_json_array(text: str) -> list[dict]:
+        """Extract a JSON array from Claude's response text."""
+        text = text.strip()
+        start = text.find("[")
+        end = text.rfind("]") + 1
+        if start >= 0 and end > start:
+            try:
+                parsed = json.loads(text[start:end])
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return []
 
     async def _dedup_gaps(self, gaps: list[dict]) -> list[dict]:
         """Remove gaps that already have corresponding tasks in the DB."""

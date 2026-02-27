@@ -358,6 +358,78 @@ class TestVelociraptorConnectorConnect:
         # Should not raise — trailing slash is stripped
         await conn._connect()
 
+    async def test_connect_passes_client_cert_string_to_httpx(self) -> None:
+        conn = VelociraptorConnector(
+            _make_config(client_cert="/path/to/client.pem"),
+            InMemoryQueue(),
+        )
+        captured_kwargs: dict = {}
+
+        def _fake_client_factory(**kwargs):
+            captured_kwargs.update(kwargs)
+            return _make_stream_client([
+                _make_streaming_response(_health_response_lines()),
+            ])
+
+        with patch("httpx.AsyncClient", side_effect=_fake_client_factory):
+            await conn._connect()
+
+        assert captured_kwargs.get("cert") == "/path/to/client.pem"
+
+    async def test_connect_passes_client_cert_tuple_to_httpx(self) -> None:
+        conn = VelociraptorConnector(
+            _make_config(client_cert=["/path/to/cert.pem", "/path/to/key.pem"]),
+            InMemoryQueue(),
+        )
+        captured_kwargs: dict = {}
+
+        def _fake_client_factory(**kwargs):
+            captured_kwargs.update(kwargs)
+            return _make_stream_client([
+                _make_streaming_response(_health_response_lines()),
+            ])
+
+        with patch("httpx.AsyncClient", side_effect=_fake_client_factory):
+            await conn._connect()
+
+        assert captured_kwargs.get("cert") == ("/path/to/cert.pem", "/path/to/key.pem")
+
+    async def test_connect_does_not_pass_cert_when_client_cert_is_none(self) -> None:
+        conn = VelociraptorConnector(
+            _make_config(client_cert=None),
+            InMemoryQueue(),
+        )
+        captured_kwargs: dict = {}
+
+        def _fake_client_factory(**kwargs):
+            captured_kwargs.update(kwargs)
+            return _make_stream_client([
+                _make_streaming_response(_health_response_lines()),
+            ])
+
+        with patch("httpx.AsyncClient", side_effect=_fake_client_factory):
+            await conn._connect()
+
+        assert "cert" not in captured_kwargs
+
+    async def test_connect_does_not_pass_cert_when_client_cert_is_empty_string(self) -> None:
+        conn = VelociraptorConnector(
+            _make_config(client_cert=""),
+            InMemoryQueue(),
+        )
+        captured_kwargs: dict = {}
+
+        def _fake_client_factory(**kwargs):
+            captured_kwargs.update(kwargs)
+            return _make_stream_client([
+                _make_streaming_response(_health_response_lines()),
+            ])
+
+        with patch("httpx.AsyncClient", side_effect=_fake_client_factory):
+            await conn._connect()
+
+        assert "cert" not in captured_kwargs
+
 
 # ── _run_vql() ─────────────────────────────────────────────────────────────────
 
@@ -1079,3 +1151,28 @@ class TestVelociraptorConnectorFactory:
             InMemoryQueue(),
         )
         assert conn.config.extra["org_id"] == "acme"
+
+    def test_client_cert_defaults_to_none(self) -> None:
+        conn = VelociraptorConnectorFactory.from_dict(
+            {"api_url": "https://v.test", "api_key": "k"},
+            InMemoryQueue(),
+        )
+        assert conn.config.extra["client_cert"] is None
+
+    def test_client_cert_string_path_passed_through(self) -> None:
+        conn = VelociraptorConnectorFactory.from_dict(
+            {"api_url": "https://v.test", "api_key": "k", "client_cert": "/certs/client.pem"},
+            InMemoryQueue(),
+        )
+        assert conn.config.extra["client_cert"] == "/certs/client.pem"
+
+    def test_client_cert_list_passed_through(self) -> None:
+        conn = VelociraptorConnectorFactory.from_dict(
+            {
+                "api_url": "https://v.test",
+                "api_key": "k",
+                "client_cert": ["/certs/cert.pem", "/certs/key.pem"],
+            },
+            InMemoryQueue(),
+        )
+        assert conn.config.extra["client_cert"] == ["/certs/cert.pem", "/certs/key.pem"]

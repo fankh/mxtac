@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     agent_task_creator_interval: int = 300  # 5 minutes
     agent_task_creator_max_tasks_per_cycle: int = 20
     agent_task_creator_use_claude: bool = True
+    agent_task_creator_quality_sample_size: int = 3  # files per quality scan cycle
 
     # VerifierAgent (P0)
     agent_verifier_enabled: bool = True

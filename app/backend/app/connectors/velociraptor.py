@@ -19,6 +19,11 @@ Optional config.extra keys:
   verify_ssl: bool      — SSL certificate verification. Default: True.
   timeout: int          — HTTP request timeout in seconds. Default: 30.
   org_id: str           — Velociraptor org ID for multi-tenant deployments. Default: "".
+  client_cert: str | list[str] | None
+                        — Path to a PEM file containing client certificate + private key
+                          for mutual TLS authentication, or a two-element list/tuple
+                          [cert_path, key_path] to specify them separately.
+                          When None or empty, no client certificate is used. Default: None.
 
 Feature 6.23: Velociraptor connector — forensic artifacts.
   Polls the Velociraptor VQL endpoint every poll_interval_seconds and publishes
@@ -107,11 +112,12 @@ class VelociraptorConnector(BaseConnector):
 
     async def _connect(self) -> None:
         extra = self.config.extra
-        api_url    = extra.get("api_url", "").rstrip("/")
-        api_key    = extra.get("api_key", "")
-        verify_ssl = extra.get("verify_ssl", True)
-        timeout    = extra.get("timeout", 30)
-        org_id     = extra.get("org_id", "")
+        api_url     = extra.get("api_url", "").rstrip("/")
+        api_key     = extra.get("api_key", "")
+        verify_ssl  = extra.get("verify_ssl", True)
+        timeout     = extra.get("timeout", 30)
+        org_id      = extra.get("org_id", "")
+        client_cert = extra.get("client_cert") or None
 
         if not api_url:
             raise ConnectionError("Missing required config key: api_url")
@@ -125,14 +131,25 @@ class VelociraptorConnector(BaseConnector):
         if org_id:
             headers["Grpc-Metadata-Velociraptor-Org-Id"] = org_id
 
+        # Normalise client_cert: accept a plain path string or a [cert, key] list/tuple
+        cert_arg: str | tuple[str, str] | None = None
+        if client_cert is not None:
+            if isinstance(client_cert, (list, tuple)) and len(client_cert) == 2:
+                cert_arg = (str(client_cert[0]), str(client_cert[1]))
+            else:
+                cert_arg = str(client_cert)
+
         if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url=api_url,
-                headers=headers,
-                verify=verify_ssl,
-                timeout=timeout,
-                follow_redirects=True,
-            )
+            client_kwargs: dict = {
+                "base_url": api_url,
+                "headers": headers,
+                "verify": verify_ssl,
+                "timeout": timeout,
+                "follow_redirects": True,
+            }
+            if cert_arg is not None:
+                client_kwargs["cert"] = cert_arg
+            self._client = httpx.AsyncClient(**client_kwargs)
 
         # Health probe — run a trivial VQL query to verify connectivity and auth
         rows: list[dict[str, Any]] = []
@@ -320,14 +337,15 @@ class VelociraptorConnectorFactory:
             enabled=d.get("enabled", True),
             poll_interval_seconds=d.get("poll_interval_seconds", 300),
             extra={
-                "api_url":    d["api_url"],
-                "api_key":    d["api_key"],
-                "artifacts":  d.get("artifacts", []),
-                "vql":        d.get("vql", ""),
-                "page_size":  d.get("page_size", DEFAULT_PAGE_SIZE),
-                "verify_ssl": d.get("verify_ssl", True),
-                "timeout":    d.get("timeout", 30),
-                "org_id":     d.get("org_id", ""),
+                "api_url":     d["api_url"],
+                "api_key":     d["api_key"],
+                "artifacts":   d.get("artifacts", []),
+                "vql":         d.get("vql", ""),
+                "page_size":   d.get("page_size", DEFAULT_PAGE_SIZE),
+                "verify_ssl":  d.get("verify_ssl", True),
+                "timeout":     d.get("timeout", 30),
+                "org_id":      d.get("org_id", ""),
+                "client_cert": d.get("client_cert"),
             },
         )
         return VelociraptorConnector(config, queue)

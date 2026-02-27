@@ -30,8 +30,19 @@ class SSEBroadcaster:
 
     async def broadcast(self, event: str, data: dict):
         msg = {"event": event, "data": data}
+        dead: list[asyncio.Queue] = []
         for q in self._queues:
-            await q.put(msg)
+            try:
+                q.put_nowait(msg)
+            except asyncio.QueueFull:
+                dead.append(q)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            try:
+                self._queues.remove(q)
+            except ValueError:
+                pass
 
 
 sse_broadcaster = SSEBroadcaster()
@@ -403,7 +414,10 @@ class Scheduler:
                 )
             except asyncio.TimeoutError:
                 proc.kill()
-                await proc.communicate()
+                try:
+                    await asyncio.wait_for(proc.communicate(), timeout=5)
+                except asyncio.TimeoutError:
+                    logger.warning(f"Test process for task {task_db_id} still alive after SIGKILL")
                 stdout = b""
                 stderr = b"Test timed out"
 
@@ -432,6 +446,26 @@ class Scheduler:
                     await session.refresh(task)
                     await sse_broadcaster.broadcast("task_update", task.to_dict())
 
+    @staticmethod
+    async def _git_exec(*args: str, cwd: str, timeout: int = 30) -> tuple[int, bytes, bytes]:
+        """Run a git command with timeout. Returns (returncode, stdout, stderr)."""
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=5)
+            except asyncio.TimeoutError:
+                pass
+            return -1, b"", f"git {args[1] if len(args) > 1 else ''} timed out after {timeout}s".encode()
+        return proc.returncode or 0, stdout, stderr
+
     async def _git_auto_commit(
         self, task_db_id: int, task_id: str, title: str, working_dir: str
     ) -> str | None:
@@ -440,48 +474,30 @@ class Scheduler:
         logger.info(f"Auto-commit check for {task_id} in {cwd}")
         try:
             # Check for changes
-            proc = await asyncio.create_subprocess_exec(
-                "git", "status", "--porcelain",
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await proc.communicate()
+            rc, stdout, stderr = await self._git_exec("git", "status", "--porcelain", cwd=cwd)
+            if rc != 0:
+                logger.warning(f"Task {task_id}: git status failed: {stderr.decode(errors='replace')}")
+                return None
             if not stdout or not stdout.strip():
                 logger.info(f"Task {task_id}: no changes to commit")
                 return None
 
             # Stage all changes
-            proc = await asyncio.create_subprocess_exec(
-                "git", "add", "-A",
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await proc.communicate()
+            rc, _, stderr = await self._git_exec("git", "add", "-A", cwd=cwd)
+            if rc != 0:
+                logger.warning(f"Task {task_id}: git add failed: {stderr.decode(errors='replace')}")
+                return None
 
             # Commit
             commit_msg = f"feat({task_id}): {title}"
-            proc = await asyncio.create_subprocess_exec(
-                "git", "commit", "-m", commit_msg,
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await proc.communicate()
-            if proc.returncode != 0:
-                logger.warning(f"Task {task_id}: git commit failed (exit {proc.returncode})")
+            rc, _, stderr = await self._git_exec("git", "commit", "-m", commit_msg, cwd=cwd)
+            if rc != 0:
+                logger.warning(f"Task {task_id}: git commit failed (exit {rc})")
                 return None
 
             # Get commit SHA
-            proc = await asyncio.create_subprocess_exec(
-                "git", "rev-parse", "HEAD",
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await proc.communicate()
-            sha = stdout.decode().strip()[:40] if stdout else None
+            rc, stdout, _ = await self._git_exec("git", "rev-parse", "HEAD", cwd=cwd)
+            sha = stdout.decode().strip()[:40] if rc == 0 and stdout else None
             if sha:
                 logger.info(f"Task {task_id}: committed {sha[:8]}")
             return sha

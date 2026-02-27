@@ -4,6 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 
 import anthropic
+import httpx
 
 from ..config import now, settings
 from ..database import async_session
@@ -142,6 +143,12 @@ class BaseAgent(ABC):
             kwargs = {}
             if settings.anthropic_api_key:
                 kwargs["api_key"] = settings.anthropic_api_key
+            kwargs["timeout"] = httpx.Timeout(
+                connect=30.0,
+                read=600.0,
+                write=30.0,
+                pool=30.0,
+            )
             cls._claude_client = anthropic.AsyncAnthropic(**kwargs)
         return cls._claude_client
 

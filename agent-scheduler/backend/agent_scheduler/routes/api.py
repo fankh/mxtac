@@ -298,7 +298,7 @@ async def get_task(task_db_id: int, session: AsyncSession = Depends(get_session)
 @router.get("/tasks/{task_db_id}/runs")
 async def get_task_runs(task_db_id: int, session: AsyncSession = Depends(get_session)):
     result = await session.execute(
-        select(Run).where(Run.task_id == task_db_id).order_by(Run.attempt.desc())
+        select(Run).where(Run.task_id == task_db_id).order_by(Run.id.desc())
     )
     runs = result.scalars().all()
     return [r.to_dict() for r in runs]

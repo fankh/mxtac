@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass, field
 
 import anthropic
+import httpx
 
 from .config import settings
 from .context import build_api_messages
@@ -31,12 +32,20 @@ class Executor:
         self._client: anthropic.AsyncAnthropic | None = None
 
     def _get_client(self) -> anthropic.AsyncAnthropic:
-        """Lazy-init the async Anthropic client."""
+        """Lazy-init the async Anthropic client with HTTP-level timeouts."""
         if self._client is None:
             kwargs = {}
             if settings.anthropic_api_key:
                 kwargs["api_key"] = settings.anthropic_api_key
-            # Falls back to ANTHROPIC_API_KEY env var if not set in config
+            # HTTP-level timeout ensures the connection is forcibly closed
+            # even if asyncio task cancellation is not honored by the SDK.
+            # connect=30s, read=600s (10min per chunk), write=30s, pool=30s
+            kwargs["timeout"] = httpx.Timeout(
+                connect=30.0,
+                read=600.0,
+                write=30.0,
+                pool=30.0,
+            )
             self._client = anthropic.AsyncAnthropic(**kwargs)
         return self._client
 
