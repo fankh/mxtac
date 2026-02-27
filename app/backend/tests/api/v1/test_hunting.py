@@ -78,13 +78,23 @@ async def test_limit_boundary_50_is_valid(
 
 
 @pytest.mark.asyncio
-async def test_high_severity_detection_yields_medium_priority(
+async def test_high_severity_detection_with_rule_yields_medium_priority(
     client: AsyncClient,
     db_session: AsyncSession,
     auth_headers: dict,
 ) -> None:
-    """A technique with only high-severity detections (no critical) gets priority='medium'."""
+    """A high-severity (non-critical) detection covered by an enabled rule gets priority='medium'.
+
+    Priority logic:
+      high   → critical > 0  OR  (count > 0 AND rule_count == 0)
+      medium → high > 0  OR  count > 0  (after high conditions fail)
+      low    → neither above
+
+    For medium: no critical, rule_count > 0 (so the no-coverage path is skipped),
+    and high > 0.
+    """
     from app.models.detection import Detection
+    from app.models.rule import Rule
 
     now = _utcnow()
     db_session.add(
@@ -101,6 +111,16 @@ async def test_high_severity_detection_yields_medium_priority(
             status="active",
         )
     )
+    # Add an enabled rule covering T1566.001 → rule_count=1 → no longer a "no coverage" gap
+    db_session.add(
+        Rule(
+            title="Phishing Attachment Rule",
+            content="title: Phishing Attachment\n",
+            level="high",
+            enabled=True,
+            technique_ids=json.dumps(["T1566.001"]),
+        )
+    )
     await db_session.flush()
 
     resp = await client.get("/api/v1/hunting/suggestions", headers=auth_headers)
@@ -108,7 +128,9 @@ async def test_high_severity_detection_yields_medium_priority(
     suggestions = resp.json()["suggestions"]
     s = next((x for x in suggestions if x["technique_id"] == "T1566.001"), None)
     assert s is not None
+    # critical=0, rule_count=1, high=1 → medium priority
     assert s["priority"] == "medium"
+    assert s["rule_count"] == 1
 
 
 @pytest.mark.asyncio
