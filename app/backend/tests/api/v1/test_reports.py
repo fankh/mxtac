@@ -104,7 +104,7 @@ async def _seed_ready_report(
 async def test_generate_returns_202(client: AsyncClient, analyst_headers: dict) -> None:
     """POST /reports/generate returns 202 with report_id and status='generating'."""
     with patch("app.api.v1.endpoints.reports.asyncio.create_task") as mock_ct:
-        mock_ct.return_value = None
+        mock_ct.side_effect = lambda coro: coro.close()
         resp = await client.post(_BASE_URL + "/generate", json=_GENERATE_BODY, headers=analyst_headers)
 
     assert resp.status_code == 202
@@ -120,7 +120,7 @@ async def test_generate_creates_db_record(
 ) -> None:
     """POST /reports/generate persists a report record in the DB."""
     with patch("app.api.v1.endpoints.reports.asyncio.create_task") as mock_ct:
-        mock_ct.return_value = None
+        mock_ct.side_effect = lambda coro: coro.close()
         resp = await client.post(_BASE_URL + "/generate", json=_GENERATE_BODY, headers=analyst_headers)
 
     report_id = resp.json()["report_id"]
@@ -137,7 +137,7 @@ async def test_generate_csv_format(client: AsyncClient, analyst_headers: dict) -
     """CSV format is accepted for report generation."""
     body = {**_GENERATE_BODY, "format": "csv"}
     with patch("app.api.v1.endpoints.reports.asyncio.create_task") as mock_ct:
-        mock_ct.return_value = None
+        mock_ct.side_effect = lambda coro: coro.close()
         resp = await client.post(_BASE_URL + "/generate", json=body, headers=analyst_headers)
 
     assert resp.status_code == 202
@@ -467,7 +467,7 @@ async def test_engineer_can_generate_report(
 ) -> None:
     """Engineer role can generate reports."""
     with patch("app.api.v1.endpoints.reports.asyncio.create_task") as mock_ct:
-        mock_ct.return_value = None
+        mock_ct.side_effect = lambda coro: coro.close()
         resp = await client.post(
             _BASE_URL + "/generate", json=_GENERATE_BODY, headers=engineer_headers
         )
