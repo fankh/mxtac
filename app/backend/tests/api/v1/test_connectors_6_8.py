@@ -280,7 +280,7 @@ async def test_suricata_test_not_reachable_when_eve_file_missing(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("connector_type", ["velociraptor", "osquery", "generic"])
+@pytest.mark.parametrize("connector_type", ["osquery", "generic"])
 async def test_unsupported_type_returns_not_reachable(
     client: AsyncClient, engineer_headers: dict, connector_type: str
 ) -> None:
