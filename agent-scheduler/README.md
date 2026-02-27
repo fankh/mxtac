@@ -510,26 +510,70 @@ es.addEventListener('log', (e) => {
 
 ## Configuration reference
 
-Copy `.env.example` to `.env` and adjust values. All variables have defaults and are optional unless noted.
+Copy `.env.example` to `.env` and adjust values. All variables have defaults and are optional unless marked **required**.
+
+### Core
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SCHEDULER_DB_URL` | `sqlite+aiosqlite:///./data/scheduler.db` | SQLAlchemy async database URL |
 | `SCHEDULER_HOST` | `0.0.0.0` | Bind address for uvicorn |
 | `SCHEDULER_PORT` | `13002` | Listen port |
+| `MXTAC_PROJECT_ROOT` | `/home/khchoi/development/new-research/mitre-attack/mxtac` | Absolute path to the MxTac repository root |
+| `AUTH_PASSWORD` | _(empty)_ | Dashboard password; empty disables auth entirely |
+
+### Scheduler tuning
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `SCHEDULER_MAX_CONCURRENT` | `2` | Max tasks running simultaneously |
-| `SCHEDULER_SPAWN_DELAY` | `30` | Seconds between scheduler loop iterations |
+| `SCHEDULER_SPAWN_DELAY` | `3` | Seconds between consecutive task spawns |
 | `SCHEDULER_TASK_TIMEOUT` | `1800` | Per-task execution timeout (seconds) |
 | `SCHEDULER_RETRY_MAX` | `5` | Max retry attempts per task |
+| `SCHEDULER_QUALITY_RETRY_MAX` | `10` | Max retries for quality-failure (verifier-rejected) tasks |
 | `SCHEDULER_RETRY_BACKOFF` | `60` | Base backoff for exponential retry (seconds) |
 | `SCHEDULER_AUTO_START` | `false` | Start scheduler automatically on server boot |
-| `SCHEDULER_TEST_COMMAND` | _(empty)_ | Shell command to run after each task completes; empty disables |
+| `SCHEDULER_TEST_COMMAND` | _(empty)_ | Shell command run after each task completes; empty disables |
 | `SCHEDULER_TEST_TIMEOUT` | `300` | Test command timeout (seconds) |
-| `GITHUB_REPO_URL` | `https://github.com/fankh/new-research` | Used in git auto-commit messages |
-| `CLAUDE_MODEL` | `sonnet` | Default Claude model (`sonnet`, `opus`, `haiku`) |
-| `CLAUDE_CLI_PATH` | `claude` | Path to the `claude` CLI binary |
-| `AUTH_PASSWORD` | _(empty)_ | Dashboard password; empty disables auth entirely |
-| `MXTAC_PROJECT_ROOT` | `/home/khchoi/development/new-research/mitre-attack/mxtac` | Absolute path to the MxTac repository root |
+| `GITHUB_REPO_URL` | `https://github.com/fankh/mxtac` | Used in git auto-commit messages |
+
+### Claude API
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | _(empty)_ | **Required** for agent features; leave empty to use only the `claude` CLI subprocess mode |
+| `CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Default Claude model for task execution and agents |
+| `CLAUDE_MAX_TOKENS` | `16384` | Max tokens per Claude API call |
+
+### Autonomous agents
+
+Each agent runs as a background loop inside the scheduler process. All agents default to disabled except `TaskCreatorAgent` and `VerifierAgent`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AGENT_TASK_CREATOR_ENABLED` | `true` | Enable TaskCreatorAgent (generates new tasks from spec docs) |
+| `AGENT_TASK_CREATOR_INTERVAL` | `300` | Polling interval in seconds |
+| `AGENT_TASK_CREATOR_MAX_TASKS_PER_CYCLE` | `20` | Max tasks created per cycle |
+| `AGENT_TASK_CREATOR_USE_CLAUDE` | `true` | Use Claude API (vs. heuristic) |
+| `AGENT_VERIFIER_ENABLED` | `true` | Enable VerifierAgent (validates completed tasks) |
+| `AGENT_VERIFIER_INTERVAL` | `180` | Polling interval in seconds |
+| `AGENT_VERIFIER_MAX_PER_CYCLE` | `3` | Max tasks verified per cycle |
+| `AGENT_VERIFIER_USE_CLAUDE` | `true` | Use Claude API for verification |
+| `AGENT_VERIFIER_FAIL_ACTION` | `reset` | Action on failed verification: `reset` (re-queue) or `mark` (mark failed) |
+| `AGENT_TEST_ENABLED` | `false` | Enable TestAgent (runs pytest after completions) |
+| `AGENT_TEST_INTERVAL` | `300` | Polling interval in seconds |
+| `AGENT_TEST_FAIL_ACTION` | `reset` | Action on test failure: `reset` or `mark` |
+| `AGENT_TEST_FULL_SUITE_EVERY` | `6` | Run full test suite every Nth cycle (otherwise incremental) |
+| `AGENT_TEST_TIMEOUT` | `300` | Test run timeout (seconds) |
+| `AGENT_LINT_ENABLED` | `false` | Enable LintAgent (runs ruff/flake8) |
+| `AGENT_LINT_INTERVAL` | `600` | Polling interval in seconds |
+| `AGENT_LINT_ERROR_THRESHOLD` | `50` | Max lint errors before flagging a task |
+| `AGENT_INTEGRATION_ENABLED` | `false` | Enable IntegrationAgent (smoke-tests running service) |
+| `AGENT_INTEGRATION_INTERVAL` | `900` | Polling interval in seconds |
+| `AGENT_INTEGRATION_SMOKE_URL` | _(empty)_ | URL to probe for smoke test (e.g. `http://localhost:13002/health`) |
+| `AGENT_SECURITY_ENABLED` | `false` | Enable SecurityAuditAgent (runs bandit) |
+| `AGENT_SECURITY_INTERVAL` | `1800` | Polling interval in seconds |
+| `AGENT_SECURITY_BANDIT_SKIP` | _(empty)_ | Comma-separated bandit test IDs to skip |
 
 ---
 

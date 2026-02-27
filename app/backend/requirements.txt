@@ -12,6 +12,11 @@ pydantic-settings==2.6.1
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 pyotp==2.9.0
+# SAML 2.0 SSO (feature 1.10) — requires libxmlsec1 system library
+python3-saml==1.16.0
+# Form data parsing — required for SAML ACS endpoint (HTTP-POST binding)
+# python-multipart 0.0.22 fixes CVE-2026-24486.
+python-multipart==0.0.22
 
 # ── Database ──────────────────────────────────────────────────────────────────
 sqlalchemy[asyncio]==2.0.36
@@ -43,6 +48,9 @@ valkey==6.1.1
 # Install separately: pip install aiokafka==0.12.0
 # aiokafka==0.12.0
 
+# ── Cron Scheduling ───────────────────────────────────────────────────────────
+croniter==6.0.0
+
 # ── Search / Analytics ────────────────────────────────────────────────────────
 opensearch-py[async]==3.1.0
 duckdb==1.4.4
@@ -57,4 +65,7 @@ geoip2==4.8.1
 pytest==8.3.4
 pytest-asyncio==0.24.0
 pytest-cov==6.0.0
+httpx==0.28.1
+mypy==1.13.0
+ruff==0.8.3
 pip-audit==2.10.0
