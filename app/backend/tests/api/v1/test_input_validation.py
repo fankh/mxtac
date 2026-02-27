@@ -151,25 +151,26 @@ class TestMfaVerifyLoginRequestValidation:
 
 class TestMfaDisableRequestValidation:
     def test_valid_user_id(self):
-        req = MfaDisableRequest(user_id="42")
-        assert req.user_id == "42"
+        uid = "550e8400-e29b-41d4-a716-446655440000"
+        req = MfaDisableRequest(user_id=uid)
+        assert req.user_id == uid
 
-    def test_non_numeric_raises(self):
-        with pytest.raises(ValidationError, match="positive integer"):
+    def test_non_uuid_short_raises(self):
+        with pytest.raises(ValidationError):
+            MfaDisableRequest(user_id="42")
+
+    def test_non_uuid_alpha_raises(self):
+        with pytest.raises(ValidationError):
             MfaDisableRequest(user_id="abc")
 
-    def test_zero_raises(self):
-        with pytest.raises(ValidationError, match="positive integer"):
+    def test_non_uuid_zero_raises(self):
+        with pytest.raises(ValidationError):
             MfaDisableRequest(user_id="0")
 
-    def test_negative_raises(self):
-        with pytest.raises(ValidationError, match="positive integer"):
-            MfaDisableRequest(user_id="-1")
-
-    def test_uuid_format_raises(self):
-        # UUIDs are 36 chars (> max_length=20) and non-numeric — rejected either way
+    def test_malformed_uuid_raises(self):
+        # Correct length but wrong format
         with pytest.raises(ValidationError):
-            MfaDisableRequest(user_id="550e8400-e29b-41d4-a716-446655440000")
+            MfaDisableRequest(user_id="not-a-valid-uuid-string-here-xyz")
 
     def test_empty_raises(self):
         with pytest.raises(ValidationError):
