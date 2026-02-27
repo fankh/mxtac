@@ -1,5 +1,14 @@
+// vi.mock is hoisted before imports
+vi.mock('../../components/features/auth/MfaSetupModal', () => ({
+  MfaSetupModal: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid="mfa-setup-modal">
+      <button onClick={onClose}>Close MFA Modal</button>
+    </div>
+  ),
+}))
+
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { Sidebar } from '../../components/layout/Sidebar'
 import { useUIStore } from '../../stores/uiStore'
@@ -216,6 +225,33 @@ describe('Sidebar', () => {
     it('renders the user avatar with KH initials', () => {
       renderSidebar()
       expect(screen.getByText('KH')).toBeInTheDocument()
+    })
+
+    it('MFA setup modal is not shown by default', () => {
+      renderSidebar()
+      expect(screen.queryByTestId('mfa-setup-modal')).not.toBeInTheDocument()
+    })
+
+    it('clicking the Settings button opens the MFA setup modal', () => {
+      renderSidebar()
+      fireEvent.click(screen.getByTitle('Settings'))
+      expect(screen.getByTestId('mfa-setup-modal')).toBeInTheDocument()
+    })
+
+    it('clicking the user avatar opens the MFA setup modal', () => {
+      renderSidebar()
+      const avatar = screen.getByText('KH').closest('button')!
+      fireEvent.click(avatar)
+      expect(screen.getByTestId('mfa-setup-modal')).toBeInTheDocument()
+    })
+
+    it('MFA modal closes when onClose is called', () => {
+      renderSidebar()
+      fireEvent.click(screen.getByTitle('Settings'))
+      expect(screen.getByTestId('mfa-setup-modal')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close MFA Modal' }))
+      expect(screen.queryByTestId('mfa-setup-modal')).not.toBeInTheDocument()
     })
   })
 })
