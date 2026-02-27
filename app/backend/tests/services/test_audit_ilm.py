@@ -37,6 +37,7 @@ from app.services.opensearch_client import (
     AUDIT_ILM_RETENTION_DAYS,
     AUDIT_INDEX_TEMPLATE,
     AUDIT_MAPPING,
+    AUDIT_TYPE_ILM_POLICY_NAME,
     ILM_POLICY_NAME,
     OpenSearchService,
     _monthly_index,
@@ -446,7 +447,8 @@ async def test_ensure_indices_audit_template_has_ism_policy_id() -> None:
     audit_body = calls.get("mxtac-audit-template")
     assert audit_body is not None
     settings_block = audit_body["template"]["settings"]
-    assert settings_block.get("plugins.index_state_management.policy_id") == AUDIT_ILM_POLICY_NAME
+    # Feature 38.2: audit template now references the per-type hot/warm/delete policy
+    assert settings_block.get("plugins.index_state_management.policy_id") == AUDIT_TYPE_ILM_POLICY_NAME
 
 
 @pytest.mark.asyncio
