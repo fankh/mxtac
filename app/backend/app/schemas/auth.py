@@ -74,14 +74,20 @@ class MeResponse(BaseModel):
     mfa_enabled: bool
 
 
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
 class MfaDisableRequest(BaseModel):
-    user_id: str = Field(..., min_length=1, max_length=20)
+    user_id: str = Field(..., min_length=36, max_length=36)
 
     @field_validator("user_id")
     @classmethod
     def validate_user_id(cls, v: str) -> str:
-        if not v.isdigit() or int(v) < 1:
-            raise ValueError("user_id must be a positive integer")
+        if not _UUID_RE.match(v):
+            raise ValueError("user_id must be a valid UUID")
         return v
 
 
