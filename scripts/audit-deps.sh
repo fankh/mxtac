@@ -67,16 +67,13 @@ if $RUN_PYTHON; then
 
   if [ $PYTHON_EXIT -eq 0 ]; then
     echo -e "${YELLOW}Known accepted vulnerabilities (see SECURITY.md):${NC}"
-    echo "  - python-jose 3.3.0: PYSEC-2024-232, PYSEC-2024-233 (no upstream fix)"
-    echo "  - ecdsa 0.19.1:      CVE-2024-23342 (transitive via python-jose, no fix)"
-    echo "  - starlette 0.41.3:  CVE-2025-54121, CVE-2025-62727 (fix: upgrade fastapi)"
+    echo "  - ecdsa 0.19.1:     CVE-2024-23342 (transitive via python-jose, no fix available)"
+    echo "  - starlette 0.41.3: CVE-2025-54121, CVE-2025-62727 (fix: upgrade fastapi>=0.133)"
     echo ""
 
     if $CI_MODE; then
       # In CI: exit non-zero on any vuln, but skip known accepted ones
       $AUDIT_CMD \
-        --ignore-vuln PYSEC-2024-232 \
-        --ignore-vuln PYSEC-2024-233 \
         --ignore-vuln CVE-2024-23342 \
         --ignore-vuln CVE-2025-54121 \
         --ignore-vuln CVE-2025-62727 \
@@ -111,8 +108,9 @@ if $RUN_NODE; then
   else
     echo -e "${YELLOW}Known accepted vulnerabilities (dev-only, see SECURITY.md):${NC}"
     echo "  - esbuild ≤ 0.24.2:  GHSA-67mh-4wv8-2f99 (moderate, dev-server only)"
-    echo "  All findings are in devDependencies (vitest, vite-node)."
+    echo "  All esbuild/vite findings are in devDependencies (vitest, vite-node)."
     echo "  Fix requires breaking upgrade: vitest@4 — tracked in backlog."
+    echo "  rollup: GHSA-mw96-cpmx-2vgc fixed via overrides in package.json (run npm install)."
     echo "  Production dependencies: 0 vulnerabilities."
     echo ""
 

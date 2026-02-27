@@ -7,12 +7,9 @@ pydantic[email]==2.10.3
 pydantic-settings==2.6.1
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
-# KNOWN VULNERABILITY: python-jose has PYSEC-2024-232, PYSEC-2024-233
-# (algorithm confusion attack, improper signature verification)
-# No upstream fix released (last PyPI release: 3.3.0, 2021).
-# Tracked in SECURITY.md — migration to PyJWT is the remediation path.
-# ecdsa (transitive dep) has CVE-2024-23342 with no available fix.
-python-jose[cryptography]==3.3.0
+# python-jose 3.5.0 fixes PYSEC-2024-232 and PYSEC-2024-233 (released 2025-05-28).
+# ecdsa (transitive dep) still has CVE-2024-23342 with no available fix — see SECURITY.md.
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 pyotp==2.9.0
 
@@ -56,7 +53,8 @@ pytz==2025.2
 # Configure GEOIP_DB_PATH to point to a GeoLite2-City.mmdb file.
 geoip2==4.8.1
 
-# ── Testing ───────────────────────────────────────────────────────────────────
+# ── Testing / Dev Tools ───────────────────────────────────────────────────────
 pytest==8.3.4
 pytest-asyncio==0.24.0
 pytest-cov==6.0.0
+pip-audit==2.10.0
