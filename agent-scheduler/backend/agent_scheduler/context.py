@@ -105,10 +105,15 @@ This task may be a **retry after a previous failure**. If so:
 
 
 def build_prompt(task_prompt: str, task_id: str, attempt: int, max_retries: int) -> str:
-    """Build the full prompt with system context prepended."""
+    """Build the full prompt with system context prepended (legacy, for text mode)."""
     retry_info = ""
     if attempt > 1:
-        retry_info = f"""
+        retry_info = _build_retry_info(attempt, max_retries)
+    return f"{SYSTEM_CONTEXT}\n{retry_info}\n---\n\n{task_prompt}"
+
+
+def _build_retry_info(attempt: int, max_retries: int) -> str:
+    return f"""
 
 ## ⚠ RETRY ATTEMPT {attempt} of {max_retries}
 
@@ -119,4 +124,18 @@ This is retry attempt {attempt}. The previous {attempt - 1} attempt(s) FAILED.
 - Run tests after your changes to make sure they pass
 """
 
-    return f"{SYSTEM_CONTEXT}\n{retry_info}\n---\n\n{task_prompt}"
+
+def build_api_messages(
+    task_prompt: str, task_id: str, attempt: int, max_retries: int
+) -> tuple[str, str]:
+    """Build (system, user_message) tuple for the Anthropic Messages API.
+
+    Returns:
+        system: The system prompt (project context + conventions).
+        user_message: The task-specific user message (retry info + task prompt).
+    """
+    user_parts = []
+    if attempt > 1:
+        user_parts.append(_build_retry_info(attempt, max_retries).strip())
+    user_parts.append(task_prompt)
+    return SYSTEM_CONTEXT, "\n\n---\n\n".join(user_parts)

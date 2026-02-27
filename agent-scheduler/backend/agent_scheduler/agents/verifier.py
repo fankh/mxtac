@@ -211,8 +211,9 @@ class VerifierAgent(BaseAgent):
         )
 
         async with self._claude_semaphore:
-            rc, stdout, _ = await self._run_subprocess(
-                f'{settings.claude_cli_path} -p "{prompt}" 2>/dev/null',
+            rc, stdout = await self._call_claude(
+                prompt,
+                max_tokens=1024,
                 timeout=60,
             )
 

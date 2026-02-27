@@ -744,7 +744,7 @@ class WatchdogAgent:
         # Detect ghost tasks: RUNNING in DB but no active process in executor
         running_tasks = [t for t in all_tasks if t.status == TaskStatus.RUNNING]
         for t in running_tasks:
-            if t.id not in executor._running_processes:
+            if t.id not in executor._running_tasks:
                 logger.warning(
                     f"Ghost task detected: task {t.id} ({t.task_id}) is RUNNING "
                     f"in DB but has no active process"

@@ -3,6 +3,9 @@ import datetime
 import logging
 from abc import ABC, abstractmethod
 
+import anthropic
+
+from ..config import settings
 from ..database import async_session
 from ..models import AgentRun
 from ..scheduler import sse_broadcaster
@@ -24,8 +27,9 @@ class BaseAgent(ABC):
     DEFAULT_INTERVAL: int = 300
     DESCRIPTION: str = ""
 
-    # Shared semaphore to prevent concurrent Claude CLI calls
+    # Shared semaphore to prevent concurrent Claude API calls from agents
     _claude_semaphore = asyncio.Semaphore(1)
+    _claude_client: anthropic.AsyncAnthropic | None = None
 
     def __init__(self):
         self._running = False
@@ -130,6 +134,63 @@ class BaseAgent(ABC):
                 agent_run.items_processed = result.get("items_processed", 0)
                 agent_run.items_found = result.get("items_found", 0)
                 await session.commit()
+
+    @classmethod
+    def _get_claude_client(cls) -> anthropic.AsyncAnthropic:
+        """Lazy-init the shared async Anthropic client for agents."""
+        if cls._claude_client is None:
+            kwargs = {}
+            if settings.anthropic_api_key:
+                kwargs["api_key"] = settings.anthropic_api_key
+            cls._claude_client = anthropic.AsyncAnthropic(**kwargs)
+        return cls._claude_client
+
+    async def _call_claude(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        model: str | None = None,
+        max_tokens: int = 4096,
+        timeout: int = 120,
+    ) -> tuple[int, str]:
+        """Call Claude API with semaphore gating.
+
+        Returns (exit_code, response_text) to match the pattern used by agents.
+        exit_code is 0 on success, -1 on failure.
+        """
+        client = self._get_claude_client()
+        m = model or settings.claude_model
+
+        try:
+            kwargs: dict = {
+                "model": m,
+                "max_tokens": max_tokens,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            if system:
+                kwargs["system"] = system
+
+            response = await asyncio.wait_for(
+                client.messages.create(**kwargs),
+                timeout=timeout,
+            )
+
+            text_parts = []
+            for block in response.content:
+                if block.type == "text":
+                    text_parts.append(block.text)
+            return 0, "\n".join(text_parts)
+
+        except asyncio.TimeoutError:
+            logger.warning("Claude API call timed out after %ds", timeout)
+            return -1, ""
+        except anthropic.APIError as e:
+            logger.warning("Claude API error: %s", e)
+            return -1, ""
+        except Exception as e:
+            logger.exception("Unexpected error calling Claude API: %s", e)
+            return -1, ""
 
     async def _run_subprocess(
         self, cmd: str, cwd: str | None = None, timeout: int = 120

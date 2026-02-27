@@ -31,9 +31,10 @@ class Settings(BaseSettings):
     # GitHub
     github_repo_url: str = "https://github.com/fankh/mxtac"
 
-    # Claude CLI
-    claude_model: str = "sonnet"
-    claude_cli_path: str = "claude"
+    # Claude API
+    anthropic_api_key: str = ""
+    claude_model: str = "claude-sonnet-4-20250514"
+    claude_max_tokens: int = 16384
 
     # Auth
     auth_password: str = ""  # Empty = auth disabled
