@@ -19,6 +19,7 @@ export default function SettingsPage() {
 
   const { data: currentSettings } = useApi(() => getSchedulerSettings(), []);
 
+  const [timezone, setTimezone] = useState("");
   const [maxConcurrent, setMaxConcurrent] = useState("");
   const [spawnDelay, setSpawnDelay] = useState("");
   const [taskTimeout, setTaskTimeout] = useState("");
@@ -36,6 +37,7 @@ export default function SettingsPage() {
   // Populate form with current backend values once loaded
   useEffect(() => {
     if (currentSettings) {
+      setTimezone(currentSettings.timezone);
       setMaxConcurrent(String(currentSettings.max_concurrent));
       setSpawnDelay(String(currentSettings.spawn_delay));
       setTaskTimeout(String(currentSettings.task_timeout));
@@ -72,6 +74,7 @@ export default function SettingsPage() {
   const handleSettingsUpdate = async () => {
     try {
       await updateSchedulerSettings({
+        timezone,
         max_concurrent: parseInt(maxConcurrent, 10),
         spawn_delay: parseInt(spawnDelay, 10),
         task_timeout: parseInt(taskTimeout, 10),
@@ -175,6 +178,30 @@ export default function SettingsPage() {
           Scheduler Settings
         </h2>
         <div className="space-y-3">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              Timezone
+            </label>
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value="UTC">UTC</option>
+              <option value="Asia/Seoul">Asia/Seoul (KST)</option>
+              <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+              <option value="Asia/Shanghai">Asia/Shanghai (CST)</option>
+              <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+              <option value="US/Eastern">US/Eastern (ET)</option>
+              <option value="US/Central">US/Central (CT)</option>
+              <option value="US/Mountain">US/Mountain (MT)</option>
+              <option value="US/Pacific">US/Pacific (PT)</option>
+              <option value="Europe/London">Europe/London (GMT/BST)</option>
+              <option value="Europe/Berlin">Europe/Berlin (CET)</option>
+              <option value="Europe/Paris">Europe/Paris (CET)</option>
+              <option value="Australia/Sydney">Australia/Sydney (AEST)</option>
+            </select>
+          </div>
           <div>
             <label className="block text-sm text-gray-400 mb-1">
               Max Concurrent Tasks

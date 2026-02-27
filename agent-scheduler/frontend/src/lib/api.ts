@@ -124,6 +124,7 @@ export const getSchedulerStatus = () =>
   fetchJson<{ running: boolean; paused: boolean }>("/scheduler/status");
 
 export interface SchedulerSettings {
+  timezone: string;
   max_concurrent: number;
   spawn_delay: number;
   task_timeout: number;
@@ -146,6 +147,7 @@ export const controlScheduler = (action: string) =>
   });
 
 export const updateSchedulerSettings = (settings: {
+  timezone?: string;
   max_concurrent?: number;
   spawn_delay?: number;
   task_timeout?: number;

@@ -30,6 +30,7 @@ class SchedulerControlRequest(BaseModel):
 
 
 class SchedulerSettingsUpdate(BaseModel):
+    timezone: Optional[str] = None
     max_concurrent: Optional[int] = None
     spawn_delay: Optional[int] = None
     task_timeout: Optional[int] = None
@@ -465,6 +466,7 @@ async def scheduler_status():
 @router.get("/scheduler/settings")
 async def get_scheduler_settings():
     return {
+        "timezone": settings.scheduler_timezone,
         "max_concurrent": settings.scheduler_max_concurrent,
         "spawn_delay": settings.scheduler_spawn_delay,
         "task_timeout": settings.scheduler_task_timeout,
@@ -480,6 +482,13 @@ async def get_scheduler_settings():
 
 @router.put("/scheduler/settings")
 async def update_scheduler_settings(req: SchedulerSettingsUpdate):
+    if req.timezone is not None:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        try:
+            ZoneInfo(req.timezone)
+        except (ZoneInfoNotFoundError, KeyError):
+            raise HTTPException(status_code=400, detail=f"Invalid timezone: {req.timezone}")
+        settings.scheduler_timezone = req.timezone
     if req.max_concurrent is not None:
         settings.scheduler_max_concurrent = req.max_concurrent
     if req.spawn_delay is not None:
