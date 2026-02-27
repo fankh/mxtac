@@ -1,9 +1,10 @@
 import json
+import re
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,9 +12,10 @@ from sqlalchemy.orm import selectinload
 from ..agents import ALL_NEW_AGENTS, get_agent_by_name, get_enabled_agents
 from ..config import settings
 from ..database import get_session
+from ..decomposer import decompose_task as _decompose_task
 from ..models import AgentRun, Run, RunStatus, Task, TaskStatus
 from ..executor import executor
-from ..scheduler import scheduler, retry_agent, watchdog_agent
+from ..scheduler import scheduler, retry_agent, watchdog_agent, sse_broadcaster
 from ..task_loader import load_tasks_into_db, parse_yaml_directory, parse_yaml_tasks
 
 router = APIRouter(prefix="/api")
@@ -27,6 +29,33 @@ class TaskLoadRequest(BaseModel):
 
 class SchedulerControlRequest(BaseModel):
     action: str  # start, stop, pause, resume
+
+
+class TaskDecomposeRequest(BaseModel):
+    description: Optional[str] = None
+    task_db_id: Optional[int] = None
+    category: str = ""
+    phase: str = ""
+    prefix: Optional[str] = None
+    max_subtasks: int = 8
+    auto_load: bool = False
+
+    @model_validator(mode="after")
+    def _validate_inputs(self):
+        if self.description and self.task_db_id is not None:
+            raise ValueError("Provide either 'description' or 'task_db_id', not both")
+        if not self.description and self.task_db_id is None:
+            raise ValueError("Provide either 'description' or 'task_db_id'")
+        if not 3 <= self.max_subtasks <= 8:
+            raise ValueError("max_subtasks must be between 3 and 8")
+        return self
+
+
+def _slugify_prefix(text: str) -> str:
+    """Generate a task_id prefix from freeform text: 'auto-<first-4-words>'."""
+    words = re.sub(r"[^a-z0-9\s]", "", text.lower()).split()
+    slug = "-".join(words[:4]) if words else "task"
+    return f"auto-{slug}"
 
 
 class SchedulerSettingsUpdate(BaseModel):
@@ -421,6 +450,68 @@ async def load_tasks(req: TaskLoadRequest):
 
     created, skipped = await load_tasks_into_db(task_defs)
     return {"created": created, "skipped": skipped, "total_parsed": len(task_defs)}
+
+
+# --- Task Decomposition ---
+
+@router.post("/tasks/decompose")
+async def decompose_task(req: TaskDecomposeRequest, session: AsyncSession = Depends(get_session)):
+    import asyncio as _asyncio
+    import anthropic as _anthropic
+
+    # Resolve description + prefix
+    source = "freeform"
+    description = req.description or ""
+    prefix = req.prefix
+
+    if req.task_db_id is not None:
+        source = "existing_task"
+        task = await session.get(Task, req.task_db_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        description = f"{task.title}\n\n{task.prompt}" if task.prompt else task.title
+        if not prefix:
+            prefix = task.task_id
+
+    if not prefix:
+        prefix = _slugify_prefix(description)
+
+    try:
+        subtasks = await _decompose_task(
+            description=description,
+            prefix=prefix,
+            category=req.category,
+            phase=req.phase,
+            max_subtasks=req.max_subtasks,
+        )
+    except _asyncio.TimeoutError:
+        raise HTTPException(status_code=502, detail="Claude API timed out during decomposition")
+    except _anthropic.APIError as e:
+        raise HTTPException(status_code=502, detail=f"Claude API error: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=f"Failed to parse decomposition: {e}")
+
+    created = 0
+    skipped = 0
+    loaded = False
+
+    if req.auto_load:
+        created, skipped = await load_tasks_into_db(subtasks)
+        loaded = True
+        # Broadcast SSE events for each created subtask
+        for st in subtasks:
+            await sse_broadcaster.broadcast("task_created", {
+                "task_id": st["task_id"],
+                "title": st["title"],
+            })
+
+    return {
+        "subtasks": subtasks,
+        "loaded": loaded,
+        "created": created,
+        "skipped": skipped,
+        "source": source,
+    }
 
 
 # --- Scheduler Control ---
