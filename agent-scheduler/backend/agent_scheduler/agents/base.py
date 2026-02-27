@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 
 import anthropic
 
-from ..config import settings
+from ..config import now, settings
 from ..database import async_session
 from ..models import AgentRun
 from ..scheduler import sse_broadcaster
@@ -78,7 +78,7 @@ class BaseAgent(ABC):
             run_id = await self._record_start()
             result = await self.run_cycle()
             await self._record_finish(run_id, "completed", result)
-            self._last_action = datetime.datetime.utcnow()
+            self._last_action = now()
             self._action_count += 1
             return result
         except Exception:
@@ -102,7 +102,7 @@ class BaseAgent(ABC):
                     await self._record_finish(run_id, "failed", {
                         "summary": "Cycle error",
                     })
-                self._last_action = datetime.datetime.utcnow()
+                self._last_action = now()
                 self._action_count += 1
             except asyncio.CancelledError:
                 break
@@ -127,7 +127,7 @@ class BaseAgent(ABC):
         async with async_session() as session:
             agent_run = await session.get(AgentRun, run_id)
             if agent_run:
-                agent_run.finished_at = datetime.datetime.utcnow()
+                agent_run.finished_at = now()
                 agent_run.status = status
                 agent_run.summary = result.get("summary", "")
                 agent_run.output = result.get("output", "")

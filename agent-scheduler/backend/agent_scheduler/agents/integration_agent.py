@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from ..config import settings
+from ..config import now, settings
 from ..database import async_session
 from ..models import Task, TaskStatus
 from ..scheduler import sse_broadcaster
@@ -103,7 +103,7 @@ class IntegrationAgent(BaseAgent):
 
     async def _detect_conflicts(self) -> dict:
         """Find completed tasks from last 24h with overlapping target_files."""
-        cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=24)
+        cutoff = now() - datetime.timedelta(hours=24)
 
         async with async_session() as session:
             result = await session.execute(

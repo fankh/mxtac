@@ -1,4 +1,6 @@
+import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,6 +20,7 @@ class Settings(BaseSettings):
     scheduler_port: int = 13002
 
     # Scheduler
+    scheduler_timezone: str = "UTC"
     scheduler_max_concurrent: int = 2
     scheduler_spawn_delay: int = 3  # seconds between spawns
     scheduler_task_timeout: int = 1800  # 30 minutes
@@ -87,5 +90,15 @@ class Settings(BaseSettings):
             return Path(url.replace("sqlite+aiosqlite:///", ""))
         return Path("./data/scheduler.db")
 
+    @property
+    def tz(self) -> ZoneInfo:
+        """Return the configured timezone as a ZoneInfo object."""
+        return ZoneInfo(self.scheduler_timezone)
+
 
 settings = Settings()
+
+
+def now() -> datetime.datetime:
+    """Return the current timezone-aware datetime in the configured timezone."""
+    return datetime.datetime.now(settings.tz)

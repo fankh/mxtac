@@ -6,7 +6,7 @@ import logging
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .config import settings
+from .config import now, settings
 from .database import async_session
 from .executor import ExecutionResult, executor
 from .models import Log, Run, RunStatus, Task, TaskStatus
@@ -108,7 +108,7 @@ class Scheduler:
             if orphaned_runs:
                 for run in orphaned_runs:
                     run.status = RunStatus.CANCELLED
-                    run.finished_at = datetime.datetime.utcnow()
+                    run.finished_at = now()
                 logger.info(f"Cancelled {len(orphaned_runs)} orphaned runs")
 
             await session.commit()
@@ -142,7 +142,7 @@ class Scheduler:
             try:
                 if not self._paused:
                     await self._dispatch_eligible_tasks()
-                self._last_action = datetime.datetime.utcnow()
+                self._last_action = now()
                 self._action_count += 1
                 # Wait for wake event or timeout after 5s (fallback poll)
                 try:
@@ -183,7 +183,7 @@ class Scheduler:
                 if task.retry_count > 0:
                     backoff = settings.scheduler_retry_backoff * (2 ** (task.retry_count - 1))
                     if task.updated_at:
-                        elapsed = (datetime.datetime.utcnow() - task.updated_at).total_seconds()
+                        elapsed = (now() - task.updated_at).total_seconds()
                         if elapsed < backoff:
                             continue
 
@@ -303,7 +303,7 @@ class Scheduler:
                 run.stdout = result.stdout
                 run.stderr = result.stderr
                 run.duration_seconds = result.duration_seconds
-                run.finished_at = datetime.datetime.utcnow()
+                run.finished_at = now()
 
                 if result.timed_out:
                     run.status = RunStatus.TIMEOUT
@@ -612,7 +612,7 @@ class RetryAgent:
             try:
                 await asyncio.sleep(self.INTERVAL_SECONDS)
                 await self._retry_failed_tasks()
-                self._last_action = datetime.datetime.utcnow()
+                self._last_action = now()
                 self._action_count += 1
             except asyncio.CancelledError:
                 break
@@ -730,7 +730,7 @@ class WatchdogAgent:
             try:
                 await asyncio.sleep(self.INTERVAL_SECONDS)
                 await self._check_progress()
-                self._last_action = datetime.datetime.utcnow()
+                self._last_action = now()
                 self._action_count += 1
             except asyncio.CancelledError:
                 break
