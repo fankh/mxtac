@@ -115,7 +115,7 @@ Run `uv pip compile` to regenerate pinned requirements after updating `pyproject
 | `pydantic[email]` | `==2.10.3` | `==2.10.3` ✓ |
 | `aiohttp` | `==3.13.3` | `==3.13.3` ✓ |
 | `pyyaml` | `==6.0.3` | `==6.0.3` ✓ |
-| `aiosqlite` | `>=0.20.0` | `==0.22.1` ✓ |
-| `prometheus-client` | `>=0.21.0` | `==0.24.1` ✓ |
+| `aiosqlite` | `==0.22.1` | `==0.22.1` ✓ |
+| `prometheus-client` | `==0.24.1` | `==0.24.1` ✓ |
 | `opensearch-py[async]` | `==3.1.0` | `==3.1.0` ✓ |
 | `valkey` | `==6.1.1` | `==6.1.1` ✓ |
