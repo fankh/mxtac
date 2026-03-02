@@ -20,6 +20,10 @@ from app.services.duckdb_store import (
 
 # ── Sample OCSF event ─────────────────────────────────────────────────────────
 
+# Use a fixed time_from that falls before _SAMPLE_OCSF's timestamp so tests
+# are deterministic regardless of when they run (avoids "now-1d" staleness).
+_TIME_FROM = "2026-02-20T00:00:00Z"
+
 _SAMPLE_OCSF: dict = {
     "class_uid":        4001,
     "class_name":       "Network Activity",
@@ -146,7 +150,7 @@ async def test_index_event_inserts_row(store: DuckDBEventStore) -> None:
 @pytest.mark.asyncio
 async def test_index_event_uses_doc_id(store: DuckDBEventStore) -> None:
     await store.index_event(_SAMPLE_OCSF, doc_id="explicit-id-001")
-    result = await store.search_events(time_from="now-1d")
+    result = await store.search_events(time_from=_TIME_FROM)
     assert result["total"] == 1
     assert result["items"][0]["id"] == "explicit-id-001"
 
@@ -188,7 +192,7 @@ async def test_index_event_extracts_nested_fields(store: DuckDBEventStore) -> No
         filters=[
             type("F", (), {"field": "src_ip", "operator": "eq", "value": "192.168.1.10"})()
         ],
-        time_from="now-1d",
+        time_from=_TIME_FROM,
     )
     assert result["total"] == 1
 
@@ -206,7 +210,7 @@ async def test_search_no_results_empty_store(store: DuckDBEventStore) -> None:
 @pytest.mark.asyncio
 async def test_search_returns_inserted_event(store: DuckDBEventStore) -> None:
     await store.index_event(_SAMPLE_OCSF, doc_id="search-test-01")
-    result = await store.search_events(time_from="now-1d")
+    result = await store.search_events(time_from=_TIME_FROM)
     assert result["total"] == 1
     assert result["items"][0]["id"] == "search-test-01"
 
@@ -215,17 +219,17 @@ async def test_search_returns_inserted_event(store: DuckDBEventStore) -> None:
 async def test_search_full_text_query(store: DuckDBEventStore) -> None:
     await store.index_event(_SAMPLE_OCSF, doc_id="ft-test-01")
     # Should match on summary field
-    result = await store.search_events(query="Suspicious", time_from="now-1d")
+    result = await store.search_events(query="Suspicious", time_from=_TIME_FROM)
     assert result["total"] == 1
     # Should NOT match on unrelated query
-    result2 = await store.search_events(query="ZeroMatchXYZ", time_from="now-1d")
+    result2 = await store.search_events(query="ZeroMatchXYZ", time_from=_TIME_FROM)
     assert result2["total"] == 0
 
 
 @pytest.mark.asyncio
 async def test_search_text_matches_hostname(store: DuckDBEventStore) -> None:
     await store.index_event(_SAMPLE_OCSF, doc_id="host-match-01")
-    result = await store.search_events(query="WIN-DC01", time_from="now-1d")
+    result = await store.search_events(query="WIN-DC01", time_from=_TIME_FROM)
     assert result["total"] == 1
 
 
@@ -235,13 +239,13 @@ async def test_search_filter_eq(store: DuckDBEventStore) -> None:
     # Matching filter
     result = await store.search_events(
         filters=[type("F", (), {"field": "source", "operator": "eq", "value": "Wazuh"})()],
-        time_from="now-1d",
+        time_from=_TIME_FROM,
     )
     assert result["total"] == 1
     # Non-matching filter
     result2 = await store.search_events(
         filters=[type("F", (), {"field": "source", "operator": "eq", "value": "Zeek"})()],
-        time_from="now-1d",
+        time_from=_TIME_FROM,
     )
     assert result2["total"] == 0
 
@@ -251,7 +255,7 @@ async def test_search_filter_ne(store: DuckDBEventStore) -> None:
     await store.index_event(_SAMPLE_OCSF, doc_id="filter-ne-01")
     result = await store.search_events(
         filters=[type("F", (), {"field": "source", "operator": "ne", "value": "Zeek"})()],
-        time_from="now-1d",
+        time_from=_TIME_FROM,
     )
     assert result["total"] == 1
 
@@ -261,7 +265,7 @@ async def test_search_filter_contains(store: DuckDBEventStore) -> None:
     await store.index_event(_SAMPLE_OCSF, doc_id="filter-cont-01")
     result = await store.search_events(
         filters=[type("F", (), {"field": "hostname", "operator": "contains", "value": "DC01"})()],
-        time_from="now-1d",
+        time_from=_TIME_FROM,
     )
     assert result["total"] == 1
 
@@ -271,12 +275,12 @@ async def test_search_filter_severity_gt(store: DuckDBEventStore) -> None:
     await store.index_event(_SAMPLE_OCSF, doc_id="sev-gt-01")  # severity_id=3
     result = await store.search_events(
         filters=[type("F", (), {"field": "severity_id", "operator": "gt", "value": 2})()],
-        time_from="now-1d",
+        time_from=_TIME_FROM,
     )
     assert result["total"] == 1
     result2 = await store.search_events(
         filters=[type("F", (), {"field": "severity_id", "operator": "gt", "value": 5})()],
-        time_from="now-1d",
+        time_from=_TIME_FROM,
     )
     assert result2["total"] == 0
 
@@ -288,11 +292,11 @@ async def test_search_pagination(store: DuckDBEventStore) -> None:
             {**_SAMPLE_OCSF, "time": f"2026-02-20T12:0{i}:00+00:00"},
             doc_id=f"page-{i}",
         )
-    result = await store.search_events(time_from="now-1d", size=2, from_=0)
+    result = await store.search_events(time_from=_TIME_FROM, size=2, from_=0)
     assert len(result["items"]) == 2
     assert result["total"] == 5
 
-    result2 = await store.search_events(time_from="now-1d", size=2, from_=4)
+    result2 = await store.search_events(time_from=_TIME_FROM, size=2, from_=4)
     assert len(result2["items"]) == 1
 
 
@@ -303,7 +307,7 @@ async def test_search_time_range_excludes_old_events(store: DuckDBEventStore) ->
     await store.index_event(old_event, doc_id="old-evt")
     # Recent event (inside range)
     await store.index_event(_SAMPLE_OCSF, doc_id="recent-evt")
-    result = await store.search_events(time_from="now-1d")
+    result = await store.search_events(time_from=_TIME_FROM)
     assert result["total"] == 1
     assert result["items"][0]["id"] == "recent-evt"
 
@@ -317,7 +321,7 @@ async def test_search_unknown_filter_field_ignored(store: DuckDBEventStore) -> N
             type("F", (), {"field": "src_ip", "operator": "eq", "value": "192.168.1.10"})(),
             type("F", (), {"field": "unknown_field", "operator": "eq", "value": "x"})(),
         ],
-        time_from="now-1d",
+        time_from=_TIME_FROM,
     )
     # Should not raise; unknown field is ignored
     assert result["total"] == 1
@@ -336,7 +340,7 @@ async def test_search_returns_empty_when_unavailable() -> None:
 
 @pytest.mark.asyncio
 async def test_aggregate_terms_empty_store(store: DuckDBEventStore) -> None:
-    buckets = await store.aggregate("terms", field="source", time_from="now-1d")
+    buckets = await store.aggregate("terms", field="source", time_from=_TIME_FROM)
     assert buckets == []
 
 
@@ -347,7 +351,7 @@ async def test_aggregate_terms_counts_by_field(store: DuckDBEventStore) -> None:
     await store.index_event(
         {**_SAMPLE_OCSF, "metadata_product": "Zeek"}, doc_id="agg-3"
     )
-    buckets = await store.aggregate("terms", field="source", time_from="now-1d", size=10)
+    buckets = await store.aggregate("terms", field="source", time_from=_TIME_FROM, size=10)
     assert len(buckets) == 2
     # Wazuh should be first (higher count)
     keys = [b["key"] for b in buckets]
@@ -364,7 +368,7 @@ async def test_aggregate_terms_respects_size_limit(store: DuckDBEventStore) -> N
             {**_SAMPLE_OCSF, "metadata_product": f"Source{i}"},
             doc_id=f"sz-{i}",
         )
-    buckets = await store.aggregate("terms", field="source", time_from="now-1d", size=3)
+    buckets = await store.aggregate("terms", field="source", time_from=_TIME_FROM, size=3)
     assert len(buckets) == 3
 
 
@@ -373,7 +377,7 @@ async def test_aggregate_terms_opensearch_alias(store: DuckDBEventStore) -> None
     """OpenSearch nested-field alias 'actor_user.name' maps to username column."""
     await store.index_event(_SAMPLE_OCSF, doc_id="alias-1")
     buckets = await store.aggregate(
-        "terms", field="actor_user.name", time_from="now-1d"
+        "terms", field="actor_user.name", time_from=_TIME_FROM
     )
     assert len(buckets) == 1
     assert buckets[0]["key"] == "CORP\\admin"
