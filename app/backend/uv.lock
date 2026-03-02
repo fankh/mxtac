@@ -1400,7 +1400,6 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pip-audit" },
     { name = "pytest" },
@@ -1421,7 +1420,6 @@ requires-dist = [
     { name = "fastapi", specifier = "==0.115.5" },
     { name = "geoip2", specifier = "==4.8.1" },
     { name = "httpx", specifier = "==0.28.1" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = "==0.28.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "==1.13.0" },
     { name = "opensearch-py", extras = ["async"], specifier = "==3.1.0" },
     { name = "passlib", extras = ["bcrypt"], specifier = "==1.7.4" },
