@@ -14,7 +14,8 @@ export function useSSE(onEvent: SSEHandler) {
 
   useEffect(() => {
     const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
-    const url = token ? `/api/events?token=${encodeURIComponent(token)}` : "/api/events";
+    const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
+    const url = token ? `${base}/api/events?token=${encodeURIComponent(token)}` : `${base}/api/events`;
     const es = new EventSource(url);
     eventSourceRef.current = es;
 

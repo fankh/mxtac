@@ -11,7 +11,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Login page is always accessible
-    if (pathname === "/login") {
+    const loginPath = `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/login`;
+    if (pathname === "/login" || pathname === loginPath) {
       setReady(true);
       return;
     }
@@ -24,7 +25,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         }
         const token = localStorage.getItem("auth_token");
         if (!token) {
-          router.replace("/login");
+          router.replace(`${process.env.NEXT_PUBLIC_BASE_PATH || ""}/login`);
         } else {
           setReady(true);
         }

@@ -1,6 +1,6 @@
 import type { AgentRunInfo, AgentRunListResponse, AgentsResponse, CategoryInfo, PhaseInfo, Run, RunListResponse, Stats, Task, TaskListResponse } from "./types";
 
-const BASE = "/api";
+const BASE = `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/api`;
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -21,7 +21,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
   if (res.status === 401) {
     localStorage.removeItem("auth_token");
-    window.location.href = "/login";
+    window.location.href = `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/login`;
     throw new Error("Unauthorized");
   }
   if (!res.ok) {

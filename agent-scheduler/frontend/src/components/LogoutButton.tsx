@@ -16,7 +16,7 @@ export function LogoutButton() {
 
   const handleLogout = () => {
     localStorage.removeItem("auth_token");
-    window.location.href = "/login";
+    window.location.href = `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/login`;
   };
 
   return (

@@ -4,7 +4,8 @@ const API_HOST = process.env.API_HOST ?? "localhost";
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token") ?? "";
-  const backendUrl = `http://${API_HOST}:13002/api/events?token=${encodeURIComponent(token)}`;
+  const API_PORT = process.env.API_PORT ?? "13002";
+  const backendUrl = `http://${API_HOST}:${API_PORT}/api/events?token=${encodeURIComponent(token)}`;
 
   const upstream = await fetch(backendUrl, {
     headers: { Accept: "text/event-stream" },
