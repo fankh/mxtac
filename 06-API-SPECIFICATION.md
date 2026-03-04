@@ -10,13 +10,14 @@
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Authentication](#authentication)
-3. [Common Patterns](#common-patterns)
-4. [API Endpoints](#api-endpoints)
-5. [WebSocket API](#websocket-api)
-6. [Error Handling](#error-handling)
-7. [Rate Limiting](#rate-limiting)
-8. [SDKs & Examples](#sdks--examples)
+2. [API Versioning Strategy](#api-versioning-strategy)
+3. [Authentication](#authentication)
+4. [Common Patterns](#common-patterns)
+5. [API Endpoints](#api-endpoints)
+6. [WebSocket API](#websocket-api)
+7. [Error Handling](#error-handling)
+8. [Rate Limiting](#rate-limiting)
+9. [SDKs & Examples](#sdks--examples)
 
 ---
 
@@ -59,6 +60,278 @@ X-RateLimit-Limit: 1000
 X-RateLimit-Remaining: 999
 X-RateLimit-Reset: 1704067200
 ```
+
+---
+
+## API Versioning Strategy
+
+MxTac follows a comprehensive API versioning strategy designed to ensure backward compatibility while enabling platform evolution.
+
+### Versioning Method
+
+**URL Path Versioning** is used as the primary versioning mechanism:
+
+```http
+https://api.mxtac.example.com/api/v1/alerts
+https://api.mxtac.example.com/api/v2/alerts
+```
+
+This approach provides explicit version identification in every request, making the active version clear for debugging and client implementation.
+
+### Version Lifecycle
+
+| Phase | Duration | Description |
+|-------|----------|-------------|
+| **Development** | 3-6 months | New version developed in parallel |
+| **Beta** | 2-3 months | Limited release for early adopters |
+| **Current** | 18-24 months | Production-ready, recommended version |
+| **Deprecated** | 6-12 months | Sunset warning, migration period |
+| **Sunset** | N/A | Version removed |
+
+### Supported Versions
+
+| Version | Status | Release Date | Deprecation Date | Sunset Date |
+|---------|--------|--------------|------------------|-------------|
+| v1 | Current | 2026-Q1 | TBD | TBD |
+| v2 | Planned | 2026-Q4 | TBD | TBD |
+
+### Breaking Changes Policy
+
+**Major Version Changes** (v1 → v2) may include:
+- Removed endpoints or parameters
+- Changed response formats
+- Modified authentication methods
+- New required fields
+- Renamed fields or endpoints
+
+**Minor Updates** (within version) are backward-compatible:
+- New optional parameters
+- Additional response fields
+- New endpoints
+- Performance improvements
+- Bug fixes
+
+### Version Discovery
+
+Clients can discover supported API versions:
+
+```http
+GET /api/versions
+```
+
+**Response:**
+```json
+{
+  "versions": [
+    {
+      "version": "v1",
+      "status": "current",
+      "deprecated": false,
+      "sunset_date": null,
+      "documentation": "https://docs.mxtac.example.com/api/v1"
+    },
+    {
+      "version": "v2",
+      "status": "beta",
+      "deprecated": false,
+      "sunset_date": null,
+      "documentation": "https://docs.mxtac.example.com/api/v2"
+    }
+  ],
+  "recommended": "v1"
+}
+```
+
+### Migration Strategy
+
+#### 1. Parallel Development
+- New API versions developed alongside existing versions
+- Feature parity maintained during transition period
+- Shared backend services ensure data consistency
+
+#### 2. Client Migration Path
+```http
+# Step 1: Continue using v1
+GET /api/v1/alerts
+
+# Step 2: Test against v2 beta
+GET /api/v2/alerts
+
+# Step 3: Migration period - both versions available
+GET /api/v1/alerts  # Still supported
+GET /api/v2/alerts  # Recommended
+
+# Step 4: v1 deprecated, migrate to v2
+GET /api/v2/alerts  # Only supported version
+```
+
+#### 3. Migration Tools
+
+**Version Compatibility Check:**
+```http
+POST /api/migrate/compatibility-check
+Content-Type: application/json
+
+{
+  "current_version": "v1",
+  "target_version": "v2",
+  "endpoints_used": [
+    "/alerts",
+    "/events/search",
+    "/rules"
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "compatible": false,
+  "breaking_changes": [
+    {
+      "endpoint": "/alerts",
+      "field": "severity_id",
+      "change": "removed",
+      "migration": "Use 'severity' string field instead"
+    }
+  ],
+  "migration_guide": "https://docs.mxtac.example.com/migrate/v1-to-v2"
+}
+```
+
+### Deprecation Process
+
+#### 1. Announcement (12 months before sunset)
+- Blog post and documentation updates
+- Email notifications to registered developers
+- Warning headers in API responses
+
+#### 2. Warning Phase (6 months before sunset)
+```http
+# Deprecated version responses include warning headers
+HTTP/1.1 200 OK
+X-API-Version-Deprecated: true
+X-API-Version-Sunset: 2027-06-01T00:00:00Z
+Warning: 299 - "API version v1 is deprecated. Please migrate to v2. See https://docs.mxtac.example.com/migrate"
+
+{
+  "data": [...],
+  "_meta": {
+    "api_version": "v1",
+    "deprecated": true,
+    "sunset_date": "2027-06-01T00:00:00Z",
+    "migration_guide": "https://docs.mxtac.example.com/migrate/v1-to-v2"
+  }
+}
+```
+
+#### 3. Final Notice (30 days before sunset)
+- Direct outreach to active API consumers
+- Increased warning frequency
+- Migration assistance offered
+
+#### 4. Sunset
+- Version removed from service
+- Requests return 410 Gone status
+
+```http
+HTTP/1.1 410 Gone
+Content-Type: application/json
+
+{
+  "error": {
+    "code": "VERSION_SUNSET",
+    "message": "API version v1 was sunset on 2027-06-01. Please use v2.",
+    "migration_guide": "https://docs.mxtac.example.com/migrate/v1-to-v2"
+  }
+}
+```
+
+### Version-Specific Features
+
+#### v1 Features
+- Basic ATT&CK coverage reporting
+- Alert management with manual status updates
+- Simple Sigma rule evaluation
+- Basic connector integration
+
+#### v2 Planned Features
+- Enhanced AI-driven alert correlation
+- Automated response orchestration
+- Advanced threat hunting capabilities
+- Improved performance and scalability
+- GraphQL API alternative
+
+### Client Best Practices
+
+#### 1. Version Pinning
+Always specify the API version explicitly in client configuration:
+
+```javascript
+// Good: Explicit version
+const client = new MxTacClient({
+  baseUrl: 'https://api.mxtac.example.com/api/v1',
+  version: 'v1'
+});
+
+// Avoid: Latest version auto-selection
+const client = new MxTacClient({
+  baseUrl: 'https://api.mxtac.example.com/api/latest'
+});
+```
+
+#### 2. Deprecation Monitoring
+Monitor API responses for deprecation warnings:
+
+```javascript
+client.interceptors.response.use((response) => {
+  if (response.headers['x-api-version-deprecated']) {
+    console.warn('API version deprecated:', response.headers['warning']);
+  }
+  return response;
+});
+```
+
+#### 3. Graceful Degradation
+Handle version-specific errors gracefully:
+
+```javascript
+try {
+  const alerts = await client.alerts.list();
+} catch (error) {
+  if (error.code === 'VERSION_SUNSET') {
+    // Redirect to migration guide or update client
+    window.location.href = error.migration_guide;
+  }
+  throw error;
+}
+```
+
+### Semantic Versioning for SDKs
+
+Client SDKs follow semantic versioning independently of API versions:
+
+| SDK Version | API Version | Compatibility |
+|-------------|-------------|---------------|
+| 1.0.x | v1 | Full support |
+| 1.1.x | v1 | New features, backward compatible |
+| 2.0.x | v2 | New API version, breaking changes |
+
+### Documentation Versioning
+
+Each API version maintains separate documentation:
+
+- **v1**: https://docs.mxtac.example.com/api/v1
+- **v2**: https://docs.mxtac.example.com/api/v2
+- **Migration**: https://docs.mxtac.example.com/migrate
+
+### Version-Specific Support
+
+| Version | Support Level | Response Time |
+|---------|---------------|---------------|
+| Current | Full support | 24 hours |
+| Deprecated | Security fixes only | 72 hours |
+| Beta | Best effort | 1 week |
 
 ---
 
