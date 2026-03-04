@@ -7,8 +7,8 @@ HOST="0.0.0.0"
 PORT="13002"
 LOG="/tmp/agent-scheduler.log"
 
-# Kill existing processes
-PIDS=$(pgrep -f "uvicorn $APP" || true)
+# Kill existing processes (port-specific to avoid killing other schedulers)
+PIDS=$(pgrep -f "uvicorn $APP --host $HOST --port $PORT" || true)
 if [ -n "$PIDS" ]; then
     echo "Stopping existing processes (pids: $(echo $PIDS))..."
     kill $PIDS 2>/dev/null || true

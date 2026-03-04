@@ -1,7 +1,10 @@
 import asyncio
 import logging
+import os
+import subprocess
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import anthropic
 import httpx
@@ -10,6 +13,178 @@ from .config import settings
 from .context import build_api_messages
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Tool definitions for the Claude Messages API
+# ---------------------------------------------------------------------------
+
+TOOL_DEFINITIONS = [
+    {
+        "name": "read_file",
+        "description": "Read the contents of a file. Returns the file content as text. Use this to inspect existing code before making changes.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute or relative path to the file to read.",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "write_file",
+        "description": "Create or overwrite a file with the given content. Parent directories are created automatically.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute or relative path to the file to write.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The full content to write to the file.",
+                },
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "list_directory",
+        "description": "List the contents of a directory. Returns file and subdirectory names.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute or relative path to the directory to list. Defaults to working directory if omitted.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "run_command",
+        "description": "Execute a shell command and return its stdout, stderr, and exit code. Use for running tests, builds, git commands, etc.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The shell command to execute.",
+                },
+            },
+            "required": ["command"],
+        },
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# Path security
+# ---------------------------------------------------------------------------
+
+def _resolve_safe_path(path_str: str, working_directory: str) -> Path:
+    """Resolve a path against working_directory, rejecting traversal outside it."""
+    wd = Path(working_directory).resolve()
+    # Handle absolute paths — still must be under working_directory
+    candidate = Path(path_str)
+    if candidate.is_absolute():
+        resolved = candidate.resolve()
+    else:
+        resolved = (wd / candidate).resolve()
+
+    # Security: ensure the resolved path is within the working directory
+    if not (resolved == wd or str(resolved).startswith(str(wd) + os.sep)):
+        raise ValueError(
+            f"Path '{path_str}' resolves to '{resolved}' which is outside "
+            f"the working directory '{wd}'"
+        )
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# Tool execution
+# ---------------------------------------------------------------------------
+
+def _execute_tool(name: str, tool_input: dict, working_directory: str) -> str:
+    """Execute a single tool call synchronously. Returns the result string."""
+    try:
+        if name == "read_file":
+            path = _resolve_safe_path(tool_input["path"], working_directory)
+            if not path.exists():
+                return f"Error: File not found: {path}"
+            if not path.is_file():
+                return f"Error: Not a file: {path}"
+            content = path.read_text(encoding="utf-8", errors="replace")
+            # Truncate very large files
+            if len(content) > 100_000:
+                content = content[:100_000] + "\n\n... [truncated at 100K chars]"
+            return content
+
+        elif name == "write_file":
+            path = _resolve_safe_path(tool_input["path"], working_directory)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(tool_input["content"], encoding="utf-8")
+            return f"Successfully wrote {len(tool_input['content'])} chars to {path}"
+
+        elif name == "list_directory":
+            dir_path_str = tool_input.get("path", ".")
+            dir_path = _resolve_safe_path(dir_path_str, working_directory)
+            if not dir_path.exists():
+                return f"Error: Directory not found: {dir_path}"
+            if not dir_path.is_dir():
+                return f"Error: Not a directory: {dir_path}"
+            entries = sorted(dir_path.iterdir())
+            lines = []
+            for entry in entries[:500]:  # Cap at 500 entries
+                suffix = "/" if entry.is_dir() else ""
+                lines.append(f"{entry.name}{suffix}")
+            result = "\n".join(lines)
+            if len(entries) > 500:
+                result += f"\n... and {len(entries) - 500} more entries"
+            return result
+
+        elif name == "run_command":
+            result = subprocess.run(
+                tool_input["command"],
+                shell=True,
+                cwd=working_directory,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            output_parts = []
+            if result.stdout:
+                output_parts.append(f"stdout:\n{result.stdout}")
+            if result.stderr:
+                output_parts.append(f"stderr:\n{result.stderr}")
+            output_parts.append(f"exit_code: {result.returncode}")
+            output = "\n".join(output_parts)
+            # Truncate if too large
+            if len(output) > 100_000:
+                output = output[:100_000] + "\n\n... [truncated at 100K chars]"
+            return output
+
+        else:
+            return f"Error: Unknown tool '{name}'"
+
+    except subprocess.TimeoutExpired:
+        return "Error: Command timed out after 300 seconds"
+    except ValueError as e:
+        return f"Error: {e}"
+    except Exception as e:
+        return f"Error executing {name}: {type(e).__name__}: {e}"
+
+
+class MaxIterationsExceeded(Exception):
+    """Raised when the agentic loop exceeds max_tool_iterations."""
+    def __init__(self, message: str, usage: dict):
+        super().__init__(message)
+        self.usage = usage
 
 
 @dataclass
@@ -70,9 +245,12 @@ class Executor:
         attempt: int = 1,
         max_retries: int = 3,
     ) -> ExecutionResult:
-        """Execute a Claude API call with semaphore gating and rate limiting."""
+        """Execute a Claude API call with tool-use loop, semaphore gating, and rate limiting."""
         async with self._semaphore:
             await self._wait_for_rate_limit()
+
+            # Resolve working directory
+            wd = working_directory or settings.mxtac_project_root
 
             system_prompt, user_message = build_api_messages(
                 prompt, task_id, attempt, max_retries,
@@ -81,12 +259,13 @@ class Executor:
 
             logger.info(
                 f"Calling Claude API for task {task_db_id} "
-                f"(model={m}, max_tokens={settings.claude_max_tokens})"
+                f"(model={m}, max_tokens={settings.claude_max_tokens}, "
+                f"working_dir={wd})"
             )
             start_time = time.monotonic()
 
-            # Wrap the API call in an asyncio.Task so we can cancel it
-            api_coro = self._call_api(system_prompt, user_message, m)
+            # Wrap the agentic loop in an asyncio.Task so we can cancel it
+            api_coro = self._call_api_with_tools(system_prompt, user_message, m, wd, task_db_id)
             task = asyncio.ensure_future(api_coro)
 
             if task_db_id is not None:
@@ -126,6 +305,18 @@ class Executor:
                         timed_out=True,
                     )
 
+            except MaxIterationsExceeded as e:
+                duration = time.monotonic() - start_time
+                logger.warning(f"Task {task_db_id}: {e}")
+                return ExecutionResult(
+                    exit_code=-1,
+                    stdout="",
+                    stderr=str(e),
+                    pid=None,
+                    duration_seconds=duration,
+                    usage=e.usage,
+                )
+
             except Exception as e:
                 duration = time.monotonic() - start_time
                 logger.exception(f"Failed to execute task {task_db_id}: {e}")
@@ -140,30 +331,101 @@ class Executor:
                 if task_db_id is not None:
                     self._running_tasks.pop(task_db_id, None)
 
-    async def _call_api(
-        self, system_prompt: str, user_message: str, model: str
+    async def _call_api_with_tools(
+        self,
+        system_prompt: str,
+        user_message: str,
+        model: str,
+        working_directory: str,
+        task_db_id: int | None = None,
     ) -> tuple[str, dict]:
-        """Make the actual Anthropic API call. Returns (response_text, usage_dict)."""
+        """Agentic tool-use loop. Calls Claude, executes tools, repeats until done."""
         client = self._get_client()
-        response = await client.messages.create(
-            model=model,
-            max_tokens=settings.claude_max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
-        )
+        messages = [{"role": "user", "content": user_message}]
 
-        # Extract text from content blocks
-        text_parts = []
-        for block in response.content:
-            if block.type == "text":
-                text_parts.append(block.text)
+        total_input_tokens = 0
+        total_output_tokens = 0
+        iteration = 0
+        max_iterations = settings.max_tool_iterations
 
-        result_text = "\n".join(text_parts)
-        usage_info = {
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-        }
-        return result_text, usage_info
+        while True:
+            iteration += 1
+            if iteration > max_iterations:
+                logger.warning(
+                    f"Task {task_db_id}: max tool iterations ({max_iterations}) exceeded"
+                )
+                raise MaxIterationsExceeded(
+                    f"Max tool iterations ({max_iterations}) exceeded. Task may be incomplete.",
+                    usage={
+                        "input_tokens": total_input_tokens,
+                        "output_tokens": total_output_tokens,
+                        "tool_iterations": iteration - 1,
+                    },
+                )
+
+            response = await client.messages.create(
+                model=model,
+                max_tokens=settings.claude_max_tokens,
+                system=system_prompt,
+                messages=messages,
+                tools=TOOL_DEFINITIONS,
+            )
+
+            total_input_tokens += response.usage.input_tokens
+            total_output_tokens += response.usage.output_tokens
+
+            # Append the assistant response to the conversation
+            messages.append({"role": "assistant", "content": response.content})
+
+            # If the model stopped for a reason other than tool_use, we're done
+            if response.stop_reason != "tool_use":
+                # Extract final text
+                text_parts = []
+                for block in response.content:
+                    if block.type == "text":
+                        text_parts.append(block.text)
+                result_text = "\n".join(text_parts)
+                usage_info = {
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
+                    "tool_iterations": iteration,
+                }
+                return result_text, usage_info
+
+            # Process tool calls
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    tool_name = block.name
+                    tool_input = block.input
+                    tool_use_id = block.id
+
+                    logger.info(
+                        f"Task {task_db_id} iter {iteration}: "
+                        f"tool={tool_name}, input_keys={list(tool_input.keys())}"
+                    )
+
+                    # Execute tool on disk (synchronous — runs in thread pool)
+                    result_str = await asyncio.get_event_loop().run_in_executor(
+                        None, _execute_tool, tool_name, tool_input, working_directory
+                    )
+
+                    is_error = result_str.startswith("Error:")
+                    if is_error:
+                        logger.warning(
+                            f"Task {task_db_id} iter {iteration}: "
+                            f"tool {tool_name} error: {result_str[:200]}"
+                        )
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": result_str,
+                        "is_error": is_error,
+                    })
+
+            # Append tool results as the next user message
+            messages.append({"role": "user", "content": tool_results})
 
     async def cancel(self, task_db_id: int) -> bool:
         """Cancel a running API call by task DB ID."""

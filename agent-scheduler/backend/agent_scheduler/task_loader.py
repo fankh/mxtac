@@ -38,7 +38,7 @@ def parse_yaml_directory(dir_path: str | Path) -> list[dict]:
         raise FileNotFoundError(f"Directory not found: {dir_path}")
 
     all_tasks = []
-    for yaml_file in sorted(dir_path.glob("*.yml")):
+    for yaml_file in sorted([*dir_path.glob("*.yml"), *dir_path.glob("*.yaml")]):
         try:
             tasks = parse_yaml_tasks(yaml_file)
             all_tasks.extend(tasks)

@@ -181,12 +181,23 @@ This task may be a **retry after a previous failure**. If so:
 - Read the current state of all relevant files before making any changes
 - If the previous attempt left broken tests or incomplete code, fix or rewrite as needed
 
+## Available Tools
+
+You have the following tools to interact with the filesystem:
+
+- **read_file(path)** — Read file contents. Always read before modifying.
+- **write_file(path, content)** — Create or overwrite a file. Parent directories are auto-created.
+- **list_directory(path)** — List directory contents. Use to explore project structure.
+- **run_command(command)** — Run a shell command (tests, builds, git, etc.). 300s timeout.
+
+Use these tools to complete your task. You MUST use write_file to create/modify files — do NOT just describe what to write.
+
 ## Task Execution Steps
 
-1. **Explore:** Read relevant existing files to understand current state
+1. **Explore:** Use list_directory and read_file to understand the current codebase state
 2. **Plan:** Determine what needs to change and in what order
-3. **Implement:** Make changes following project conventions
-4. **Verify:** Run tests (`./gradlew test` for Java, `cargo test` for Rust, `npm test` for portal)
+3. **Implement:** Use write_file to make changes following project conventions
+4. **Verify:** Use run_command to run tests (`./gradlew test` for Java, `cargo test` for Rust, `npm test` for portal)
 5. **Fix:** If tests fail, debug and fix until they pass
 """.strip()
 

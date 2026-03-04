@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     scheduler_task_timeout: int = 1800  # 30 minutes
     scheduler_retry_max: int = 5
     scheduler_retry_backoff: int = 60  # base backoff in seconds
-    scheduler_auto_start: bool = False
+    scheduler_auto_start: bool = True
     scheduler_quality_retry_max: int = 10  # max quality-failure retries
     scheduler_test_command: str = ""  # empty = disabled
     scheduler_test_timeout: int = 300  # 5 minutes
@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-4-20250514"
     claude_max_tokens: int = 16384
+    max_tool_iterations: int = 50
 
     # Auth
     auth_password: str = ""  # Empty = auth disabled
