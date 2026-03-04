@@ -1,4 +1,5 @@
 import datetime
+import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -7,10 +8,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=os.environ.get("ENV_FILE", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    # Project identity
+    project_name: str = ""
+    project_root: str = ""
 
     # Database
     scheduler_db_url: str = "sqlite+aiosqlite:///./data/scheduler.db"
@@ -18,6 +23,7 @@ class Settings(BaseSettings):
     # Server
     scheduler_host: str = "0.0.0.0"
     scheduler_port: int = 13002
+    frontend_port: int = 13001  # for CORS origins
 
     # Scheduler
     scheduler_timezone: str = "UTC"
@@ -28,11 +34,12 @@ class Settings(BaseSettings):
     scheduler_retry_backoff: int = 60  # base backoff in seconds
     scheduler_auto_start: bool = True
     scheduler_quality_retry_max: int = 10  # max quality-failure retries
+    scheduler_max_total_runs: int = 20  # hard cap on total runs per task
     scheduler_test_command: str = ""  # empty = disabled
     scheduler_test_timeout: int = 300  # 5 minutes
 
     # GitHub
-    github_repo_url: str = "https://github.com/fankh/mxtac"
+    github_repo_url: str = ""
 
     # Claude API
     anthropic_api_key: str = ""
@@ -43,9 +50,6 @@ class Settings(BaseSettings):
     # Auth
     auth_password: str = ""  # Empty = auth disabled
 
-    # MxTac
-    mxtac_project_root: str = "/home/khchoi/development/new-research/mitre-attack/mxtac"
-
     # --- New Agent Settings ---
 
     # TaskCreatorAgent (P0)
@@ -54,6 +58,11 @@ class Settings(BaseSettings):
     agent_task_creator_max_tasks_per_cycle: int = 20
     agent_task_creator_use_claude: bool = True
     agent_task_creator_quality_sample_size: int = 3  # files per quality scan cycle
+    # Markdown docs scanned for task discovery (relative to project_root)
+    agent_task_creator_checklist_path: str = "docs/FEATURE-CHECKLIST.md"
+    agent_task_creator_plan_path: str = "docs/IMPLEMENTATION-PLAN.md"
+    agent_task_creator_api_spec_path: str = "docs/API-SPECIFICATION.md"
+    agent_task_creator_security_doc_path: str = "docs/SECURITY-IMPLEMENTATION.md"
 
     # VerifierAgent (P0)
     agent_verifier_enabled: bool = True

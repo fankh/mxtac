@@ -169,6 +169,10 @@ class Scheduler:
 
     async def _dispatch_eligible_tasks(self):
         """Find and dispatch tasks that are ready to run."""
+        # Don't dispatch anything while circuit breaker is open
+        if executor._check_circuit():
+            return
+
         async with async_session() as session:
             # Query 1: Only PENDING tasks (candidates)
             result = await session.execute(
@@ -180,9 +184,11 @@ class Scheduler:
                 return
 
             # Query 2: Terminal-status tasks for dependency checking
+            # NOTE: FAILED is intentionally excluded — a failed dependency
+            # should NOT unblock downstream tasks (they would just fail too)
             dep_result = await session.execute(
                 select(Task.task_id, Task.status).where(
-                    Task.status.in_([TaskStatus.COMPLETED, TaskStatus.SKIPPED, TaskStatus.FAILED])
+                    Task.status.in_([TaskStatus.COMPLETED, TaskStatus.SKIPPED])
                 )
             )
             status_map = {row.task_id: row.status for row in dep_result}
@@ -203,7 +209,7 @@ class Scheduler:
                 deps = task.depends_on_list
                 if deps:
                     all_met = all(
-                        status_map.get(dep) in (TaskStatus.COMPLETED, TaskStatus.SKIPPED, TaskStatus.FAILED)
+                        status_map.get(dep) in (TaskStatus.COMPLETED, TaskStatus.SKIPPED)
                         for dep in deps
                     )
                     if not all_met:
@@ -251,6 +257,27 @@ class Scheduler:
             if task is None or task.status != TaskStatus.PENDING:
                 return
 
+            # Hard cap: refuse to run if total runs already exceeded
+            from sqlalchemy import func as sa_func
+            run_count_result = await session.execute(
+                select(sa_func.count(Run.id)).where(Run.task_id == task_db_id)
+            )
+            total_runs = run_count_result.scalar() or 0
+            if total_runs >= settings.scheduler_max_total_runs:
+                task.status = TaskStatus.FAILED
+                task.failure_reason = (
+                    f"Hard cap: {total_runs} total runs reached "
+                    f"(max_total_runs={settings.scheduler_max_total_runs})"
+                )
+                await session.commit()
+                logger.warning(
+                    f"Task {task_db_id} ({task.task_id}) hit max_total_runs "
+                    f"({total_runs}/{settings.scheduler_max_total_runs}), marking FAILED"
+                )
+                await session.refresh(task)
+                await sse_broadcaster.broadcast("task_update", task.to_dict())
+                return
+
             # Mark as running + create run + log start in a single commit
             task.status = TaskStatus.RUNNING
             run = Run(
@@ -292,6 +319,35 @@ class Scheduler:
             f"pid={result.pid}, timed_out={result.timed_out}, "
             f"duration={result.duration_seconds:.1f}s"
         )
+
+        # Budget exhaustion (exit_code=-2): don't count as attempt, reset to PENDING
+        if result.exit_code == -2:
+            async with async_session() as session:
+                task = await session.get(Task, task_db_id)
+                run_result = await session.execute(
+                    select(Run).where(Run.task_id == task_db_id, Run.status == RunStatus.RUNNING)
+                    .order_by(Run.id.desc()).limit(1)
+                )
+                run = run_result.scalar_one_or_none()
+                if run:
+                    run.exit_code = -2
+                    run.stderr = result.stderr
+                    run.duration_seconds = result.duration_seconds
+                    run.finished_at = now()
+                    run.status = RunStatus.CANCELLED
+                    log = Log(run_id=run.id, level="WARNING", message="Budget exhausted — circuit breaker tripped")
+                    session.add(log)
+                if task:
+                    # Do NOT increment retry_count — this is not a real failure
+                    task.status = TaskStatus.PENDING
+                    logger.info(f"Task {task_db_id} reset to PENDING (budget exhausted, not counted as attempt)")
+                await session.commit()
+                if task:
+                    await session.refresh(task)
+                    await sse_broadcaster.broadcast("task_update", task.to_dict())
+                await sse_broadcaster.broadcast("circuit_breaker", {"open": True, "reason": "budget_exhausted"})
+            # Do NOT notify — circuit is open, nothing useful to dispatch
+            return
 
         # Auto-commit on success
         commit_sha = None
@@ -390,7 +446,7 @@ class Scheduler:
         if not test_command:
             return
 
-        cwd = working_dir or settings.mxtac_project_root
+        cwd = working_dir or settings.project_root
         timeout = settings.scheduler_test_timeout
 
         # Mark as testing
@@ -471,7 +527,7 @@ class Scheduler:
         self, task_db_id: int, task_id: str, title: str, working_dir: str
     ) -> str | None:
         """Auto-commit changes after a successful task. Returns commit SHA or None."""
-        cwd = working_dir or settings.mxtac_project_root
+        cwd = working_dir or settings.project_root
         logger.info(f"Auto-commit check for {task_id} in {cwd}")
         try:
             # Check for changes
@@ -665,8 +721,39 @@ class RetryAgent:
             for task in all_candidates:
                 if (task.quality_retry_count or 0) >= settings.scheduler_quality_retry_max:
                     continue  # permanently failed, skip
+
+                reason = (task.failure_reason or "").lower()
+
+                # Skip budget/credit failures — circuit breaker handles these
+                if "budget" in reason or "credit" in reason:
+                    continue
+
+                # Skip hard-capped tasks
+                if "hard cap" in reason or "max_total_runs" in reason:
+                    continue
+
+                # Classify failure: only retry transient or quality failures
+                is_stuck = task in stuck_tasks  # verification/test failed
+                is_transient = "timeout" in reason or "timed out" in reason
+                is_deterministic = (
+                    not is_stuck
+                    and not is_transient
+                    and task.retry_count >= task.max_retries
+                )
+
+                # Deterministic execution failures (hit max_retries with
+                # consistent errors) should NOT be retried — the task's
+                # code/prompt needs manual intervention
+                if is_deterministic:
+                    logger.info(
+                        "RetryAgent: skipping %s (deterministic failure: %s)",
+                        task.task_id, reason[:100],
+                    )
+                    continue
+
+                task.quality_retry_count = (task.quality_retry_count or 0) + 1
                 task.status = TaskStatus.PENDING
-                task.retry_count = 0
+                task.retry_count = 0  # fresh set of attempts
                 task.verification_status = None
                 task.verification_output = None
                 task.test_status = None

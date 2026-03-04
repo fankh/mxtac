@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class TaskCreatorAgent(BaseAgent):
     NAME = "TaskCreatorAgent"
     DEFAULT_INTERVAL = 3600
-    DESCRIPTION = "Scans MxTac codebase to discover gaps and generate task definitions"
+    DESCRIPTION = "Scans project codebase to discover gaps and generate task definitions"
 
     def __init__(self):
         super().__init__()
@@ -32,7 +32,7 @@ class TaskCreatorAgent(BaseAgent):
         self._scanned_files: dict[str, float] = {}  # path -> last-scanned timestamp
 
     async def run_cycle(self) -> dict:
-        project_root = Path(settings.mxtac_project_root)
+        project_root = Path(settings.project_root)
         gaps = []
 
         # Tier 0: Heuristic (free, always)
@@ -98,8 +98,8 @@ class TaskCreatorAgent(BaseAgent):
         }
 
     async def _scan_checklist(self, root: Path) -> list[dict]:
-        """Parse docs/19-FEATURE-CHECKLIST.md for unchecked items."""
-        checklist = root / "docs" / "19-FEATURE-CHECKLIST.md"
+        """Parse checklist markdown for unchecked items."""
+        checklist = root / settings.agent_task_creator_checklist_path
         if not checklist.exists():
             return []
 
@@ -124,8 +124,8 @@ class TaskCreatorAgent(BaseAgent):
         return gaps
 
     async def _scan_implementation_plan(self, root: Path) -> list[dict]:
-        """Parse docs/18-AI-AGENT-IMPLEMENTATION-PLAN.md for uncompleted tasks."""
-        plan_file = root / "docs" / "18-AI-AGENT-IMPLEMENTATION-PLAN.md"
+        """Parse implementation plan markdown for uncompleted tasks."""
+        plan_file = root / settings.agent_task_creator_plan_path
         if not plan_file.exists():
             return []
 
@@ -224,7 +224,7 @@ class TaskCreatorAgent(BaseAgent):
     # ── Tier 1: Structural cross-reference (no Claude API) ─────────────
 
     async def _scan_architectural_gaps(self, root: Path) -> list[dict]:
-        """Cross-reference MxTac layers to find structural holes."""
+        """Cross-reference project layers to find structural holes."""
         gaps = []
         backend = root / "app" / "backend" / "app"
 
@@ -392,7 +392,7 @@ class TaskCreatorAgent(BaseAgent):
     async def _scan_spec_compliance(self, root: Path) -> list[dict]:
         """Compare API spec doc against actual endpoint implementations."""
         gaps = []
-        spec_file = root / "docs" / "06-API-SPECIFICATION.md"
+        spec_file = root / settings.agent_task_creator_api_spec_path
         endpoints_dir = root / "app" / "backend" / "app" / "api" / "v1" / "endpoints"
 
         if not spec_file.exists() or not endpoints_dir.exists():
@@ -463,7 +463,7 @@ class TaskCreatorAgent(BaseAgent):
     async def _scan_security_gaps(self, root: Path) -> list[dict]:
         """Cross-reference security implementation doc against code."""
         gaps = []
-        sec_doc = root / "docs" / "12-BACKEND-SECURITY-IMPLEMENTATION.md"
+        sec_doc = root / settings.agent_task_creator_security_doc_path
         backend = root / "app" / "backend" / "app"
 
         if not sec_doc.exists():
@@ -548,7 +548,7 @@ class TaskCreatorAgent(BaseAgent):
             return gaps
 
         prompt = (
-            f"Analyze the MxTac backend '{domain}' implementation for security gaps.\n"
+            f"Analyze the {settings.project_name} backend '{domain}' implementation for security gaps.\n"
             f"Compare the security spec against the actual code.\n\n"
             f"--- SECURITY SPEC (excerpt) ---\n{sec_text}\n\n"
             f"--- CODE ---\n{''.join(code_snippets)}\n\n"
@@ -623,7 +623,7 @@ class TaskCreatorAgent(BaseAgent):
 
             rel_path = fpath.relative_to(backend)
             prompt = (
-                f"Analyze this Python file from the MxTac security platform for code quality issues.\n"
+                f"Analyze this Python file from the {settings.project_name} security platform for code quality issues.\n"
                 f"File: {rel_path}\n\n"
                 f"```python\n{code}\n```\n\n"
                 f"Find SPECIFIC, actionable issues:\n"
@@ -695,7 +695,7 @@ class TaskCreatorAgent(BaseAgent):
     async def _generate_with_claude(self, gaps: list[dict]) -> list[dict]:
         """Use Claude CLI to generate structured task definitions."""
         task_defs = []
-        project_root = settings.mxtac_project_root
+        project_root = settings.project_root
 
         # Process in batches of 5
         for i in range(0, len(gaps), 5):
@@ -706,7 +706,7 @@ class TaskCreatorAgent(BaseAgent):
             )
 
             prompt = (
-                f"Generate task definitions for the MxTac project. "
+                f"Generate task definitions for the {settings.project_name} project. "
                 f"For each gap below, create a JSON object with fields: "
                 f"task_id, title, category, phase, priority (0-10), prompt, "
                 f"working_directory, target_files (list), acceptance_criteria.\n\n"
@@ -753,7 +753,7 @@ class TaskCreatorAgent(BaseAgent):
                 "phase": "auto-discovery",
                 "priority": 3,
                 "prompt": f"Address the following gap: {g['description']}",
-                "working_directory": settings.mxtac_project_root,
+                "working_directory": settings.project_root,
                 "target_files": [g["file"]] if "file" in g else [],
                 "acceptance_criteria": f"The gap '{g['description']}' has been addressed.",
             })

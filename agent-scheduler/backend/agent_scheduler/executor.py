@@ -12,6 +12,8 @@ import httpx
 from .config import settings
 from .context import build_api_messages
 
+__all__ = ["Executor", "ExecutionResult", "BudgetExhaustedError", "executor"]
+
 logger = logging.getLogger(__name__)
 
 
@@ -180,6 +182,11 @@ def _execute_tool(name: str, tool_input: dict, working_directory: str) -> str:
         return f"Error executing {name}: {type(e).__name__}: {e}"
 
 
+class BudgetExhaustedError(Exception):
+    """Raised when the API returns a credit/budget exhaustion error."""
+    pass
+
+
 class MaxIterationsExceeded(Exception):
     """Raised when the agentic loop exceeds max_tool_iterations."""
     def __init__(self, message: str, usage: dict):
@@ -199,12 +206,17 @@ class ExecutionResult:
 
 
 class Executor:
+    CIRCUIT_COOLDOWN = 300  # 5 minutes pause after budget error
+
     def __init__(self):
         self._semaphore = asyncio.Semaphore(settings.scheduler_max_concurrent)
         self._last_spawn_time: float = 0
         self._spawn_lock = asyncio.Lock()
         self._running_tasks: dict[int, asyncio.Task] = {}
         self._client: anthropic.AsyncAnthropic | None = None
+        # Circuit breaker state
+        self._circuit_open: bool = False
+        self._circuit_open_until: float = 0
 
     def _get_client(self) -> anthropic.AsyncAnthropic:
         """Lazy-init the async Anthropic client with HTTP-level timeouts."""
@@ -235,6 +247,30 @@ class Executor:
                 await asyncio.sleep(wait_time)
             self._last_spawn_time = time.monotonic()
 
+    def _check_circuit(self) -> bool:
+        """Return True if circuit is open (API calls should be blocked)."""
+        if not self._circuit_open:
+            return False
+        if time.monotonic() >= self._circuit_open_until:
+            self._circuit_open = False
+            logger.info("Circuit breaker RESET — resuming API calls")
+            return False
+        return True
+
+    def _trip_circuit(self, reason: str = "budget exhausted"):
+        """Trip the circuit breaker, blocking API calls for CIRCUIT_COOLDOWN seconds."""
+        self._circuit_open = True
+        self._circuit_open_until = time.monotonic() + self.CIRCUIT_COOLDOWN
+        logger.critical(
+            f"CIRCUIT BREAKER TRIPPED ({reason}) — "
+            f"blocking API calls for {self.CIRCUIT_COOLDOWN}s"
+        )
+
+    @property
+    def circuit_open(self) -> bool:
+        """Public read-only check (auto-resets if cooldown expired)."""
+        return self._check_circuit()  # side-effect: resets if expired
+
     async def execute(
         self,
         prompt: str,
@@ -246,11 +282,58 @@ class Executor:
         max_retries: int = 3,
     ) -> ExecutionResult:
         """Execute a Claude API call with tool-use loop, semaphore gating, and rate limiting."""
+        # Circuit breaker check — return immediately if API is paused
+        if self._check_circuit():
+            remaining = self._circuit_open_until - time.monotonic()
+            logger.info(
+                f"Task {task_db_id} blocked by circuit breaker "
+                f"({remaining:.0f}s remaining)"
+            )
+            return ExecutionResult(
+                exit_code=-2,
+                stdout="",
+                stderr=f"Circuit breaker open — API paused for {remaining:.0f}s",
+                pid=None,
+                duration_seconds=0,
+            )
+
         async with self._semaphore:
+            # Re-check circuit after waiting for semaphore — another task
+            # may have tripped it while we were queued
+            if self._check_circuit():
+                remaining = self._circuit_open_until - time.monotonic()
+                logger.info(
+                    f"Task {task_db_id} blocked by circuit breaker "
+                    f"(after semaphore, {remaining:.0f}s remaining)"
+                )
+                return ExecutionResult(
+                    exit_code=-2,
+                    stdout="",
+                    stderr=f"Circuit breaker open — API paused for {remaining:.0f}s",
+                    pid=None,
+                    duration_seconds=0,
+                )
+
             await self._wait_for_rate_limit()
 
+            # Final circuit check right before API call — catches tasks
+            # that were waiting on the rate limiter when circuit tripped
+            if self._check_circuit():
+                remaining = self._circuit_open_until - time.monotonic()
+                logger.info(
+                    f"Task {task_db_id} blocked by circuit breaker "
+                    f"(pre-call, {remaining:.0f}s remaining)"
+                )
+                return ExecutionResult(
+                    exit_code=-2,
+                    stdout="",
+                    stderr=f"Circuit breaker open — API paused for {remaining:.0f}s",
+                    pid=None,
+                    duration_seconds=0,
+                )
+
             # Resolve working directory
-            wd = working_directory or settings.mxtac_project_root
+            wd = working_directory or settings.project_root
 
             system_prompt, user_message = build_api_messages(
                 prompt, task_id, attempt, max_retries,
@@ -304,6 +387,17 @@ class Executor:
                         duration_seconds=duration,
                         timed_out=True,
                     )
+
+            except BudgetExhaustedError as e:
+                duration = time.monotonic() - start_time
+                self._trip_circuit(str(e))
+                return ExecutionResult(
+                    exit_code=-2,
+                    stdout="",
+                    stderr=str(e),
+                    pid=None,
+                    duration_seconds=duration,
+                )
 
             except MaxIterationsExceeded as e:
                 duration = time.monotonic() - start_time
@@ -377,6 +471,9 @@ class Executor:
                     f"Task {task_db_id} iter {iteration}: "
                     f"API BadRequestError: {error_body[:300]}"
                 )
+                # Budget / credit exhaustion — unrecoverable, trip circuit
+                if "credit" in error_body.lower() or "balance" in error_body.lower() or "budget" in error_body.lower():
+                    raise BudgetExhaustedError(f"API budget exhausted: {error_body[:200]}")
                 if "content filtering" in error_body.lower():
                     # Content filter blocked the output — tell Claude to rephrase
                     messages.append({
@@ -397,6 +494,20 @@ class Executor:
                     })
                     continue
                 raise
+            except anthropic.RateLimitError:
+                logger.warning(
+                    f"Task {task_db_id} iter {iteration}: rate-limited (429), "
+                    f"sleeping 60s then retrying"
+                )
+                await asyncio.sleep(60)
+                continue
+            except anthropic.InternalServerError:
+                logger.warning(
+                    f"Task {task_db_id} iter {iteration}: server overload (5xx), "
+                    f"sleeping 30s then retrying"
+                )
+                await asyncio.sleep(30)
+                continue
 
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens

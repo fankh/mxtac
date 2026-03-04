@@ -166,6 +166,14 @@ class BaseAgent(ABC):
         Returns (exit_code, response_text) to match the pattern used by agents.
         exit_code is 0 on success, -1 on failure.
         """
+        # Check circuit breaker — skip Claude call if API is paused
+        from ..executor import executor
+        if executor.circuit_open:
+            logger.info(
+                "%s: skipping Claude call — circuit breaker open", self.NAME
+            )
+            return -1, ""
+
         client = self._get_claude_client()
         m = model or settings.claude_model
 
@@ -191,6 +199,14 @@ class BaseAgent(ABC):
 
         except asyncio.TimeoutError:
             logger.warning("Claude API call timed out after %ds", timeout)
+            return -1, ""
+        except anthropic.BadRequestError as e:
+            error_body = str(e).lower()
+            if "credit" in error_body or "balance" in error_body or "budget" in error_body:
+                logger.warning("%s: budget exhausted, tripping circuit breaker", self.NAME)
+                executor._trip_circuit(f"budget exhausted (via {self.NAME})")
+            else:
+                logger.warning("Claude API BadRequestError: %s", e)
             return -1, ""
         except anthropic.APIError as e:
             logger.warning("Claude API error: %s", e)

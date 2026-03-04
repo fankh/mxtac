@@ -139,7 +139,7 @@ class VerifierAgent(BaseAgent):
         if not target_files:
             return {"check": "files", "pass": True, "detail": "No target files specified"}
 
-        base = Path(task.working_directory or settings.mxtac_project_root)
+        base = Path(task.working_directory or settings.project_root)
         missing = []
         for f in target_files:
             p = Path(f)
@@ -163,7 +163,7 @@ class VerifierAgent(BaseAgent):
         if not target_files:
             return {"check": "git", "pass": True, "detail": "No target files to check"}
 
-        cwd = task.working_directory or settings.mxtac_project_root
+        cwd = task.working_directory or settings.project_root
         rc, stdout, _ = await self._run_subprocess(
             f"git diff --name-only {task.git_commit_sha}~1 {task.git_commit_sha}",
             cwd=cwd,
@@ -206,6 +206,10 @@ class VerifierAgent(BaseAgent):
             f"Verification Results:\n{checks_summary}\n\n"
             f"Test Status: {task.test_status or 'not tested'}\n"
             f"Git Commit: {task.git_commit_sha or 'none'}\n\n"
+            f"IMPORTANT: A 'not tested' test status is NOT a failure — it simply means "
+            f"no automated test suite is configured. Do NOT fail the task for lacking tests. "
+            f"Focus only on whether the code changes satisfy the acceptance criteria based on "
+            f"the file existence and git commit evidence.\n\n"
             f"Respond with exactly 'PASS' or 'FAIL' on the first line, "
             f"followed by a brief explanation."
         )
