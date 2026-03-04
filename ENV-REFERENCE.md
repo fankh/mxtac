@@ -45,6 +45,18 @@ Copy to `.env.local`. In development, the Vite proxy handles routing automatical
 
 ---
 
+## App Docker Swarm (`app/.env.swarm.example`)
+
+Used for Docker Swarm production deployments.
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `IMAGE_PREFIX` | Registry prefix for pre-built images | `mxtac` | **Yes** |
+| `VERSION` | Image version tag | `latest` | No |
+| `DOMAIN` | Public hostname for CORS and SSL | `mxtac.example.com` | **Yes** |
+
+---
+
 ## Agent Scheduler — Root (`agent-scheduler/.env.example`)
 
 Consumed by the top-level Docker Compose for the scheduler service.
@@ -68,8 +80,9 @@ Consumed by the top-level Docker Compose for the scheduler service.
 | `SCHEDULER_RETRY_MAX` | Maximum retry attempts for a failed task | `3` | No |
 | `SCHEDULER_RETRY_BACKOFF` | Seconds to wait before retrying a failed task | `60` | No |
 | `SCHEDULER_AUTO_START` | Automatically start the scheduler on server startup | `false` | No |
-| `CLAUDE_MODEL` | Claude model alias passed to the CLI (`sonnet`, `opus`, `haiku`) | `sonnet` | No |
-| `CLAUDE_CLI_PATH` | Path or command name of the Claude CLI binary | `claude` | No |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude models | *(none)* | **Yes** |
+| `CLAUDE_MODEL` | Claude model identifier | `claude-sonnet-4-20250514` | No |
+| `CLAUDE_MAX_TOKENS` | Maximum tokens per Claude API request | `16384` | No |
 | `MXTAC_PROJECT_ROOT` | Absolute path to the MxTac repository root | *(none)* | **Yes** |
 | `AUTH_PASSWORD` | HTTP Basic Auth password (mirrors root `AUTH_PASSWORD`) | *(none)* | **Yes (prod)** |
 
@@ -81,3 +94,5 @@ Consumed by the top-level Docker Compose for the scheduler service.
 - `AUTH_PASSWORD` appears in both the root and backend `agent-scheduler` examples. When using Docker Compose, set it once in `agent-scheduler/.env`; when running the backend directly, set it in `agent-scheduler/backend/.env`.
 - `SECRET_KEY` must be unique per deployment. Reusing the same key across environments is a security risk.
 - `QUEUE_BACKEND=memory` is suitable for development only. Use `redis` or `kafka` in production.
+- `ANTHROPIC_API_KEY` is required for the agent scheduler to interact with Claude models.
+- `MXTAC_PROJECT_ROOT` should point to the absolute path of the MxTac repository root directory.
