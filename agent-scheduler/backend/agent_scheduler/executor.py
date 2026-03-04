@@ -363,13 +363,40 @@ class Executor:
                     },
                 )
 
-            response = await client.messages.create(
-                model=model,
-                max_tokens=settings.claude_max_tokens,
-                system=system_prompt,
-                messages=messages,
-                tools=TOOL_DEFINITIONS,
-            )
+            try:
+                response = await client.messages.create(
+                    model=model,
+                    max_tokens=settings.claude_max_tokens,
+                    system=system_prompt,
+                    messages=messages,
+                    tools=TOOL_DEFINITIONS,
+                )
+            except anthropic.BadRequestError as e:
+                error_body = str(e)
+                logger.warning(
+                    f"Task {task_db_id} iter {iteration}: "
+                    f"API BadRequestError: {error_body[:300]}"
+                )
+                if "content filtering" in error_body.lower():
+                    # Content filter blocked the output — tell Claude to rephrase
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "Your previous response was blocked by the API content "
+                            "filtering policy. This often happens when generating "
+                            "full license texts, security policies, or similar "
+                            "boilerplate. Please try a different approach:\n"
+                            "- For LICENSE files, use run_command to download the "
+                            "license text (e.g., curl from a trusted source) or "
+                            "write a brief placeholder pointing to the full text.\n"
+                            "- For SECURITY.md, keep the content concise and "
+                            "avoid detailed vulnerability exploitation steps.\n"
+                            "- Break large file writes into smaller chunks if needed.\n"
+                            "Please continue with the task."
+                        ),
+                    })
+                    continue
+                raise
 
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
