@@ -47,13 +47,38 @@ Copy to `.env.local`. In development, the Vite proxy handles routing automatical
 
 ## App Docker Swarm (`app/.env.swarm.example`)
 
-Used for Docker Swarm production deployments.
+Swarm deployment environment variables. Source before deploying with `docker stack deploy`.
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `IMAGE_PREFIX` | Registry prefix for pre-built images | `mxtac` | **Yes** |
-| `VERSION` | Image version tag | `latest` | No |
-| `DOMAIN` | Public hostname for CORS and SSL | `mxtac.example.com` | **Yes** |
+| `VERSION` | Image tag version | `latest` | **Yes** |
+| `DOMAIN` | Public hostname for CORS and SSL certificates | `mxtac.example.com` | **Yes** |
+
+---
+
+## App SystemD Deployment (`app/deploy/systemd/mxtac.env.example`)
+
+Production systemd service environment variables. Copy to `/etc/mxtac/mxtac.env`.
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `DEBUG` | Enable debug mode (never set `true` in production) | `false` | No |
+| `SECRET_KEY` | JWT signing secret — generate with `python3 -c "import secrets; print(secrets.token_hex(32))"` | *(none)* | **Yes** |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT access token lifetime in minutes | `60` | No |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | JWT refresh token lifetime in days | `7` | No |
+| `DATABASE_URL` | PostgreSQL async DSN or SQLite for single-node | `postgresql+asyncpg://mxtac:CHANGE_ME@localhost:5432/mxtac` | **Yes** |
+| `VALKEY_URL` | Valkey / Redis connection URL | `redis://localhost:6379/0` | **Yes** |
+| `QUEUE_BACKEND` | Event queue backend: `memory`, `redis`, or `kafka` | `memory` | No |
+| `KAFKA_BOOTSTRAP_SERVERS` | Kafka broker list (when `QUEUE_BACKEND=kafka`) | `localhost:9092` | No |
+| `KAFKA_CONSUMER_GROUP` | Kafka consumer group id | `mxtac` | No |
+| `OPENSEARCH_HOST` | OpenSearch hostname (leave blank to disable) | `localhost` | No |
+| `OPENSEARCH_PORT` | OpenSearch HTTP port | `9200` | No |
+| `OPENSEARCH_USERNAME` | OpenSearch username | *(empty)* | No |
+| `OPENSEARCH_PASSWORD` | OpenSearch password | *(empty)* | No |
+| `OPENSEARCH_USE_SSL` | Enable TLS for OpenSearch connection | `false` | No |
+| `CORS_ORIGINS` | Comma-separated list of allowed CORS origins | `http://localhost:5173,http://localhost:3000` | No |
+| `RATE_LIMIT_PER_MINUTE` | Max API requests per IP per minute | `300` | No |
 
 ---
 
@@ -80,9 +105,8 @@ Consumed by the top-level Docker Compose for the scheduler service.
 | `SCHEDULER_RETRY_MAX` | Maximum retry attempts for a failed task | `3` | No |
 | `SCHEDULER_RETRY_BACKOFF` | Seconds to wait before retrying a failed task | `60` | No |
 | `SCHEDULER_AUTO_START` | Automatically start the scheduler on server startup | `false` | No |
-| `ANTHROPIC_API_KEY` | Anthropic API key for Claude models | *(none)* | **Yes** |
-| `CLAUDE_MODEL` | Claude model identifier | `claude-sonnet-4-20250514` | No |
-| `CLAUDE_MAX_TOKENS` | Maximum tokens per Claude API request | `16384` | No |
+| `CLAUDE_MODEL` | Claude model alias passed to the CLI (`sonnet`, `opus`, `haiku`) | `sonnet` | No |
+| `CLAUDE_CLI_PATH` | Path or command name of the Claude CLI binary | `claude` | No |
 | `MXTAC_PROJECT_ROOT` | Absolute path to the MxTac repository root | *(none)* | **Yes** |
 | `AUTH_PASSWORD` | HTTP Basic Auth password (mirrors root `AUTH_PASSWORD`) | *(none)* | **Yes (prod)** |
 
@@ -94,5 +118,5 @@ Consumed by the top-level Docker Compose for the scheduler service.
 - `AUTH_PASSWORD` appears in both the root and backend `agent-scheduler` examples. When using Docker Compose, set it once in `agent-scheduler/.env`; when running the backend directly, set it in `agent-scheduler/backend/.env`.
 - `SECRET_KEY` must be unique per deployment. Reusing the same key across environments is a security risk.
 - `QUEUE_BACKEND=memory` is suitable for development only. Use `redis` or `kafka` in production.
-- `ANTHROPIC_API_KEY` is required for the agent scheduler to interact with Claude models.
-- `MXTAC_PROJECT_ROOT` should point to the absolute path of the MxTac repository root directory.
+- **Docker Swarm**: Build and push images with the `IMAGE_PREFIX` and `VERSION` before deploying the stack.
+- **SystemD**: The `app/deploy/systemd/mxtac.env.example` should be copied to `/etc/mxtac/mxtac.env` with restricted permissions (`640 root:mxtac`).
