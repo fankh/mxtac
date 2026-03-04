@@ -194,7 +194,8 @@ class Scheduler:
                 if task.retry_count > 0:
                     backoff = settings.scheduler_retry_backoff * (2 ** (task.retry_count - 1))
                     if task.updated_at:
-                        elapsed = (now() - task.updated_at).total_seconds()
+                        updated = task.updated_at if task.updated_at.tzinfo else task.updated_at.replace(tzinfo=settings.tz)
+                        elapsed = (now() - updated).total_seconds()
                         if elapsed < backoff:
                             continue
 

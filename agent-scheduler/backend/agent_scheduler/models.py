@@ -65,10 +65,10 @@ class Task(Base):
     verification_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default=func.now()
+        DateTime(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     runs: Mapped[list["Run"]] = relationship(back_populates="task", cascade="all, delete-orphan")
@@ -136,10 +136,10 @@ class Run(Base):
     files_changed: Mapped[str] = mapped_column(Text, default="[]")  # JSON list
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     started_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default=func.now()
+        DateTime(timezone=True), server_default=func.now()
     )
     finished_at: Mapped[datetime.datetime | None] = mapped_column(
-        DateTime, nullable=True
+        DateTime(timezone=True), nullable=True
     )
 
     task: Mapped["Task"] = relationship(back_populates="runs")
@@ -171,7 +171,7 @@ class Log(Base):
     level: Mapped[str] = mapped_column(String(20), default="INFO")
     message: Mapped[str] = mapped_column(Text, default="")
     timestamp: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default=func.now()
+        DateTime(timezone=True), server_default=func.now()
     )
 
     run: Mapped["Run"] = relationship(back_populates="logs")
@@ -192,10 +192,10 @@ class AgentRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     agent_name: Mapped[str] = mapped_column(String(100), index=True)
     started_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default=func.now()
+        DateTime(timezone=True), server_default=func.now()
     )
     finished_at: Mapped[datetime.datetime | None] = mapped_column(
-        DateTime, nullable=True
+        DateTime(timezone=True), nullable=True
     )
     status: Mapped[str] = mapped_column(String(20), default="running")
     summary: Mapped[str] = mapped_column(Text, default="")

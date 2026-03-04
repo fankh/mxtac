@@ -62,24 +62,24 @@ class Settings(BaseSettings):
     agent_verifier_fail_action: str = "reset"  # "mark" or "reset"
 
     # TestAgent (P1)
-    agent_test_enabled: bool = False
+    agent_test_enabled: bool = True
     agent_test_interval: int = 300  # 5 minutes
     agent_test_fail_action: str = "reset"  # "mark" or "reset"
     agent_test_full_suite_every: int = 6  # run full suite every Nth cycle
     agent_test_timeout: int = 300
 
     # LintAgent (P1)
-    agent_lint_enabled: bool = False
+    agent_lint_enabled: bool = True
     agent_lint_interval: int = 600  # 10 minutes
     agent_lint_error_threshold: int = 50
 
     # IntegrationAgent (P2)
-    agent_integration_enabled: bool = False
+    agent_integration_enabled: bool = True
     agent_integration_interval: int = 900  # 15 minutes
     agent_integration_smoke_url: str = ""
 
     # SecurityAuditAgent (P2)
-    agent_security_enabled: bool = False
+    agent_security_enabled: bool = True
     agent_security_interval: int = 1800  # 30 minutes
     agent_security_bandit_skip: str = ""
 
