@@ -53,16 +53,20 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Agent Scheduler",
-    description="AI Agent Task Scheduler for MxTac",
+    title=f"{settings.project_name} Agent Scheduler",
+    description=f"AI Agent Task Scheduler for {settings.project_name}",
     version="0.1.0",
     lifespan=lifespan,
 )
 
-# CORS for frontend
+# CORS for frontend (dynamic based on frontend_port)
+_frontend_port = settings.frontend_port
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:13001", "http://127.0.0.1:13001"],
+    allow_origins=[
+        f"http://localhost:{_frontend_port}",
+        f"http://127.0.0.1:{_frontend_port}",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

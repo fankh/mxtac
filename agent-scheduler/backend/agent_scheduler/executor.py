@@ -123,8 +123,8 @@ def _execute_tool(name: str, tool_input: dict, working_directory: str) -> str:
                 return f"Error: Not a file: {path}"
             content = path.read_text(encoding="utf-8", errors="replace")
             # Truncate very large files
-            if len(content) > 100_000:
-                content = content[:100_000] + "\n\n... [truncated at 100K chars]"
+            if len(content) > 30_000:
+                content = content[:30_000] + "\n\n... [truncated at 30K chars]"
             return content
 
         elif name == "write_file":
@@ -167,8 +167,8 @@ def _execute_tool(name: str, tool_input: dict, working_directory: str) -> str:
             output_parts.append(f"exit_code: {result.returncode}")
             output = "\n".join(output_parts)
             # Truncate if too large
-            if len(output) > 100_000:
-                output = output[:100_000] + "\n\n... [truncated at 100K chars]"
+            if len(output) > 30_000:
+                output = output[:30_000] + "\n\n... [truncated at 30K chars]"
             return output
 
         else:
@@ -425,6 +425,35 @@ class Executor:
                 if task_db_id is not None:
                     self._running_tasks.pop(task_db_id, None)
 
+    @staticmethod
+    def _prune_messages(messages: list[dict], max_turn_pairs: int = 10) -> list[dict]:
+        """Sliding-window pruning: keep first user message + last N turn-pairs.
+
+        A turn-pair is (assistant, user). If the conversation exceeds the
+        threshold, middle turns are removed and a summary marker is inserted.
+        """
+        if len(messages) <= 1 + max_turn_pairs * 2:
+            return messages  # nothing to prune
+
+        first_msg = messages[0]  # original user prompt — always keep
+        kept_tail = messages[-(max_turn_pairs * 2):]
+        removed_count = len(messages) - 1 - len(kept_tail)
+
+        summary = {
+            "role": "user",
+            "content": (
+                f"[{removed_count} earlier tool-use rounds were removed to stay "
+                f"within context limits. The original task prompt is above. "
+                f"Continue from where you left off.]"
+            ),
+        }
+        pruned = [first_msg, summary] + kept_tail
+        logger.info(
+            f"Pruned message history: removed {removed_count} messages, "
+            f"keeping first + {len(kept_tail)} recent"
+        )
+        return pruned
+
     async def _call_api_with_tools(
         self,
         system_prompt: str,
@@ -441,6 +470,10 @@ class Executor:
         total_output_tokens = 0
         iteration = 0
         max_iterations = settings.max_tool_iterations
+        api_error_retries = 0
+        max_api_error_retries = 5
+        content_filter_retries = 0
+        max_content_filter_retries = 3
 
         while True:
             iteration += 1
@@ -456,6 +489,9 @@ class Executor:
                         "tool_iterations": iteration - 1,
                     },
                 )
+
+            # Prune conversation history to avoid unbounded context growth
+            messages = self._prune_messages(messages)
 
             try:
                 response = await client.messages.create(
@@ -475,6 +511,16 @@ class Executor:
                 if "credit" in error_body.lower() or "balance" in error_body.lower() or "budget" in error_body.lower():
                     raise BudgetExhaustedError(f"API budget exhausted: {error_body[:200]}")
                 if "content filtering" in error_body.lower():
+                    content_filter_retries += 1
+                    if content_filter_retries >= max_content_filter_retries:
+                        raise RuntimeError(
+                            f"Content filter triggered {content_filter_retries} times, "
+                            f"aborting task"
+                        )
+                    logger.warning(
+                        f"Task {task_db_id} iter {iteration}: content filter retry "
+                        f"{content_filter_retries}/{max_content_filter_retries}"
+                    )
                     # Content filter blocked the output — tell Claude to rephrase
                     messages.append({
                         "role": "user",
@@ -495,22 +541,38 @@ class Executor:
                     continue
                 raise
             except anthropic.RateLimitError:
+                api_error_retries += 1
+                if api_error_retries >= max_api_error_retries:
+                    raise RuntimeError(
+                        f"Rate-limited (429) {api_error_retries} times, aborting task"
+                    )
+                backoff = min(60 * (2 ** (api_error_retries - 1)), 300)
                 logger.warning(
                     f"Task {task_db_id} iter {iteration}: rate-limited (429), "
-                    f"sleeping 60s then retrying"
+                    f"retry {api_error_retries}/{max_api_error_retries}, "
+                    f"sleeping {backoff}s"
                 )
-                await asyncio.sleep(60)
+                await asyncio.sleep(backoff)
                 continue
             except anthropic.InternalServerError:
+                api_error_retries += 1
+                if api_error_retries >= max_api_error_retries:
+                    raise RuntimeError(
+                        f"Server error (5xx) {api_error_retries} times, aborting task"
+                    )
+                backoff = min(30 * (2 ** (api_error_retries - 1)), 300)
                 logger.warning(
                     f"Task {task_db_id} iter {iteration}: server overload (5xx), "
-                    f"sleeping 30s then retrying"
+                    f"retry {api_error_retries}/{max_api_error_retries}, "
+                    f"sleeping {backoff}s"
                 )
-                await asyncio.sleep(30)
+                await asyncio.sleep(backoff)
                 continue
 
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
+            # Reset API error counter on successful response
+            api_error_retries = 0
 
             # Append the assistant response to the conversation
             messages.append({"role": "assistant", "content": response.content})

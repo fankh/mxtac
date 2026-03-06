@@ -26,6 +26,7 @@ class TaskStatus(str, enum.Enum):
     FAILED = "failed"
     SKIPPED = "skipped"
     CANCELLED = "cancelled"
+    SPLIT = "split"
 
 
 class RunStatus(str, enum.Enum):

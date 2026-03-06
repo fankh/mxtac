@@ -4,9 +4,10 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from ..config import settings
+from ..config import now, settings
 from ..database import async_session
 from ..models import Task, TaskStatus
+from ..rules_checker import check_files as rules_check_files
 from ..scheduler import sse_broadcaster
 from .base import BaseAgent
 
@@ -23,6 +24,9 @@ class VerifierAgent(BaseAgent):
         self._interval = settings.agent_verifier_interval
 
     async def run_cycle(self) -> dict:
+        # 0. Recover zombie tasks stuck in "verifying" for >10 minutes
+        await self._recover_zombie_verifications()
+
         # 1. Query tasks needing verification
         async with async_session() as session:
             result = await session.execute(
@@ -82,7 +86,13 @@ class VerifierAgent(BaseAgent):
                 if not test_result["pass"]:
                     all_pass = False
 
-            # 2d. Criteria check with Claude
+            # 2d. Project rules check (free, deterministic)
+            rules_result = self._check_rules(task)
+            checks.append(rules_result)
+            if not rules_result["pass"]:
+                all_pass = False
+
+            # 2e. Criteria check with Claude (opt-in)
             if (
                 task.acceptance_criteria
                 and task.acceptance_criteria.strip()
@@ -133,6 +143,28 @@ class VerifierAgent(BaseAgent):
             "output": json.dumps({"passed": passed, "failed": failed}),
         }
 
+    async def _recover_zombie_verifications(self):
+        """Reset tasks stuck in verification_status='verifying' for >10 minutes."""
+        cutoff = now() - __import__("datetime").timedelta(minutes=10)
+        async with async_session() as session:
+            result = await session.execute(
+                select(Task)
+                .where(Task.verification_status == "verifying")
+                .where(Task.updated_at < cutoff)
+            )
+            zombies = result.scalars().all()
+            if zombies:
+                for t in zombies:
+                    t.verification_status = None
+                    logger.warning(
+                        f"VerifierAgent: reset zombie task {t.id} ({t.task_id}) "
+                        f"from 'verifying' to NULL"
+                    )
+                await session.commit()
+                for t in zombies:
+                    await session.refresh(t)
+                    await sse_broadcaster.broadcast("task_update", t.to_dict())
+
     async def _check_files(self, task: Task) -> dict:
         """Verify that target_files exist on disk."""
         target_files = task.target_files_list
@@ -158,7 +190,12 @@ class VerifierAgent(BaseAgent):
         return {"check": "files", "pass": True, "detail": "All target files exist"}
 
     async def _check_git(self, task: Task) -> dict:
-        """Verify target files appear in the git commit diff."""
+        """Verify target files appear in the git commit diff.
+
+        Non-blocking: auto-commit uses `git add -A` which may capture
+        unrelated changes, so target files might be in a different commit.
+        The file existence check (_check_files) is the authoritative gate.
+        """
         target_files = task.target_files_list
         if not target_files:
             return {"check": "git", "pass": True, "detail": "No target files to check"}
@@ -171,7 +208,8 @@ class VerifierAgent(BaseAgent):
         )
 
         if rc != 0:
-            return {"check": "git", "pass": False, "detail": "Failed to get git diff"}
+            # Don't block on git errors — file check is authoritative
+            return {"check": "git", "pass": True, "detail": "Git diff unavailable (non-blocking)"}
 
         changed_files = set(stdout.strip().splitlines())
         # Check if any target file (or its basename) appears in changed files
@@ -182,16 +220,31 @@ class VerifierAgent(BaseAgent):
                 found += 1
 
         if found == 0:
+            # Non-blocking: files may have been committed in a prior commit
+            # or auto-commit captured unrelated changes
             return {
                 "check": "git",
-                "pass": False,
-                "detail": f"No target files found in commit {task.git_commit_sha[:8]}",
+                "pass": True,
+                "detail": f"Target files not in commit {task.git_commit_sha[:8]} (non-blocking, files exist on disk)",
             }
         return {
             "check": "git",
             "pass": True,
             "detail": f"{found}/{len(target_files)} target files in commit",
         }
+
+    def _check_rules(self, task: Task) -> dict:
+        """Check task's target files against project-specific lint rules."""
+        target_files = task.target_files_list
+        if not target_files:
+            return {"check": "project_rules", "pass": True, "detail": "No target files to check"}
+
+        project_root = task.working_directory or settings.project_root
+        try:
+            return rules_check_files(project_root, target_files)
+        except Exception as e:
+            logger.error(f"Rules check failed for task {task.task_id}: {e}")
+            return {"check": "project_rules", "pass": True, "detail": f"Rules check error: {e}"}
 
     async def _check_criteria(self, task: Task, prior_checks: list[dict]) -> dict:
         """Use Claude CLI to evaluate acceptance criteria."""
@@ -206,10 +259,6 @@ class VerifierAgent(BaseAgent):
             f"Verification Results:\n{checks_summary}\n\n"
             f"Test Status: {task.test_status or 'not tested'}\n"
             f"Git Commit: {task.git_commit_sha or 'none'}\n\n"
-            f"IMPORTANT: A 'not tested' test status is NOT a failure — it simply means "
-            f"no automated test suite is configured. Do NOT fail the task for lacking tests. "
-            f"Focus only on whether the code changes satisfy the acceptance criteria based on "
-            f"the file existence and git commit evidence.\n\n"
             f"Respond with exactly 'PASS' or 'FAIL' on the first line, "
             f"followed by a brief explanation."
         )

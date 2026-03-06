@@ -3,7 +3,7 @@ import datetime
 import json
 import logging
 
-from sqlalchemy import select, update
+from sqlalchemy import func as sa_func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import now, settings
@@ -12,6 +12,21 @@ from .executor import ExecutionResult, executor
 from .models import Log, Run, RunStatus, Task, TaskStatus
 
 logger = logging.getLogger(__name__)
+
+# Priority mapping for string values (from Claude-generated tasks)
+_PRIORITY_MAP = {"critical": 10, "high": 7, "medium": 5, "low": 3}
+
+
+def _safe_priority(val) -> int:
+    """Convert priority to int, handling None, strings like 'high', and garbage."""
+    if val is None:
+        return 0
+    if isinstance(val, int):
+        return val
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return _PRIORITY_MAP.get(str(val).lower(), 0)
 
 
 class SSEBroadcaster:
@@ -171,6 +186,7 @@ class Scheduler:
         """Find and dispatch tasks that are ready to run."""
         # Don't dispatch anything while circuit breaker is open
         if executor._check_circuit():
+            logger.info("Dispatch skipped: circuit breaker open")
             return
 
         async with async_session() as session:
@@ -188,7 +204,7 @@ class Scheduler:
             # should NOT unblock downstream tasks (they would just fail too)
             dep_result = await session.execute(
                 select(Task.task_id, Task.status).where(
-                    Task.status.in_([TaskStatus.COMPLETED, TaskStatus.SKIPPED])
+                    Task.status.in_([TaskStatus.COMPLETED, TaskStatus.SKIPPED, TaskStatus.SPLIT])
                 )
             )
             status_map = {row.task_id: row.status for row in dep_result}
@@ -209,7 +225,7 @@ class Scheduler:
                 deps = task.depends_on_list
                 if deps:
                     all_met = all(
-                        status_map.get(dep) in (TaskStatus.COMPLETED, TaskStatus.SKIPPED)
+                        status_map.get(dep) in (TaskStatus.COMPLETED, TaskStatus.SKIPPED, TaskStatus.SPLIT)
                         for dep in deps
                     )
                     if not all_met:
@@ -218,21 +234,84 @@ class Scheduler:
                 eligible.append(task)
 
             # Sort by priority (higher first) then by id
-            eligible.sort(key=lambda t: (-t.priority, t.id))
+            eligible.sort(key=lambda t: (-_safe_priority(t.priority), t.id))
+
+            # Count RUNNING tasks from DB (not executor) to avoid race condition
+            # where tasks are RUNNING in DB but waiting on the executor semaphore
+            running_count_result = await session.execute(
+                select(sa_func.count(Task.id)).where(Task.status == TaskStatus.RUNNING)
+            )
+            current_running = running_count_result.scalar() or 0
+
+            # Auto-skip failed blockers when pipeline is stalled
+            if not eligible and current_running == 0 and pending_tasks:
+                failed_result = await session.execute(
+                    select(Task).where(Task.status == TaskStatus.FAILED)
+                )
+                failed_tasks = failed_result.scalars().all()
+                # Build set of task_ids that pending tasks depend on
+                needed_deps: set[str] = set()
+                for t in pending_tasks:
+                    for dep in t.depends_on_list:
+                        if dep not in status_map:
+                            needed_deps.add(dep)
+                # Skip failed tasks that are blocking pending ones
+                skipped_ids = []
+                for ft in failed_tasks:
+                    if ft.task_id in needed_deps:
+                        ft.status = TaskStatus.SKIPPED
+                        ft.failure_reason = (ft.failure_reason or "") + " [auto-skipped: unblocking stalled pipeline]"
+                        skipped_ids.append(ft.task_id)
+                        status_map[ft.task_id] = TaskStatus.SKIPPED
+                if skipped_ids:
+                    await session.commit()
+                    logger.warning(
+                        "Pipeline stalled: auto-skipped %d failed blocker(s): %s",
+                        len(skipped_ids), ", ".join(skipped_ids),
+                    )
+                    for sid in skipped_ids:
+                        await sse_broadcaster.broadcast("task_update", {"task_id": sid, "status": "SKIPPED"})
+                    # Re-evaluate eligible tasks with updated status_map
+                    eligible = []
+                    for task in pending_tasks:
+                        if task.retry_count > 0:
+                            backoff = settings.scheduler_retry_backoff * (2 ** (task.retry_count - 1))
+                            if task.updated_at:
+                                updated = task.updated_at if task.updated_at.tzinfo else task.updated_at.replace(tzinfo=settings.tz)
+                                elapsed = (now() - updated).total_seconds()
+                                if elapsed < backoff:
+                                    continue
+                        deps = task.depends_on_list
+                        if deps:
+                            all_met = all(
+                                status_map.get(dep) in (TaskStatus.COMPLETED, TaskStatus.SKIPPED, TaskStatus.SPLIT)
+                                for dep in deps
+                            )
+                            if not all_met:
+                                continue
+                        eligible.append(task)
+                    eligible.sort(key=lambda t: (-_safe_priority(t.priority), t.id))
 
             # Dispatch tasks up to max_concurrent limit
+            # Mark tasks as RUNNING in DB BEFORE spawning to prevent race conditions
             dispatched = 0
+            dispatch_ids = []
             for task in eligible:
-                if executor.running_count + dispatched >= settings.scheduler_max_concurrent:
+                if current_running + dispatched >= settings.scheduler_max_concurrent:
                     break
-                asyncio.create_task(self._run_task(task.id))
+                task.status = TaskStatus.RUNNING
                 dispatched += 1
+                dispatch_ids.append(task.id)
 
             if dispatched > 0:
+                await session.commit()
                 logger.info(
                     f"Dispatched {dispatched}/{len(eligible)} eligible tasks "
-                    f"(running={executor.running_count})"
+                    f"(running={current_running})"
                 )
+                # Spawn async tasks AFTER committing status change
+                for task_id in dispatch_ids:
+                    asyncio.create_task(self._run_task(task_id))
 
     async def _run_task(self, task_db_id: int):
         """Wrapper that catches crashes and resets ghost tasks to PENDING."""
@@ -254,11 +333,10 @@ class Scheduler:
         """Execute a single task and record results."""
         async with async_session() as session:
             task = await session.get(Task, task_db_id)
-            if task is None or task.status != TaskStatus.PENDING:
+            if task is None or task.status != TaskStatus.RUNNING:
                 return
 
             # Hard cap: refuse to run if total runs already exceeded
-            from sqlalchemy import func as sa_func
             run_count_result = await session.execute(
                 select(sa_func.count(Run.id)).where(Run.task_id == task_db_id)
             )
@@ -278,8 +356,7 @@ class Scheduler:
                 await sse_broadcaster.broadcast("task_update", task.to_dict())
                 return
 
-            # Mark as running + create run + log start in a single commit
-            task.status = TaskStatus.RUNNING
+            # Create run + log start in a single commit (status already RUNNING from dispatch)
             run = Run(
                 task_id=task.id,
                 attempt=task.retry_count + 1,
@@ -397,27 +474,75 @@ class Scheduler:
                         task.git_commit_sha = commit_sha
                 else:
                     task.retry_count += 1
+
+                    # Detect MaxIterationsExceeded for auto-split
+                    stderr_text = result.stderr or ""
+                    is_max_iterations = (
+                        result.exit_code == -1
+                        and "Max tool iterations" in stderr_text
+                    )
+
                     if task.retry_count >= task.max_retries:
-                        task.status = TaskStatus.FAILED
-                        reason = f"Execution failed after {task.retry_count}/{task.max_retries} attempts"
-                        if result.timed_out:
-                            reason += " (last: timeout)"
-                        elif result.exit_code != 0:
-                            # Extract first meaningful line from stdout/stderr
-                            error_hint = (result.stderr or result.stdout or "").strip().split("\n")[0][:200]
-                            if error_hint:
-                                reason += f" (last: {error_hint})"
-                        task.failure_reason = reason
-                        logger.warning(
-                            f"Task {task_db_id} failed permanently after "
-                            f"{task.retry_count}/{task.max_retries} attempts"
-                        )
-                        log2 = Log(
-                            run_id=run.id if run else None,
-                            level="ERROR",
-                            message=reason,
-                        )
-                        session.add(log2)
+                        # Try auto-split for MaxIterationsExceeded failures
+                        if (
+                            is_max_iterations
+                            and settings.scheduler_auto_split_enabled
+                            and not task.task_id.endswith(("-a", "-b", "-c", "-d"))
+                        ):
+                            # Attempt to split the task
+                            split_success = await self._auto_split_failed_task(
+                                session, task
+                            )
+                            if split_success:
+                                task.status = TaskStatus.SPLIT
+                                task.failure_reason = (
+                                    f"Auto-split: MaxIterationsExceeded after "
+                                    f"{task.retry_count} attempts — subtasks created"
+                                )
+                                logger.info(
+                                    f"Task {task_db_id} ({task.task_id}) auto-split "
+                                    f"due to MaxIterationsExceeded"
+                                )
+                                log2 = Log(
+                                    run_id=run.id if run else None,
+                                    level="INFO",
+                                    message=f"Task auto-split into subtasks",
+                                )
+                                session.add(log2)
+                            else:
+                                # Split failed, mark as FAILED normally
+                                task.status = TaskStatus.FAILED
+                                task.failure_reason = (
+                                    f"MaxIterationsExceeded after {task.retry_count} "
+                                    f"attempts (auto-split failed)"
+                                )
+                                log2 = Log(
+                                    run_id=run.id if run else None,
+                                    level="ERROR",
+                                    message=task.failure_reason,
+                                )
+                                session.add(log2)
+                        else:
+                            task.status = TaskStatus.FAILED
+                            reason = f"Execution failed after {task.retry_count}/{task.max_retries} attempts"
+                            if result.timed_out:
+                                reason += " (last: timeout)"
+                            elif result.exit_code != 0:
+                                # Extract first meaningful line from stdout/stderr
+                                error_hint = (result.stderr or result.stdout or "").strip().split("\n")[0][:200]
+                                if error_hint:
+                                    reason += f" (last: {error_hint})"
+                            task.failure_reason = reason
+                            logger.warning(
+                                f"Task {task_db_id} failed permanently after "
+                                f"{task.retry_count}/{task.max_retries} attempts"
+                            )
+                            log2 = Log(
+                                run_id=run.id if run else None,
+                                level="ERROR",
+                                message=reason,
+                            )
+                            session.add(log2)
                     else:
                         task.status = TaskStatus.PENDING  # Will retry
                         logger.info(
@@ -562,6 +687,51 @@ class Scheduler:
         except Exception:
             logger.exception(f"Task {task_id}: git auto-commit failed")
             return None
+
+    async def _auto_split_failed_task(self, session: AsyncSession, task: Task) -> bool:
+        """Split a failed task into subtasks using TaskCreatorAgent.
+
+        Returns True if split was successful.
+        """
+        try:
+            from .agents.task_creator import TaskCreatorAgent
+            from .task_loader import load_tasks_into_db
+
+            task_def = {
+                "task_id": task.task_id,
+                "title": task.title,
+                "category": task.category,
+                "phase": task.phase,
+                "priority": task.priority,
+                "prompt": task.prompt,
+                "working_directory": task.working_directory,
+                "target_files": task.target_files_list,
+                "acceptance_criteria": task.acceptance_criteria,
+            }
+
+            creator = TaskCreatorAgent()
+            subtasks = await creator._split_task_with_claude(task_def)
+
+            if not subtasks:
+                logger.warning(
+                    "Auto-split: Claude returned no subtasks for %s", task.task_id
+                )
+                return False
+
+            # Insert subtasks (bypass auto_split to avoid recursion)
+            created, _ = await load_tasks_into_db(subtasks, auto_split=False)
+            if created > 0:
+                logger.info(
+                    "Auto-split: created %d subtasks for failed task %s",
+                    created, task.task_id,
+                )
+                return True
+
+            return False
+
+        except Exception:
+            logger.exception("Auto-split error for task %s", task.task_id)
+            return False
 
     # --- Manual controls ---
 
@@ -751,9 +921,12 @@ class RetryAgent:
                     )
                     continue
 
-                task.quality_retry_count = (task.quality_retry_count or 0) + 1
+                new_qrc = (task.quality_retry_count or 0) + 1
+                task.quality_retry_count = new_qrc
                 task.status = TaskStatus.PENDING
-                task.retry_count = 0  # fresh set of attempts
+                # Diminishing retries: each quality retry gets fewer normal retries
+                # e.g., max_retries=5: q1->retry_count=1, q2->2, q3->3 (fewer attempts left)
+                task.retry_count = min(new_qrc, task.max_retries - 1)
                 task.verification_status = None
                 task.verification_output = None
                 task.test_status = None
@@ -859,12 +1032,13 @@ class WatchdogAgent:
         failed = counts.get(TaskStatus.FAILED, 0)
         skipped = counts.get(TaskStatus.SKIPPED, 0)
         cancelled = counts.get(TaskStatus.CANCELLED, 0)
+        split = counts.get(TaskStatus.SPLIT, 0)
 
         pct = (completed / total * 100) if total else 0
 
         logger.info(
-            "Watchdog: %d/%d done (%.0f%%) | running=%d pending=%d failed=%d skipped=%d cancelled=%d",
-            completed, total, pct, running, pending, failed, skipped, cancelled,
+            "Watchdog: %d/%d done (%.0f%%) | running=%d pending=%d failed=%d skipped=%d cancelled=%d split=%d",
+            completed, total, pct, running, pending, failed, skipped, cancelled, split,
         )
 
         # Detect ghost tasks: RUNNING in DB but no active process in executor
@@ -885,6 +1059,7 @@ class WatchdogAgent:
             "failed": failed,
             "skipped": skipped,
             "cancelled": cancelled,
+            "split": split,
             "percent": round(pct, 1),
         })
 

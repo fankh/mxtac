@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 
 from ..config import settings
+from ..rules_checker import check_all as rules_check_all
 from ..scheduler import sse_broadcaster
 from .base import BaseAgent
 
@@ -12,14 +13,14 @@ logger = logging.getLogger(__name__)
 class LintAgent(BaseAgent):
     NAME = "LintAgent"
     DEFAULT_INTERVAL = 600
-    DESCRIPTION = "Runs linting and type-checking on MxTac codebase"
+    DESCRIPTION = "Runs linting and type-checking on project codebase"
 
     def __init__(self):
         super().__init__()
         self._interval = settings.agent_lint_interval
 
     async def run_cycle(self) -> dict:
-        project_root = Path(settings.mxtac_project_root)
+        project_root = Path(settings.project_root)
         results = []
 
         # 1. Ruff (Python linting)
@@ -29,6 +30,10 @@ class LintAgent(BaseAgent):
         # 2. TypeScript type checking
         tsc_result = await self._run_tsc(project_root)
         results.append(tsc_result)
+
+        # 3. Project-specific rules
+        rules_result = self._run_project_rules(project_root)
+        results.append(rules_result)
 
         total_errors = sum(r.get("errors", 0) for r in results)
         total_warnings = sum(r.get("warnings", 0) for r in results)
@@ -115,3 +120,11 @@ class LintAgent(BaseAgent):
             "detail": f"{errors} type errors",
             "output": output[-2000:] if errors > 0 else "",
         }
+
+    def _run_project_rules(self, root: Path) -> dict:
+        """Run project-specific rules from .agent-scheduler/lint-rules.yaml."""
+        try:
+            return rules_check_all(root)
+        except Exception as e:
+            logger.error(f"Project rules check failed: {e}")
+            return {"tool": "project_rules", "errors": 0, "warnings": 0, "detail": f"Error: {e}"}

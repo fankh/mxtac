@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     scheduler_retry_max: int = 5
     scheduler_retry_backoff: int = 60  # base backoff in seconds
     scheduler_auto_start: bool = True
-    scheduler_quality_retry_max: int = 10  # max quality-failure retries
+    scheduler_quality_retry_max: int = 3  # max quality-failure retries
     scheduler_max_total_runs: int = 20  # hard cap on total runs per task
     scheduler_test_command: str = ""  # empty = disabled
     scheduler_test_timeout: int = 300  # 5 minutes
@@ -45,10 +45,14 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-4-20250514"
     claude_max_tokens: int = 16384
-    max_tool_iterations: int = 50
+    max_tool_iterations: int = 75
 
     # Auth
     auth_password: str = ""  # Empty = auth disabled
+
+    # Auto-split
+    scheduler_auto_split_enabled: bool = True
+    scheduler_max_target_files: int = 2
 
     # --- New Agent Settings ---
 
@@ -58,6 +62,7 @@ class Settings(BaseSettings):
     agent_task_creator_max_tasks_per_cycle: int = 20
     agent_task_creator_use_claude: bool = True
     agent_task_creator_quality_sample_size: int = 3  # files per quality scan cycle
+    agent_task_creator_yaml_dir: str = "tasks"  # YAML task directory (relative to project_root)
     # Markdown docs scanned for task discovery (relative to project_root)
     agent_task_creator_checklist_path: str = "docs/FEATURE-CHECKLIST.md"
     agent_task_creator_plan_path: str = "docs/IMPLEMENTATION-PLAN.md"
@@ -68,7 +73,7 @@ class Settings(BaseSettings):
     agent_verifier_enabled: bool = True
     agent_verifier_interval: int = 180  # 3 minutes
     agent_verifier_max_per_cycle: int = 3
-    agent_verifier_use_claude: bool = True
+    agent_verifier_use_claude: bool = False
     agent_verifier_fail_action: str = "reset"  # "mark" or "reset"
 
     # TestAgent (P1)

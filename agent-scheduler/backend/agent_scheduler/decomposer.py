@@ -13,7 +13,7 @@ import anthropic
 import httpx
 
 from .config import settings
-from .context import SYSTEM_CONTEXT
+from .context import get_system_context
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def _get_client() -> anthropic.AsyncAnthropic:
 
 
 DECOMPOSER_ROLE = """
-You are a task decomposition specialist for the MxTac agent scheduler.
+You are a task decomposition specialist for the agent scheduler.
 
 The scheduler executes tasks autonomously using Claude Code CLI. Each task is a
 self-contained unit of work with a prompt, target files, acceptance criteria, and
@@ -63,7 +63,7 @@ DECOMPOSITION_RULES = """
    criteria (e.g., "tests pass", "endpoint returns 200", "file exists with X structure").
 5. **target_files**: List the primary files the subtask will create or modify.
 6. **working_directory**: Set to the project subdirectory where the agent should work.
-   Default: the MxTac project root.
+   Default: the project root.
 7. **task_id format**: `{prefix}.N` where N is 1-based sequential.
 8. **prompt**: Write a detailed, self-contained prompt for the agent. Include specific
    file paths, function signatures, and expected behavior. The agent has no memory of
@@ -92,11 +92,11 @@ Return ONLY the JSON array, no markdown fences, no commentary.
 EXAMPLE_OUTPUT = """
 ## Example
 
-For prefix "mxtac-syslog" with 3 subtasks:
+For prefix "project-syslog" with 3 subtasks:
 
 [
   {
-    "task_id": "mxtac-syslog.1",
+    "task_id": "project-syslog.1",
     "title": "Create syslog UDP listener",
     "prompt": "Implement a UDP syslog listener in app/connectors/syslog.py that...",
     "depends_on": [],
@@ -108,10 +108,10 @@ For prefix "mxtac-syslog" with 3 subtasks:
     "phase": "1.0"
   },
   {
-    "task_id": "mxtac-syslog.2",
+    "task_id": "project-syslog.2",
     "title": "Add syslog message parser",
     "prompt": "Read app/connectors/syslog.py as reference. Add RFC 5424 parsing...",
-    "depends_on": ["mxtac-syslog.1"],
+    "depends_on": ["project-syslog.1"],
     "target_files": ["app/connectors/syslog.py", "tests/connectors/test_syslog.py"],
     "working_directory": "app/backend",
     "acceptance_criteria": "Parser extracts facility, severity, timestamp, message; tests pass",
@@ -120,10 +120,10 @@ For prefix "mxtac-syslog" with 3 subtasks:
     "phase": "1.0"
   },
   {
-    "task_id": "mxtac-syslog.3",
+    "task_id": "project-syslog.3",
     "title": "Add OCSF normalization for syslog events",
     "prompt": "Read app/connectors/syslog.py and app/pipeline/ocsf.py as reference...",
-    "depends_on": ["mxtac-syslog.2"],
+    "depends_on": ["project-syslog.2"],
     "target_files": ["app/connectors/syslog.py", "app/pipeline/ocsf.py"],
     "working_directory": "app/backend",
     "acceptance_criteria": "Syslog events normalized to OCSF format; integration test passes",
@@ -137,7 +137,7 @@ For prefix "mxtac-syslog" with 3 subtasks:
 
 async def _gather_codebase_context() -> str:
     """Run `find` on the project root to collect ~300 file paths for context."""
-    project_root = settings.mxtac_project_root
+    project_root = settings.project_root
     cmd = (
         f"find {project_root} "
         "-not -path '*/.git/*' "
@@ -170,7 +170,7 @@ async def _gather_codebase_context() -> str:
 
 def _build_system_prompt(max_subtasks: int) -> str:
     role = DECOMPOSER_ROLE.replace("{max_subtasks}", str(max_subtasks))
-    return f"{SYSTEM_CONTEXT}\n\n{role}"
+    return f"{get_system_context()}\n\n{role}"
 
 
 def _build_user_message(
@@ -282,7 +282,7 @@ async def decompose_task(
 
     Args:
         description: The high-level feature description.
-        prefix: Task ID prefix (e.g., "mxtac-syslog").
+        prefix: Task ID prefix (e.g., "project-syslog").
         category: Category for generated subtasks.
         phase: Phase for generated subtasks.
         max_subtasks: Maximum number of subtasks (3-8).

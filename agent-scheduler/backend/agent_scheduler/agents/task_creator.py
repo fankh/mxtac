@@ -10,7 +10,7 @@ from ..config import settings
 from ..database import async_session
 from ..models import Task, TaskStatus
 from ..scheduler import sse_broadcaster
-from ..task_loader import load_tasks_into_db
+from ..task_loader import load_tasks_into_db, parse_yaml_directory
 from .base import BaseAgent
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,10 @@ class TaskCreatorAgent(BaseAgent):
 
     async def run_cycle(self) -> dict:
         project_root = Path(settings.project_root)
+
+        # Tier -1: Load YAML task files from tasks/ directory
+        yaml_created, yaml_skipped = await self._load_yaml_tasks(project_root)
+
         gaps = []
 
         # Tier 0: Heuristic (free, always)
@@ -62,9 +66,11 @@ class TaskCreatorAgent(BaseAgent):
 
         if not gaps:
             return {
-                "summary": "No new gaps discovered",
+                "summary": f"YAML: {yaml_created} created/{yaml_skipped} skipped. No new gaps discovered",
                 "items_processed": 0,
-                "items_found": 0,
+                "items_found": yaml_created,
+                "yaml_created": yaml_created,
+                "yaml_skipped": yaml_skipped,
             }
 
         # 3. Limit to max_tasks_per_cycle
@@ -78,10 +84,14 @@ class TaskCreatorAgent(BaseAgent):
         else:
             task_defs = self._generate_basic(gaps)
 
+        # 4b. Auto-split oversized tasks before DB insertion
+        if settings.scheduler_auto_split_enabled:
+            task_defs = await self._estimate_and_split(task_defs)
+
         # 5. Load into DB
         created = 0
         if task_defs:
-            created, _ = await load_tasks_into_db(task_defs)
+            created, _ = await load_tasks_into_db(task_defs, auto_split=False)
 
         # 6. Broadcast events
         for td in task_defs[:created]:
@@ -91,11 +101,40 @@ class TaskCreatorAgent(BaseAgent):
             })
 
         return {
-            "summary": f"Discovered {len(gaps)} gaps, created {created} tasks",
+            "summary": f"YAML: {yaml_created} created/{yaml_skipped} skipped. Gaps: {len(gaps)} discovered, {created} tasks created",
             "items_processed": len(gaps),
-            "items_found": created,
+            "items_found": yaml_created + created,
+            "yaml_created": yaml_created,
+            "yaml_skipped": yaml_skipped,
             "output": json.dumps([g["id"] for g in gaps[:20]]),
         }
+
+    async def _load_yaml_tasks(self, root: Path) -> tuple[int, int]:
+        """Scan tasks/ directory for YAML files and load new tasks into DB."""
+        yaml_dir = root / settings.agent_task_creator_yaml_dir
+        if not yaml_dir.is_dir():
+            return 0, 0
+
+        try:
+            task_defs = parse_yaml_directory(yaml_dir)
+        except Exception:
+            logger.exception("Failed to parse YAML task directory %s", yaml_dir)
+            return 0, 0
+
+        if not task_defs:
+            return 0, 0
+
+        created, skipped = await load_tasks_into_db(task_defs)
+        if created > 0:
+            logger.info("YAML loader: %d new tasks created from %s", created, yaml_dir)
+            for td in task_defs:
+                await sse_broadcaster.broadcast("task_created", {
+                    "task_id": td.get("task_id", ""),
+                    "title": td.get("title", ""),
+                    "source": "yaml",
+                })
+
+        return created, skipped
 
     async def _scan_checklist(self, root: Path) -> list[dict]:
         """Parse checklist markdown for unchecked items."""
@@ -221,7 +260,7 @@ class TaskCreatorAgent(BaseAgent):
 
         return gaps
 
-    # ── Tier 1: Structural cross-reference (no Claude API) ─────────────
+    # -- Tier 1: Structural cross-reference (no Claude API) ----------------
 
     async def _scan_architectural_gaps(self, root: Path) -> list[dict]:
         """Cross-reference project layers to find structural holes."""
@@ -387,7 +426,7 @@ class TaskCreatorAgent(BaseAgent):
 
         return gaps
 
-    # ── Tier 2: Claude semantic analysis (rotates 1 per cycle) ───────
+    # -- Tier 2: Claude semantic analysis (rotates 1 per cycle) ------------
 
     async def _scan_spec_compliance(self, root: Path) -> list[dict]:
         """Compare API spec doc against actual endpoint implementations."""
@@ -623,7 +662,7 @@ class TaskCreatorAgent(BaseAgent):
 
             rel_path = fpath.relative_to(backend)
             prompt = (
-                f"Analyze this Python file from the {settings.project_name} security platform for code quality issues.\n"
+                f"Analyze this Python file from the {settings.project_name} project for code quality issues.\n"
                 f"File: {rel_path}\n\n"
                 f"```python\n{code}\n```\n\n"
                 f"Find SPECIFIC, actionable issues:\n"
@@ -665,6 +704,126 @@ class TaskCreatorAgent(BaseAgent):
                     })
 
         return gaps
+
+    async def _estimate_and_split(self, task_defs: list[dict]) -> list[dict]:
+        """Check each task_def for oversized scope and split if needed."""
+        max_files = settings.scheduler_max_target_files
+        result = []
+
+        for td in task_defs:
+            target_files = td.get("target_files", [])
+            prompt_text = td.get("prompt", "")
+
+            # Count action directives in prompt
+            directive_count = len(re.findall(
+                r"\b(Create|Implement|Add|Build|Write)\b", prompt_text
+            ))
+
+            is_oversized = (
+                len(target_files) > max_files or directive_count > 5
+            )
+
+            if not is_oversized:
+                result.append(td)
+                continue
+
+            logger.info(
+                "Auto-split: task %s has %d target_files, %d directives — splitting",
+                td.get("task_id", "?"), len(target_files), directive_count,
+            )
+
+            try:
+                subtasks = await self._split_task_with_claude(td)
+                if subtasks:
+                    result.extend(subtasks)
+                    logger.info(
+                        "Auto-split: task %s split into %d subtasks",
+                        td.get("task_id", "?"), len(subtasks),
+                    )
+                else:
+                    # Claude split failed, keep original
+                    result.append(td)
+            except Exception:
+                logger.exception(
+                    "Auto-split failed for task %s, keeping original",
+                    td.get("task_id", "?"),
+                )
+                result.append(td)
+
+        return result
+
+    async def _split_task_with_claude(self, task_def: dict) -> list[dict]:
+        """Use Claude Haiku to split an oversized task into 2-4 subtasks."""
+        parent_id = task_def.get("task_id", "unknown")
+        prompt = (
+            f"Split this oversized task into 2-4 smaller subtasks.\n\n"
+            f"TASK:\n"
+            f"  task_id: {parent_id}\n"
+            f"  title: {task_def.get('title', '')}\n"
+            f"  target_files: {json.dumps(task_def.get('target_files', []))}\n"
+            f"  prompt: {task_def.get('prompt', '')[:3000]}\n"
+            f"  working_directory: {task_def.get('working_directory', '')}\n\n"
+            f"SPLITTING RULES (hard requirements):\n"
+            f"1. Max 2 target_files per subtask\n"
+            f"2. Separate entity/model creation from service logic\n"
+            f"3. Separate code implementation from tests\n"
+            f"4. Separate DTOs/schemas from repositories\n"
+            f"5. Set max_retries: 2 on all subtasks\n"
+            f"6. Chain dependencies: each subtask depends_on the previous one\n\n"
+            f"Subtask IDs must be: {parent_id}-a, {parent_id}-b, {parent_id}-c, etc.\n\n"
+            f"Return a JSON array of subtask objects with fields:\n"
+            f"  task_id, title, category, phase, priority, prompt, "
+            f"working_directory, target_files (list, max 2), "
+            f"acceptance_criteria, depends_on (list), max_retries\n\n"
+            f"JSON array only, no markdown."
+        )
+
+        async with self._claude_semaphore:
+            rc, stdout = await self._call_claude(
+                prompt,
+                model="claude-haiku-4-5-20251001",
+                max_tokens=4096,
+                timeout=120,
+            )
+
+        if rc != 0 or not stdout.strip():
+            logger.warning("Auto-split Claude call failed for task %s", parent_id)
+            return []
+
+        parsed = self._parse_json_array(stdout)
+        if not parsed:
+            logger.warning("Auto-split: no valid JSON returned for task %s", parent_id)
+            return []
+
+        # Validate and fix subtasks
+        suffixes = "abcdefghij"
+        for i, subtask in enumerate(parsed):
+            # Ensure correct subtask ID
+            expected_id = f"{parent_id}-{suffixes[i]}" if i < len(suffixes) else f"{parent_id}-{i}"
+            subtask["task_id"] = expected_id
+
+            # Enforce max 2 target files
+            if len(subtask.get("target_files", [])) > 2:
+                subtask["target_files"] = subtask["target_files"][:2]
+
+            # Enforce max_retries
+            subtask["max_retries"] = 2
+
+            # Carry over fields from parent if missing
+            subtask.setdefault("working_directory", task_def.get("working_directory", ""))
+            subtask.setdefault("category", task_def.get("category", ""))
+            subtask.setdefault("phase", task_def.get("phase", ""))
+            subtask.setdefault("priority", task_def.get("priority", 0))
+
+            # Chain dependencies: each subtask depends on the previous
+            if i > 0:
+                prev_id = f"{parent_id}-{suffixes[i - 1]}" if (i - 1) < len(suffixes) else f"{parent_id}-{i - 1}"
+                deps = subtask.get("depends_on", [])
+                if prev_id not in deps:
+                    deps.append(prev_id)
+                subtask["depends_on"] = deps
+
+        return parsed
 
     @staticmethod
     def _parse_json_array(text: str) -> list[dict]:

@@ -19,7 +19,7 @@ class SecurityAuditAgent(BaseAgent):
         self._interval = settings.agent_security_interval
 
     async def run_cycle(self) -> dict:
-        project_root = Path(settings.mxtac_project_root)
+        project_root = Path(settings.project_root)
         results = []
         critical_findings = []
 

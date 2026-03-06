@@ -49,8 +49,43 @@ def parse_yaml_directory(dir_path: str | Path) -> list[dict]:
     return all_tasks
 
 
-async def load_tasks_into_db(task_defs: list[dict]) -> tuple[int, int]:
-    """Load task definitions into the database. Returns (created, skipped) counts."""
+def _ensure_str(value) -> str:
+    """Coerce list/dict values to string (handles Claude-generated task defs)."""
+    if isinstance(value, list):
+        return "\n".join(str(v) for v in value)
+    if isinstance(value, dict):
+        return json.dumps(value)
+    return str(value) if value else ""
+
+
+_PRIORITY_MAP = {"critical": 10, "high": 7, "medium": 5, "low": 3}
+
+
+def _ensure_int_priority(value) -> int:
+    """Coerce priority to int (handles 'high', 'medium', etc. from Claude)."""
+    if isinstance(value, int):
+        return value
+    if value is None:
+        return 0
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return _PRIORITY_MAP.get(str(value).lower(), 0)
+
+
+async def load_tasks_into_db(task_defs: list[dict], auto_split: bool = True) -> tuple[int, int]:
+    """Load task definitions into the database. Returns (created, skipped) counts.
+
+    When auto_split=True (default), oversized tasks are split before insertion.
+    """
+    from .config import settings
+
+    # Auto-split oversized tasks at load time
+    if auto_split and settings.scheduler_auto_split_enabled and task_defs:
+        from .agents.task_creator import TaskCreatorAgent
+        creator = TaskCreatorAgent()
+        task_defs = await creator._estimate_and_split(task_defs)
+
     created = 0
     skipped = 0
 
@@ -75,13 +110,13 @@ async def load_tasks_into_db(task_defs: list[dict]) -> tuple[int, int]:
                 title=td.get("title", ""),
                 category=td.get("category", ""),
                 phase=td.get("phase", ""),
-                priority=td.get("priority", 0),
+                priority=_ensure_int_priority(td.get("priority", 0)),
                 status=TaskStatus.PENDING,
                 prompt=td.get("prompt", ""),
                 depends_on=json.dumps(td.get("depends_on", [])),
                 working_directory=td.get("working_directory", ""),
                 target_files=json.dumps(td.get("target_files", [])),
-                acceptance_criteria=td.get("acceptance_criteria", ""),
+                acceptance_criteria=_ensure_str(td.get("acceptance_criteria", "")),
                 max_retries=td.get("max_retries", 3),
                 model=td.get("model"),
                 allowed_tools=json.dumps(td.get("allowed_tools", [])),

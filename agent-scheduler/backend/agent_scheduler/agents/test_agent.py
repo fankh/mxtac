@@ -25,7 +25,7 @@ class TestAgent(BaseAgent):
 
     async def run_cycle(self) -> dict:
         self._cycle_count += 1
-        project_root = Path(settings.mxtac_project_root)
+        project_root = Path(settings.project_root)
         results = []
 
         # 1. Targeted tests for recently completed tasks

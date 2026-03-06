@@ -106,11 +106,25 @@ async def get_stats(session: AsyncSession = Depends(get_session)):
         elif t.verification_status == "failed":
             quality["verification_failed"] += 1
 
+    # Run-level counts (execution attempts, not tasks)
+    run_count_result = await session.execute(
+        select(Run.status, func.count()).group_by(Run.status)
+    )
+    run_status_counts = {}
+    total_runs = 0
+    for row in run_count_result:
+        run_status_counts[row[0].value] = row[1]
+        total_runs += row[1]
+
     return {
         "total_tasks": len(tasks),
         "status_counts": status_counts,
         "phase_counts": phase_counts,
         "quality": quality,
+        "runs": {
+            "total": total_runs,
+            "status_counts": run_status_counts,
+        },
         "scheduler": {
             "running": scheduler.is_running,
             "paused": scheduler.is_paused,
@@ -357,14 +371,24 @@ async def list_runs(
     result = await session.execute(query)
     runs = result.scalars().all()
 
+    # Find the latest run id per task so we only show verify/test on the most recent
+    latest_run_ids: set[int] = set()
+    seen_tasks: set[int] = set()
+    for r in runs:
+        if r.task_id not in seen_tasks:
+            seen_tasks.add(r.task_id)
+            latest_run_ids.add(r.id)
+
     items = []
     for r in runs:
         d = r.to_dict()
         d["task_title"] = r.task.title if r.task else ""
         d["task_task_id"] = r.task.task_id if r.task else ""
         d["task_phase"] = r.task.phase if r.task else ""
-        d["verification_status"] = r.task.verification_status if r.task else None
-        d["test_status"] = r.task.test_status if r.task else None
+        # Only show verify/test status on the latest run per task
+        is_latest = r.id in latest_run_ids
+        d["verification_status"] = r.task.verification_status if r.task and is_latest else None
+        d["test_status"] = r.task.test_status if r.task and is_latest else None
         d["quality_retry_count"] = r.task.quality_retry_count if r.task else 0
         items.append(d)
 
