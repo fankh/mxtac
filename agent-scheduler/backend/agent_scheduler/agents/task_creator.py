@@ -705,49 +705,120 @@ class TaskCreatorAgent(BaseAgent):
 
         return gaps
 
-    async def _estimate_and_split(self, task_defs: list[dict]) -> list[dict]:
-        """Check each task_def for oversized scope and split if needed."""
-        max_files = settings.scheduler_max_target_files
-        result = []
+    @staticmethod
+    def _complexity_score(td: dict) -> int:
+        """Language-agnostic complexity score for a task definition.
 
-        for td in task_defs:
-            target_files = td.get("target_files", [])
-            prompt_text = td.get("prompt", "")
+        Signals (all derivable from task metadata, no codebase knowledge):
+          - target_files count: 3 points per file
+          - Directive verbs in prompt: 2 points each
+          - Prompt length: 1 point per 200 words
+          - Acceptance criteria count (split on ';' or newlines): 2 points each
 
-            # Count action directives in prompt
-            directive_count = len(re.findall(
-                r"\b(Create|Implement|Add|Build|Write)\b", prompt_text
-            ))
+        Threshold: score > 8 → pre-split before execution.
+        """
+        score = 0
+        target_files = td.get("target_files", [])
+        prompt_text = td.get("prompt", "")
+        criteria = td.get("acceptance_criteria", "")
 
-            is_oversized = (
-                len(target_files) > max_files or directive_count > 5
+        # File count
+        score += len(target_files) * 3
+
+        # Directive verbs (case-insensitive)
+        directives = re.findall(
+            r"\b(create|implement|add|build|write|register|configure|test|wire|setup)\b",
+            prompt_text, re.IGNORECASE,
+        )
+        score += len(directives) * 2
+
+        # Prompt length
+        score += len(prompt_text.split()) // 200
+
+        # Acceptance criteria count
+        if criteria:
+            parts = re.split(r"[;\n]", criteria)
+            criteria_count = sum(1 for p in parts if p.strip())
+            score += max(0, criteria_count - 1) * 2  # first criterion is free
+
+        return score
+
+    @staticmethod
+    def _deterministic_split(td: dict) -> list[dict] | None:
+        """Split a task by target_files — one file per subtask, chained.
+
+        Returns None if deterministic split doesn't apply (e.g., single file
+        but prompt is too complex — needs Claude).
+        """
+        target_files = td.get("target_files", [])
+        if len(target_files) <= 1:
+            return None  # Can't deterministically split single-file tasks
+
+        parent_id = td.get("task_id", "unknown")
+        suffixes = "abcdefghij"
+        subtasks = []
+
+        for i, tf in enumerate(target_files):
+            suffix = suffixes[i] if i < len(suffixes) else str(i)
+            child_id = f"{parent_id}-{suffix}"
+
+            # Derive a focused sub-prompt
+            filename = tf.rsplit("/", 1)[-1] if "/" in tf else tf
+            sub_prompt = (
+                f"{td.get('prompt', '')}\n\n"
+                f"SCOPE: Focus ONLY on this file: {tf}\n"
+                f"Do not modify other files unless absolutely necessary."
             )
 
-            if not is_oversized:
+            subtask = {
+                "task_id": child_id,
+                "title": f"{td.get('title', '')} — {filename}",
+                "category": td.get("category", ""),
+                "phase": td.get("phase", ""),
+                "priority": td.get("priority", 0),
+                "prompt": sub_prompt,
+                "working_directory": td.get("working_directory", ""),
+                "target_files": [tf],
+                "acceptance_criteria": f"File {tf} exists and compiles/passes lint",
+                "max_retries": 2,
+                "depends_on": [f"{parent_id}-{suffixes[i-1]}"] if i > 0 else [],
+            }
+            subtasks.append(subtask)
+
+        return subtasks
+
+    async def _estimate_and_split(self, task_defs: list[dict]) -> list[dict]:
+        """Score each task and pre-split oversized ones BEFORE execution."""
+        result = []
+        for td in task_defs:
+            score = self._complexity_score(td)
+            target_files = td.get("target_files", [])
+
+            # Threshold: score > 8 or too many files
+            if score <= 8 and len(target_files) <= settings.scheduler_max_target_files:
                 result.append(td)
                 continue
 
             logger.info(
-                "Auto-split: task %s has %d target_files, %d directives — splitting",
-                td.get("task_id", "?"), len(target_files), directive_count,
+                "Pre-split: task %s has complexity score %d (files=%d)",
+                td.get("task_id", "?"), score, len(target_files),
             )
 
-            try:
-                subtasks = await self._split_task_with_claude(td)
-                if subtasks:
-                    result.extend(subtasks)
-                    logger.info(
-                        "Auto-split: task %s split into %d subtasks",
-                        td.get("task_id", "?"), len(subtasks),
-                    )
-                else:
-                    # Claude split failed, keep original
-                    result.append(td)
-            except Exception:
-                logger.exception(
-                    "Auto-split failed for task %s, keeping original",
-                    td.get("task_id", "?"),
-                )
+            # Try deterministic split first (cheaper than Claude)
+            subtasks = self._deterministic_split(td)
+            if not subtasks:
+                # Fall back to Claude-assisted split
+                try:
+                    subtasks = await self._split_task_with_claude(td)
+                except Exception:
+                    logger.exception("Pre-split failed for %s", td.get("task_id", "?"))
+
+            if subtasks:
+                result.extend(subtasks)
+            else:
+                # Can't split — keep original but cap target_files
+                if len(target_files) > settings.scheduler_max_target_files:
+                    td["target_files"] = target_files[:settings.scheduler_max_target_files]
                 result.append(td)
 
         return result

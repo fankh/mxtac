@@ -136,6 +136,10 @@ class Run(Base):
     git_diff: Mapped[str] = mapped_column(Text, default="")
     files_changed: Mapped[str] = mapped_column(Text, default="[]")  # JSON list
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    model: Mapped[str | None] = mapped_column(String(50), nullable=True)
     started_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -159,6 +163,10 @@ class Run(Base):
             "git_diff": self.git_diff,
             "files_changed": json.loads(self.files_changed) if self.files_changed else [],
             "duration_seconds": self.duration_seconds,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_cost": self.total_cost,
+            "model": self.model,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
         }
@@ -203,6 +211,10 @@ class AgentRun(Base):
     output: Mapped[str] = mapped_column(Text, default="")
     items_processed: Mapped[int] = mapped_column(Integer, default=0)
     items_found: Mapped[int] = mapped_column(Integer, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_cost: Mapped[float] = mapped_column(Float, default=0.0)
+    model: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -215,4 +227,8 @@ class AgentRun(Base):
             "output": self.output,
             "items_processed": self.items_processed,
             "items_found": self.items_found,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_cost": self.total_cost,
+            "model": self.model,
         }

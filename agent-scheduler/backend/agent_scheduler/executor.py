@@ -12,9 +12,33 @@ import httpx
 from .config import settings
 from .context import build_api_messages
 
-__all__ = ["Executor", "ExecutionResult", "BudgetExhaustedError", "executor"]
+__all__ = ["Executor", "ExecutionResult", "BudgetExhaustedError", "executor", "estimate_cost"]
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Cost estimation (per 1M tokens, USD)
+# ---------------------------------------------------------------------------
+
+_MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # (input_per_1M, output_per_1M)
+    "claude-opus-4-20250514": (15.0, 75.0),
+    "claude-opus-4-6": (15.0, 75.0),
+    "claude-sonnet-4-20250514": (3.0, 15.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-haiku-4-5-20251001": (0.80, 4.0),
+    "claude-3-5-sonnet-20241022": (3.0, 15.0),
+    "claude-3-5-haiku-20241022": (0.80, 4.0),
+}
+
+_DEFAULT_PRICING = (3.0, 15.0)  # fallback to Sonnet pricing
+
+
+def estimate_cost(model: str | None, input_tokens: int, output_tokens: int) -> float:
+    """Estimate USD cost for a Claude API call."""
+    pricing = _MODEL_PRICING.get(model or "", _DEFAULT_PRICING)
+    return (input_tokens * pricing[0] + output_tokens * pricing[1]) / 1_000_000
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +136,31 @@ def _resolve_safe_path(path_str: str, working_directory: str) -> Path:
 # Tool execution
 # ---------------------------------------------------------------------------
 
+# Scheduler infrastructure files that agents must not overwrite.
+# Agents may READ these but never WRITE to them.
+_PROTECTED_FILES = {
+    "frontend/src/lib/api.ts",
+    "frontend/src/lib/types.ts",
+    "frontend/src/app/layout.tsx",
+    "frontend/src/app/login/page.tsx",
+    "frontend/src/app/api/events/route.ts",
+    "frontend/src/hooks/useApi.ts",
+    "frontend/src/hooks/useSSE.ts",
+    "frontend/src/components/AuthGuard.tsx",
+    "frontend/next.config.ts",
+}
+
+
+def _is_protected(path: Path, working_directory: str) -> bool:
+    """Check if a file path matches a protected scheduler file."""
+    wd = Path(working_directory).resolve()
+    try:
+        rel = path.resolve().relative_to(wd)
+    except ValueError:
+        return False
+    return str(rel) in _PROTECTED_FILES or str(rel).startswith("backend/")
+
+
 def _execute_tool(name: str, tool_input: dict, working_directory: str) -> str:
     """Execute a single tool call synchronously. Returns the result string."""
     try:
@@ -123,12 +172,18 @@ def _execute_tool(name: str, tool_input: dict, working_directory: str) -> str:
                 return f"Error: Not a file: {path}"
             content = path.read_text(encoding="utf-8", errors="replace")
             # Truncate very large files
-            if len(content) > 30_000:
-                content = content[:30_000] + "\n\n... [truncated at 30K chars]"
+            if len(content) > 15_000:
+                content = content[:15_000] + "\n\n... [truncated at 15K chars]"
             return content
 
         elif name == "write_file":
             path = _resolve_safe_path(tool_input["path"], working_directory)
+            if _is_protected(path, working_directory):
+                return (
+                    f"Error: '{path.name}' is a protected scheduler file and cannot "
+                    f"be overwritten. If you need to add new API functions, append "
+                    f"them — do not rewrite the file."
+                )
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(tool_input["content"], encoding="utf-8")
             return f"Successfully wrote {len(tool_input['content'])} chars to {path}"
@@ -167,8 +222,8 @@ def _execute_tool(name: str, tool_input: dict, working_directory: str) -> str:
             output_parts.append(f"exit_code: {result.returncode}")
             output = "\n".join(output_parts)
             # Truncate if too large
-            if len(output) > 30_000:
-                output = output[:30_000] + "\n\n... [truncated at 30K chars]"
+            if len(output) > 10_000:
+                output = output[:10_000] + "\n\n... [truncated at 10K chars]"
             return output
 
         else:
@@ -280,6 +335,7 @@ class Executor:
         task_id: str = "",
         attempt: int = 1,
         max_retries: int = 3,
+        target_files: list[str] | None = None,
     ) -> ExecutionResult:
         """Execute a Claude API call with tool-use loop, semaphore gating, and rate limiting."""
         # Circuit breaker check — return immediately if API is paused
@@ -337,6 +393,8 @@ class Executor:
 
             system_prompt, user_message = build_api_messages(
                 prompt, task_id, attempt, max_retries,
+                target_files=target_files,
+                working_directory=working_directory,
             )
             m = model or settings.claude_model
 
@@ -426,7 +484,7 @@ class Executor:
                     self._running_tasks.pop(task_db_id, None)
 
     @staticmethod
-    def _prune_messages(messages: list[dict], max_turn_pairs: int = 10) -> list[dict]:
+    def _prune_messages(messages: list[dict], max_turn_pairs: int = 3) -> list[dict]:
         """Sliding-window pruning: keep first user message + last N turn-pairs.
 
         A turn-pair is (assistant, user). If the conversation exceeds the
@@ -468,6 +526,7 @@ class Executor:
 
         total_input_tokens = 0
         total_output_tokens = 0
+        actual_model = model
         iteration = 0
         max_iterations = settings.max_tool_iterations
         api_error_retries = 0
@@ -487,6 +546,7 @@ class Executor:
                         "input_tokens": total_input_tokens,
                         "output_tokens": total_output_tokens,
                         "tool_iterations": iteration - 1,
+                        "model": actual_model,
                     },
                 )
 
@@ -494,12 +554,28 @@ class Executor:
             messages = self._prune_messages(messages)
 
             try:
+                # Use prompt caching: system prompt and tools are identical
+                # across runs — cached input tokens cost 90% less.
+                cached_system = [
+                    {
+                        "type": "text",
+                        "text": system_prompt,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+                cached_tools = []
+                for i, tool in enumerate(TOOL_DEFINITIONS):
+                    t = dict(tool)
+                    if i == len(TOOL_DEFINITIONS) - 1:
+                        t["cache_control"] = {"type": "ephemeral"}
+                    cached_tools.append(t)
+
                 response = await client.messages.create(
                     model=model,
                     max_tokens=settings.claude_max_tokens,
-                    system=system_prompt,
+                    system=cached_system,
                     messages=messages,
-                    tools=TOOL_DEFINITIONS,
+                    tools=cached_tools,
                 )
             except anthropic.BadRequestError as e:
                 error_body = str(e)
@@ -571,6 +647,14 @@ class Executor:
 
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
+            # Track cache hits for cost monitoring
+            cache_usage = getattr(response.usage, "cache_read_input_tokens", 0) or 0
+            cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+            if cache_usage > 0:
+                logger.debug(
+                    f"Task {task_db_id} iter {iteration}: "
+                    f"cache_read={cache_usage:,}, cache_create={cache_creation:,}"
+                )
             # Reset API error counter on successful response
             api_error_retries = 0
 
@@ -589,6 +673,7 @@ class Executor:
                     "input_tokens": total_input_tokens,
                     "output_tokens": total_output_tokens,
                     "tool_iterations": iteration,
+                    "model": actual_model,
                 }
                 return result_text, usage_info
 

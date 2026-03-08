@@ -116,6 +116,25 @@ async def get_stats(session: AsyncSession = Depends(get_session)):
         run_status_counts[row[0].value] = row[1]
         total_runs += row[1]
 
+    # Token usage totals
+    token_result = await session.execute(
+        select(
+            func.coalesce(func.sum(Run.input_tokens), 0),
+            func.coalesce(func.sum(Run.output_tokens), 0),
+            func.coalesce(func.sum(Run.total_cost), 0),
+        )
+    )
+    run_tokens = token_result.one()
+
+    agent_token_result = await session.execute(
+        select(
+            func.coalesce(func.sum(AgentRun.input_tokens), 0),
+            func.coalesce(func.sum(AgentRun.output_tokens), 0),
+            func.coalesce(func.sum(AgentRun.total_cost), 0),
+        )
+    )
+    agent_tokens = agent_token_result.one()
+
     return {
         "total_tasks": len(tasks),
         "status_counts": status_counts,
@@ -124,6 +143,21 @@ async def get_stats(session: AsyncSession = Depends(get_session)):
         "runs": {
             "total": total_runs,
             "status_counts": run_status_counts,
+        },
+        "usage": {
+            "tasks": {
+                "input_tokens": int(run_tokens[0]),
+                "output_tokens": int(run_tokens[1]),
+                "total_cost": round(float(run_tokens[2]), 4),
+            },
+            "agents": {
+                "input_tokens": int(agent_tokens[0]),
+                "output_tokens": int(agent_tokens[1]),
+                "total_cost": round(float(agent_tokens[2]), 4),
+            },
+            "total_input_tokens": int(run_tokens[0]) + int(agent_tokens[0]),
+            "total_output_tokens": int(run_tokens[1]) + int(agent_tokens[1]),
+            "total_cost": round(float(run_tokens[2]) + float(agent_tokens[2]), 4),
         },
         "scheduler": {
             "running": scheduler.is_running,
@@ -421,6 +455,76 @@ async def list_agent_runs(
     runs = result.scalars().all()
 
     return {"runs": [r.to_dict() for r in runs], "total": total, "limit": limit, "offset": offset}
+
+
+# --- Usage / Token Tracking ---
+
+@router.get("/usage")
+async def get_usage(session: AsyncSession = Depends(get_session)):
+    """Detailed token usage breakdown by source (task runs vs each agent)."""
+
+    # Task execution totals
+    task_result = await session.execute(
+        select(
+            func.count(Run.id),
+            func.coalesce(func.sum(Run.input_tokens), 0),
+            func.coalesce(func.sum(Run.output_tokens), 0),
+            func.coalesce(func.sum(Run.total_cost), 0),
+        )
+    )
+    task_row = task_result.one()
+
+    # Agent breakdown by name
+    agent_result = await session.execute(
+        select(
+            AgentRun.agent_name,
+            func.count(AgentRun.id),
+            func.coalesce(func.sum(AgentRun.input_tokens), 0),
+            func.coalesce(func.sum(AgentRun.output_tokens), 0),
+            func.coalesce(func.sum(AgentRun.total_cost), 0),
+        ).group_by(AgentRun.agent_name)
+    )
+    agent_breakdown = {}
+    total_agent_input = 0
+    total_agent_output = 0
+    total_agent_cost = 0.0
+    for row in agent_result:
+        inp = int(row[2])
+        out = int(row[3])
+        cost = float(row[4])
+        agent_breakdown[row[0]] = {
+            "runs": row[1],
+            "input_tokens": inp,
+            "output_tokens": out,
+            "total_cost": round(cost, 4),
+        }
+        total_agent_input += inp
+        total_agent_output += out
+        total_agent_cost += cost
+
+    task_inp = int(task_row[1])
+    task_out = int(task_row[2])
+    task_cost = float(task_row[3])
+
+    return {
+        "tasks": {
+            "runs": task_row[0],
+            "input_tokens": task_inp,
+            "output_tokens": task_out,
+            "total_cost": round(task_cost, 4),
+        },
+        "agents": agent_breakdown,
+        "agents_total": {
+            "input_tokens": total_agent_input,
+            "output_tokens": total_agent_output,
+            "total_cost": round(total_agent_cost, 4),
+        },
+        "grand_total": {
+            "input_tokens": task_inp + total_agent_input,
+            "output_tokens": task_out + total_agent_output,
+            "total_cost": round(task_cost + total_agent_cost, 4),
+        },
+    }
 
 
 # --- Task Actions ---

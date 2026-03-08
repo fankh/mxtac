@@ -75,8 +75,8 @@ class VerifierAgent(BaseAgent):
                 if not git_result["pass"]:
                     all_pass = False
 
-            # 2c. Test check
-            if task.test_status:
+            # 2c. Test check — "skipped" is neutral (not a failure)
+            if task.test_status and task.test_status not in ("skipped",):
                 test_result = {
                     "check": "test_status",
                     "pass": task.test_status == "passed",

@@ -2,13 +2,14 @@ import asyncio
 import datetime
 import json
 import logging
+import re
 
 from sqlalchemy import func as sa_func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import now, settings
 from .database import async_session
-from .executor import ExecutionResult, executor
+from .executor import ExecutionResult, estimate_cost, executor
 from .models import Log, Run, RunStatus, Task, TaskStatus
 
 logger = logging.getLogger(__name__)
@@ -380,6 +381,7 @@ class Scheduler:
             task_model = task.model
             task_attempt = task.retry_count + 1
             task_max_retries = task.max_retries
+            task_target_files = task.target_files_list
 
         # Execute outside the session
         result: ExecutionResult = await executor.execute(
@@ -390,6 +392,7 @@ class Scheduler:
             task_id=task_str_id,
             attempt=task_attempt,
             max_retries=task_max_retries,
+            target_files=task_target_files,
         )
         logger.info(
             f"Task {task_db_id} result: exit_code={result.exit_code}, "
@@ -449,6 +452,14 @@ class Scheduler:
                 run.stderr = result.stderr
                 run.duration_seconds = result.duration_seconds
                 run.finished_at = now()
+                # Persist token usage
+                usage = result.usage or {}
+                run.input_tokens = usage.get("input_tokens", 0)
+                run.output_tokens = usage.get("output_tokens", 0)
+                run.model = usage.get("model", "")
+                run.total_cost = estimate_cost(
+                    run.model, run.input_tokens, run.output_tokens
+                )
 
                 if result.timed_out:
                     run.status = RunStatus.TIMEOUT
@@ -482,14 +493,46 @@ class Scheduler:
                         and "Max tool iterations" in stderr_text
                     )
 
-                    if task.retry_count >= task.max_retries:
-                        # Try auto-split for MaxIterationsExceeded failures
+                    # --- Circuit breaker: cost cap ---
+                    task_cost = await self._get_task_total_cost(session, task.id)
+                    cost_limit = settings.scheduler_task_cost_limit
+                    cost_exceeded = cost_limit > 0 and task_cost >= cost_limit
+
+                    # --- Circuit breaker: duplicate error detection ---
+                    current_error = self._extract_error_signature(result)
+                    is_duplicate_error = await self._is_duplicate_error(
+                        session, task.id, current_error
+                    )
+
+                    should_stop = (
+                        task.retry_count >= task.max_retries
+                        or cost_exceeded
+                        or is_duplicate_error
+                    )
+
+                    if should_stop:
+                        # Build failure reason
+                        if cost_exceeded:
+                            stop_reason = (
+                                f"Cost limit exceeded: ${task_cost:.2f} >= "
+                                f"${cost_limit:.2f} after {task.retry_count} attempts"
+                            )
+                        elif is_duplicate_error:
+                            stop_reason = (
+                                f"Duplicate error detected after {task.retry_count} "
+                                f"attempts — same failure repeated"
+                            )
+                        else:
+                            stop_reason = None  # normal max_retries
+
+                        # Try auto-split for MaxIterationsExceeded (only if not cost/dup stopped)
                         if (
                             is_max_iterations
+                            and not cost_exceeded
+                            and not is_duplicate_error
                             and settings.scheduler_auto_split_enabled
                             and not task.task_id.endswith(("-a", "-b", "-c", "-d"))
                         ):
-                            # Attempt to split the task
                             split_success = await self._auto_split_failed_task(
                                 session, task
                             )
@@ -510,7 +553,6 @@ class Scheduler:
                                 )
                                 session.add(log2)
                             else:
-                                # Split failed, mark as FAILED normally
                                 task.status = TaskStatus.FAILED
                                 task.failure_reason = (
                                     f"MaxIterationsExceeded after {task.retry_count} "
@@ -524,18 +566,19 @@ class Scheduler:
                                 session.add(log2)
                         else:
                             task.status = TaskStatus.FAILED
-                            reason = f"Execution failed after {task.retry_count}/{task.max_retries} attempts"
-                            if result.timed_out:
-                                reason += " (last: timeout)"
-                            elif result.exit_code != 0:
-                                # Extract first meaningful line from stdout/stderr
-                                error_hint = (result.stderr or result.stdout or "").strip().split("\n")[0][:200]
-                                if error_hint:
-                                    reason += f" (last: {error_hint})"
+                            if stop_reason:
+                                reason = stop_reason
+                            else:
+                                reason = f"Execution failed after {task.retry_count}/{task.max_retries} attempts"
+                                if result.timed_out:
+                                    reason += " (last: timeout)"
+                                elif result.exit_code != 0:
+                                    error_hint = (result.stderr or result.stdout or "").strip().split("\n")[0][:200]
+                                    if error_hint:
+                                        reason += f" (last: {error_hint})"
                             task.failure_reason = reason
                             logger.warning(
-                                f"Task {task_db_id} failed permanently after "
-                                f"{task.retry_count}/{task.max_retries} attempts"
+                                f"Task {task_db_id} failed permanently: {reason}"
                             )
                             log2 = Log(
                                 run_id=run.id if run else None,
@@ -547,7 +590,8 @@ class Scheduler:
                         task.status = TaskStatus.PENDING  # Will retry
                         logger.info(
                             f"Task {task_db_id} will retry "
-                            f"(attempt {task.retry_count}/{task.max_retries})"
+                            f"(attempt {task.retry_count}/{task.max_retries}, "
+                            f"cost so far: ${task_cost:.2f})"
                         )
 
             await session.commit()
@@ -687,6 +731,71 @@ class Scheduler:
         except Exception:
             logger.exception(f"Task {task_id}: git auto-commit failed")
             return None
+
+    @staticmethod
+    async def _get_task_total_cost(session: AsyncSession, task_db_id: int) -> float:
+        """Sum total_cost across all runs for a task."""
+        result = await session.execute(
+            select(sa_func.coalesce(sa_func.sum(Run.total_cost), 0.0))
+            .where(Run.task_id == task_db_id)
+        )
+        return float(result.scalar_one())
+
+    @staticmethod
+    def _extract_error_signature(result: ExecutionResult) -> str:
+        """Extract a normalized error signature from execution result for dedup."""
+        text = (result.stderr or result.stdout or "").strip()
+        if not text:
+            return f"exit_{result.exit_code}"
+        # Take the first meaningful error line, strip variable parts
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("Traceback") or line.startswith("  "):
+                continue
+            # Normalize: remove file paths, line numbers, timestamps
+            sig = re.sub(r"/[^\s:]+", "<path>", line)
+            sig = re.sub(r":\d+", ":<n>", sig)
+            sig = re.sub(r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}\S*", "<ts>", sig)
+            return sig[:200]
+        return f"exit_{result.exit_code}"
+
+    @staticmethod
+    async def _is_duplicate_error(
+        session: AsyncSession, task_db_id: int, current_sig: str
+    ) -> bool:
+        """Check if the last N runs had the same error signature."""
+        limit = settings.scheduler_duplicate_error_limit
+        if limit <= 0:
+            return False
+        result = await session.execute(
+            select(Run.stderr, Run.stdout, Run.exit_code)
+            .where(Run.task_id == task_db_id)
+            .where(Run.status.in_(["FAILED", "TIMEOUT"]))
+            .order_by(Run.id.desc())
+            .limit(limit)
+        )
+        rows = result.all()
+        if len(rows) < limit:
+            return False
+        # Build signatures for previous runs and compare
+        for row in rows:
+            text = (row.stderr or row.stdout or "").strip()
+            if not text:
+                prev_sig = f"exit_{row.exit_code}"
+            else:
+                prev_sig = f"exit_{row.exit_code}"
+                for line in text.split("\n"):
+                    line = line.strip()
+                    if not line or line.startswith("Traceback") or line.startswith("  "):
+                        continue
+                    sig = re.sub(r"/[^\s:]+", "<path>", line)
+                    sig = re.sub(r":\d+", ":<n>", sig)
+                    sig = re.sub(r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}\S*", "<ts>", sig)
+                    prev_sig = sig[:200]
+                    break
+            if prev_sig != current_sig:
+                return False
+        return True
 
     async def _auto_split_failed_task(self, session: AsyncSession, task: Task) -> bool:
         """Split a failed task into subtasks using TaskCreatorAgent.

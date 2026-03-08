@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-4-20250514"
     claude_max_tokens: int = 16384
-    max_tool_iterations: int = 75
+    max_tool_iterations: int = 60
 
     # Auth
     auth_password: str = ""  # Empty = auth disabled
@@ -54,7 +54,11 @@ class Settings(BaseSettings):
     scheduler_auto_split_enabled: bool = True
     scheduler_max_target_files: int = 2
 
-    # --- New Agent Settings ---
+    # Cost & circuit breaker
+    scheduler_task_cost_limit: float = 3.0  # max $ per task before auto-fail
+    scheduler_duplicate_error_limit: int = 2  # stop retrying after N identical errors
+
+    # --- Agent Settings ---
 
     # TaskCreatorAgent (P0)
     agent_task_creator_enabled: bool = True

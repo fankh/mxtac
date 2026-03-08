@@ -41,6 +41,14 @@ async def _ensure_columns():
         ("tasks", "verification_status", "VARCHAR(20)"),
         ("tasks", "verification_output", "TEXT"),
         ("tasks", "quality_retry_count", "INTEGER DEFAULT 0"),
+        ("runs", "input_tokens", "INTEGER DEFAULT 0"),
+        ("runs", "output_tokens", "INTEGER DEFAULT 0"),
+        ("runs", "total_cost", "REAL DEFAULT 0.0"),
+        ("runs", "model", "VARCHAR(50)"),
+        ("agent_runs", "input_tokens", "INTEGER DEFAULT 0"),
+        ("agent_runs", "output_tokens", "INTEGER DEFAULT 0"),
+        ("agent_runs", "total_cost", "REAL DEFAULT 0.0"),
+        ("agent_runs", "model", "VARCHAR(50)"),
     ]
     async with engine.begin() as conn:
         for table, column, col_type in migrations:

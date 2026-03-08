@@ -39,6 +39,7 @@ class BaseAgent(ABC):
         self._action_count: int = 0
         self._interval: int = self.DEFAULT_INTERVAL
         self._current_run_id: int | None = None
+        self._cycle_usage: dict = self._empty_usage()
 
     @property
     def status(self) -> str:
@@ -72,10 +73,15 @@ class BaseAgent(ABC):
             self._task = None
         logger.info("%s stopped", self.NAME)
 
+    @staticmethod
+    def _empty_usage() -> dict:
+        return {"input_tokens": 0, "output_tokens": 0, "model": "", "api_calls": 0}
+
     async def trigger(self):
         """Manual one-shot execution."""
         logger.info("%s triggered manually", self.NAME)
         try:
+            self._cycle_usage = self._empty_usage()
             run_id = await self._record_start()
             result = await self.run_cycle()
             await self._record_finish(run_id, "completed", result)
@@ -94,6 +100,7 @@ class BaseAgent(ABC):
         while self._running:
             try:
                 await asyncio.sleep(self._interval)
+                self._cycle_usage = self._empty_usage()
                 run_id = await self._record_start()
                 try:
                     result = await self.run_cycle()
@@ -125,6 +132,8 @@ class BaseAgent(ABC):
 
     async def _record_finish(self, run_id: int, status: str, result: dict):
         """Update the AgentRun row at cycle end."""
+        from ..executor import estimate_cost
+
         async with async_session() as session:
             agent_run = await session.get(AgentRun, run_id)
             if agent_run:
@@ -134,6 +143,15 @@ class BaseAgent(ABC):
                 agent_run.output = result.get("output", "")
                 agent_run.items_processed = result.get("items_processed", 0)
                 agent_run.items_found = result.get("items_found", 0)
+                # Token usage
+                agent_run.input_tokens = self._cycle_usage["input_tokens"]
+                agent_run.output_tokens = self._cycle_usage["output_tokens"]
+                agent_run.model = self._cycle_usage["model"] or None
+                agent_run.total_cost = estimate_cost(
+                    agent_run.model,
+                    agent_run.input_tokens,
+                    agent_run.output_tokens,
+                )
                 await session.commit()
 
     @classmethod
@@ -165,6 +183,7 @@ class BaseAgent(ABC):
 
         Returns (exit_code, response_text) to match the pattern used by agents.
         exit_code is 0 on success, -1 on failure.
+        Token usage is accumulated in self._cycle_usage for the current cycle.
         """
         # Check circuit breaker — skip Claude call if API is paused
         from ..executor import executor
@@ -190,6 +209,12 @@ class BaseAgent(ABC):
                 client.messages.create(**kwargs),
                 timeout=timeout,
             )
+
+            # Accumulate token usage for this cycle
+            self._cycle_usage["input_tokens"] += response.usage.input_tokens
+            self._cycle_usage["output_tokens"] += response.usage.output_tokens
+            self._cycle_usage["model"] = m
+            self._cycle_usage["api_calls"] += 1
 
             text_parts = []
             for block in response.content:
