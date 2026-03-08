@@ -36,7 +36,6 @@ tasks:
       Acceptance criteria:
       - .editorconfig exists at repo root and enforces consistent formatting
       - app/frontend/.prettierrc exists with valid JSON
-    working_directory: /home/khchoi/development/new-research/mitre-attack/mxtac
     target_files: [".editorconfig", "app/frontend/.prettierrc"]
     acceptance_criteria: ".editorconfig and .prettierrc exist with correct settings"
     max_retries: 3
@@ -74,7 +73,6 @@ tasks:
       Acceptance criteria:
       - CHANGELOG.md exists at repo root in Keep a Changelog format
       - ENV-REFERENCE.md documents every env var in the project grouped by component
-    working_directory: /home/khchoi/development/new-research/mitre-attack/mxtac
     target_files: ["CHANGELOG.md", "ENV-REFERENCE.md"]
     acceptance_criteria: "CHANGELOG.md and ENV-REFERENCE.md exist and are comprehensive"
     max_retries: 3
@@ -100,7 +98,6 @@ tasks:
       Acceptance criteria:
       - LICENSE file exists at repo root with MIT license text
       - 00-README.md License section updated to MIT
-    working_directory: /home/khchoi/development/new-research/mitre-attack/mxtac
     target_files: ["LICENSE"]
     acceptance_criteria: "LICENSE file exists with AGPL-3.0 content"
     max_retries: 3
@@ -136,7 +133,6 @@ tasks:
       Acceptance criteria:
       - SECURITY.md exists at repo root (short, professional)
       - 00-README.md has API versioning section
-    working_directory: /home/khchoi/development/new-research/mitre-attack/mxtac
     target_files: ["SECURITY.md", "00-README.md"]
     acceptance_criteria: "SECURITY.md exists; 00-README.md has API versioning section"
     max_retries: 3

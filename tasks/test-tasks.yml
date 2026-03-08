@@ -7,7 +7,6 @@ tasks:
     prompt: |
       Create a file at /tmp/mxtac-test/hello.txt with the content "Hello from MxTac agent scheduler! Test passed."
       Then verify the file exists and print its contents.
-    working_directory: /home/khchoi/development/new-research/mitre-attack/mxtac
     acceptance_criteria: "File /tmp/mxtac-test/hello.txt exists with correct content"
     max_retries: 1
 
@@ -19,7 +18,6 @@ tasks:
     prompt: |
       Read the file /home/khchoi/development/new-research/mitre-attack/mxtac/app/backend/pyproject.toml
       and provide a 3-line summary of the project: name, python version, and main dependencies.
-    working_directory: /home/khchoi/development/new-research/mitre-attack/mxtac
     acceptance_criteria: "Summary includes project name, python version, and key dependencies"
     max_retries: 1
 
@@ -31,6 +29,5 @@ tasks:
     prompt: |
       Read the file /nonexistent/path/does-not-exist.txt and print its contents.
       Do not create the file. Just try to read it. If it does not exist, exit with an error.
-    working_directory: /home/khchoi/development/new-research/mitre-attack/mxtac
     acceptance_criteria: "This task should fail"
     max_retries: 1
