@@ -3,7 +3,7 @@
 ## Reporting a Vulnerability
 
 To report a security vulnerability in MxTac, **do not open a public GitHub issue**.
-Instead, email **fankh111@gmail.com** with:
+Instead, email **security@seekerslab.com** with:
 
 - A clear description of the vulnerability
 - Steps to reproduce or a proof-of-concept
@@ -25,12 +25,22 @@ disclosure.
 
 ---
 
-## Security Update Policy
+## Security Update Process
 
 - **Critical / High** vulnerabilities in production dependencies: patched within 7 days
 - **Moderate** vulnerabilities in production dependencies: patched within 30 days
 - **Dev-only** vulnerabilities (test tooling, linters): addressed in the next release cycle
 - Container base images are rebuilt monthly to pick up OS-level patches
+
+---
+
+## Scope
+
+This security policy covers the following components of the MxTac project:
+
+- **Web application** (frontend)
+- **API** (backend)
+- **Database** (data layer)
 
 ---
 
