@@ -1,122 +1,77 @@
 # ENV-REFERENCE — MxTac Environment Variable Reference
 
-All environment variables used across MxTac components, grouped by component.
-Copy each component's `.env.example` to `.env` and fill in the required values.
+This document summarizes backend environment variables based on:
+- `app/backend/.env.example`
+- `app/backend/app/core/config.py`
+- `app/docker-compose.yml`
 
----
+All values below are example values only (no real secrets).
 
-## App Backend (`app/backend/.env.example`)
+## Database
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `APP_NAME` | Application display name | `MxTac API` | No |
-| `VERSION` | Application version string | `2.0.0` | No |
-| `DEBUG` | Enable debug mode (never set `true` in production) | `false` | No |
-| `SECRET_KEY` | JWT signing secret — generate with `openssl rand -hex 32` | *(none)* | **Yes** |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT access token lifetime in minutes | `60` | No |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | JWT refresh token lifetime in days | `7` | No |
-| `DATABASE_URL` | PostgreSQL async DSN (`postgresql+asyncpg://...`) | `postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac` | **Yes** |
-| `VALKEY_URL` | Valkey / Redis connection URL | `redis://localhost:6379/0` | **Yes** |
-| `QUEUE_BACKEND` | Event queue backend: `memory`, `redis`, or `kafka` | `memory` | No |
-| `KAFKA_BOOTSTRAP_SERVERS` | Kafka broker list (used when `QUEUE_BACKEND=kafka`) | `localhost:9092` | No |
-| `KAFKA_CONSUMER_GROUP` | Kafka consumer group id | `mxtac` | No |
-| `OPENSEARCH_HOST` | OpenSearch hostname | `localhost` | No |
-| `OPENSEARCH_PORT` | OpenSearch HTTP port | `9200` | No |
-| `OPENSEARCH_USERNAME` | OpenSearch username (leave empty if auth disabled) | *(empty)* | No |
-| `OPENSEARCH_PASSWORD` | OpenSearch password | *(empty)* | No |
-| `OPENSEARCH_USE_SSL` | Enable TLS for OpenSearch connection | `false` | No |
-| `RATE_LIMIT_PER_MINUTE` | Max API requests per IP per minute | `300` | No |
-| `CORS_ORIGINS` | JSON array of allowed CORS origins | `["http://localhost:5173","https://mxtac.example.com"]` | No |
-| `SMTP_HOST` | SMTP server hostname for email notifications | `localhost` | No |
-| `SMTP_PORT` | SMTP server port (587 = STARTTLS) | `587` | No |
-| `SMTP_USERNAME` | SMTP authentication username | *(empty)* | No |
-| `SMTP_PASSWORD` | SMTP authentication password | *(empty)* | No |
-| `SMTP_FROM_ADDRESS` | Sender address for outgoing alert emails | `mxtac-alerts@localhost` | No |
+| Variable | Default | Description | Required |
+|---|---|---|---|
+| `DATABASE_URL` | `postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac` | Primary metadata database DSN. In Docker Compose backend uses `postgresql+asyncpg://mxtac:mxtac@postgres:5432/mxtac`. | Yes |
+| `VALKEY_URL` | `redis://localhost:6379/0` | Valkey/Redis URL for cache, coordination, and some background features. In Docker Compose backend uses `redis://redis:6379/0`. | No |
+| `SQLITE_MODE` | `false` | If `true`, app can run with local SQLite (single-binary mode) when `DATABASE_URL` is not explicitly sqlite. | No |
+| `SQLITE_PATH` | `./mxtac.db` | SQLite file path used when `SQLITE_MODE=true`. | No |
+| `DUCKDB_ENABLED` | `false` | Enables DuckDB event analytics fallback/mirroring features. | No |
+| `DUCKDB_PATH` | `./mxtac-events.duckdb` | DuckDB file path when DuckDB mode is enabled. | No |
 
----
+## API Keys
 
-## App Frontend (`app/frontend/.env.example`)
+| Variable | Default | Description | Required |
+|---|---|---|---|
+| `SECRET_KEY` | `dev-secret-change-in-production` (example/dev only) | JWT signing key. Must be changed for production; startup fails in prod mode if left as dev default. Example secure value: `a3f9...` (64 hex chars). | Yes (production) |
+| `OPENSEARCH_USERNAME` | *(empty)* | OpenSearch username when cluster security/auth is enabled. Example: `mxtac_reader`. | No |
+| `OPENSEARCH_PASSWORD` | *(empty)* | OpenSearch password for `OPENSEARCH_USERNAME`. Example: `change-me-opensearch-password`. | No |
+| `SMTP_USERNAME` | *(empty)* | Default SMTP auth username for notification dispatcher. Example: `smtp_user`. | No |
+| `SMTP_PASSWORD` | *(empty)* | Default SMTP auth password for notification dispatcher. Example: `change-me-smtp-password`. | No |
+| `ALERT_EMAIL_SMTP_USERNAME` | *(empty)* | SMTP username for alert email output integration. | No |
+| `ALERT_EMAIL_SMTP_PASSWORD` | *(empty)* | SMTP password for alert email output integration. | No |
+| `OPENCTI_TOKEN` | *(empty)* | Token for OpenCTI enrichment API (if used). | No |
+| `THREAT_INTEL_FEEDS` | `[]` | JSON array of STIX/TAXII feed objects, can include per-feed `api_key`. Example: `[{"name":"AlienVault","taxii_url":"https://taxii.example/api","collection_id":"abcd","api_key":"demo-key"}]`. | No |
 
-Copy to `.env.local`. In development, the Vite proxy handles routing automatically.
+## Server
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `VITE_API_BASE_URL` | Backend API base URL (used in production builds) | `http://localhost:8080` | No |
+| Variable | Default | Description | Required |
+|---|---|---|---|
+| `APP_NAME` | `MxTac API` | API service display name. | No |
+| `VERSION` | `2.0.0` | Application version string. | No |
+| `DEBUG` | `false` in `.env.example` (`true` in `config.py` default, `true` in compose dev) | Enables debug/development behavior. Example production value: `false`. | No |
+| `API_PREFIX` | `/api/v1` | Base path prefix for backend API routes. | No |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access token lifetime in minutes. | No |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime in days. | No |
+| `JWT_KEY_VERSION` | `1` | JWT key version claim value for mass token invalidation on rotation. | No |
+| `CORS_ORIGINS` | `["http://localhost:5173","https://mxtac.example.com"]` (`.env.example`) | JSON array of allowed frontend origins. Compose dev example uses localhost origins. | No |
+| `RATE_LIMIT_PER_MINUTE` | `300` | Per-client API request rate limit. | No |
+| `QUEUE_BACKEND` | `memory` | Queue backend: `memory`, `redis`, or `kafka`. Compose sets `memory` for dev. | No |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka bootstrap servers when Kafka queue backend is used. Compose dev example: `redpanda:9092`. | No |
+| `KAFKA_CONSUMER_GROUP` | `mxtac` | Kafka consumer group id. | No |
+| `OPENSEARCH_HOST` | `localhost` | OpenSearch hostname. Compose dev example: `opensearch`. | No |
+| `OPENSEARCH_PORT` | `9200` | OpenSearch API port. | No |
+| `OPENSEARCH_USE_SSL` | `false` | Enables HTTPS connection to OpenSearch. | No |
+| `SMTP_HOST` | `localhost` | Default SMTP host for notifications. Example: `smtp.example.com`. | No |
+| `SMTP_PORT` | `587` | Default SMTP port. | No |
+| `SMTP_FROM_ADDRESS` | `mxtac-alerts@localhost` | Default sender address for notification emails. Example: `alerts@mxtac.example.com`. | No |
 
----
+## Feature Flags
 
-## App Docker Swarm (`app/.env.swarm.example`)
-
-Swarm deployment environment variables. Source before deploying with `docker stack deploy`.
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `IMAGE_PREFIX` | Registry prefix for pre-built images | `mxtac` | **Yes** |
-| `VERSION` | Image tag version | `latest` | **Yes** |
-| `DOMAIN` | Public hostname for CORS and SSL certificates | `mxtac.example.com` | **Yes** |
-
----
-
-## App SystemD Deployment (`app/deploy/systemd/mxtac.env.example`)
-
-Production systemd service environment variables. Copy to `/etc/mxtac/mxtac.env`.
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `DEBUG` | Enable debug mode (never set `true` in production) | `false` | No |
-| `SECRET_KEY` | JWT signing secret — generate with `python3 -c "import secrets; print(secrets.token_hex(32))"` | *(none)* | **Yes** |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT access token lifetime in minutes | `60` | No |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | JWT refresh token lifetime in days | `7` | No |
-| `DATABASE_URL` | PostgreSQL async DSN or SQLite for single-node | `postgresql+asyncpg://mxtac:CHANGE_ME@localhost:5432/mxtac` | **Yes** |
-| `VALKEY_URL` | Valkey / Redis connection URL | `redis://localhost:6379/0` | **Yes** |
-| `QUEUE_BACKEND` | Event queue backend: `memory`, `redis`, or `kafka` | `memory` | No |
-| `KAFKA_BOOTSTRAP_SERVERS` | Kafka broker list (when `QUEUE_BACKEND=kafka`) | `localhost:9092` | No |
-| `KAFKA_CONSUMER_GROUP` | Kafka consumer group id | `mxtac` | No |
-| `OPENSEARCH_HOST` | OpenSearch hostname (leave blank to disable) | `localhost` | No |
-| `OPENSEARCH_PORT` | OpenSearch HTTP port | `9200` | No |
-| `OPENSEARCH_USERNAME` | OpenSearch username | *(empty)* | No |
-| `OPENSEARCH_PASSWORD` | OpenSearch password | *(empty)* | No |
-| `OPENSEARCH_USE_SSL` | Enable TLS for OpenSearch connection | `false` | No |
-| `CORS_ORIGINS` | Comma-separated list of allowed CORS origins | `http://localhost:5173,http://localhost:3000` | No |
-| `RATE_LIMIT_PER_MINUTE` | Max API requests per IP per minute | `300` | No |
-
----
-
-## Agent Scheduler — Root (`agent-scheduler/.env.example`)
-
-Consumed by the top-level Docker Compose for the scheduler service.
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `AUTH_PASSWORD` | HTTP Basic Auth password for the scheduler API. Leave empty to disable auth. | *(none)* | **Yes (prod)** |
-
----
-
-## Agent Scheduler — Backend (`agent-scheduler/backend/.env.example`)
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `SCHEDULER_DB_URL` | SQLite async DSN for task persistence | `sqlite+aiosqlite:///./data/scheduler.db` | No |
-| `SCHEDULER_HOST` | Host address the scheduler API binds to | `0.0.0.0` | No |
-| `SCHEDULER_PORT` | Port the scheduler API listens on | `13002` | No |
-| `SCHEDULER_MAX_CONCURRENT` | Maximum number of agent tasks running concurrently | `2` | No |
-| `SCHEDULER_SPAWN_DELAY` | Seconds to wait between spawning consecutive tasks | `30` | No |
-| `SCHEDULER_TASK_TIMEOUT` | Maximum runtime per task in seconds | `1800` | No |
-| `SCHEDULER_RETRY_MAX` | Maximum retry attempts for a failed task | `3` | No |
-| `SCHEDULER_RETRY_BACKOFF` | Seconds to wait before retrying a failed task | `60` | No |
-| `SCHEDULER_AUTO_START` | Automatically start the scheduler on server startup | `false` | No |
-| `CLAUDE_MODEL` | Claude model alias passed to the CLI (`sonnet`, `opus`, `haiku`) | `sonnet` | No |
-| `CLAUDE_CLI_PATH` | Path or command name of the Claude CLI binary | `claude` | No |
-| `MXTAC_PROJECT_ROOT` | Absolute path to the MxTac repository root | *(none)* | **Yes** |
-| `AUTH_PASSWORD` | HTTP Basic Auth password (mirrors root `AUTH_PASSWORD`) | *(none)* | **Yes (prod)** |
-
----
+| Variable | Default | Description | Required |
+|---|---|---|---|
+| `ALERT_FILE_OUTPUT_ENABLED` | `false` | Enable writing alerts to local JSONL files. | No |
+| `ALERT_WEBHOOK_OUTPUT_ENABLED` | `false` | Enable alert delivery via HTTP webhooks. | No |
+| `SYSLOG_ENABLED` | `false` | Enable inbound syslog receiver. | No |
+| `ALERT_SYSLOG_OUTPUT_ENABLED` | `false` | Enable outbound alert syslog forwarding. | No |
+| `ALERT_EMAIL_OUTPUT_ENABLED` | `false` | Enable outbound alert email notifications. | No |
+| `DUCKDB_ENABLED` | `false` | Enable DuckDB analytics support. | No |
+| `SQLITE_MODE` | `false` | Enable SQLite single-node mode. | No |
+| `AUTO_CREATE_INCIDENT_ENABLED` | `true` | Auto-create incidents from correlated alerts. | No |
+| `ASSET_AUTO_DISCOVERY` | `true` | Auto-upsert assets from normalized events. | No |
+| `ALERT_AUTO_CLOSE_ENABLED` | `true` | Auto-close alerts after no recurrence window. | No |
 
 ## Notes
 
-- **Never commit `.env` files.** Each component's `.env.example` is safe to commit; the actual `.env` is in `.gitignore`.
-- `AUTH_PASSWORD` appears in both the root and backend `agent-scheduler` examples. When using Docker Compose, set it once in `agent-scheduler/.env`; when running the backend directly, set it in `agent-scheduler/backend/.env`.
-- `SECRET_KEY` must be unique per deployment. Reusing the same key across environments is a security risk.
-- `QUEUE_BACKEND=memory` is suitable for development only. Use `redis` or `kafka` in production.
-- **Docker Swarm**: Build and push images with the `IMAGE_PREFIX` and `VERSION` before deploying the stack.
-- **SystemD**: The `app/deploy/systemd/mxtac.env.example` should be copied to `/etc/mxtac/mxtac.env` with restricted permissions (`640 root:mxtac`).
+- **Required vs optional**: Most variables have safe defaults for local development. For production, at minimum set a strong `SECRET_KEY` and a valid `DATABASE_URL`.
+- **Compose overrides**: `app/docker-compose.yml` passes dev-friendly values for backend (`DEBUG=true`, local service hostnames, etc.).
+- **Secret handling**: Never commit real credentials in `.env` files; use secret managers or deployment-time environment injection.
