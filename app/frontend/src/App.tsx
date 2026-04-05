@@ -1,9 +1,8 @@
 import { Routes, Route } from 'react-router-dom'
 import { Sidebar } from './components/layout/Sidebar'
-import { OverviewPage } from './components/features/overview/OverviewPage'
 import { CoveragePage } from './components/features/coverage/CoveragePage'
 import { HuntPage } from './components/features/hunt/HuntPage'
-import { NetworkLogsPage } from './components/features/network/NetworkLogsPage'
+import { SourcesPage } from './components/features/sources/SourcesPage'
 import { LoginPage } from './components/features/auth/LoginPage'
 import { ProtectedRoute } from './components/shared/ProtectedRoute'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
@@ -22,10 +21,9 @@ function MainLayout() {
       <main className="ml-[52px] flex-1 min-h-screen">
         <ErrorBoundary>
           <Routes>
-            <Route path="/"        element={<OverviewPage />} />
-            <Route path="/attack"  element={<CoveragePage />} />
+            <Route path="/"        element={<CoveragePage />} />
             <Route path="/hunt"    element={<HuntPage />} />
-            <Route path="/network" element={<NetworkLogsPage />} />
+            <Route path="/sources" element={<SourcesPage />} />
           </Routes>
         </ErrorBoundary>
       </main>

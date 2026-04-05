@@ -79,7 +79,7 @@ export function CoveragePage() {
 
   return (
     <>
-      <TopBar crumb="ATT&CK Coverage" />
+      <TopBar crumb="ATT&CK Matrix" />
       <div className="pt-[46px] p-5 space-y-4">
 
       {/* KPI Cards */}

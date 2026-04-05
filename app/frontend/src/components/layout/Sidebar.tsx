@@ -5,7 +5,6 @@ import { useAuthStore } from '../../stores/authStore'
 // import { useDetectionStore } from '../../stores/detectionStore'
 import { MfaSetupModal } from '../features/auth/MfaSetupModal'
 import {
-  LayoutDashboard,
   Search,
   Wifi,
   Crosshair,
@@ -16,10 +15,9 @@ import {
 } from 'lucide-react'
 
 const NAV: { to: string; Icon: ComponentType<LucideProps>; label: string }[] = [
-  { to: '/',        Icon: LayoutDashboard, label: 'Overview' },
-  { to: '/attack',  Icon: Crosshair,       label: 'ATT&CK Matrix' },
-  { to: '/hunt',    Icon: Search,          label: 'Event Hunt' },
-  { to: '/network', Icon: Wifi,            label: 'Network Logs' },
+  { to: '/',        Icon: Crosshair,       label: 'ATT&CK Matrix' },
+  { to: '/hunt',    Icon: Search,          label: 'Hunt' },
+  { to: '/sources', Icon: Wifi,            label: 'Sources' },
 ]
 
 const THEMES: { value: Theme; Icon: ComponentType<LucideProps>; label: string }[] = [
