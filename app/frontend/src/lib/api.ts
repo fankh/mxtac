@@ -50,8 +50,9 @@ http.interceptors.response.use(
     if (error.response?.status === 401 && !error.config?.url?.includes('/auth/')) {
       localStorage.removeItem('access_token')
       localStorage.removeItem('mxtac-auth')
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login'
+      sessionStorage.clear()
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.replace('/login')
       }
     }
     return Promise.reject(error)

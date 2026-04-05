@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import bcrypt as _bcrypt
@@ -13,7 +13,7 @@ ALGORITHM = "HS256"
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
     to_encode["exp"] = expire
     to_encode.setdefault("jti", str(uuid4()))
     # Include the current key version so tokens can be mass-invalidated by
@@ -33,7 +33,7 @@ def create_mfa_token(user_id: str) -> str:
         "purpose": "mfa",
         "jti": str(uuid4()),
         "kvr": settings.jwt_key_version,
-        "exp": datetime.utcnow() + timedelta(minutes=5),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
     }
     return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
 
@@ -49,7 +49,7 @@ def create_password_change_token(user_id: str) -> str:
         "purpose": "password_change",
         "jti": str(uuid4()),
         "kvr": settings.jwt_key_version,
-        "exp": datetime.utcnow() + timedelta(minutes=15),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
     }
     return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
 
@@ -65,14 +65,14 @@ def create_invite_token(user_id: str) -> str:
         "purpose": "invite",
         "jti": str(uuid4()),
         "kvr": settings.jwt_key_version,
-        "exp": datetime.utcnow() + timedelta(hours=48),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=48),
     }
     return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
 
 
 def create_refresh_token(data: dict) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
+    expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
     to_encode.update({
         "exp": expire,
         "type": "refresh",

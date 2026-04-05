@@ -87,6 +87,8 @@ export const useAuthStore = create<AuthState>()(
           await authApi.logout()
         } finally {
           localStorage.removeItem('access_token')
+          localStorage.removeItem('mxtac-auth')
+          sessionStorage.clear()
           set({ user: null, token: null, isAuthenticated: false, mfaPending: false, mfaToken: null })
         }
       },

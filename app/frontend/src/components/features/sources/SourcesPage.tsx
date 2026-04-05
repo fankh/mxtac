@@ -201,11 +201,11 @@ export function SourcesPage() {
               <div className="space-y-3">
                 <div>
                   <label className="text-[11px] font-medium text-text-muted">Endpoint URL</label>
-                  <input type="text" placeholder="https://..." className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue" />
+                  <input type="url" placeholder="https://..." autoComplete="off" className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue" />
                 </div>
                 <div>
                   <label className="text-[11px] font-medium text-text-muted">API Key</label>
-                  <input type="password" placeholder="sk-..." className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue" />
+                  <input type="password" placeholder="sk-..." autoComplete="off" className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue" />
                 </div>
               </div>
               <div className="flex justify-end gap-2 mt-4">

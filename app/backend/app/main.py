@@ -325,8 +325,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Agent-ID", "X-MxTac-Source", "X-MxTac-Token"],
 )
 
 # Security headers — applied after CORS so headers are present on all responses
