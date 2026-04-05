@@ -8,8 +8,17 @@ export default defineConfig({
     allowedHosts: ['mxtac.seekerslab.com', 'localhost'],
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://backend:8080',
         changeOrigin: true,
+      },
+      '/ingest': {
+        target: 'http://backend:8080',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'http://backend:8080',
+        changeOrigin: true,
+        ws: true,
       },
     },
   },
