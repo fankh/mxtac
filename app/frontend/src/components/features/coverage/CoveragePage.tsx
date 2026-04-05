@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { overviewApi, coverageApi } from '../../../lib/api'
 import type { HeatRow, CoverageTrend } from '../../../types/api'
 import { SeverityPill } from '../../shared/SeverityBadge'
+import { TopBar } from '../../layout/TopBar'
 import {
   ResponsiveContainer,
   AreaChart,
@@ -77,20 +78,9 @@ export function CoveragePage() {
   }, [trend])
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-primary">MITRE ATT&CK Coverage</h1>
-          <p className="text-xs text-muted mt-0.5">Detection rule coverage across ATT&CK Enterprise techniques</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-2xl font-bold text-primary">{stats.pct}%</p>
-            <p className="text-[10px] text-muted">{stats.covered}/{stats.total} techniques</p>
-          </div>
-        </div>
-      </div>
+    <>
+      <TopBar crumb="ATT&CK Coverage" />
+      <div className="pt-[46px] p-5 space-y-4">
 
       {/* KPI Cards */}
       <div className="grid grid-cols-4 gap-4">
@@ -222,5 +212,6 @@ export function CoveragePage() {
         </div>
       </div>
     </div>
+    </>
   )
 }

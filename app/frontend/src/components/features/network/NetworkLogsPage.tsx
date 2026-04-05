@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { eventsApi } from '../../../lib/api'
 import type { SearchResponse } from '../../../types/api'
-import { SeverityPill } from '../../shared/SeverityBadge'
+import { TopBar } from '../../layout/TopBar'
 import {
   ResponsiveContainer,
   BarChart,
@@ -91,13 +91,11 @@ export function NetworkLogsPage() {
   }, [refetch])
 
   return (
-    <div className="p-6 space-y-4">
-      {/* Header */}
+    <>
+    <TopBar crumb="Network Logs" />
+    <div className="pt-[46px] p-5 space-y-4">
+      {/* Time range + Search */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-primary">Network Logs</h1>
-          <p className="text-xs text-muted mt-0.5">Network traffic analysis and flow monitoring</p>
-        </div>
         <div className="flex items-center gap-2">
           {TIME_RANGES.map(tr => (
             <button
@@ -228,6 +226,7 @@ export function NetworkLogsPage() {
         </div>
       </div>
     </div>
+    </>
   )
 }
 
