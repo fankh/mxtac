@@ -1,0 +1,238 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900" font-family="'Segoe UI', Inter, sans-serif">
+  <defs>
+    <filter id="card" x="-4%" y="-4%" width="108%" height="120%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#0000000D"/>
+    </filter>
+  </defs>
+
+  <rect width="1400" height="900" fill="#F4F6F8"/>
+
+  <!-- Sidebar -->
+  <rect x="0" y="0" width="52" height="900" fill="#FFFFFF"/>
+  <rect x="51" y="0" width="1" height="900" fill="#E8ECF0"/>
+  <rect x="10" y="12" width="32" height="32" rx="6" fill="#0066CC"/>
+  <text x="26" y="33" text-anchor="middle" fill="white" font-size="14" font-weight="700">K</text>
+  <text x="26" y="82" text-anchor="middle" font-size="15" fill="#A0AABB">⊞</text>
+  <text x="26" y="128" text-anchor="middle" font-size="15" fill="#A0AABB">⚡</text>
+  <text x="26" y="166" text-anchor="middle" font-size="15" fill="#A0AABB">⬡</text>
+  <text x="26" y="208" text-anchor="middle" font-size="15" fill="#A0AABB">🖥</text>
+  <text x="26" y="250" text-anchor="middle" font-size="15" fill="#A0AABB">⏱</text>
+  <!-- Connectors active -->
+  <rect x="6" y="270" width="40" height="34" rx="6" fill="#EBF3FF"/>
+  <rect x="6" y="270" width="3" height="34" rx="1" fill="#0066CC"/>
+  <text x="26" y="292" text-anchor="middle" font-size="15" fill="#0066CC">🔌</text>
+  <text x="26" y="338" text-anchor="middle" font-size="15" fill="#A0AABB">📋</text>
+  <text x="26" y="858" text-anchor="middle" font-size="15" fill="#A0AABB">⚙</text>
+
+  <!-- Top bar -->
+  <rect x="52" y="0" width="1348" height="46" fill="white"/>
+  <rect x="52" y="45" width="1348" height="1" fill="#E8ECF0"/>
+  <text x="72" y="25" font-size="12" fill="#A0AABB">KYRA MDR</text>
+  <text x="136" y="25" font-size="12" fill="#A0AABB">/</text>
+  <text x="146" y="25" font-size="12" fill="#1C2D40" font-weight="600">Integrations</text>
+  <text x="1150" y="26" font-size="11" fill="#A0AABB">Updated 14:32 UTC</text>
+
+  <!-- Page Header -->
+  <text x="72" y="76" font-size="18" fill="#1C2D40" font-weight="700">Integrations</text>
+  <text x="72" y="94" font-size="12" fill="#A0AABB">Manage data source connections</text>
+  <rect x="1178" y="58" width="154" height="32" rx="6" fill="#0066CC"/>
+  <text x="1255" y="79" text-anchor="middle" font-size="12" fill="white" font-weight="500">+ Add Connector</text>
+
+  <!-- KPI Cards -->
+  <rect x="72" y="110" width="290" height="90" rx="6" fill="white" filter="url(#card)"/>
+  <text x="92" y="131" font-size="10" fill="#A0AABB" font-weight="500" letter-spacing="0.5">TOTAL CONNECTORS</text>
+  <text x="92" y="163" font-size="32" fill="#1C2D40" font-weight="700">8</text>
+  <text x="92" y="187" font-size="11" fill="#A0AABB">3 SIEM · 2 EDR · 2 IAM · 1 VM</text>
+
+  <rect x="378" y="110" width="290" height="90" rx="6" fill="white" filter="url(#card)"/>
+  <text x="398" y="131" font-size="10" fill="#A0AABB" font-weight="500" letter-spacing="0.5">HEALTHY</text>
+  <text x="398" y="163" font-size="32" fill="#2E7D32" font-weight="700">6</text>
+  <circle cx="442" cy="155" r="5" fill="#2E7D32"/>
+  <text x="398" y="187" font-size="11" fill="#2E7D32">All ingesting data normally</text>
+
+  <rect x="684" y="110" width="290" height="90" rx="6" fill="white" filter="url(#card)"/>
+  <text x="704" y="131" font-size="10" fill="#A0AABB" font-weight="500" letter-spacing="0.5">ISSUES</text>
+  <text x="704" y="163" font-size="32" fill="#CC3333" font-weight="700">1</text>
+  <circle cx="740" cy="155" r="5" fill="#CC3333"/>
+  <text x="704" y="187" font-size="11" fill="#CC3333">Splunk: auth token expired</text>
+
+  <rect x="990" y="110" width="290" height="90" rx="6" fill="white" filter="url(#card)"/>
+  <text x="1010" y="131" font-size="10" fill="#A0AABB" font-weight="500" letter-spacing="0.5">DATA INGESTION RATE</text>
+  <text x="1010" y="163" font-size="32" fill="#1C2D40" font-weight="700">31.4k</text>
+  <text x="1120" y="163" font-size="14" fill="#A0AABB">events/min</text>
+  <text x="1010" y="187" font-size="11" fill="#2E7D32">↑ 8% vs yesterday</text>
+
+  <!-- Connector Grid -->
+  <!-- Row 1 -->
+  <!-- Elastic SIEM — Healthy -->
+  <rect x="72" y="218" width="392" height="140" rx="6" fill="white" filter="url(#card)"/>
+  <rect x="92" y="238" width="48" height="48" rx="10" fill="#F4F6F8"/>
+  <text x="116" y="267" text-anchor="middle" font-size="20" fill="#0066CC">E</text>
+  <text x="152" y="250" font-size="13" fill="#1C2D40" font-weight="600">Elastic SIEM</text>
+  <rect x="260" y="238" width="40" height="16" rx="8" fill="#EBF3FF"/>
+  <text x="280" y="250" text-anchor="middle" font-size="9" fill="#0066CC">SIEM</text>
+  <circle cx="320" cy="246" r="4" fill="#2E7D32"/>
+  <text x="330" y="250" font-size="10" fill="#2E7D32">Healthy</text>
+  <text x="152" y="272" font-size="11" fill="#A0AABB">Last event: 2 seconds ago</text>
+  <!-- Metrics -->
+  <text x="92" y="302" font-size="10" fill="#A0AABB">Events/min</text>
+  <text x="92" y="318" font-size="14" fill="#1C2D40" font-weight="600">14,204</text>
+  <text x="200" y="302" font-size="10" fill="#A0AABB">Latency</text>
+  <text x="200" y="318" font-size="14" fill="#1C2D40" font-weight="600">12ms</text>
+  <text x="300" y="302" font-size="10" fill="#A0AABB">Uptime</text>
+  <text x="300" y="318" font-size="14" fill="#2E7D32" font-weight="600">99.99%</text>
+  <!-- Actions -->
+  <rect x="92" y="332" width="50" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="117" y="346" text-anchor="middle" font-size="10" fill="#5A6B82">Test</text>
+  <rect x="150" y="332" width="74" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="187" y="346" text-anchor="middle" font-size="10" fill="#5A6B82">Configure</text>
+
+  <!-- MS Sentinel — Healthy -->
+  <rect x="480" y="218" width="392" height="140" rx="6" fill="white" filter="url(#card)"/>
+  <rect x="500" y="238" width="48" height="48" rx="10" fill="#F4F6F8"/>
+  <text x="524" y="267" text-anchor="middle" font-size="20" fill="#0066CC">S</text>
+  <text x="560" y="250" font-size="13" fill="#1C2D40" font-weight="600">MS Sentinel</text>
+  <rect x="660" y="238" width="40" height="16" rx="8" fill="#EBF3FF"/>
+  <text x="680" y="250" text-anchor="middle" font-size="9" fill="#0066CC">SIEM</text>
+  <circle cx="720" cy="246" r="4" fill="#2E7D32"/>
+  <text x="730" y="250" font-size="10" fill="#2E7D32">Healthy</text>
+  <text x="560" y="272" font-size="11" fill="#A0AABB">Last event: 5 seconds ago</text>
+  <text x="500" y="302" font-size="10" fill="#A0AABB">Events/min</text>
+  <text x="500" y="318" font-size="14" fill="#1C2D40" font-weight="600">8,901</text>
+  <text x="608" y="302" font-size="10" fill="#A0AABB">Latency</text>
+  <text x="608" y="318" font-size="14" fill="#1C2D40" font-weight="600">24ms</text>
+  <text x="708" y="302" font-size="10" fill="#A0AABB">Uptime</text>
+  <text x="708" y="318" font-size="14" fill="#2E7D32" font-weight="600">99.97%</text>
+  <rect x="500" y="332" width="50" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="525" y="346" text-anchor="middle" font-size="10" fill="#5A6B82">Test</text>
+  <rect x="558" y="332" width="74" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="595" y="346" text-anchor="middle" font-size="10" fill="#5A6B82">Configure</text>
+
+  <!-- Splunk — ERROR -->
+  <rect x="888" y="218" width="392" height="140" rx="6" fill="white" filter="url(#card)" stroke="#CC3333" stroke-width="1"/>
+  <rect x="888" y="218" width="4" height="140" rx="2" fill="#CC3333"/>
+  <rect x="908" y="238" width="48" height="48" rx="10" fill="#FDECEA"/>
+  <text x="932" y="267" text-anchor="middle" font-size="20" fill="#CC3333">S</text>
+  <text x="968" y="250" font-size="13" fill="#1C2D40" font-weight="600">Splunk</text>
+  <rect x="1020" y="238" width="40" height="16" rx="8" fill="#EBF3FF"/>
+  <text x="1040" y="250" text-anchor="middle" font-size="9" fill="#0066CC">SIEM</text>
+  <circle cx="1080" cy="246" r="4" fill="#CC3333"/>
+  <text x="1090" y="250" font-size="10" fill="#CC3333" font-weight="500">Error</text>
+  <text x="968" y="272" font-size="11" fill="#CC3333">Auth error — token expired 2h ago</text>
+  <text x="908" y="302" font-size="10" fill="#A0AABB">Events/min</text>
+  <text x="908" y="318" font-size="14" fill="#CC3333" font-weight="600">0</text>
+  <text x="1016" y="302" font-size="10" fill="#A0AABB">Last event</text>
+  <text x="1016" y="318" font-size="14" fill="#CC3333" font-weight="600">2h ago</text>
+  <text x="1116" y="302" font-size="10" fill="#A0AABB">Uptime</text>
+  <text x="1116" y="318" font-size="14" fill="#CC3333" font-weight="600">97.2%</text>
+  <rect x="908" y="332" width="50" height="20" rx="4" fill="#FDECEA" stroke="#CC3333" stroke-width="1"/>
+  <text x="933" y="346" text-anchor="middle" font-size="10" fill="#CC3333">Test</text>
+  <rect x="966" y="332" width="74" height="20" rx="4" fill="#CC3333"/>
+  <text x="1003" y="346" text-anchor="middle" font-size="10" fill="white" font-weight="500">Fix Now</text>
+
+  <!-- Row 2 -->
+  <!-- CrowdStrike — Healthy -->
+  <rect x="72" y="374" width="392" height="140" rx="6" fill="white" filter="url(#card)"/>
+  <rect x="92" y="394" width="48" height="48" rx="10" fill="#F4F6F8"/>
+  <text x="116" y="423" text-anchor="middle" font-size="20" fill="#CC3333">C</text>
+  <text x="152" y="406" font-size="13" fill="#1C2D40" font-weight="600">CrowdStrike Falcon</text>
+  <rect x="296" y="394" width="36" height="16" rx="8" fill="#FDECEA"/>
+  <text x="314" y="406" text-anchor="middle" font-size="9" fill="#CC3333">EDR</text>
+  <circle cx="352" cy="402" r="4" fill="#2E7D32"/>
+  <text x="362" y="406" font-size="10" fill="#2E7D32">Healthy</text>
+  <text x="152" y="428" font-size="11" fill="#A0AABB">Last event: 1 second ago · 2,102 managed hosts</text>
+  <text x="92" y="458" font-size="10" fill="#A0AABB">Events/min</text>
+  <text x="92" y="474" font-size="14" fill="#1C2D40" font-weight="600">4,380</text>
+  <text x="200" y="458" font-size="10" fill="#A0AABB">Hosts</text>
+  <text x="200" y="474" font-size="14" fill="#1C2D40" font-weight="600">2,102</text>
+  <text x="300" y="458" font-size="10" fill="#A0AABB">Uptime</text>
+  <text x="300" y="474" font-size="14" fill="#2E7D32" font-weight="600">100%</text>
+  <rect x="92" y="488" width="50" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="117" y="502" text-anchor="middle" font-size="10" fill="#5A6B82">Test</text>
+  <rect x="150" y="488" width="74" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="187" y="502" text-anchor="middle" font-size="10" fill="#5A6B82">Configure</text>
+
+  <!-- Tenable.io — Healthy -->
+  <rect x="480" y="374" width="392" height="140" rx="6" fill="white" filter="url(#card)"/>
+  <rect x="500" y="394" width="48" height="48" rx="10" fill="#F4F6F8"/>
+  <text x="524" y="423" text-anchor="middle" font-size="20" fill="#0066CC">T</text>
+  <text x="560" y="406" font-size="13" fill="#1C2D40" font-weight="600">Tenable.io</text>
+  <rect x="648" y="394" width="30" height="16" rx="8" fill="#EBF5EB"/>
+  <text x="663" y="406" text-anchor="middle" font-size="9" fill="#2E7D32">VM</text>
+  <circle cx="698" cy="402" r="4" fill="#2E7D32"/>
+  <text x="708" y="406" font-size="10" fill="#2E7D32">Healthy</text>
+  <text x="560" y="428" font-size="11" fill="#A0AABB">Last scan: 3 hours ago · 4,780 assets scanned</text>
+  <text x="500" y="458" font-size="10" fill="#A0AABB">Assets</text>
+  <text x="500" y="474" font-size="14" fill="#1C2D40" font-weight="600">4,780</text>
+  <text x="608" y="458" font-size="10" fill="#A0AABB">Vulns found</text>
+  <text x="608" y="474" font-size="14" fill="#CC6600" font-weight="600">1,247</text>
+  <text x="708" y="458" font-size="10" fill="#A0AABB">Uptime</text>
+  <text x="708" y="474" font-size="14" fill="#2E7D32" font-weight="600">99.95%</text>
+  <rect x="500" y="488" width="50" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="525" y="502" text-anchor="middle" font-size="10" fill="#5A6B82">Test</text>
+  <rect x="558" y="488" width="74" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="595" y="502" text-anchor="middle" font-size="10" fill="#5A6B82">Configure</text>
+
+  <!-- Okta — Healthy -->
+  <rect x="888" y="374" width="392" height="140" rx="6" fill="white" filter="url(#card)"/>
+  <rect x="908" y="394" width="48" height="48" rx="10" fill="#F4F6F8"/>
+  <text x="932" y="423" text-anchor="middle" font-size="20" fill="#0066CC">O</text>
+  <text x="968" y="406" font-size="13" fill="#1C2D40" font-weight="600">Okta</text>
+  <rect x="1006" y="394" width="36" height="16" rx="8" fill="#FEF3E2"/>
+  <text x="1024" y="406" text-anchor="middle" font-size="9" fill="#CC6600">IAM</text>
+  <circle cx="1062" cy="402" r="4" fill="#2E7D32"/>
+  <text x="1072" y="406" font-size="10" fill="#2E7D32">Healthy</text>
+  <text x="968" y="428" font-size="11" fill="#A0AABB">Last event: 8 seconds ago · 12,400 users managed</text>
+  <text x="908" y="458" font-size="10" fill="#A0AABB">Events/min</text>
+  <text x="908" y="474" font-size="14" fill="#1C2D40" font-weight="600">1,840</text>
+  <text x="1016" y="458" font-size="10" fill="#A0AABB">Users</text>
+  <text x="1016" y="474" font-size="14" fill="#1C2D40" font-weight="600">12,400</text>
+  <text x="1116" y="458" font-size="10" fill="#A0AABB">Uptime</text>
+  <text x="1116" y="474" font-size="14" fill="#2E7D32" font-weight="600">99.98%</text>
+  <rect x="908" y="488" width="50" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="933" y="502" text-anchor="middle" font-size="10" fill="#5A6B82">Test</text>
+  <rect x="966" y="488" width="74" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="1003" y="502" text-anchor="middle" font-size="10" fill="#5A6B82">Configure</text>
+
+  <!-- Row 3 -->
+  <!-- Palo Alto — Healthy -->
+  <rect x="72" y="530" width="392" height="140" rx="6" fill="white" filter="url(#card)"/>
+  <rect x="92" y="550" width="48" height="48" rx="10" fill="#F4F6F8"/>
+  <text x="116" y="579" text-anchor="middle" font-size="20" fill="#CC6600">P</text>
+  <text x="152" y="562" font-size="13" fill="#1C2D40" font-weight="600">Palo Alto NGFW</text>
+  <rect x="276" y="550" width="54" height="16" rx="8" fill="#FEF3E2"/>
+  <text x="303" y="562" text-anchor="middle" font-size="9" fill="#CC6600">Firewall</text>
+  <circle cx="352" cy="558" r="4" fill="#2E7D32"/>
+  <text x="362" y="562" font-size="10" fill="#2E7D32">Healthy</text>
+  <text x="152" y="584" font-size="11" fill="#A0AABB">Last event: 1 second ago · 6 devices</text>
+  <text x="92" y="614" font-size="10" fill="#A0AABB">Events/min</text>
+  <text x="92" y="630" font-size="14" fill="#1C2D40" font-weight="600">2,090</text>
+  <text x="200" y="614" font-size="10" fill="#A0AABB">Devices</text>
+  <text x="200" y="630" font-size="14" fill="#1C2D40" font-weight="600">6</text>
+  <text x="300" y="614" font-size="10" fill="#A0AABB">Uptime</text>
+  <text x="300" y="630" font-size="14" fill="#2E7D32" font-weight="600">100%</text>
+  <rect x="92" y="644" width="50" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="117" y="658" text-anchor="middle" font-size="10" fill="#5A6B82">Test</text>
+  <rect x="150" y="644" width="74" height="20" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="187" y="658" text-anchor="middle" font-size="10" fill="#5A6B82">Configure</text>
+
+  <!-- Wiz CSPM — Not configured -->
+  <rect x="480" y="530" width="392" height="140" rx="6" fill="white" filter="url(#card)" stroke="#DDE3EB" stroke-width="1" stroke-dasharray="4,4" opacity="0.7"/>
+  <rect x="500" y="550" width="48" height="48" rx="10" fill="#F4F6F8"/>
+  <text x="524" y="579" text-anchor="middle" font-size="20" fill="#C8D0DC">W</text>
+  <text x="560" y="562" font-size="13" fill="#A0AABB" font-weight="600">Wiz CSPM</text>
+  <rect x="640" y="550" width="52" height="16" rx="8" fill="#F4F6F8"/>
+  <text x="666" y="562" text-anchor="middle" font-size="9" fill="#A0AABB">Cloud</text>
+  <circle cx="712" cy="558" r="4" fill="#C8D0DC"/>
+  <text x="722" y="562" font-size="10" fill="#C8D0DC">Not configured</text>
+  <text x="560" y="584" font-size="11" fill="#C8D0DC">Connect Wiz to monitor cloud security posture</text>
+  <rect x="500" y="620" width="100" height="28" rx="4" fill="#0066CC"/>
+  <text x="550" y="638" text-anchor="middle" font-size="11" fill="white" font-weight="500">Set Up →</text>
+
+  <!-- Footer -->
+  <rect x="0" y="882" width="1400" height="18" fill="#F0F2F5"/>
+  <rect x="0" y="882" width="1400" height="1" fill="#E0E4EA"/>
+  <text x="72" y="895" font-size="9" fill="#A0AABB">KYRA MDR v1.0  ·  7/8 connectors healthy  ·  31.4k events/min</text>
+  <circle cx="1346" cy="891" r="3" fill="#CC6600"/>
+  <text x="1354" y="895" font-size="9" fill="#CC6600">1 Issue</text>
+</svg>

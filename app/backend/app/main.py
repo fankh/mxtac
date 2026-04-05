@@ -698,12 +698,40 @@ async def on_startup() -> None:
             settings.syslog_port,
         )
 
+    # Start scheduled detection engine (per-target aggregation + dedup)
+    try:
+        from .services.detection_engine import DetectionEngine
+        os_client = getattr(app.state, "os_client", None)
+        detection_repo = getattr(app.state, "detection_repo", None)
+        rule_repo = getattr(app.state, "rule_repo", None)
+        if os_client:
+            detection_engine = DetectionEngine(
+                os_client=os_client,
+                detection_repo=detection_repo,
+                rule_repo=rule_repo,
+            )
+            await detection_engine.start()
+            app.state.detection_engine = detection_engine
+            logger.info("Detection engine started (per-target aggregation)")
+        else:
+            logger.info("Detection engine skipped (OpenSearch not available)")
+    except Exception:
+        logger.exception("Detection engine start failed")
+
     logger.info("MxTac API startup complete")
 
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
     logger.info("MxTac API shutting down")
+
+    # Stop detection engine
+    detection_engine = getattr(app.state, "detection_engine", None)
+    if detection_engine:
+        try:
+            await detection_engine.stop()
+        except Exception:
+            pass
 
     # Stop connectors (cancels each connector's poll loop)
     for conn in getattr(app.state, "connectors", {}).values():

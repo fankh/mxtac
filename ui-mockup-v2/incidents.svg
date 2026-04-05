@@ -1,0 +1,246 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900" font-family="'Segoe UI', Inter, sans-serif">
+  <defs>
+    <filter id="card" x="-4%" y="-4%" width="108%" height="120%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#0000000D"/>
+    </filter>
+  </defs>
+
+  <!-- Page background -->
+  <rect width="1400" height="900" fill="#F4F6F8"/>
+
+  <!-- ── Sidebar ── -->
+  <rect x="0" y="0" width="52" height="900" fill="#FFFFFF"/>
+  <rect x="51" y="0" width="1" height="900" fill="#E8ECF0"/>
+  <rect x="10" y="12" width="32" height="32" rx="6" fill="#0066CC"/>
+  <text x="26" y="33" text-anchor="middle" fill="white" font-size="14" font-weight="700">K</text>
+  <text x="26" y="82" text-anchor="middle" font-size="15" fill="#A0AABB">⊞</text>
+  <text x="26" y="128" text-anchor="middle" font-size="15" fill="#A0AABB">⚡</text>
+  <!-- Incidents active -->
+  <rect x="6" y="144" width="40" height="34" rx="6" fill="#EBF3FF"/>
+  <rect x="6" y="144" width="3" height="34" rx="1" fill="#0066CC"/>
+  <text x="26" y="166" text-anchor="middle" font-size="15" fill="#0066CC">⬡</text>
+  <text x="26" y="212" text-anchor="middle" font-size="15" fill="#A0AABB">🖥</text>
+  <text x="26" y="254" text-anchor="middle" font-size="15" fill="#A0AABB">⏱</text>
+  <text x="26" y="296" text-anchor="middle" font-size="15" fill="#A0AABB">🔌</text>
+  <text x="26" y="338" text-anchor="middle" font-size="15" fill="#A0AABB">📋</text>
+  <text x="26" y="858" text-anchor="middle" font-size="15" fill="#A0AABB">⚙</text>
+
+  <!-- ── Top bar ── -->
+  <rect x="52" y="0" width="1348" height="46" fill="white"/>
+  <rect x="52" y="45" width="1348" height="1" fill="#E8ECF0"/>
+  <text x="72" y="25" font-size="12" fill="#A0AABB">KYRA MDR</text>
+  <text x="136" y="25" font-size="12" fill="#A0AABB">/</text>
+  <text x="146" y="25" font-size="12" fill="#1C2D40" font-weight="600">Incidents</text>
+  <text x="1150" y="26" font-size="11" fill="#A0AABB">Updated 14:32 UTC</text>
+
+  <!-- ── Page Header ── -->
+  <text x="72" y="76" font-size="18" fill="#1C2D40" font-weight="700">Incidents</text>
+  <text x="72" y="94" font-size="12" fill="#A0AABB">Manage and track security incidents</text>
+  <!-- Create button -->
+  <rect x="1218" y="58" width="114" height="32" rx="6" fill="#0066CC"/>
+  <text x="1275" y="79" text-anchor="middle" font-size="12" fill="white" font-weight="500">+ New Incident</text>
+
+  <!-- ── KPI Cards Row ── -->
+  <!-- Card 1: Open Incidents -->
+  <rect x="72" y="110" width="280" height="90" rx="6" fill="white" filter="url(#card)"/>
+  <text x="92" y="131" font-size="10" fill="#A0AABB" font-weight="500" letter-spacing="0.5">OPEN INCIDENTS</text>
+  <text x="92" y="163" font-size="32" fill="#CC3333" font-weight="700">23</text>
+  <text x="92" y="187" font-size="11" fill="#CC3333">↑ 4 new today</text>
+  <rect x="312" y="130" width="28" height="28" rx="6" fill="#FDECEA"/>
+  <text x="326" y="149" text-anchor="middle" font-size="14" fill="#CC3333">⬡</text>
+
+  <!-- Card 2: Mean Time to Resolve -->
+  <rect x="366" y="110" width="280" height="90" rx="6" fill="white" filter="url(#card)"/>
+  <text x="386" y="131" font-size="10" fill="#A0AABB" font-weight="500" letter-spacing="0.5">MEAN TIME TO RESOLVE</text>
+  <text x="386" y="163" font-size="32" fill="#1C2D40" font-weight="700">2h 34m</text>
+  <text x="386" y="187" font-size="11" fill="#2E7D32">↓ 18min improved vs last week</text>
+  <rect x="606" y="130" width="28" height="28" rx="6" fill="#EBF5EB"/>
+  <text x="620" y="149" text-anchor="middle" font-size="14" fill="#2E7D32">⏱</text>
+
+  <!-- Card 3: SLA Compliance -->
+  <rect x="660" y="110" width="280" height="90" rx="6" fill="white" filter="url(#card)"/>
+  <text x="680" y="131" font-size="10" fill="#A0AABB" font-weight="500" letter-spacing="0.5">SLA COMPLIANCE</text>
+  <text x="680" y="163" font-size="32" fill="#2E7D32" font-weight="700">94.2%</text>
+  <text x="680" y="187" font-size="11" fill="#A0AABB">Target: 95% · 3 breached this week</text>
+  <!-- Progress bar -->
+  <rect x="880" y="148" width="48" height="36" rx="4" fill="none"/>
+  <circle cx="904" cy="160" r="18" fill="none" stroke="#E8ECF0" stroke-width="4"/>
+  <circle cx="904" cy="160" r="18" fill="none" stroke="#2E7D32" stroke-width="4"
+    stroke-dasharray="107 113" stroke-dashoffset="28" stroke-linecap="round" transform="rotate(-90 904 160)"/>
+  <text x="904" y="165" text-anchor="middle" font-size="9" fill="#1C2D40" font-weight="700">94%</text>
+
+  <!-- Card 4: Closed This Week -->
+  <rect x="954" y="110" width="280" height="90" rx="6" fill="white" filter="url(#card)"/>
+  <text x="974" y="131" font-size="10" fill="#A0AABB" font-weight="500" letter-spacing="0.5">CLOSED THIS WEEK</text>
+  <text x="974" y="163" font-size="32" fill="#1C2D40" font-weight="700">47</text>
+  <text x="974" y="187" font-size="11" fill="#2E7D32">↑ 12% vs prev week</text>
+  <rect x="1194" y="130" width="28" height="28" rx="6" fill="#EBF3FF"/>
+  <text x="1208" y="149" text-anchor="middle" font-size="14" fill="#0066CC">✓</text>
+
+  <!-- ── View Toggle + Filters ── -->
+  <rect x="72" y="218" width="1260" height="36" rx="6" fill="white" filter="url(#card)"/>
+  <!-- View toggles -->
+  <rect x="82" y="225" width="56" height="22" rx="4" fill="#0066CC"/>
+  <text x="110" y="240" text-anchor="middle" font-size="11" fill="white" font-weight="500">Table</text>
+  <rect x="142" y="225" width="60" height="22" rx="4" fill="#F4F6F8"/>
+  <text x="172" y="240" text-anchor="middle" font-size="11" fill="#5A6B82">Kanban</text>
+  <!-- Filters -->
+  <rect x="228" y="225" width="80" height="22" rx="11" fill="#FDECEA"/>
+  <text x="268" y="239" text-anchor="middle" font-size="10" fill="#CC3333">Critical (8) ×</text>
+  <rect x="316" y="225" width="64" height="22" rx="11" fill="#FEF3E2"/>
+  <text x="348" y="239" text-anchor="middle" font-size="10" fill="#CC6600">High (15) ×</text>
+  <text x="400" y="239" font-size="10" fill="#0066CC">+ Add Filter</text>
+  <!-- Sort -->
+  <rect x="1194" y="225" width="126" height="22" rx="4" fill="#F4F6F8" stroke="#DDE3EB" stroke-width="1"/>
+  <text x="1257" y="239" text-anchor="middle" font-size="10" fill="#5A6B82">Sort: Priority ▾</text>
+
+  <!-- ── Incidents Table ── -->
+  <rect x="72" y="268" width="1260" height="580" rx="6" fill="white" filter="url(#card)"/>
+  <!-- Table header -->
+  <rect x="72" y="268" width="1260" height="30" rx="6" fill="#F9FAFB"/>
+  <text x="92" y="287" font-size="10" fill="#A0AABB" font-weight="500">ID</text>
+  <text x="172" y="287" font-size="10" fill="#A0AABB" font-weight="500">SEVERITY</text>
+  <text x="262" y="287" font-size="10" fill="#A0AABB" font-weight="500">TITLE</text>
+  <text x="620" y="287" font-size="10" fill="#A0AABB" font-weight="500">STATUS</text>
+  <text x="740" y="287" font-size="10" fill="#A0AABB" font-weight="500">ASSIGNED TO</text>
+  <text x="880" y="287" font-size="10" fill="#A0AABB" font-weight="500">ALERTS</text>
+  <text x="940" y="287" font-size="10" fill="#A0AABB" font-weight="500">SLA</text>
+  <text x="1060" y="287" font-size="10" fill="#A0AABB" font-weight="500">CREATED</text>
+  <text x="1200" y="287" font-size="10" fill="#A0AABB" font-weight="500">ACTIONS</text>
+  <line x1="72" y1="298" x2="1332" y2="298" stroke="#E8ECF0" stroke-width="1"/>
+
+  <!-- Row 1 — Critical, Active -->
+  <rect x="72" y="298" width="4" height="40" fill="#CC3333"/>
+  <text x="92" y="322" font-size="11" fill="#0066CC" font-weight="500">INC-2847</text>
+  <rect x="172" y="310" width="56" height="18" rx="9" fill="#CC3333"/>
+  <text x="200" y="323" text-anchor="middle" font-size="9" fill="white" font-weight="600">Critical</text>
+  <text x="262" y="318" font-size="11" fill="#1C2D40" font-weight="500">Suspected lateral movement from DC-PROD-01</text>
+  <text x="262" y="332" font-size="10" fill="#A0AABB">12 related alerts · T1550.003, T1003.006</text>
+  <rect x="620" y="310" width="66" height="18" rx="9" fill="#FDECEA"/>
+  <text x="653" y="323" text-anchor="middle" font-size="9" fill="#CC3333" font-weight="500">Active</text>
+  <circle cx="750" cy="320" r="10" fill="#E8ECF0"/>
+  <text x="750" y="324" text-anchor="middle" font-size="8" fill="#5A6B82" font-weight="600">JS</text>
+  <text x="766" y="322" font-size="11" fill="#1C2D40">J. Smith</text>
+  <text x="888" y="322" font-size="11" fill="#1C2D40" font-weight="600">12</text>
+  <!-- SLA timer red -->
+  <rect x="940" y="310" width="90" height="18" rx="4" fill="#FDECEA"/>
+  <text x="985" y="322" text-anchor="middle" font-size="9" fill="#CC3333" font-weight="500">⏱ 0h 26m left</text>
+  <text x="1060" y="322" font-size="11" fill="#A0AABB">14:02 today</text>
+  <text x="1210" y="322" font-size="11" fill="#0066CC">View →</text>
+  <line x1="76" y1="338" x2="1332" y2="338" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 2 — Critical, Investigating -->
+  <rect x="72" y="338" width="4" height="40" fill="#CC3333"/>
+  <text x="92" y="362" font-size="11" fill="#0066CC" font-weight="500">INC-2845</text>
+  <rect x="172" y="350" width="56" height="18" rx="9" fill="#CC3333"/>
+  <text x="200" y="363" text-anchor="middle" font-size="9" fill="white" font-weight="600">Critical</text>
+  <text x="262" y="358" font-size="11" fill="#1C2D40" font-weight="500">Credential dumping detected on FS-CORP-05</text>
+  <text x="262" y="372" font-size="10" fill="#A0AABB">8 related alerts · T1003.001</text>
+  <rect x="620" y="350" width="88" height="18" rx="9" fill="#FEF3E2"/>
+  <text x="664" y="363" text-anchor="middle" font-size="9" fill="#CC6600" font-weight="500">Investigating</text>
+  <circle cx="750" cy="360" r="10" fill="#E8ECF0"/>
+  <text x="750" y="364" text-anchor="middle" font-size="8" fill="#5A6B82" font-weight="600">MK</text>
+  <text x="766" y="362" font-size="11" fill="#1C2D40">M. Kim</text>
+  <text x="888" y="362" font-size="11" fill="#1C2D40" font-weight="600">8</text>
+  <rect x="940" y="350" width="90" height="18" rx="4" fill="#FEF3E2"/>
+  <text x="985" y="362" text-anchor="middle" font-size="9" fill="#CC6600" font-weight="500">⏱ 1h 42m left</text>
+  <text x="1060" y="362" font-size="11" fill="#A0AABB">12:18 today</text>
+  <text x="1210" y="362" font-size="11" fill="#0066CC">View →</text>
+  <line x1="76" y1="378" x2="1332" y2="378" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 3 — High, Active -->
+  <rect x="72" y="378" width="4" height="40" fill="#E67700"/>
+  <text x="92" y="402" font-size="11" fill="#0066CC" font-weight="500">INC-2843</text>
+  <rect x="172" y="390" width="40" height="18" rx="9" fill="#E67700"/>
+  <text x="192" y="403" text-anchor="middle" font-size="9" fill="white" font-weight="600">High</text>
+  <text x="262" y="398" font-size="11" fill="#1C2D40" font-weight="500">Kerberoasting activity on SRV-AUTH-07</text>
+  <text x="262" y="412" font-size="10" fill="#A0AABB">5 related alerts · T1558.003</text>
+  <rect x="620" y="390" width="66" height="18" rx="9" fill="#FDECEA"/>
+  <text x="653" y="403" text-anchor="middle" font-size="9" fill="#CC3333" font-weight="500">Active</text>
+  <circle cx="750" cy="400" r="10" fill="#E8ECF0"/>
+  <text x="750" y="404" text-anchor="middle" font-size="8" fill="#5A6B82" font-weight="600">AL</text>
+  <text x="766" y="402" font-size="11" fill="#1C2D40">A. Lee</text>
+  <text x="888" y="402" font-size="11" fill="#1C2D40" font-weight="600">5</text>
+  <rect x="940" y="390" width="90" height="18" rx="4" fill="#EBF5EB"/>
+  <text x="985" y="402" text-anchor="middle" font-size="9" fill="#2E7D32" font-weight="500">⏱ 3h 12m left</text>
+  <text x="1060" y="402" font-size="11" fill="#A0AABB">10:45 today</text>
+  <text x="1210" y="402" font-size="11" fill="#0066CC">View →</text>
+  <line x1="76" y1="418" x2="1332" y2="418" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 4 — High, Contained -->
+  <rect x="72" y="418" width="4" height="40" fill="#E67700"/>
+  <text x="92" y="442" font-size="11" fill="#0066CC" font-weight="500">INC-2840</text>
+  <rect x="172" y="430" width="40" height="18" rx="9" fill="#E67700"/>
+  <text x="192" y="443" text-anchor="middle" font-size="9" fill="white" font-weight="600">High</text>
+  <text x="262" y="438" font-size="11" fill="#1C2D40" font-weight="500">Suspicious PowerShell execution on WS-DEV-031</text>
+  <text x="262" y="452" font-size="10" fill="#A0AABB">3 related alerts · T1059.001</text>
+  <rect x="620" y="430" width="72" height="18" rx="9" fill="#EBF3FF"/>
+  <text x="656" y="443" text-anchor="middle" font-size="9" fill="#0066CC" font-weight="500">Contained</text>
+  <circle cx="750" cy="440" r="10" fill="#E8ECF0"/>
+  <text x="750" y="444" text-anchor="middle" font-size="8" fill="#5A6B82" font-weight="600">JS</text>
+  <text x="766" y="442" font-size="11" fill="#1C2D40">J. Smith</text>
+  <text x="888" y="442" font-size="11" fill="#1C2D40" font-weight="600">3</text>
+  <rect x="940" y="430" width="90" height="18" rx="4" fill="#EBF5EB"/>
+  <text x="985" y="442" text-anchor="middle" font-size="9" fill="#2E7D32" font-weight="500">✓ Within SLA</text>
+  <text x="1060" y="442" font-size="11" fill="#A0AABB">Yesterday</text>
+  <text x="1210" y="442" font-size="11" fill="#0066CC">View →</text>
+  <line x1="76" y1="458" x2="1332" y2="458" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 5 — Medium, Resolved -->
+  <rect x="72" y="458" width="4" height="40" fill="#E6B800"/>
+  <text x="92" y="482" font-size="11" fill="#0066CC" font-weight="500">INC-2838</text>
+  <rect x="172" y="470" width="56" height="18" rx="9" fill="#E6B800"/>
+  <text x="200" y="483" text-anchor="middle" font-size="9" fill="white" font-weight="600">Medium</text>
+  <text x="262" y="478" font-size="11" fill="#1C2D40" font-weight="500">Azure AD credential added to service principal</text>
+  <text x="262" y="492" font-size="10" fill="#A0AABB">2 related alerts · T1098.001</text>
+  <rect x="620" y="470" width="66" height="18" rx="9" fill="#EBF5EB"/>
+  <text x="653" y="483" text-anchor="middle" font-size="9" fill="#2E7D32" font-weight="500">Resolved</text>
+  <circle cx="750" cy="480" r="10" fill="#E8ECF0"/>
+  <text x="750" y="484" text-anchor="middle" font-size="8" fill="#5A6B82" font-weight="600">MK</text>
+  <text x="766" y="482" font-size="11" fill="#1C2D40">M. Kim</text>
+  <text x="888" y="482" font-size="11" fill="#1C2D40" font-weight="600">2</text>
+  <rect x="940" y="470" width="90" height="18" rx="4" fill="#EBF5EB"/>
+  <text x="985" y="482" text-anchor="middle" font-size="9" fill="#2E7D32" font-weight="500">✓ Within SLA</text>
+  <text x="1060" y="482" font-size="11" fill="#A0AABB">2 days ago</text>
+  <text x="1210" y="482" font-size="11" fill="#0066CC">View →</text>
+  <line x1="76" y1="498" x2="1332" y2="498" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Row 6 — Medium, Closed -->
+  <rect x="72" y="498" width="4" height="40" fill="#E6B800"/>
+  <text x="92" y="522" font-size="11" fill="#0066CC" font-weight="500">INC-2835</text>
+  <rect x="172" y="510" width="56" height="18" rx="9" fill="#E6B800"/>
+  <text x="200" y="523" text-anchor="middle" font-size="9" fill="white" font-weight="600">Medium</text>
+  <text x="262" y="518" font-size="11" fill="#1C2D40" font-weight="500">RDP brute force attempts on WS-FIN-022</text>
+  <text x="262" y="532" font-size="10" fill="#A0AABB">4 related alerts · T1110.001</text>
+  <rect x="620" y="510" width="52" height="18" rx="9" fill="#F4F6F8"/>
+  <text x="646" y="523" text-anchor="middle" font-size="9" fill="#5A6B82" font-weight="500">Closed</text>
+  <circle cx="750" cy="520" r="10" fill="#E8ECF0"/>
+  <text x="750" y="524" text-anchor="middle" font-size="8" fill="#5A6B82" font-weight="600">AL</text>
+  <text x="766" y="522" font-size="11" fill="#1C2D40">A. Lee</text>
+  <text x="888" y="522" font-size="11" fill="#1C2D40" font-weight="600">4</text>
+  <rect x="940" y="510" width="90" height="18" rx="4" fill="#EBF5EB"/>
+  <text x="985" y="522" text-anchor="middle" font-size="9" fill="#2E7D32" font-weight="500">✓ Within SLA</text>
+  <text x="1060" y="522" font-size="11" fill="#A0AABB">3 days ago</text>
+  <text x="1210" y="522" font-size="11" fill="#0066CC">View →</text>
+  <line x1="76" y1="538" x2="1332" y2="538" stroke="#F4F6F8" stroke-width="1"/>
+
+  <!-- Pagination -->
+  <text x="92" y="826" font-size="11" fill="#A0AABB">Showing 1-10 of 23 incidents</text>
+  <rect x="1138" y="812" width="24" height="22" rx="4" fill="#F4F6F8"/>
+  <text x="1150" y="827" text-anchor="middle" font-size="10" fill="#A0AABB">‹</text>
+  <rect x="1168" y="812" width="24" height="22" rx="4" fill="#0066CC"/>
+  <text x="1180" y="827" text-anchor="middle" font-size="10" fill="white">1</text>
+  <rect x="1198" y="812" width="24" height="22" rx="4" fill="#F4F6F8"/>
+  <text x="1210" y="827" text-anchor="middle" font-size="10" fill="#5A6B82">2</text>
+  <rect x="1228" y="812" width="24" height="22" rx="4" fill="#F4F6F8"/>
+  <text x="1240" y="827" text-anchor="middle" font-size="10" fill="#5A6B82">3</text>
+  <rect x="1258" y="812" width="24" height="22" rx="4" fill="#F4F6F8"/>
+  <text x="1270" y="827" text-anchor="middle" font-size="10" fill="#A0AABB">›</text>
+
+  <!-- Footer -->
+  <rect x="0" y="882" width="1400" height="18" fill="#F0F2F5"/>
+  <rect x="0" y="882" width="1400" height="1" fill="#E0E4EA"/>
+  <text x="72" y="895" font-size="9" fill="#A0AABB">KYRA MDR v1.0  ·  23 open incidents  ·  SLA: 94.2%</text>
+  <circle cx="1346" cy="891" r="3" fill="#2E7D32"/>
+  <text x="1354" y="895" font-size="9" fill="#2E7D32">Operational</text>
+</svg>

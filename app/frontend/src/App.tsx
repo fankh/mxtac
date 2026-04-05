@@ -11,6 +11,7 @@ import { AssetsPage } from './components/features/assets/AssetsPage'
 import { IncidentsPage } from './components/features/incidents/IncidentsPage'
 import { ThreatIntelPage } from './components/features/intel/ThreatIntelPage'
 import { ReportsPage } from './components/features/reports/ReportsPage'
+import { NetworkLogsPage } from './components/features/network/NetworkLogsPage'
 import { LoginPage } from './components/features/auth/LoginPage'
 import { ProtectedRoute } from './components/shared/ProtectedRoute'
 import { ErrorBoundary } from './components/shared/ErrorBoundary'
@@ -41,6 +42,7 @@ function MainLayout() {
             <Route path="/intel"        element={<ThreatIntelPage />} />
             <Route path="/assets"       element={<AssetsPage />} />
             <Route path="/reports"      element={<ReportsPage />} />
+            <Route path="/network"     element={<NetworkLogsPage />} />
           </Routes>
         </ErrorBoundary>
       </main>

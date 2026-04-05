@@ -9,6 +9,7 @@ const NAV = [
   { to: '/',              icon: '\u229E',       label: 'Overview' },
   { to: '/detections',   icon: '\u26A1',       label: 'Detections' },
   { to: '/hunt',         icon: '\uD83D\uDD0D', label: 'Event Hunt' },
+  { to: '/network',     icon: '\uD83D\uDCE1', label: 'Network Logs' },
   { to: '/attack',       icon: '\u2B21',       label: 'ATT&CK Coverage' },
   { to: '/rules',        icon: '\u03C3',       label: 'Sigma Rules' },
   { to: '/incidents',    icon: '\uD83D\uDD14', label: 'Incidents' },
