@@ -43,6 +43,20 @@ http.interceptors.request.use((config) => {
   return config
 })
 
+// Redirect to login on 401 (expired/missing token)
+http.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/')) {
+      localStorage.removeItem('access_token')
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
+
 // ── Raw axios instance (for pages that need direct access) ────────────────────
 export const apiClient = http
 

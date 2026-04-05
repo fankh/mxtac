@@ -9,13 +9,15 @@ import { IntegrationStatusRow } from './IntegrationStatusRow'
 import { RecentDetectionsTable } from './RecentDetectionsTable'
 
 export function OverviewPage() {
-  const kpis        = useQuery({ queryKey: ['kpis'],         queryFn: overviewApi.kpis })
-  const timeline    = useQuery({ queryKey: ['timeline'],     queryFn: overviewApi.timeline })
-  const tactics     = useQuery({ queryKey: ['tactics'],      queryFn: overviewApi.tactics })
-  const heatmap     = useQuery({ queryKey: ['heatmap'],      queryFn: overviewApi.heatmap })
-  const tacticLbls  = useQuery({ queryKey: ['tacticLabels'], queryFn: overviewApi.tacticLabels })
-  const integrations = useQuery({ queryKey: ['integrations'], queryFn: overviewApi.integrations })
-  const recent      = useQuery({ queryKey: ['recent'],       queryFn: overviewApi.recentDetections })
+  const hasToken = !!localStorage.getItem('access_token')
+  const queryOpts = { enabled: hasToken, retry: 2, staleTime: 30_000 }
+  const kpis        = useQuery({ queryKey: ['kpis'],         queryFn: overviewApi.kpis, ...queryOpts })
+  const timeline    = useQuery({ queryKey: ['timeline'],     queryFn: overviewApi.timeline, ...queryOpts })
+  const tactics     = useQuery({ queryKey: ['tactics'],      queryFn: overviewApi.tactics, ...queryOpts })
+  const heatmap     = useQuery({ queryKey: ['heatmap'],      queryFn: overviewApi.heatmap, ...queryOpts })
+  const tacticLbls  = useQuery({ queryKey: ['tacticLabels'], queryFn: overviewApi.tacticLabels, ...queryOpts })
+  const integrations = useQuery({ queryKey: ['integrations'], queryFn: overviewApi.integrations, ...queryOpts })
+  const recent      = useQuery({ queryKey: ['recent'],       queryFn: overviewApi.recentDetections, ...queryOpts })
 
   // Only require KPIs to render — other sections degrade gracefully
   const loading = kpis.isLoading
