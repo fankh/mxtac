@@ -698,6 +698,14 @@ async def on_startup() -> None:
             settings.syslog_port,
         )
 
+    # Wire NDR detection consumer — subscribes to mxtac.normalized for network events
+    try:
+        from .services.ndr_consumer import ndr_consumer
+        await ndr_consumer(queue)
+        logger.info("NDR detection consumer started")
+    except Exception:
+        logger.exception("NDR detection consumer start failed")
+
     # Start scheduled detection engine (per-target aggregation + dedup)
     try:
         from .services.detection_engine import DetectionEngine

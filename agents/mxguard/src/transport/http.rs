@@ -132,6 +132,53 @@ impl HttpTransport {
     /// - `Ok(())` on any 2xx response.
     /// - `Err(TransportError::RateLimited)` on HTTP 429.
     /// - `Err(TransportError::Other(...))` on any other failure.
+    /// Register this agent with the MxTac backend.
+    pub async fn register(&self, hostname: &str, version: &str) -> anyhow::Result<String> {
+        let base = self.config.endpoint.trim_end_matches("/api/v1/events/ingest");
+        let url = format!("{base}/api/v1/agents/register");
+        let body = serde_json::json!({
+            "hostname": hostname,
+            "agent_type": "mxguard",
+            "version": version,
+        });
+
+        let mut req = self.client.post(&url)
+            .header(header::CONTENT_TYPE, "application/json")
+            .json(&body);
+        if !self.config.api_key.is_empty() {
+            req = req.header("X-API-Key", &self.config.api_key);
+        }
+
+        let resp = req.send().await.map_err(|e| anyhow::anyhow!("{e}"))?;
+        if resp.status().is_success() {
+            let data: serde_json::Value = resp.json().await.map_err(|e| anyhow::anyhow!("{e}"))?;
+            let id = data["id"].as_str().unwrap_or("unknown").to_string();
+            info!("Registered with backend as agent_id={id}");
+            Ok(id)
+        } else {
+            let status = resp.status();
+            warn!("Agent registration failed: {status}");
+            anyhow::bail!("Registration failed: {status}")
+        }
+    }
+
+    /// Send periodic heartbeat.
+    pub async fn heartbeat(&self, agent_id: &str) -> anyhow::Result<()> {
+        let base = self.config.endpoint.trim_end_matches("/api/v1/events/ingest");
+        let url = format!("{base}/api/v1/agents/{agent_id}/heartbeat");
+
+        let mut req = self.client.post(&url);
+        if !self.config.api_key.is_empty() {
+            req = req.header("X-API-Key", &self.config.api_key);
+        }
+
+        let resp = req.send().await.map_err(|e| anyhow::anyhow!("{e}"))?;
+        if !resp.status().is_success() {
+            warn!("Heartbeat failed: {}", resp.status());
+        }
+        Ok(())
+    }
+
     async fn try_send(&self, payload: &[u8]) -> Result<(), TransportError> {
         let mut req = self
             .client

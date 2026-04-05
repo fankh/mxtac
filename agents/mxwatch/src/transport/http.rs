@@ -58,6 +58,57 @@ impl HttpTransport {
         }
     }
 
+    /// Register this agent with the MxTac backend.
+    /// Returns the assigned agent UUID on success.
+    pub async fn register(&self, hostname: &str, version: &str) -> anyhow::Result<String> {
+        let base = self.config.endpoint.trim_end_matches("/api/v1/events/ingest");
+        let url = format!("{base}/api/v1/agents/register");
+        let body = serde_json::json!({
+            "hostname": hostname,
+            "agent_type": "mxwatch",
+            "version": version,
+        });
+
+        let mut req = self.client.post(&url)
+            .header(header::CONTENT_TYPE, "application/json")
+            .json(&body);
+        if !self.config.api_key.is_empty() {
+            req = req.header("X-API-Key", &self.config.api_key);
+        }
+
+        let resp = req.send().await?;
+        if resp.status().is_success() {
+            let data: serde_json::Value = resp.json().await?;
+            let id = data["id"].as_str().unwrap_or("unknown").to_string();
+            info!("Registered with backend as agent_id={id}");
+            Ok(id)
+        } else {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            warn!("Agent registration failed ({status}): {body}");
+            anyhow::bail!("Registration failed: {status}")
+        }
+    }
+
+    /// Send periodic heartbeat to keep agent status "online".
+    pub async fn heartbeat(&self, agent_id: &str) -> anyhow::Result<()> {
+        let base = self.config.endpoint.trim_end_matches("/api/v1/events/ingest");
+        let url = format!("{base}/api/v1/agents/{agent_id}/heartbeat");
+
+        let mut req = self.client.post(&url);
+        if !self.config.api_key.is_empty() {
+            req = req.header("X-API-Key", &self.config.api_key);
+        }
+
+        let resp = req.send().await?;
+        if resp.status().is_success() {
+            debug!("Heartbeat sent for agent {agent_id}");
+        } else {
+            warn!("Heartbeat failed: {}", resp.status());
+        }
+        Ok(())
+    }
+
     async fn try_send(&self, payload: &[u8]) -> anyhow::Result<()> {
         let mut req = self
             .client
