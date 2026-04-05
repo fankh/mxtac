@@ -36,32 +36,79 @@ MxTac is organized into three major layers:
 - `mxguard`: Rust endpoint agent
 - Developed as separate projects, aligned with core platform data flows
 
+## Port Assignments
+
+All MxTac services use the **15000–15010** port range to avoid conflicts with other services on the same host.
+
+| Service | Host Port | Container Port | Description |
+|---------|-----------|----------------|-------------|
+| **Backend API** | 15000 | 8080 | FastAPI REST API |
+| **Frontend** | 15001 | 5173 | React dev server (Vite) |
+| **PostgreSQL** | 15002 | 5432 | Primary database |
+| **Valkey (Redis)** | 15003 | 6379 | Cache, dedup, queue |
+| **OpenSearch** | 15004 | 9200 | Log search & analytics |
+| **OpenSearch Perf** | 15005 | 9600 | Performance analyzer |
+| **OS Dashboards** | 15006 | 5601 | OpenSearch Dashboards (optional) |
+| **Redpanda Kafka** | 15007 | 19092 | Message queue (optional) |
+| **Redpanda Admin** | 15008 | 9644 | Redpanda admin API (optional) |
+| **Prometheus** | 15009 | 9090 | Metrics (optional) |
+| **Grafana** | 15010 | 3000 | Dashboards (optional) |
+
+### Access URLs
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| Frontend UI | http://localhost:15001 | analyst@mxtac.local / mxtac2026 |
+| Backend API | http://localhost:15000/docs | (Swagger UI) |
+| OpenSearch | http://localhost:15004 | (no auth in dev) |
+| Grafana | http://localhost:15010 | admin / admin |
+
 ## Getting Started
 
-For full runtime instructions, see `app/README.md`. At a governance level, contributors should use the following baseline process.
-
 ### Prerequisites
-- Git
-- Docker + Docker Compose (recommended path)
-- Python 3.12+
-- Node.js 18+ and npm
-- Rust toolchain (only if working on agents)
+- Docker + Docker Compose v2
+- 4 GB+ RAM available for containers
+- Optional: Python 3.12+, Node.js 18+, Rust toolchain (for local dev)
 
-### Setup Steps
-1. Clone repository:
-   ```bash
-   git clone <repository-url>
-   cd mxtac
-   ```
-2. Review implementation setup in:
-   - `app/README.md`
-   - `docs/` (security and supporting technical docs)
-3. Run the platform (recommended):
-   ```bash
-   cd app
-   docker-compose up
-   ```
-4. For local development, follow backend/frontend manual setup from `app/README.md`.
+### Quick Start
+
+```bash
+# Clone
+git clone https://github.com/fankh/mxtac.git
+cd mxtac/app
+
+# Start core services (backend + frontend + postgres + valkey + opensearch)
+docker compose up -d
+
+# Check health
+curl http://localhost:15000/health
+
+# Open UI
+open http://localhost:15001
+```
+
+### With Optional Services
+
+```bash
+# Core + OpenSearch Dashboards
+docker compose --profile dashboards up -d
+
+# Core + Kafka (Redpanda)
+docker compose --profile kafka up -d
+
+# Core + Monitoring (Prometheus + Grafana)
+docker compose --profile monitoring up -d
+
+# Everything
+docker compose --profile dashboards --profile kafka --profile monitoring up -d
+```
+
+### Stop
+
+```bash
+docker compose down          # stop containers, keep data
+docker compose down -v       # stop and delete all data
+```
 
 ## Contributing Guidelines
 

@@ -94,7 +94,13 @@ class DetectionEngine:
         self._cycle_counter += 1
         full_recheck = self._cycle_counter % FULL_RECHECK_INTERVAL == 0
 
-        rules = await self.rule_repo.list_active()
+        if not self.rule_repo:
+            return
+        try:
+            rules = await self.rule_repo.list_active()
+        except Exception:
+            logger.debug("Could not load rules", exc_info=True)
+            return
         if not rules:
             return
 
@@ -276,9 +282,14 @@ class DetectionEngine:
 
         # Check for existing alert within dedup window
         dedup_since = datetime.now(timezone.utc) - timedelta(hours=ALERT_DEDUP_HOURS)
-        existing = await self.detection_repo.find_recent_by_rule_and_target(
-            rule_id, target, dedup_since
-        )
+        existing = None
+        if self.detection_repo:
+            try:
+                existing = await self.detection_repo.find_recent_by_rule_and_target(
+                    rule_id, target, dedup_since
+                )
+            except Exception:
+                pass
 
         if existing:
             # Merge into existing detection
