@@ -17,8 +17,9 @@ export function OverviewPage() {
   const integrations = useQuery({ queryKey: ['integrations'], queryFn: overviewApi.integrations })
   const recent      = useQuery({ queryKey: ['recent'],       queryFn: overviewApi.recentDetections })
 
-  const loading = [kpis, timeline, tactics, heatmap, tacticLbls, integrations, recent].some((q) => q.isLoading)
-  const error   = [kpis, timeline, tactics, heatmap, tacticLbls, integrations, recent].find((q) => q.isError)
+  // Only require KPIs to render — other sections degrade gracefully
+  const loading = kpis.isLoading
+  const error   = kpis.isError
 
   return (
     <>
