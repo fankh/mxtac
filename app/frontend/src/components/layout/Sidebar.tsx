@@ -2,21 +2,13 @@ import { useState, useRef, useEffect, type ComponentType } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useUIStore, type Theme } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
-import { useDetectionStore } from '../../stores/detectionStore'
+// import { useDetectionStore } from '../../stores/detectionStore'
 import { MfaSetupModal } from '../features/auth/MfaSetupModal'
 import {
   LayoutDashboard,
-  Zap,
   Search,
   Wifi,
   Crosshair,
-  FileCode,
-  ShieldAlert,
-  Globe,
-  Monitor,
-  FileText,
-  Plug,
-  Settings,
   Sun,
   Moon,
   Binary,
@@ -24,18 +16,10 @@ import {
 } from 'lucide-react'
 
 const NAV: { to: string; Icon: ComponentType<LucideProps>; label: string }[] = [
-  { to: '/',              Icon: LayoutDashboard, label: 'Overview' },
-  { to: '/detections',   Icon: Zap,             label: 'Detections' },
-  { to: '/hunt',         Icon: Search,          label: 'Event Hunt' },
-  { to: '/network',     Icon: Wifi,            label: 'Network Logs' },
-  { to: '/attack',       Icon: Crosshair,       label: 'ATT&CK Coverage' },
-  { to: '/rules',        Icon: FileCode,        label: 'Sigma Rules' },
-  { to: '/incidents',    Icon: ShieldAlert,      label: 'Incidents' },
-  { to: '/intel',        Icon: Globe,           label: 'Threat Intel' },
-  { to: '/assets',       Icon: Monitor,         label: 'Assets' },
-  { to: '/reports',      Icon: FileText,        label: 'Reports' },
-  { to: '/integrations', Icon: Plug,            label: 'Integrations' },
-  { to: '/admin',        Icon: Settings,        label: 'Admin' },
+  { to: '/',        Icon: LayoutDashboard, label: 'Overview' },
+  { to: '/attack',  Icon: Crosshair,       label: 'ATT&CK Matrix' },
+  { to: '/hunt',    Icon: Search,          label: 'Event Hunt' },
+  { to: '/network', Icon: Wifi,            label: 'Network Logs' },
 ]
 
 const THEMES: { value: Theme; Icon: ComponentType<LucideProps>; label: string }[] = [
@@ -47,19 +31,12 @@ const THEMES: { value: Theme; Icon: ComponentType<LucideProps>; label: string }[
 export function Sidebar() {
   const { theme, setTheme, openShortcutsModal } = useUIStore()
   const user = useAuthStore(s => s.user)
-  const unreadCount = useDetectionStore(s => s.unreadCount)
-  const clearUnread = useDetectionStore(s => s.clearUnread)
+  const unreadCount = 0
   const location = useLocation()
   const [showThemeMenu, setShowThemeMenu] = useState(false)
   const [showMfaModal, setShowMfaModal] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // Clear unread count whenever the user is on the Detections page
-  useEffect(() => {
-    if (location.pathname === '/detections') {
-      clearUnread()
-    }
-  }, [location.pathname, clearUnread])
 
   // Derive initials from email (e.g. "khchoi@..." → "KH")
   const initials = user?.email
@@ -90,7 +67,7 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 flex flex-col gap-1 py-2">
         {NAV.map(({ to, Icon, label }) => {
-          const badge = to === '/detections' ? unreadCount : 0
+          const badge = 0
           return (
             <NavLink
               key={to}
