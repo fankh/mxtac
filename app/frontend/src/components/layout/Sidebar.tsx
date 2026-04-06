@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type ComponentType } from 'react'
+import { useState, type ComponentType } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useUIStore, type Theme } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
@@ -9,35 +9,27 @@ import {
   Wifi,
   Radio,
   Crosshair,
-  Sun,
-  Moon,
-  Binary,
+  Settings,
   HelpCircle,
-  Shield,
   type LucideProps,
 } from 'lucide-react'
 
 const NAV: { to: string; Icon: ComponentType<LucideProps>; label: string }[] = [
-  { to: '/',        Icon: Crosshair,       label: 'ATT&CK Matrix' },
-  { to: '/hunt',    Icon: Search,          label: 'Hunt' },
-  { to: '/ndr',     Icon: Radio,           label: 'NDR Logs' },
-  { to: '/sources', Icon: Wifi,            label: 'Sources' },
+  { to: '/',         Icon: Crosshair,       label: 'ATT&CK Matrix' },
+  { to: '/hunt',     Icon: Search,          label: 'Hunt' },
+  { to: '/ndr',      Icon: Radio,           label: 'NDR Logs' },
+  { to: '/sources',  Icon: Wifi,            label: 'Sources' },
+  { to: '/settings', Icon: Settings,        label: 'Settings' },
 ]
 
-const THEMES: { value: Theme; Icon: ComponentType<LucideProps>; label: string }[] = [
-  { value: 'light',  Icon: Sun,    label: 'Light' },
-  { value: 'dark',   Icon: Moon,   label: 'Dark' },
-  { value: 'matrix', Icon: Binary,  label: 'Matrix' },
-]
+// Theme toggle removed — theme is set via user preferences
 
 export function Sidebar() {
-  const { theme, setTheme, openShortcutsModal } = useUIStore()
+  const { openShortcutsModal } = useUIStore()
   const user = useAuthStore(s => s.user)
   const unreadCount = 0
   const location = useLocation()
-  const [showThemeMenu, setShowThemeMenu] = useState(false)
   const [showMfaModal, setShowMfaModal] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
 
 
   // Derive initials from email (e.g. "khchoi@..." → "KH")
@@ -45,17 +37,6 @@ export function Sidebar() {
     ? user.email.split('@')[0].slice(0, 2).toUpperCase()
     : 'KH'
 
-  // Close menu on outside click
-  useEffect(() => {
-    if (!showThemeMenu) return
-    function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowThemeMenu(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showThemeMenu])
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-[52px] bg-surface border-r border-border flex flex-col z-30">

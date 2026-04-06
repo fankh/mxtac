@@ -3,6 +3,7 @@ import { Sidebar } from './components/layout/Sidebar'
 import { CoveragePage } from './components/features/coverage/CoveragePage'
 import { HuntPage } from './components/features/hunt/HuntPage'
 import { SourcesPage } from './components/features/sources/SourcesPage'
+import { SettingsPage } from './components/features/settings/SettingsPage'
 import { NdrLogPage } from './components/features/ndr/NdrLogPage'
 import { LoginPage } from './components/features/auth/LoginPage'
 import { ProtectedRoute } from './components/shared/ProtectedRoute'
@@ -26,6 +27,7 @@ function MainLayout() {
             <Route path="/hunt"    element={<HuntPage />} />
             <Route path="/ndr"     element={<NdrLogPage />} />
             <Route path="/sources" element={<SourcesPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </ErrorBoundary>
       </main>
