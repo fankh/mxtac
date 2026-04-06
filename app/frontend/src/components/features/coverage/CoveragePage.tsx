@@ -405,8 +405,11 @@ export function CoveragePage() {
         </div>
       </div>
 
+      {/* Matrix + Finding Logs side by side */}
+      <div className="flex gap-3">
+
       {/* MITRE ATT&CK Enterprise Matrix */}
-      <div className="bg-surface border border-border rounded-lg p-4">
+      <div className={`bg-surface border border-border rounded-lg p-4 ${(activeTactic || activeTechnique) ? 'flex-1 min-w-0' : 'w-full'} transition-all`}>
         <h2 className="text-[11px] font-semibold mb-3">MITRE ATT&CK Enterprise Matrix</h2>
         <div className="overflow-x-auto">
           <div className="flex gap-[3px] min-w-max">
@@ -475,9 +478,9 @@ export function CoveragePage() {
         </div>
       </div>
 
-      {/* Finding Logs Panel — shows when a tactic is clicked */}
+      {/* Finding Logs — right side panel */}
       {(activeTactic || activeTechnique) && (
-        <div className="bg-surface border border-border rounded-lg p-4">
+        <div className="w-[30%] shrink-0 bg-surface border border-border rounded-lg p-4 overflow-y-auto max-h-[600px]">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-[11px] font-semibold">
               Finding Logs — {activeTechnique ? (
@@ -513,54 +516,33 @@ export function CoveragePage() {
               )
             }
             return (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[11px]">
-                  <thead>
-                    <tr className="border-b border-border text-[11px] font-medium text-text-muted">
-                      <th className="text-left p-2 w-[70px]">Time</th>
-                      <th className="text-left p-2">Event</th>
-                      <th className="text-left p-2 w-[120px]">Source</th>
-                      <th className="text-left p-2 w-[120px]">Host</th>
-                      <th className="text-left p-2 w-[80px]">Severity</th>
-                      <th className="text-left p-2 w-[100px]">Technique</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {events.slice(0, 30).map((evt, i) => {
-                      const raw = (evt.raw ?? evt) as Record<string, unknown>
-                      const time = String(raw.time ?? evt.time ?? '').slice(11, 19)
-                      const summary = String(raw.summary ?? (raw as Record<string, unknown>).unmapped?.summary ?? evt.summary ?? evt.class_name ?? '—')
-                      const source = String(raw.source ?? evt.source ?? '—')
-                      const host = String((raw.src_endpoint as Record<string, unknown>)?.hostname ?? raw.hostname ?? evt.hostname ?? evt.src_ip ?? '—')
-                      const severity = Number(raw.severity_id ?? evt.severity_id ?? 0)
-                      const technique = String(raw.technique_id ?? evt.technique_id ?? '—')
-                      const sevLabel = severity >= 4 ? 'high' : severity >= 3 ? 'medium' : severity >= 2 ? 'low' : 'info'
-                      const sevColor = severity >= 4 ? 'text-red-500' : severity >= 3 ? 'text-yellow-600' : severity >= 2 ? 'text-blue' : 'text-text-muted'
-                      return (
-                        <tr key={i} className="border-b border-border/50 hover:bg-hover/50 transition-colors">
-                          <td className="p-2 font-mono text-text-muted tabular-nums">{time}</td>
-                          <td className="p-2 truncate max-w-[400px]" title={summary}>{summary}</td>
-                          <td className="p-2 text-text-muted">{source}</td>
-                          <td className="p-2 font-mono text-text-primary">{host}</td>
-                          <td className="p-2">
-                            <span className={`text-[10px] font-semibold ${sevColor}`}>{sevLabel}</span>
-                          </td>
-                          <td className="p-2 font-mono text-[10px] text-text-muted">{technique}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-                {events.length > 30 && (
-                  <div className="p-2 text-center text-[10px] text-text-muted border-t border-border">
-                    Showing 30 of {events.length} findings
-                  </div>
+              <div className="space-y-1.5">
+                {events.slice(0, 20).map((evt, i) => {
+                  const raw = (evt.raw ?? evt) as Record<string, unknown>
+                  const time = String(raw.time ?? evt.time ?? '').slice(11, 19)
+                  const summary = String(raw.summary ?? (raw as Record<string, unknown>).unmapped?.summary ?? evt.summary ?? evt.class_name ?? '—')
+                  const host = String((raw.src_endpoint as Record<string, unknown>)?.hostname ?? raw.hostname ?? evt.hostname ?? evt.src_ip ?? '—')
+                  const severity = Number(raw.severity_id ?? evt.severity_id ?? 0)
+                  const sevColor = severity >= 4 ? 'border-l-red-500' : severity >= 3 ? 'border-l-yellow-500' : severity >= 2 ? 'border-l-blue' : 'border-l-border'
+                  return (
+                    <div key={i} className={`border-l-2 ${sevColor} bg-page rounded-r px-2 py-1.5 hover:bg-hover/50 transition-colors`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono text-text-muted">{time}</span>
+                        <span className="text-[9px] font-mono text-text-muted">{host}</span>
+                      </div>
+                      <p className="text-[10px] text-text-primary truncate mt-0.5" title={summary}>{summary}</p>
+                    </div>
+                  )
+                })}
+                {events.length > 20 && (
+                  <p className="text-center text-[9px] text-text-muted pt-1">+{events.length - 20} more findings</p>
                 )}
               </div>
             )
           })()}
         </div>
       )}
+      </div>{/* end flex row */}
     </div>
     </>
   )
