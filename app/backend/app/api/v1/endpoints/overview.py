@@ -52,6 +52,22 @@ async def get_kpis(
     conn_counts = await ConnectorRepo.get_status_counts(db)
     rule_counts = await RuleRepo.get_kpi_counts(db, week_start=week_start)
 
+    # ATT&CK coverage: count distinct techniques from detections + rules
+    from sqlalchemy import func, distinct, select
+    from app.models.detection import Detection as DetectionModel
+    from app.models.rule import Rule as RuleModel
+    attack_q = await db.execute(
+        select(func.count(distinct(DetectionModel.technique_id)))
+        .where(DetectionModel.technique_id.is_not(None))
+    )
+    attack_from_detections = attack_q.scalar() or 0
+    rule_q = await db.execute(
+        select(func.count(distinct(RuleModel.id)))
+        .where(RuleModel.technique_ids.is_not(None), RuleModel.enabled.is_(True))
+    )
+    attack_from_rules = rule_q.scalar() or 0
+    attack_covered = max(attack_from_detections, attack_from_rules)
+
     # Detection delta %: compare current period vs previous period
     total_current = det_counts["total_current"]
     total_prev = det_counts["total_prev"]
@@ -71,11 +87,11 @@ async def get_kpis(
         total_detections_delta_pct=delta_pct if total_current > 0 else kpi_mock["total_detections_delta_pct"],
         critical_alerts=det_counts["critical"] if total_current > 0 else kpi_mock["critical_alerts"],
         critical_alerts_new_today=det_counts["critical_today"] if total_current > 0 else kpi_mock["critical_alerts_new_today"],
-        # ATT&CK coverage — requires external metadata, keep mock for now
-        attack_coverage_pct=kpi_mock["attack_coverage_pct"],
-        attack_covered=kpi_mock["attack_covered"],
-        attack_total=kpi_mock["attack_total"],
-        attack_coverage_delta=kpi_mock["attack_coverage_delta"],
+        # ATT&CK coverage — real DB: count distinct technique_ids from detections
+        attack_coverage_pct=round((attack_covered / 420) * 100, 1) if attack_covered > 0 else 0,
+        attack_covered=attack_covered,
+        attack_total=420,
+        attack_coverage_delta=0,
         # MTTD — real DB; fall back to mock when no incident TTD data
         mttd_minutes=(
             round(inc_metrics["avg_ttd"] / 60, 2)

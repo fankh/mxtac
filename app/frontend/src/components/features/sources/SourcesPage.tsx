@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { TopBar } from '../../layout/TopBar'
 import { Wifi, Shield, Monitor, Cloud, Server, Plus, Check, AlertTriangle, X } from 'lucide-react'
 import type { ComponentType } from 'react'
@@ -48,8 +48,50 @@ const STATUS_ICON: Record<string, { Icon: ComponentType<LucideProps>; color: str
 }
 
 export function SourcesPage() {
+  const queryClient = useQueryClient()
   const [filter, setFilter] = useState<string>('all')
   const [configOpen, setConfigOpen] = useState<string | null>(null)
+  const [configEndpoint, setConfigEndpoint] = useState('')
+  const [configApiKey, setConfigApiKey] = useState('')
+  const [configSaving, setConfigSaving] = useState(false)
+  const [configError, setConfigError] = useState('')
+
+  const handleConnect = async () => {
+    if (!configOpen || !configEndpoint.trim()) {
+      setConfigError('Endpoint URL is required')
+      return
+    }
+    const source = SOURCE_TEMPLATES.find(s => s.id === configOpen)
+    if (!source) return
+
+    setConfigSaving(true)
+    setConfigError('')
+    try {
+      const token = localStorage.getItem('access_token')
+      const resp = await fetch('/api/v1/connectors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: source.name,
+          connector_type: source.id,
+          config: { endpoint: configEndpoint.trim(), api_key: configApiKey.trim() },
+          enabled: true,
+        }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: 'Connection failed' }))
+        throw new Error(err.detail || `HTTP ${resp.status}`)
+      }
+      queryClient.invalidateQueries({ queryKey: ['connectors'] })
+      setConfigOpen(null)
+      setConfigEndpoint('')
+      setConfigApiKey('')
+    } catch (e) {
+      setConfigError(e instanceof Error ? e.message : 'Connection failed')
+    } finally {
+      setConfigSaving(false)
+    }
+  }
 
   // Fetch connected sources from backend
   const { data: connectors } = useQuery({
@@ -193,24 +235,48 @@ export function SourcesPage() {
           })}
         </div>
 
-        {/* Config modal placeholder */}
+        {/* Config modal */}
         {configOpen && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setConfigOpen(null)}>
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => { setConfigOpen(null); setConfigError('') }}>
             <div className="bg-surface border border-border rounded-lg p-6 w-[480px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
-              <h3 className="text-sm font-bold mb-3">Configure {SOURCE_TEMPLATES.find(s => s.id === configOpen)?.name}</h3>
+              <h3 className="text-sm font-bold mb-1">Configure {SOURCE_TEMPLATES.find(s => s.id === configOpen)?.name}</h3>
+              <p className="text-[10px] text-text-muted mb-3">{SOURCE_TEMPLATES.find(s => s.id === configOpen)?.description}</p>
               <div className="space-y-3">
                 <div>
                   <label className="text-[11px] font-medium text-text-muted">Endpoint URL</label>
-                  <input type="url" placeholder="https://..." autoComplete="off" className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue" />
+                  <input
+                    type="url"
+                    value={configEndpoint}
+                    onChange={e => setConfigEndpoint(e.target.value)}
+                    placeholder="https://zeek.internal:9200"
+                    autoComplete="off"
+                    className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue"
+                  />
                 </div>
                 <div>
-                  <label className="text-[11px] font-medium text-text-muted">API Key</label>
-                  <input type="password" placeholder="sk-..." autoComplete="off" className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue" />
+                  <label className="text-[11px] font-medium text-text-muted">API Key (optional)</label>
+                  <input
+                    type="password"
+                    value={configApiKey}
+                    onChange={e => setConfigApiKey(e.target.value)}
+                    placeholder="sk-..."
+                    autoComplete="off"
+                    className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue"
+                  />
                 </div>
+                {configError && (
+                  <p className="text-[11px] text-red-500">{configError}</p>
+                )}
               </div>
               <div className="flex justify-end gap-2 mt-4">
-                <button onClick={() => setConfigOpen(null)} className="px-3 py-1.5 text-xs border border-border rounded hover:bg-hover transition-colors">Cancel</button>
-                <button onClick={() => setConfigOpen(null)} className="px-3 py-1.5 text-xs bg-blue text-white rounded hover:bg-blue/90 transition-colors">Connect</button>
+                <button onClick={() => { setConfigOpen(null); setConfigError('') }} className="px-3 py-1.5 text-xs border border-border rounded hover:bg-hover transition-colors">Cancel</button>
+                <button
+                  onClick={handleConnect}
+                  disabled={configSaving}
+                  className="px-3 py-1.5 text-xs bg-blue text-white rounded hover:bg-blue/90 transition-colors disabled:opacity-50"
+                >
+                  {configSaving ? 'Connecting...' : 'Connect'}
+                </button>
               </div>
             </div>
           </div>
