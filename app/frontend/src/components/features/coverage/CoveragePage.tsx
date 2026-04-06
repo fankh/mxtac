@@ -165,59 +165,68 @@ export function CoveragePage() {
         </div>
       </div>
 
-      {/* ATT&CK Heatmap Matrix */}
+      {/* MITRE ATT&CK Enterprise Matrix */}
       <div className="bg-surface border border-border rounded-lg p-4">
-        <h2 className="text-xs font-semibold mb-3">ATT&CK Matrix Heatmap</h2>
-        {heatmapLoading ? (
-          <div className="h-[300px] flex items-center justify-center text-xs text-muted">Loading heatmap...</div>
-        ) : !heatmap || heatmap.length === 0 ? (
-          <div className="h-[300px] flex items-center justify-center text-xs text-muted">No coverage data available</div>
-        ) : (
-          <div className="overflow-x-auto">
-            {/* Tactic headers */}
-            <div className="flex gap-[2px] mb-1 min-w-max">
-              <div className="w-[100px] shrink-0" />
-              {TACTICS.map(t => (
-                <div
-                  key={t.id}
-                  className="w-[80px] shrink-0 text-[10px] text-muted font-medium text-center truncate px-0.5"
-                  title={t.name}
-                >
-                  {t.name}
+        <h2 className="text-[11px] font-semibold mb-3">MITRE ATT&CK Enterprise Matrix</h2>
+        <div className="overflow-x-auto">
+          <div className="flex gap-[3px] min-w-max">
+            {TACTICS.map(tactic => {
+              const tacticData = stats.byTactic[tactic.name] || { covered: 0, total: 0 }
+              const tacticPct = tacticData.total > 0 ? Math.round((tacticData.covered / tacticData.total) * 100) : 0
+              // Get techniques for this tactic from heatmap data
+              const techniques: { id: string; covered: boolean }[] = []
+              if (heatmap) {
+                for (const row of heatmap) {
+                  const cell = row.cells.find(c => c.tactic === tactic.name || c.tactic === tactic.id.replace('TA00', ''))
+                  if (cell) {
+                    techniques.push({ id: row.technique_id, covered: cell.covered > 0 })
+                  }
+                }
+              }
+              // Show at least some technique slots
+              const slots = techniques.length > 0 ? techniques : Array.from({ length: 8 }, (_, i) => ({ id: `T${1000 + i}`, covered: false }))
+
+              return (
+                <div key={tactic.id} className="flex flex-col w-[105px] shrink-0">
+                  {/* Tactic header */}
+                  <div className={`px-2 py-1.5 rounded-t text-center border-b-2 ${
+                    tacticPct >= 80 ? 'bg-green-500/10 border-green-500' :
+                    tacticPct >= 50 ? 'bg-yellow-500/10 border-yellow-500' :
+                    tacticPct > 0 ? 'bg-red-500/10 border-red-500' :
+                    'bg-page border-border'
+                  }`}>
+                    <p className="text-[9px] font-bold text-text-primary leading-tight truncate" title={tactic.name}>{tactic.name}</p>
+                    <p className="text-[8px] text-text-muted font-mono">{tactic.id}</p>
+                  </div>
+                  {/* Technique cells */}
+                  <div className="flex flex-col gap-[2px] mt-[2px]">
+                    {slots.slice(0, 12).map((tech, i) => (
+                      <div
+                        key={i}
+                        className={`px-1.5 py-1 rounded-[3px] text-[8px] font-mono truncate cursor-default transition-colors ${
+                          tech.covered
+                            ? 'bg-green-500/20 text-green-700 hover:bg-green-500/30'
+                            : 'bg-page text-text-muted/50 hover:bg-border/30'
+                        }`}
+                        title={tech.id}
+                      >
+                        {tech.id}
+                      </div>
+                    ))}
+                    {slots.length > 12 && (
+                      <div className="text-[8px] text-text-muted text-center py-0.5">+{slots.length - 12} more</div>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
-            {/* Technique rows */}
-            {heatmap.map(row => (
-              <div key={row.technique_id} className="flex gap-[2px] mb-[2px] min-w-max">
-                <div className="w-[100px] shrink-0 text-[10px] font-mono text-muted truncate pr-1" title={row.technique_id}>
-                  {row.technique_id}
-                </div>
-                {row.cells.map((cell, ci) => {
-                  const covered = cell.covered > 0
-                  return (
-                    <div
-                      key={ci}
-                      className={`w-[80px] h-[20px] shrink-0 rounded-[2px] transition-colors ${
-                        covered
-                          ? 'bg-green-500 hover:bg-green-400'
-                          : 'bg-border/30 hover:bg-border/50'
-                      }`}
-                      style={{ opacity: covered ? Math.max(0.3, cell.opacity) : 0.15 }}
-                      title={`${cell.tactic}: ${cell.covered}/${cell.total} rules`}
-                    />
-                  )
-                })}
-              </div>
-            ))}
+              )
+            })}
           </div>
-        )}
+        </div>
 
         {/* Legend */}
-        <div className="flex items-center gap-4 mt-3 text-[10px] text-muted">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-green-500 opacity-90" /> Covered</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-green-500 opacity-30" /> Partial</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-border/30" /> Not Covered</span>
+        <div className="flex items-center gap-4 mt-3 text-[10px] text-text-muted">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-green-500/20 border border-green-500/30" /> Covered</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-page border border-border" /> Not Covered</span>
         </div>
       </div>
     </div>
