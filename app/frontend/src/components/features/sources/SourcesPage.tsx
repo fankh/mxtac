@@ -5,33 +5,97 @@ import { Wifi, Shield, Monitor, Cloud, Server, Plus, Check, AlertTriangle, X } f
 import type { ComponentType } from 'react'
 import type { LucideProps } from 'lucide-react'
 
+interface ConfigField {
+  key: string
+  label: string
+  type: 'text' | 'password' | 'url' | 'number'
+  placeholder: string
+  required?: boolean
+}
+
 interface DataSource {
   id: string
   name: string
   type: 'ndr' | 'edr' | 'siem' | 'cloud'
   Icon: ComponentType<LucideProps>
   description: string
+  fields: ConfigField[]
   status: 'connected' | 'disconnected' | 'error'
   eventsPerMin?: number
   lastSeen?: string
-  config?: { endpoint?: string; apiKey?: string }
 }
 
 const SOURCE_TEMPLATES: Omit<DataSource, 'status' | 'eventsPerMin' | 'lastSeen'>[] = [
   // NDR Sources
-  { id: 'zeek', name: 'Zeek', type: 'ndr', Icon: Wifi, description: 'Network security monitoring — DNS, HTTP, TLS, SSH, SMB flow logs', config: { endpoint: '' } },
-  { id: 'suricata', name: 'Suricata', type: 'ndr', Icon: Shield, description: 'IDS/IPS — rule-based network threat detection (EVE JSON)', config: { endpoint: '' } },
-  { id: 'mxwatch', name: 'MxWatch', type: 'ndr', Icon: Wifi, description: 'MxTac NDR agent — packet capture, protocol parsing, flow extraction', config: { endpoint: '' } },
+  { id: 'zeek', name: 'Zeek', type: 'ndr', Icon: Wifi,
+    description: 'Network security monitoring — DNS, HTTP, TLS, SSH, SMB flow logs',
+    fields: [
+      { key: 'log_directory', label: 'Log Directory', type: 'text', placeholder: '/opt/zeek/logs/current', required: true },
+      { key: 'poll_interval', label: 'Poll Interval (sec)', type: 'number', placeholder: '10' },
+    ] },
+  { id: 'suricata', name: 'Suricata', type: 'ndr', Icon: Shield,
+    description: 'IDS/IPS — rule-based network threat detection (EVE JSON)',
+    fields: [
+      { key: 'eve_json_path', label: 'EVE JSON Path', type: 'text', placeholder: '/var/log/suricata/eve.json', required: true },
+      { key: 'syslog_port', label: 'Syslog Port (optional)', type: 'number', placeholder: '5140' },
+    ] },
+  { id: 'mxwatch', name: 'MxWatch', type: 'ndr', Icon: Wifi,
+    description: 'MxTac NDR agent — auto-registers via API key',
+    fields: [
+      { key: 'api_key', label: 'Agent API Key', type: 'password', placeholder: 'Auto-generated on save', required: true },
+      { key: 'interface', label: 'Capture Interface', type: 'text', placeholder: 'eth0' },
+    ] },
   // EDR Sources
-  { id: 'wazuh', name: 'Wazuh', type: 'edr', Icon: Monitor, description: 'Endpoint security — file integrity, rootkit detection, compliance', config: { endpoint: '' } },
-  { id: 'velociraptor', name: 'Velociraptor', type: 'edr', Icon: Monitor, description: 'Endpoint investigation — artifact collection, live forensics', config: { endpoint: '' } },
-  { id: 'mxguard', name: 'MxGuard', type: 'edr', Icon: Monitor, description: 'MxTac EDR agent — process monitoring, file integrity, auth tracking', config: { endpoint: '' } },
+  { id: 'wazuh', name: 'Wazuh', type: 'edr', Icon: Monitor,
+    description: 'Endpoint security — file integrity, rootkit detection, compliance',
+    fields: [
+      { key: 'manager_url', label: 'Wazuh Manager URL', type: 'url', placeholder: 'https://wazuh-manager:55000', required: true },
+      { key: 'username', label: 'Username', type: 'text', placeholder: 'wazuh-wui', required: true },
+      { key: 'password', label: 'Password', type: 'password', placeholder: '••••••••', required: true },
+    ] },
+  { id: 'velociraptor', name: 'Velociraptor', type: 'edr', Icon: Monitor,
+    description: 'Endpoint investigation — artifact collection, live forensics',
+    fields: [
+      { key: 'server_url', label: 'Server URL', type: 'url', placeholder: 'https://velociraptor:8889', required: true },
+      { key: 'api_key', label: 'API Key', type: 'password', placeholder: 'vr-api-...', required: true },
+    ] },
+  { id: 'mxguard', name: 'MxGuard', type: 'edr', Icon: Monitor,
+    description: 'MxTac EDR agent — auto-registers via API key',
+    fields: [
+      { key: 'api_key', label: 'Agent API Key', type: 'password', placeholder: 'Auto-generated on save', required: true },
+    ] },
   // SIEM Sources
-  { id: 'elastic', name: 'Elastic SIEM', type: 'siem', Icon: Server, description: 'Elasticsearch-based SIEM — forward alerts and events', config: { endpoint: '' } },
-  { id: 'opensearch', name: 'OpenSearch', type: 'siem', Icon: Server, description: 'OpenSearch cluster — direct log ingestion and search', config: { endpoint: '' } },
+  { id: 'elastic', name: 'Elastic SIEM', type: 'siem', Icon: Server,
+    description: 'Elasticsearch-based SIEM — forward alerts and events',
+    fields: [
+      { key: 'cluster_url', label: 'Cluster URL', type: 'url', placeholder: 'https://elasticsearch:9200', required: true },
+      { key: 'username', label: 'Username', type: 'text', placeholder: 'elastic' },
+      { key: 'password', label: 'Password', type: 'password', placeholder: '••••••••' },
+      { key: 'index_pattern', label: 'Index Pattern', type: 'text', placeholder: 'filebeat-*' },
+    ] },
+  { id: 'opensearch', name: 'OpenSearch', type: 'siem', Icon: Server,
+    description: 'OpenSearch cluster — direct log ingestion and search',
+    fields: [
+      { key: 'cluster_url', label: 'Cluster URL', type: 'url', placeholder: 'https://opensearch:9200', required: true },
+      { key: 'username', label: 'Username', type: 'text', placeholder: 'admin' },
+      { key: 'password', label: 'Password', type: 'password', placeholder: '••••••••' },
+    ] },
   // Cloud Sources
-  { id: 'prowler', name: 'Prowler', type: 'cloud', Icon: Cloud, description: 'AWS/Azure/GCP security — compliance and misconfiguration findings', config: { endpoint: '' } },
-  { id: 'cloudtrail', name: 'CloudTrail', type: 'cloud', Icon: Cloud, description: 'AWS API audit trail — IAM, S3, EC2 activity logs', config: { endpoint: '' } },
+  { id: 'prowler', name: 'Prowler', type: 'cloud', Icon: Cloud,
+    description: 'AWS/Azure/GCP security — compliance and misconfiguration findings',
+    fields: [
+      { key: 'aws_region', label: 'AWS Region', type: 'text', placeholder: 'ap-northeast-2', required: true },
+      { key: 'aws_profile', label: 'AWS Profile', type: 'text', placeholder: 'default' },
+      { key: 'scan_interval', label: 'Scan Interval (hours)', type: 'number', placeholder: '24' },
+    ] },
+  { id: 'cloudtrail', name: 'CloudTrail', type: 'cloud', Icon: Cloud,
+    description: 'AWS API audit trail — IAM, S3, EC2 activity logs',
+    fields: [
+      { key: 's3_bucket', label: 'S3 Bucket', type: 'text', placeholder: 'my-cloudtrail-logs', required: true },
+      { key: 'aws_region', label: 'AWS Region', type: 'text', placeholder: 'ap-northeast-2', required: true },
+      { key: 'aws_access_key', label: 'Access Key ID', type: 'text', placeholder: 'AKIA...' },
+      { key: 'aws_secret_key', label: 'Secret Access Key', type: 'password', placeholder: '••••••••' },
+    ] },
 ]
 
 const TYPE_LABELS: Record<string, { label: string; color: string }> = {
@@ -51,30 +115,44 @@ export function SourcesPage() {
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<string>('all')
   const [configOpen, setConfigOpen] = useState<string | null>(null)
-  const [configEndpoint, setConfigEndpoint] = useState('')
-  const [configApiKey, setConfigApiKey] = useState('')
+  const [configValues, setConfigValues] = useState<Record<string, string>>({})
   const [configSaving, setConfigSaving] = useState(false)
   const [configError, setConfigError] = useState('')
 
+  const openConfig = (sourceId: string) => {
+    setConfigOpen(sourceId)
+    setConfigValues({})
+    setConfigError('')
+  }
+
   const handleConnect = async () => {
-    if (!configOpen || !configEndpoint.trim()) {
-      setConfigError('Endpoint URL is required')
-      return
-    }
+    if (!configOpen) return
     const source = SOURCE_TEMPLATES.find(s => s.id === configOpen)
     if (!source) return
+
+    // Validate required fields
+    const missing = source.fields.filter(f => f.required && !configValues[f.key]?.trim())
+    if (missing.length > 0) {
+      setConfigError(`Required: ${missing.map(f => f.label).join(', ')}`)
+      return
+    }
 
     setConfigSaving(true)
     setConfigError('')
     try {
       const token = localStorage.getItem('access_token')
+      const config: Record<string, string> = {}
+      for (const field of source.fields) {
+        const val = configValues[field.key]?.trim()
+        if (val) config[field.key] = val
+      }
       const resp = await fetch('/api/v1/connectors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           name: source.name,
           connector_type: source.id,
-          config: { endpoint: configEndpoint.trim(), api_key: configApiKey.trim() },
+          config,
           enabled: true,
         }),
       })
@@ -84,8 +162,7 @@ export function SourcesPage() {
       }
       queryClient.invalidateQueries({ queryKey: ['connectors'] })
       setConfigOpen(null)
-      setConfigEndpoint('')
-      setConfigApiKey('')
+      setConfigValues({})
     } catch (e) {
       setConfigError(e instanceof Error ? e.message : 'Connection failed')
     } finally {
@@ -222,7 +299,7 @@ export function SourcesPage() {
                 {source.status === 'disconnected' && (
                   <div className="mt-3 pt-3 border-t border-border">
                     <button
-                      onClick={() => setConfigOpen(source.id)}
+                      onClick={() => openConfig(source.id)}
                       className="flex items-center gap-1 text-[11px] text-blue hover:text-blue/80 font-medium transition-colors"
                     >
                       <Plus className="w-3 h-3" />
@@ -235,52 +312,55 @@ export function SourcesPage() {
           })}
         </div>
 
-        {/* Config modal */}
-        {configOpen && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => { setConfigOpen(null); setConfigError('') }}>
-            <div className="bg-surface border border-border rounded-lg p-6 w-[480px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
-              <h3 className="text-sm font-bold mb-1">Configure {SOURCE_TEMPLATES.find(s => s.id === configOpen)?.name}</h3>
-              <p className="text-[10px] text-text-muted mb-3">{SOURCE_TEMPLATES.find(s => s.id === configOpen)?.description}</p>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-[11px] font-medium text-text-muted">Endpoint URL</label>
-                  <input
-                    type="url"
-                    value={configEndpoint}
-                    onChange={e => setConfigEndpoint(e.target.value)}
-                    placeholder="https://zeek.internal:9200"
-                    autoComplete="off"
-                    className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue"
-                  />
+        {/* Config modal — dynamic fields per source type */}
+        {configOpen && (() => {
+          const source = SOURCE_TEMPLATES.find(s => s.id === configOpen)
+          if (!source) return null
+          return (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => { setConfigOpen(null); setConfigError('') }}>
+              <div className="bg-surface border border-border rounded-lg p-6 w-[480px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-2 mb-1">
+                  <source.Icon className="w-4 h-4 text-blue" />
+                  <h3 className="text-sm font-bold">Configure {source.name}</h3>
+                  <span className={`px-1.5 py-0 text-[9px] font-bold rounded border ${TYPE_LABELS[source.type].color}`}>
+                    {TYPE_LABELS[source.type].label}
+                  </span>
                 </div>
-                <div>
-                  <label className="text-[11px] font-medium text-text-muted">API Key (optional)</label>
-                  <input
-                    type="password"
-                    value={configApiKey}
-                    onChange={e => setConfigApiKey(e.target.value)}
-                    placeholder="sk-..."
-                    autoComplete="off"
-                    className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue"
-                  />
+                <p className="text-[10px] text-text-muted mb-4">{source.description}</p>
+                <div className="space-y-3">
+                  {source.fields.map(field => (
+                    <div key={field.key}>
+                      <label className="text-[11px] font-medium text-text-muted">
+                        {field.label}{field.required && <span className="text-red-500 ml-0.5">*</span>}
+                      </label>
+                      <input
+                        type={field.type}
+                        value={configValues[field.key] || ''}
+                        onChange={e => setConfigValues(prev => ({ ...prev, [field.key]: e.target.value }))}
+                        placeholder={field.placeholder}
+                        autoComplete="off"
+                        className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue"
+                      />
+                    </div>
+                  ))}
+                  {configError && (
+                    <p className="text-[11px] text-red-500">{configError}</p>
+                  )}
                 </div>
-                {configError && (
-                  <p className="text-[11px] text-red-500">{configError}</p>
-                )}
-              </div>
-              <div className="flex justify-end gap-2 mt-4">
-                <button onClick={() => { setConfigOpen(null); setConfigError('') }} className="px-3 py-1.5 text-xs border border-border rounded hover:bg-hover transition-colors">Cancel</button>
-                <button
-                  onClick={handleConnect}
-                  disabled={configSaving}
-                  className="px-3 py-1.5 text-xs bg-blue text-white rounded hover:bg-blue/90 transition-colors disabled:opacity-50"
-                >
-                  {configSaving ? 'Connecting...' : 'Connect'}
-                </button>
+                <div className="flex justify-end gap-2 mt-4">
+                  <button onClick={() => { setConfigOpen(null); setConfigError('') }} className="px-3 py-1.5 text-xs border border-border rounded hover:bg-hover transition-colors">Cancel</button>
+                  <button
+                    onClick={handleConnect}
+                    disabled={configSaving}
+                    className="px-3 py-1.5 text-xs bg-blue text-white rounded hover:bg-blue/90 transition-colors disabled:opacity-50"
+                  >
+                    {configSaving ? 'Connecting...' : 'Connect'}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
       </div>
     </>
   )
