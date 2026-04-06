@@ -108,7 +108,7 @@ export function Sidebar() {
           </button>
 
           {showThemeMenu && (
-            <div className="absolute left-[52px] bottom-0 bg-surface border border-border rounded-md shadow-panel py-1 min-w-[120px] z-50">
+            <div className="absolute left-[52px] bottom-0 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[120px] z-50">
               {THEMES.map((t) => (
                 <button
                   key={t.value}

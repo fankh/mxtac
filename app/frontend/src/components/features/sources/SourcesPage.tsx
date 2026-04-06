@@ -271,7 +271,7 @@ export function SourcesPage() {
 
         {/* Stats bar */}
         <div className="flex items-center gap-3 text-[11px] text-text-muted mb-3">
-          <span><strong className="text-green-500">{connectedCount}</strong> connected</span>
+          <span><strong className={connectedCount > 0 ? 'text-green-500' : 'text-text-muted'}>{connectedCount}</strong> connected</span>
           <span>·</span>
           <span><strong className="text-text-primary">{sources.filter(s => s.type === 'ndr').length}</strong> NDR</span>
           <span>·</span>
@@ -317,12 +317,14 @@ export function SourcesPage() {
                       <p className="text-[10px] text-text-muted mt-0.5 max-w-[300px]">{source.description}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <StatusIcon className={`w-3.5 h-3.5 ${statusInfo.color}`} />
-                    <span className={`text-[10px] font-medium ${statusInfo.color}`}>
-                      {source.status === 'connected' ? 'Connected' : source.status === 'error' ? 'Error' : 'Not configured'}
-                    </span>
-                  </div>
+                  {!source.builtin && (
+                    <div className="flex items-center gap-1.5">
+                      <StatusIcon className={`w-3.5 h-3.5 ${statusInfo.color}`} />
+                      <span className={`text-[10px] font-medium ${statusInfo.color}`}>
+                        {source.status === 'connected' ? 'Connected' : source.status === 'error' ? 'Error' : 'Not configured'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {source.status === 'connected' && source.eventsPerMin != null && (
