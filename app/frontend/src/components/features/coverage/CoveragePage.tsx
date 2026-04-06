@@ -448,16 +448,17 @@ export function CoveragePage() {
                           setActiveTechnique(activeTechnique === tech.id ? null : tech.id)
                           setActiveTactic(activeTechnique === tech.id ? null : { id: tactic.id, name: tactic.name })
                         }}
-                        className={`px-1.5 py-1 rounded-[3px] text-[8px] font-mono truncate cursor-pointer transition-colors text-left w-full ${
+                        className={`px-1.5 py-[3px] rounded-[3px] cursor-pointer transition-colors text-left w-full ${
                           activeTechnique === tech.id
                             ? 'bg-blue/20 text-blue ring-1 ring-blue/40'
                             : tech.covered
                               ? 'bg-green-500/20 text-green-700 hover:bg-green-500/30'
                               : 'bg-page text-text-muted/50 hover:bg-border/30'
                         }`}
-                        title={`${tech.id}: ${tech.name} — Click to view logs`}
+                        title={`${tech.id}: ${tech.name}`}
                       >
-                        {tech.id}
+                        <span className="block text-[8px] font-bold">{tech.id}</span>
+                        <span className="block text-[7px] leading-tight opacity-70 truncate">{tech.name}</span>
                       </button>
                     ))}
                     {slots.length > 12 && (
