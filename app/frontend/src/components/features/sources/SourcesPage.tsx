@@ -322,11 +322,28 @@ export function SourcesPage() {
 
                 {source.builtin ? (
                   <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
-                    <span className="text-[10px] font-medium text-blue bg-blue/5 px-2 py-0.5 rounded border border-blue/20">Built-in Agent</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-medium text-blue bg-blue/5 px-2 py-0.5 rounded border border-blue/20">Built-in</span>
+                      <button
+                        onClick={() => {
+                          const key = `mxtac_source_${source.id}_enabled`
+                          const current = localStorage.getItem(key) !== 'false'
+                          localStorage.setItem(key, current ? 'false' : 'true')
+                          queryClient.invalidateQueries({ queryKey: ['connectors'] })
+                        }}
+                        className={`text-[10px] font-medium px-2 py-0.5 rounded border transition-colors ${
+                          localStorage.getItem(`mxtac_source_${source.id}_enabled`) !== 'false'
+                            ? 'bg-green-500/10 text-green-600 border-green-500/20'
+                            : 'bg-page text-text-muted border-border'
+                        }`}
+                      >
+                        {localStorage.getItem(`mxtac_source_${source.id}_enabled`) !== 'false' ? 'Enabled' : 'Disabled'}
+                      </button>
+                    </div>
                     {source.agentCount != null && source.agentCount > 0 ? (
-                      <span className="text-[10px] text-text-muted">{source.agentCount} agent{source.agentCount > 1 ? 's' : ''} registered</span>
+                      <span className="text-[10px] text-text-muted">{source.agentCount} agent{source.agentCount > 1 ? 's' : ''}</span>
                     ) : (
-                      <span className="text-[10px] text-text-muted">No agents registered — deploy with <code className="bg-page px-1 rounded">mxtac/{source.id}</code></span>
+                      <span className="text-[10px] text-text-muted">deploy: <code className="bg-page px-1 rounded">mxtac/{source.id}</code></span>
                     )}
                   </div>
                 ) : source.status === 'disconnected' ? (
