@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { overviewApi, coverageApi } from '../../../lib/api'
+import { overviewApi, coverageApi, eventsApi } from '../../../lib/api'
 import type { HeatRow, CoverageTrend } from '../../../types/api'
 import { SeverityPill } from '../../shared/SeverityBadge'
 import { TopBar } from '../../layout/TopBar'
@@ -34,6 +34,20 @@ const TACTICS = [
 
 export function CoveragePage() {
   const [selectedTactic, setSelectedTactic] = useState<string | null>(null)
+  const [activeTactic, setActiveTactic] = useState<{ id: string; name: string } | null>(null)
+  const hasToken = !!localStorage.getItem('access_token')
+
+  // Fetch finding logs when a tactic is clicked
+  const { data: tacticLogs, isLoading: logsLoading } = useQuery({
+    queryKey: ['tactic-logs', activeTactic?.name],
+    queryFn: () => eventsApi.search({
+      query: `tactic:${activeTactic!.name.toLowerCase().replace(/ /g, '_')} OR mitre_tactic:${activeTactic!.id}`,
+      time_range: '30d',
+      limit: 50,
+    }),
+    enabled: hasToken && !!activeTactic,
+    staleTime: 30_000,
+  })
 
   const { data: heatmap, isLoading: heatmapLoading } = useQuery({
     queryKey: ['coverage-heatmap'],
@@ -188,16 +202,20 @@ export function CoveragePage() {
 
               return (
                 <div key={tactic.id} className="flex flex-col w-[105px] shrink-0">
-                  {/* Tactic header */}
-                  <div className={`px-2 py-1.5 rounded-t text-center border-b-2 ${
-                    tacticPct >= 80 ? 'bg-green-500/10 border-green-500' :
-                    tacticPct >= 50 ? 'bg-yellow-500/10 border-yellow-500' :
-                    tacticPct > 0 ? 'bg-red-500/10 border-red-500' :
-                    'bg-page border-border'
-                  }`}>
+                  {/* Tactic header — click to show finding logs */}
+                  <button
+                    onClick={() => setActiveTactic(activeTactic?.id === tactic.id ? null : { id: tactic.id, name: tactic.name })}
+                    className={`px-2 py-1.5 rounded-t text-center border-b-2 w-full transition-colors cursor-pointer ${
+                      activeTactic?.id === tactic.id ? 'bg-blue/10 border-blue ring-1 ring-blue/30' :
+                      tacticPct >= 80 ? 'bg-green-500/10 border-green-500 hover:bg-green-500/20' :
+                      tacticPct >= 50 ? 'bg-yellow-500/10 border-yellow-500 hover:bg-yellow-500/20' :
+                      tacticPct > 0 ? 'bg-red-500/10 border-red-500 hover:bg-red-500/20' :
+                      'bg-page border-border hover:bg-hover'
+                    }`}
+                  >
                     <p className="text-[9px] font-bold text-text-primary leading-tight truncate" title={tactic.name}>{tactic.name}</p>
                     <p className="text-[8px] text-text-muted font-mono">{tactic.id}</p>
-                  </div>
+                  </button>
                   {/* Technique cells */}
                   <div className="flex flex-col gap-[2px] mt-[2px]">
                     {slots.slice(0, 12).map((tech, i) => (
@@ -227,8 +245,87 @@ export function CoveragePage() {
         <div className="flex items-center gap-4 mt-3 text-[10px] text-text-muted">
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-green-500/20 border border-green-500/30" /> Covered</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-page border border-border" /> Not Covered</span>
+          <span className="ml-auto text-text-muted">Click a tactic header to view finding logs</span>
         </div>
       </div>
+
+      {/* Finding Logs Panel — shows when a tactic is clicked */}
+      {activeTactic && (
+        <div className="bg-surface border border-border rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[11px] font-semibold">
+              Finding Logs — <span className="text-blue">{activeTactic.name}</span>
+              <span className="text-text-muted font-mono ml-1">({activeTactic.id})</span>
+            </h2>
+            <button
+              onClick={() => setActiveTactic(null)}
+              className="text-[10px] text-text-muted hover:text-text-primary transition-colors"
+            >
+              ✕ Close
+            </button>
+          </div>
+
+          {logsLoading ? (
+            <div className="flex items-center justify-center h-32 text-[11px] text-text-muted">Loading logs…</div>
+          ) : (() => {
+            const events = (tacticLogs?.events ?? []) as Record<string, unknown>[]
+            if (events.length === 0) {
+              return (
+                <div className="flex flex-col items-center justify-center h-32">
+                  <p className="text-[12px] font-semibold text-text-primary mb-1">No findings for {activeTactic.name}</p>
+                  <p className="text-[10px] text-text-muted">No events matched this tactic in the last 30 days.</p>
+                </div>
+              )
+            }
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px]">
+                  <thead>
+                    <tr className="border-b border-border text-[11px] font-medium text-text-muted">
+                      <th className="text-left p-2 w-[70px]">Time</th>
+                      <th className="text-left p-2">Event</th>
+                      <th className="text-left p-2 w-[120px]">Source</th>
+                      <th className="text-left p-2 w-[120px]">Host</th>
+                      <th className="text-left p-2 w-[80px]">Severity</th>
+                      <th className="text-left p-2 w-[100px]">Technique</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {events.slice(0, 30).map((evt, i) => {
+                      const raw = (evt.raw ?? evt) as Record<string, unknown>
+                      const time = String(raw.time ?? evt.time ?? '').slice(11, 19)
+                      const summary = String(raw.summary ?? (raw as Record<string, unknown>).unmapped?.summary ?? evt.summary ?? evt.class_name ?? '—')
+                      const source = String(raw.source ?? evt.source ?? '—')
+                      const host = String((raw.src_endpoint as Record<string, unknown>)?.hostname ?? raw.hostname ?? evt.hostname ?? evt.src_ip ?? '—')
+                      const severity = Number(raw.severity_id ?? evt.severity_id ?? 0)
+                      const technique = String(raw.technique_id ?? evt.technique_id ?? '—')
+                      const sevLabel = severity >= 4 ? 'high' : severity >= 3 ? 'medium' : severity >= 2 ? 'low' : 'info'
+                      const sevColor = severity >= 4 ? 'text-red-500' : severity >= 3 ? 'text-yellow-600' : severity >= 2 ? 'text-blue' : 'text-text-muted'
+                      return (
+                        <tr key={i} className="border-b border-border/50 hover:bg-hover/50 transition-colors">
+                          <td className="p-2 font-mono text-text-muted tabular-nums">{time}</td>
+                          <td className="p-2 truncate max-w-[400px]" title={summary}>{summary}</td>
+                          <td className="p-2 text-text-muted">{source}</td>
+                          <td className="p-2 font-mono text-text-primary">{host}</td>
+                          <td className="p-2">
+                            <span className={`text-[10px] font-semibold ${sevColor}`}>{sevLabel}</span>
+                          </td>
+                          <td className="p-2 font-mono text-[10px] text-text-muted">{technique}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                {events.length > 30 && (
+                  <div className="p-2 text-center text-[10px] text-text-muted border-t border-border">
+                    Showing 30 of {events.length} findings
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+      )}
     </div>
     </>
   )
