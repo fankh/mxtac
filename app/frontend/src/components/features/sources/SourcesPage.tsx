@@ -28,6 +28,13 @@ interface DataSource {
 }
 
 const SOURCE_TEMPLATES: Omit<DataSource, 'status' | 'eventsPerMin' | 'lastSeen'>[] = [
+  // Built-in MxTac Agents (always first)
+  { id: 'mxwatch', name: 'MxWatch', type: 'ndr', Icon: Wifi,
+    description: 'Built-in MxTac NDR agent — packet capture, protocol parsing, flow extraction',
+    fields: [], builtin: true },
+  { id: 'mxguard', name: 'MxGuard', type: 'edr', Icon: Monitor,
+    description: 'Built-in MxTac EDR agent — process monitoring, file integrity, auth tracking',
+    fields: [], builtin: true },
   // NDR Sources
   { id: 'zeek', name: 'Zeek', type: 'ndr', Icon: Wifi,
     description: 'Network security monitoring — DNS, HTTP, TLS, SSH, SMB flow logs',
@@ -41,9 +48,6 @@ const SOURCE_TEMPLATES: Omit<DataSource, 'status' | 'eventsPerMin' | 'lastSeen'>
       { key: 'eve_json_path', label: 'EVE JSON Path', type: 'text', placeholder: '/var/log/suricata/eve.json', required: true },
       { key: 'syslog_port', label: 'Syslog Port (optional)', type: 'number', placeholder: '5140' },
     ] },
-  { id: 'mxwatch', name: 'MxWatch', type: 'ndr', Icon: Wifi,
-    description: 'Built-in MxTac NDR agent — packet capture, protocol parsing, flow extraction',
-    fields: [], builtin: true },
   // EDR Sources
   { id: 'wazuh', name: 'Wazuh', type: 'edr', Icon: Monitor,
     description: 'Endpoint security — file integrity, rootkit detection, compliance',
@@ -58,9 +62,6 @@ const SOURCE_TEMPLATES: Omit<DataSource, 'status' | 'eventsPerMin' | 'lastSeen'>
       { key: 'server_url', label: 'Server URL', type: 'url', placeholder: 'https://velociraptor:8889', required: true },
       { key: 'api_key', label: 'API Key', type: 'password', placeholder: 'vr-api-...', required: true },
     ] },
-  { id: 'mxguard', name: 'MxGuard', type: 'edr', Icon: Monitor,
-    description: 'Built-in MxTac EDR agent — process monitoring, file integrity, auth tracking',
-    fields: [], builtin: true },
   // SIEM Sources
   { id: 'elastic', name: 'Elastic SIEM', type: 'siem', Icon: Server,
     description: 'Elasticsearch-based SIEM — forward alerts and events',
