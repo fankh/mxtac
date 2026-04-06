@@ -35,6 +35,7 @@ export function NdrLogPage() {
   const [query, setQuery] = useState('')
   const [timeRange, setTimeRange] = useState('24h')
   const [selectedRow, setSelectedRow] = useState<number | null>(null)
+  const [protoFilter, setProtoFilter] = useState<string | null>(null)
 
   const hasToken = !!localStorage.getItem('access_token')
 
@@ -147,10 +148,35 @@ export function NdrLogPage() {
           </button>
         </div>
 
-        {/* Toolbar — matches Hunt sub-bar style */}
+        {/* Filter toolbar — matches Hunt sub-bar */}
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
+          {['TCP', 'UDP', 'ICMP', 'DNS', 'HTTP', 'TLS', 'SSH'].map(proto => (
+            <button
+              key={proto}
+              onClick={() => setProtoFilter(protoFilter === proto ? null : proto)}
+              className={`px-2.5 h-[26px] text-[10px] font-medium rounded-md border transition-colors ${
+                protoFilter === proto
+                  ? 'bg-blue text-white border-blue'
+                  : 'bg-surface border-border text-text-secondary hover:bg-page'
+              }`}
+            >
+              {proto}
+            </button>
+          ))}
+          {protoFilter && (
+            <button
+              onClick={() => setProtoFilter(null)}
+              className="text-[10px] text-text-muted hover:text-text-primary transition-colors ml-1"
+            >
+              ✕ Clear
+            </button>
+          )}
+        </div>
+
+        {/* Stats bar */}
         <div className="flex items-center gap-3 mb-3 text-[11px]">
           <span className="text-text-muted">
-            <strong className="text-text-primary">{flows.length.toLocaleString()}</strong> flows
+            <strong className="text-text-primary">{(protoFilter ? flows.filter(f => f.protocol === protoFilter).length : flows.length).toLocaleString()}</strong> flows
             {totalBytes > 0 && <> · <strong className="text-text-primary">{formatBytes(totalBytes)}</strong></>}
             {topProtos.length > 0 && <> · {topProtos.map(([p, c]) => `${p}: ${c}`).slice(0, 4).join(', ')}</>}
           </span>
@@ -212,7 +238,7 @@ export function NdrLogPage() {
                 </tr>
               </thead>
               <tbody>
-                {flows.slice(0, 200).map((f, i) => (
+                {(protoFilter ? flows.filter(f => f.protocol === protoFilter) : flows).slice(0, 200).map((f, i) => (
                     <tr
                       key={i}
                       onClick={() => setSelectedRow(selectedRow === i ? null : i)}
