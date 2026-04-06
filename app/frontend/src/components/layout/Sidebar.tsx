@@ -7,6 +7,7 @@ import { MfaSetupModal } from '../features/auth/MfaSetupModal'
 import {
   Search,
   Wifi,
+  Radio,
   Crosshair,
   Sun,
   Moon,
@@ -17,6 +18,7 @@ import {
 const NAV: { to: string; Icon: ComponentType<LucideProps>; label: string }[] = [
   { to: '/',        Icon: Crosshair,       label: 'ATT&CK Matrix' },
   { to: '/hunt',    Icon: Search,          label: 'Hunt' },
+  { to: '/ndr',     Icon: Radio,           label: 'NDR Logs' },
   { to: '/sources', Icon: Wifi,            label: 'Sources' },
 ]
 
