@@ -271,7 +271,7 @@ export function SourcesPage() {
 
         {/* Stats bar */}
         <div className="flex items-center gap-3 text-[11px] text-text-muted mb-3">
-          <span><strong className={connectedCount > 0 ? 'text-green-500' : 'text-text-muted'}>{connectedCount}</strong> connected</span>
+          <span><strong className={connectedCount > 0 ? 'text-status-ok' : 'text-text-muted'}>{connectedCount}</strong> connected</span>
           <span>·</span>
           <span><strong className="text-text-primary">{sources.filter(s => s.type === 'ndr').length}</strong> NDR</span>
           <span>·</span>

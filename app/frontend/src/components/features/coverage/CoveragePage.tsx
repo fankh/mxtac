@@ -351,7 +351,7 @@ export function CoveragePage() {
 
       {/* Stats bar */}
       <div className="flex items-center gap-3 text-[11px] text-text-muted mb-3">
-        <span className={`font-bold text-[14px] ${stats.pct >= 80 ? 'text-green-500' : stats.pct >= 60 ? 'text-yellow-500' : 'text-red-500'}`}>
+        <span className={`font-bold text-[14px] ${stats.pct >= 80 ? 'text-status-ok' : stats.pct >= 60 ? 'text-high-text' : 'text-crit-text'}`}>
           {stats.pct}%
         </span>
         <span>coverage</span>
@@ -394,7 +394,7 @@ export function CoveragePage() {
                 <span className="text-[11px] flex-1 truncate">{tactic.name}</span>
                 <div className="w-[80px] h-1.5 rounded-full bg-border overflow-hidden shrink-0">
                   <div
-                    className={`h-full rounded-full ${pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-yellow-500' : pct > 0 ? 'bg-red-500' : 'bg-border'}`}
+                    className={`h-full rounded-full ${pct >= 80 ? 'bg-status-ok' : pct >= 50 ? 'bg-high-text' : pct > 0 ? 'bg-crit-text' : 'bg-border'}`}
                     style={{ width: `${pct}%` }}
                   />
                 </div>
@@ -429,11 +429,11 @@ export function CoveragePage() {
                   <button
                     onClick={() => setActiveTactic(activeTactic?.id === tactic.id ? null : { id: tactic.id, name: tactic.name })}
                     className={`px-2 py-1.5 rounded-t text-center border-b-2 w-full transition-colors cursor-pointer ${
-                      activeTactic?.id === tactic.id ? 'bg-blue/10 border-blue ring-1 ring-blue/30' :
-                      tacticPct >= 80 ? 'bg-green-500/10 border-green-500 hover:bg-green-500/20' :
-                      tacticPct >= 50 ? 'bg-yellow-500/10 border-yellow-500 hover:bg-yellow-500/20' :
-                      tacticPct > 0 ? 'bg-red-500/10 border-red-500 hover:bg-red-500/20' :
-                      'bg-page border-border hover:bg-hover'
+                      activeTactic?.id === tactic.id ? 'bg-blue-light border-blue ring-1 ring-blue/30' :
+                      tacticPct >= 80 ? 'bg-section border-status-ok hover:opacity-80' :
+                      tacticPct >= 50 ? 'bg-section border-high-text hover:opacity-80' :
+                      tacticPct > 0 ? 'bg-section border-crit-text hover:opacity-80' :
+                      'bg-section border-border hover:bg-hover'
                     }`}
                   >
                     <p className="text-[9px] font-bold text-text-primary leading-tight truncate" title={tactic.name}>{tactic.name}</p>
@@ -450,10 +450,10 @@ export function CoveragePage() {
                         }}
                         className={`px-1.5 py-[3px] rounded-[3px] cursor-pointer transition-colors text-left w-full ${
                           activeTechnique === tech.id
-                            ? 'bg-blue/20 text-blue ring-1 ring-blue/40'
+                            ? 'bg-blue-light text-blue ring-1 ring-blue/40'
                             : tech.covered
-                              ? 'bg-green-500/20 text-green-700 hover:bg-green-500/30'
-                              : 'bg-page text-text-muted/50 hover:bg-border/30'
+                              ? 'bg-resolved-bg text-resolved-text hover:opacity-80'
+                              : 'bg-section text-text-muted hover:bg-hover'
                         }`}
                         title={`${tech.id}: ${tech.name}`}
                       >
@@ -473,8 +473,8 @@ export function CoveragePage() {
 
         {/* Legend */}
         <div className="flex items-center gap-4 mt-3 text-[10px] text-text-muted">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-green-500/20 border border-green-500/30" /> Covered</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-page border border-border" /> Not Covered</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-resolved-bg border border-resolved-text/30" /> Covered</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-section border border-border" /> Not Covered</span>
           <span className="ml-auto text-text-muted">Click tactic or technique to view finding logs</span>
         </div>
       </div>
