@@ -143,7 +143,7 @@ export function NdrLogPage() {
             onClick={handleSearch}
             className="h-[32px] px-4 text-[12px] font-medium bg-blue text-white rounded-md hover:opacity-90 transition-opacity"
           >
-            Search
+            Run Search
           </button>
         </div>
 
@@ -184,7 +184,15 @@ export function NdrLogPage() {
           </div>
         )}
 
-        {/* Flow table */}
+        {/* Flow table — only show when results exist */}
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64 text-text-muted text-[12px]">Loading NDR flows…</div>
+        ) : flows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64">
+            <p className="text-[13px] font-semibold text-text-primary mb-1">No Network Flows</p>
+            <p className="text-[11px] text-text-muted">Connect an NDR source (Zeek, Suricata, or MxWatch) to start capturing flows.</p>
+          </div>
+        ) : (
         <div className="bg-surface border border-border rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-[11px]">
@@ -201,15 +209,7 @@ export function NdrLogPage() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
-                  <tr><td colSpan={8} className="p-8 text-center text-text-muted text-[11px]">Loading NDR flows...</td></tr>
-                ) : flows.length === 0 ? (
-                  <tr><td colSpan={8} className="p-12 text-center">
-                    <p className="text-[13px] font-semibold text-text-primary mb-1">No Network Flows</p>
-                    <p className="text-[11px] text-text-muted">Connect an NDR source (Zeek, Suricata, or MxWatch) to start capturing flows.</p>
-                  </td></tr>
-                ) : (
-                  flows.slice(0, 200).map((f, i) => (
+                {flows.slice(0, 200).map((f, i) => (
                     <tr
                       key={i}
                       onClick={() => setSelectedRow(selectedRow === i ? null : i)}
@@ -237,8 +237,7 @@ export function NdrLogPage() {
                       <td className="p-2.5 text-right font-mono tabular-nums text-text-muted">{formatBytes(f.bytes_out)}</td>
                       <td className="p-2.5 text-right font-mono tabular-nums text-text-muted">{f.duration_ms > 0 ? `${f.duration_ms}ms` : '—'}</td>
                     </tr>
-                  ))
-                )}
+                  ))}
               </tbody>
             </table>
           </div>
@@ -249,6 +248,7 @@ export function NdrLogPage() {
             </div>
           )}
         </div>
+        )}
       </div>
     </>
   )

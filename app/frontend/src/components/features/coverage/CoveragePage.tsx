@@ -80,7 +80,7 @@ export function CoveragePage() {
   return (
     <>
       <TopBar crumb="ATT&CK Matrix" />
-      <div className="pt-[46px] p-5 space-y-4">
+      <div className="pt-[46px] px-5 pb-6 space-y-4">
 
       {/* KPI Cards */}
       <div className="grid grid-cols-4 gap-4">
@@ -171,7 +171,7 @@ export function CoveragePage() {
               {TACTICS.map(t => (
                 <div
                   key={t.id}
-                  className="w-[80px] shrink-0 text-[9px] text-muted font-medium text-center truncate px-0.5"
+                  className="w-[80px] shrink-0 text-[10px] text-muted font-medium text-center truncate px-0.5"
                   title={t.name}
                 >
                   {t.name}
@@ -181,7 +181,7 @@ export function CoveragePage() {
             {/* Technique rows */}
             {heatmap.map(row => (
               <div key={row.technique_id} className="flex gap-[2px] mb-[2px] min-w-max">
-                <div className="w-[100px] shrink-0 text-[9px] font-mono text-muted truncate pr-1" title={row.technique_id}>
+                <div className="w-[100px] shrink-0 text-[10px] font-mono text-muted truncate pr-1" title={row.technique_id}>
                   {row.technique_id}
                 </div>
                 {row.cells.map((cell, ci) => {

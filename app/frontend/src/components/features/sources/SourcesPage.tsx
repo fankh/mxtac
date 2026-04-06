@@ -229,7 +229,7 @@ export function SourcesPage() {
   return (
     <>
       <TopBar crumb="Data Sources" />
-      <div className="pt-[46px] p-5 space-y-4">
+      <div className="pt-[46px] px-5 pb-6 space-y-4">
         {/* Stats */}
         <div className="grid grid-cols-4 gap-3">
           <div className="bg-surface border border-border rounded-lg p-4">
