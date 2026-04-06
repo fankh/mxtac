@@ -96,37 +96,7 @@ export function Sidebar() {
       </nav>
 
       {/* Bottom */}
-      <div className="flex flex-col items-center gap-3 pb-3 relative">
-        {/* Theme toggle */}
-        <div ref={menuRef} className="relative">
-          <button
-            className="text-text-muted hover:text-text-secondary text-base"
-            title={`Theme: ${theme}`}
-            onClick={() => setShowThemeMenu(!showThemeMenu)}
-          >
-            {(() => { const T = THEMES.find(t => t.value === theme)?.Icon ?? Sun; return <T className="w-[16px] h-[16px]" /> })()}
-          </button>
-
-          {showThemeMenu && (
-            <div className="absolute left-[52px] bottom-0 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[120px] z-50">
-              {THEMES.map((t) => (
-                <button
-                  key={t.value}
-                  onClick={() => { setTheme(t.value); setShowThemeMenu(false) }}
-                  className={`w-full flex items-center gap-2 px-3 py-[6px] text-[11px] transition-colors ${
-                    theme === t.value
-                      ? 'text-blue bg-blue-light font-medium'
-                      : 'text-text-secondary hover:bg-page'
-                  }`}
-                >
-                  <t.Icon className="w-[14px] h-[14px]" />
-                  <span>{t.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
+      <div className="flex flex-col items-center gap-3 pb-3">
         <button
           className="text-text-muted hover:text-text-secondary transition-colors"
           title="Keyboard Shortcuts"
@@ -135,16 +105,9 @@ export function Sidebar() {
           <HelpCircle className="w-[16px] h-[16px]" />
         </button>
         <button
-          className="text-text-muted hover:text-text-secondary transition-colors"
-          title="Security"
           onClick={() => setShowMfaModal(true)}
-        >
-          <Shield className="w-[16px] h-[16px]" />
-        </button>
-        <button
-          onClick={() => setShowMfaModal(true)}
-          title={user?.email ?? 'Account security'}
-          className="w-5 h-5 rounded-full bg-border flex items-center justify-center text-[9px] text-text-secondary font-semibold hover:bg-blue hover:text-white transition-colors"
+          title={user?.email ?? 'Account'}
+          className="w-6 h-6 rounded-full bg-border flex items-center justify-center text-[9px] text-text-secondary font-semibold hover:bg-blue hover:text-white transition-colors"
         >
           {initials}
         </button>
