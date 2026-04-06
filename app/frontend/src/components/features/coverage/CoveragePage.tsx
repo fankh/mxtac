@@ -35,17 +35,28 @@ const TACTICS = [
 export function CoveragePage() {
   const [selectedTactic, setSelectedTactic] = useState<string | null>(null)
   const [activeTactic, setActiveTactic] = useState<{ id: string; name: string } | null>(null)
+  const [activeTechnique, setActiveTechnique] = useState<string | null>(null)
   const hasToken = !!localStorage.getItem('access_token')
 
-  // Fetch finding logs when a tactic is clicked
+  // Fetch finding logs when a tactic or technique is clicked
+  const logsQueryKey = activeTechnique || activeTactic?.name || null
   const { data: tacticLogs, isLoading: logsLoading } = useQuery({
-    queryKey: ['tactic-logs', activeTactic?.name],
-    queryFn: () => eventsApi.search({
-      query: `tactic:${activeTactic!.name.toLowerCase().replace(/ /g, '_')} OR mitre_tactic:${activeTactic!.id}`,
-      time_range: '30d',
-      limit: 50,
-    }),
-    enabled: hasToken && !!activeTactic,
+    queryKey: ['tactic-logs', logsQueryKey],
+    queryFn: () => {
+      if (activeTechnique) {
+        return eventsApi.search({
+          query: `technique_id:${activeTechnique} OR mitre_technique:${activeTechnique}`,
+          time_range: '30d',
+          limit: 50,
+        })
+      }
+      return eventsApi.search({
+        query: `tactic:${activeTactic!.name.toLowerCase().replace(/ /g, '_')} OR mitre_tactic:${activeTactic!.id}`,
+        time_range: '30d',
+        limit: 50,
+      })
+    },
+    enabled: hasToken && (!!activeTactic || !!activeTechnique),
     staleTime: 30_000,
   })
 
@@ -219,17 +230,23 @@ export function CoveragePage() {
                   {/* Technique cells */}
                   <div className="flex flex-col gap-[2px] mt-[2px]">
                     {slots.slice(0, 12).map((tech, i) => (
-                      <div
+                      <button
                         key={i}
-                        className={`px-1.5 py-1 rounded-[3px] text-[8px] font-mono truncate cursor-default transition-colors ${
-                          tech.covered
-                            ? 'bg-green-500/20 text-green-700 hover:bg-green-500/30'
-                            : 'bg-page text-text-muted/50 hover:bg-border/30'
+                        onClick={() => {
+                          setActiveTechnique(activeTechnique === tech.id ? null : tech.id)
+                          setActiveTactic(activeTechnique === tech.id ? null : { id: tactic.id, name: tactic.name })
+                        }}
+                        className={`px-1.5 py-1 rounded-[3px] text-[8px] font-mono truncate cursor-pointer transition-colors text-left w-full ${
+                          activeTechnique === tech.id
+                            ? 'bg-blue/20 text-blue ring-1 ring-blue/40'
+                            : tech.covered
+                              ? 'bg-green-500/20 text-green-700 hover:bg-green-500/30'
+                              : 'bg-page text-text-muted/50 hover:bg-border/30'
                         }`}
-                        title={tech.id}
+                        title={`${tech.id} — Click to view logs`}
                       >
                         {tech.id}
-                      </div>
+                      </button>
                     ))}
                     {slots.length > 12 && (
                       <div className="text-[8px] text-text-muted text-center py-0.5">+{slots.length - 12} more</div>
@@ -245,20 +262,29 @@ export function CoveragePage() {
         <div className="flex items-center gap-4 mt-3 text-[10px] text-text-muted">
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-green-500/20 border border-green-500/30" /> Covered</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-[2px] bg-page border border-border" /> Not Covered</span>
-          <span className="ml-auto text-text-muted">Click a tactic header to view finding logs</span>
+          <span className="ml-auto text-text-muted">Click tactic or technique to view finding logs</span>
         </div>
       </div>
 
       {/* Finding Logs Panel — shows when a tactic is clicked */}
-      {activeTactic && (
+      {(activeTactic || activeTechnique) && (
         <div className="bg-surface border border-border rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-[11px] font-semibold">
-              Finding Logs — <span className="text-blue">{activeTactic.name}</span>
-              <span className="text-text-muted font-mono ml-1">({activeTactic.id})</span>
+              Finding Logs — {activeTechnique ? (
+                <>
+                  <span className="text-blue font-mono">{activeTechnique}</span>
+                  <span className="text-text-muted ml-1">in {activeTactic?.name}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-blue">{activeTactic!.name}</span>
+                  <span className="text-text-muted font-mono ml-1">({activeTactic!.id})</span>
+                </>
+              )}
             </h2>
             <button
-              onClick={() => setActiveTactic(null)}
+              onClick={() => { setActiveTactic(null); setActiveTechnique(null) }}
               className="text-[10px] text-text-muted hover:text-text-primary transition-colors"
             >
               ✕ Close
@@ -272,8 +298,8 @@ export function CoveragePage() {
             if (events.length === 0) {
               return (
                 <div className="flex flex-col items-center justify-center h-32">
-                  <p className="text-[12px] font-semibold text-text-primary mb-1">No findings for {activeTactic.name}</p>
-                  <p className="text-[10px] text-text-muted">No events matched this tactic in the last 30 days.</p>
+                  <p className="text-[12px] font-semibold text-text-primary mb-1">No findings for {activeTechnique || activeTactic?.name}</p>
+                  <p className="text-[10px] text-text-muted">No events matched this {activeTechnique ? 'technique' : 'tactic'} in the last 30 days.</p>
                 </div>
               )
             }
