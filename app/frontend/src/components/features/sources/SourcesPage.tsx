@@ -223,27 +223,30 @@ export function SourcesPage() {
     } as DataSource
   })
 
-  const filtered = filter === 'all' ? sources : sources.filter(s => s.type === filter)
+  const filtered = filter === 'all' ? sources
+    : filter.startsWith('search:') ? sources.filter(s => s.name.toLowerCase().includes(filter.slice(7)) || s.description.toLowerCase().includes(filter.slice(7)))
+    : sources.filter(s => s.type === filter)
   const connectedCount = sources.filter(s => s.status === 'connected').length
 
   return (
     <>
       <TopBar crumb="Data Sources" />
       <div className="pt-[46px] px-5 pb-6 space-y-4">
-        {/* Stats — inline text like Hunt/NDR */}
-        <div className="flex items-center gap-3 text-[11px] text-text-muted py-1">
-          <span><strong className="text-green-500">{connectedCount}</strong> connected</span>
-          <span>·</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'ndr').length}</strong> NDR</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'edr').length}</strong> EDR</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'siem').length}</strong> SIEM</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'cloud').length}</strong> Cloud</span>
-          <span>·</span>
-          <span><strong className="text-text-primary">{sources.length}</strong> total</span>
-        </div>
-
-        {/* Filter tabs — matches Hunt/NDR time chip style */}
-        <div className="flex items-center border border-border rounded-md overflow-hidden">
+        {/* Search bar + filter chips — matches Hunt/NDR layout */}
+        <div className="flex items-center gap-2 py-3 flex-wrap">
+          <div className="relative flex-1 min-w-[280px]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[13px] select-none">⌕</span>
+            <input
+              type="text"
+              placeholder="Search sources — e.g. Zeek, Wazuh, CloudTrail"
+              className="w-full h-[32px] pl-8 pr-3 text-[12px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
+              onChange={e => {
+                const q = e.target.value.toLowerCase()
+                setFilter(q ? 'search:' + q : 'all')
+              }}
+            />
+          </div>
+          <div className="flex items-center border border-border rounded-md overflow-hidden">
           {[
             { value: 'all', label: 'All' },
             { value: 'ndr', label: 'NDR' },
@@ -263,6 +266,22 @@ export function SourcesPage() {
               {tab.label}
             </button>
           ))}
+          </div>
+        </div>
+
+        {/* Stats bar */}
+        <div className="flex items-center gap-3 text-[11px] text-text-muted mb-3">
+          <span><strong className="text-green-500">{connectedCount}</strong> connected</span>
+          <span>·</span>
+          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'ndr').length}</strong> NDR</span>
+          <span>·</span>
+          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'edr').length}</strong> EDR</span>
+          <span>·</span>
+          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'siem').length}</strong> SIEM</span>
+          <span>·</span>
+          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'cloud').length}</strong> Cloud</span>
+          <span>·</span>
+          <span><strong className="text-text-primary">{sources.length}</strong> total</span>
         </div>
 
         {/* Source cards */}

@@ -77,7 +77,7 @@ export function LoginPage() {
                       submitMfa(val)
                     }
                   }}
-                  className="border border-border rounded-md px-3 py-2 text-sm text-text-primary bg-page
+                  className="border border-border rounded-md px-3 py-2 text-sm text-text-primary bg-surface
                              focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue placeholder:text-text-muted
                              tracking-widest text-center"
                   placeholder={useBackup ? 'XXXXXXXX' : '000000'}
@@ -136,7 +136,7 @@ export function LoginPage() {
                   required
                   value={email}
                   onChange={e => { setEmail(e.target.value); if (error) clearError() }}
-                  className="border border-border rounded-md px-3 py-2 text-sm text-text-primary bg-page
+                  className="border border-border rounded-md px-3 py-2 text-sm text-text-primary bg-surface
                              focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue placeholder:text-text-muted"
                   placeholder="you@example.com"
                 />
@@ -153,7 +153,7 @@ export function LoginPage() {
                   required
                   value={password}
                   onChange={e => { setPassword(e.target.value); if (error) clearError() }}
-                  className="border border-border rounded-md px-3 py-2 text-sm text-text-primary bg-page
+                  className="border border-border rounded-md px-3 py-2 text-sm text-text-primary bg-surface
                              focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue placeholder:text-text-muted"
                   placeholder="••••••••"
                 />

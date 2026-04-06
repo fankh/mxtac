@@ -82,7 +82,7 @@ export function CoveragePage() {
       <TopBar crumb="ATT&CK Matrix" />
       <div className="pt-[46px] px-5 pb-6">
 
-      {/* Search bar — matches Hunt/NDR layout */}
+      {/* Search bar + tactic filter chips — matches Hunt/NDR layout */}
       <div className="flex items-center gap-2 py-3 flex-wrap">
         <div className="relative flex-1 min-w-[280px]">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[13px] select-none">⌕</span>
@@ -90,9 +90,22 @@ export function CoveragePage() {
             type="text"
             value={selectedTactic ?? ''}
             onChange={e => setSelectedTactic(e.target.value || null)}
-            placeholder="Filter techniques — type a tactic name (e.g. Execution, Persistence)"
+            placeholder="Filter by tactic — e.g. Execution, Persistence, Lateral Movement"
             className="w-full h-[32px] pl-8 pr-3 text-[12px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
           />
+        </div>
+        <div className="flex items-center border border-border rounded-md overflow-hidden">
+          {['All', 'Covered', 'Gaps'].map(f => (
+            <button
+              key={f}
+              className={`px-3 h-[32px] text-[11px] font-medium border-r border-border last:border-r-0 transition-colors ${
+                (f === 'All' && !selectedTactic) ? 'bg-blue text-white' : 'bg-surface text-text-secondary hover:bg-page'
+              }`}
+              onClick={() => setSelectedTactic(f === 'All' ? null : f === 'Covered' ? 'covered' : 'gaps')}
+            >
+              {f}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -106,57 +119,49 @@ export function CoveragePage() {
         <span><strong className="text-text-primary">{stats.covered}</strong> / {stats.total} techniques</span>
         <span>·</span>
         <span><strong className="text-text-primary">{heatmap?.length ?? 0}</strong> rules mapped</span>
+        <span>·</span>
+        <span><strong className="text-text-primary">{TACTICS.length}</strong> tactics</span>
       </div>
 
-      {/* Coverage Trend + Tactic Breakdown */}
-      <div className="grid grid-cols-[1fr_360px] gap-4">
-        {/* Trend Chart */}
-        <div className="bg-surface border border-border rounded-lg p-4">
-          <h2 className="text-xs font-semibold mb-3">Coverage Trend (30 days)</h2>
-          {trendData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--color-muted)' }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--color-muted)' }} unit="%" />
-                <Tooltip contentStyle={{ fontSize: 11, background: 'var(--color-surface)', border: '1px solid var(--color-border)' }} />
-                <Area type="monotone" dataKey="pct" stroke="var(--color-blue)" fill="var(--color-blue)" fillOpacity={0.1} strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-[200px] flex items-center justify-center text-xs text-muted">No trend data</div>
-          )}
-        </div>
+      {/* Coverage Trend — full width, single column */}
+      <div className="bg-surface border border-border rounded-lg p-4 mb-4">
+        <h2 className="text-[11px] font-semibold mb-3">Coverage Trend (30 days)</h2>
+        {trendData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={160}>
+            <AreaChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--color-muted)' }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--color-muted)' }} unit="%" />
+              <Tooltip contentStyle={{ fontSize: 11, background: 'var(--color-surface)', border: '1px solid var(--color-border)' }} />
+              <Area type="monotone" dataKey="pct" stroke="var(--color-blue)" fill="var(--color-blue)" fillOpacity={0.1} strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-[160px] flex items-center justify-center text-[11px] text-text-muted">No trend data</div>
+        )}
+      </div>
 
-        {/* Tactic Breakdown */}
-        <div className="bg-surface border border-border rounded-lg p-4">
-          <h2 className="text-xs font-semibold mb-3">Coverage by Tactic</h2>
-          <div className="space-y-2">
-            {TACTICS.map(tactic => {
-              const data = stats.byTactic[tactic.name] || { covered: 0, total: 0 }
-              const pct = data.total > 0 ? Math.round((data.covered / data.total) * 100) : 0
-              const isSelected = selectedTactic === tactic.id
-              return (
-                <button
-                  key={tactic.id}
-                  onClick={() => setSelectedTactic(isSelected ? null : tactic.id)}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors ${
-                    isSelected ? 'bg-blue/10 border border-blue/30' : 'hover:bg-hover'
-                  }`}
-                >
-                  <span className="text-[10px] text-muted font-mono w-[50px]">{tactic.id}</span>
-                  <span className="text-[11px] flex-1 truncate">{tactic.name}</span>
-                  <div className="w-[60px] h-1.5 rounded-full bg-border overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-yellow-500' : pct > 0 ? 'bg-red-500' : 'bg-border'}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] font-medium w-[30px] text-right">{pct}%</span>
-                </button>
-              )
-            })}
-          </div>
+      {/* Tactic Breakdown — horizontal bar list, single column */}
+      <div className="bg-surface border border-border rounded-lg p-4 mb-4">
+        <h2 className="text-[11px] font-semibold mb-3">Coverage by Tactic</h2>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+          {TACTICS.map(tactic => {
+            const data = stats.byTactic[tactic.name] || { covered: 0, total: 0 }
+            const pct = data.total > 0 ? Math.round((data.covered / data.total) * 100) : 0
+            return (
+              <div key={tactic.id} className="flex items-center gap-2">
+                <span className="text-[10px] text-text-muted font-mono w-[46px] shrink-0">{tactic.id}</span>
+                <span className="text-[11px] flex-1 truncate">{tactic.name}</span>
+                <div className="w-[80px] h-1.5 rounded-full bg-border overflow-hidden shrink-0">
+                  <div
+                    className={`h-full rounded-full ${pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-yellow-500' : pct > 0 ? 'bg-red-500' : 'bg-border'}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className="text-[10px] font-medium w-[28px] text-right text-text-muted">{pct}%</span>
+              </div>
+            )
+          })}
         </div>
       </div>
 
