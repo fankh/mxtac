@@ -337,7 +337,7 @@ export function SourcesPage() {
                 {source.builtin ? (
                   <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-medium text-blue bg-blue-light px-2 py-0.5 rounded border border-blue/40">Built-in</span>
+                      <span className="text-[10px] font-medium text-blue bg-blue/10 px-2 py-0.5 rounded border border-blue/20">Built-in</span>
                       <button
                         onClick={() => {
                           const key = `mxtac_source_${source.id}_enabled`
@@ -347,7 +347,7 @@ export function SourcesPage() {
                         }}
                         className={`text-[10px] font-medium px-2 py-0.5 rounded border transition-colors ${
                           localStorage.getItem(`mxtac_source_${source.id}_enabled`) !== 'false'
-                            ? 'bg-resolved-bg text-resolved-text border-resolved-text/40'
+                            ? 'bg-green-500/10 text-green-600 border-green-500/20'
                             : 'bg-page text-text-muted border-border'
                         }`}
                       >
