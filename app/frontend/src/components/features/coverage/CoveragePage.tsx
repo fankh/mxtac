@@ -369,11 +369,11 @@ export function CoveragePage() {
         {trendData.length > 0 ? (
           <ResponsiveContainer width="100%" height={160}>
             <AreaChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--color-muted)' }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--color-muted)' }} unit="%" />
-              <Tooltip contentStyle={{ fontSize: 11, background: 'var(--color-surface)', border: '1px solid var(--color-border)' }} />
-              <Area type="monotone" dataKey="pct" stroke="var(--color-blue)" fill="var(--color-blue)" fillOpacity={0.1} strokeWidth={2} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border, #e2e8f0)" opacity={0.3} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--color-text-muted, #94a3b8)' }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--color-text-muted, #94a3b8)' }} unit="%" />
+              <Tooltip contentStyle={{ fontSize: 11, background: 'var(--color-surface, #fff)', border: '1px solid var(--color-border, #e2e8f0)', color: 'var(--color-text-primary, #1a1d22)' }} />
+              <Area type="monotone" dataKey="pct" stroke="var(--color-primary, #0066CC)" fill="var(--color-primary, #0066CC)" fillOpacity={0.15} strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         ) : (
