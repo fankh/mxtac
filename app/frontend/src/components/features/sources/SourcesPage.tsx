@@ -20,9 +20,11 @@ interface DataSource {
   Icon: ComponentType<LucideProps>
   description: string
   fields: ConfigField[]
+  builtin?: boolean
   status: 'connected' | 'disconnected' | 'error'
   eventsPerMin?: number
   lastSeen?: string
+  agentCount?: number
 }
 
 const SOURCE_TEMPLATES: Omit<DataSource, 'status' | 'eventsPerMin' | 'lastSeen'>[] = [
@@ -40,11 +42,8 @@ const SOURCE_TEMPLATES: Omit<DataSource, 'status' | 'eventsPerMin' | 'lastSeen'>
       { key: 'syslog_port', label: 'Syslog Port (optional)', type: 'number', placeholder: '5140' },
     ] },
   { id: 'mxwatch', name: 'MxWatch', type: 'ndr', Icon: Wifi,
-    description: 'MxTac NDR agent — auto-registers via API key',
-    fields: [
-      { key: 'api_key', label: 'Agent API Key', type: 'password', placeholder: 'Auto-generated on save', required: true },
-      { key: 'interface', label: 'Capture Interface', type: 'text', placeholder: 'eth0' },
-    ] },
+    description: 'Built-in MxTac NDR agent — packet capture, protocol parsing, flow extraction',
+    fields: [], builtin: true },
   // EDR Sources
   { id: 'wazuh', name: 'Wazuh', type: 'edr', Icon: Monitor,
     description: 'Endpoint security — file integrity, rootkit detection, compliance',
@@ -60,10 +59,8 @@ const SOURCE_TEMPLATES: Omit<DataSource, 'status' | 'eventsPerMin' | 'lastSeen'>
       { key: 'api_key', label: 'API Key', type: 'password', placeholder: 'vr-api-...', required: true },
     ] },
   { id: 'mxguard', name: 'MxGuard', type: 'edr', Icon: Monitor,
-    description: 'MxTac EDR agent — auto-registers via API key',
-    fields: [
-      { key: 'api_key', label: 'Agent API Key', type: 'password', placeholder: 'Auto-generated on save', required: true },
-    ] },
+    description: 'Built-in MxTac EDR agent — process monitoring, file integrity, auth tracking',
+    fields: [], builtin: true },
   // SIEM Sources
   { id: 'elastic', name: 'Elastic SIEM', type: 'siem', Icon: Server,
     description: 'Elasticsearch-based SIEM — forward alerts and events',
@@ -183,8 +180,35 @@ export function SourcesPage() {
     staleTime: 30_000,
   })
 
-  // Merge templates with live connector status
+  // Fetch registered agents for built-in sources
+  const { data: agents } = useQuery({
+    queryKey: ['agents'],
+    queryFn: async () => {
+      const token = localStorage.getItem('access_token')
+      if (!token) return []
+      const resp = await fetch('/api/v1/agents', { headers: { Authorization: `Bearer ${token}` } })
+      if (!resp.ok) return []
+      return resp.json()
+    },
+    staleTime: 30_000,
+  })
+
+  // Merge templates with live connector/agent status
   const sources: DataSource[] = SOURCE_TEMPLATES.map(tpl => {
+    if (tpl.builtin) {
+      // Built-in agents: check agent registrations
+      const agentType = tpl.id // 'mxwatch' or 'mxguard'
+      const registered = Array.isArray(agents)
+        ? agents.filter((a: Record<string, unknown>) => (a.agent_type as string) === agentType)
+        : []
+      const online = registered.filter((a: Record<string, unknown>) => a.status === 'online')
+      return {
+        ...tpl,
+        status: online.length > 0 ? 'connected' as const : registered.length > 0 ? 'error' as const : 'disconnected' as const,
+        agentCount: registered.length,
+        lastSeen: online[0]?.last_heartbeat as string | undefined,
+      } as DataSource
+    }
     const live = Array.isArray(connectors)
       ? connectors.find((c: Record<string, unknown>) =>
           (c.connector_type as string)?.toLowerCase() === tpl.id || (c.name as string)?.toLowerCase() === tpl.id
@@ -296,7 +320,16 @@ export function SourcesPage() {
                   </div>
                 )}
 
-                {source.status === 'disconnected' && (
+                {source.builtin ? (
+                  <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
+                    <span className="text-[10px] font-medium text-blue bg-blue/5 px-2 py-0.5 rounded border border-blue/20">Built-in Agent</span>
+                    {source.agentCount != null && source.agentCount > 0 ? (
+                      <span className="text-[10px] text-text-muted">{source.agentCount} agent{source.agentCount > 1 ? 's' : ''} registered</span>
+                    ) : (
+                      <span className="text-[10px] text-text-muted">No agents registered — deploy with <code className="bg-page px-1 rounded">mxtac/{source.id}</code></span>
+                    )}
+                  </div>
+                ) : source.status === 'disconnected' ? (
                   <div className="mt-3 pt-3 border-t border-border">
                     <button
                       onClick={() => openConfig(source.id)}
@@ -306,7 +339,7 @@ export function SourcesPage() {
                       Configure
                     </button>
                   </div>
-                )}
+                ) : null}
               </div>
             )
           })}
