@@ -58,7 +58,7 @@ export function LoginPage() {
 
             <form onSubmit={handleMfaSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
-                <label htmlFor="mfa-code" className="text-text-secondary text-xs font-medium">
+                <label htmlFor="mfa-code" className="text-text-secondary text-[11px] font-medium">
                   {useBackup ? 'Backup code' : 'Authentication code'}
                 </label>
                 <input
@@ -77,7 +77,7 @@ export function LoginPage() {
                       submitMfa(val)
                     }
                   }}
-                  className="border border-border rounded-md px-3 py-2 text-sm text-text-primary bg-surface
+                  className="border border-border rounded-md px-3 py-2 text-[12px] text-text-primary bg-surface
                              focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue placeholder:text-text-muted
                              tracking-widest text-center"
                   placeholder={useBackup ? 'XXXXXXXX' : '000000'}
@@ -94,7 +94,7 @@ export function LoginPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="bg-blue text-white rounded-md py-2 text-sm font-medium
+                className="bg-blue text-white rounded-md py-2 text-[12px] font-medium
                            hover:bg-blue-dark disabled:opacity-50 disabled:cursor-not-allowed
                            transition-colors mt-1"
               >
@@ -126,7 +126,7 @@ export function LoginPage() {
 
             <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
-                <label htmlFor="email" className="text-text-secondary text-xs font-medium">
+                <label htmlFor="email" className="text-text-secondary text-[11px] font-medium">
                   Email
                 </label>
                 <input
@@ -136,14 +136,14 @@ export function LoginPage() {
                   required
                   value={email}
                   onChange={e => { setEmail(e.target.value); if (error) clearError() }}
-                  className="border border-border rounded-md px-3 py-2 text-sm text-text-primary bg-surface
+                  className="border border-border rounded-md px-3 py-2 text-[12px] text-text-primary bg-surface
                              focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue placeholder:text-text-muted"
                   placeholder="you@example.com"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
-                <label htmlFor="password" className="text-text-secondary text-xs font-medium">
+                <label htmlFor="password" className="text-text-secondary text-[11px] font-medium">
                   Password
                 </label>
                 <input
@@ -153,7 +153,7 @@ export function LoginPage() {
                   required
                   value={password}
                   onChange={e => { setPassword(e.target.value); if (error) clearError() }}
-                  className="border border-border rounded-md px-3 py-2 text-sm text-text-primary bg-surface
+                  className="border border-border rounded-md px-3 py-2 text-[12px] text-text-primary bg-surface
                              focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue placeholder:text-text-muted"
                   placeholder="••••••••"
                 />
@@ -168,7 +168,7 @@ export function LoginPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="bg-blue text-white rounded-md py-2 text-sm font-medium
+                className="bg-blue text-white rounded-md py-2 text-[12px] font-medium
                            hover:bg-blue-dark disabled:opacity-50 disabled:cursor-not-allowed
                            transition-colors mt-1"
               >
