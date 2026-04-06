@@ -14,22 +14,236 @@ import {
   CartesianGrid,
 } from 'recharts'
 
-// MITRE ATT&CK 14 Tactics (Enterprise)
-const TACTICS = [
-  { id: 'TA0043', name: 'Reconnaissance' },
-  { id: 'TA0042', name: 'Resource Development' },
-  { id: 'TA0001', name: 'Initial Access' },
-  { id: 'TA0002', name: 'Execution' },
-  { id: 'TA0003', name: 'Persistence' },
-  { id: 'TA0004', name: 'Privilege Escalation' },
-  { id: 'TA0005', name: 'Defense Evasion' },
-  { id: 'TA0006', name: 'Credential Access' },
-  { id: 'TA0007', name: 'Discovery' },
-  { id: 'TA0008', name: 'Lateral Movement' },
-  { id: 'TA0009', name: 'Collection' },
-  { id: 'TA0011', name: 'Command and Control' },
-  { id: 'TA0010', name: 'Exfiltration' },
-  { id: 'TA0040', name: 'Impact' },
+// MITRE ATT&CK Enterprise v15 — real techniques per tactic
+const TACTICS: { id: string; name: string; techniques: { id: string; name: string }[] }[] = [
+  { id: 'TA0043', name: 'Reconnaissance', techniques: [
+    { id: 'T1595', name: 'Active Scanning' },
+    { id: 'T1592', name: 'Gather Victim Host Info' },
+    { id: 'T1589', name: 'Gather Victim Identity' },
+    { id: 'T1590', name: 'Gather Victim Network Info' },
+    { id: 'T1591', name: 'Gather Victim Org Info' },
+    { id: 'T1598', name: 'Phishing for Information' },
+    { id: 'T1597', name: 'Search Closed Sources' },
+    { id: 'T1596', name: 'Search Open Tech DBs' },
+    { id: 'T1593', name: 'Search Open Websites' },
+    { id: 'T1594', name: 'Search Victim Infra' },
+  ]},
+  { id: 'TA0042', name: 'Resource Dev', techniques: [
+    { id: 'T1583', name: 'Acquire Infrastructure' },
+    { id: 'T1586', name: 'Compromise Accounts' },
+    { id: 'T1584', name: 'Compromise Infrastructure' },
+    { id: 'T1587', name: 'Develop Capabilities' },
+    { id: 'T1585', name: 'Establish Accounts' },
+    { id: 'T1588', name: 'Obtain Capabilities' },
+    { id: 'T1608', name: 'Stage Capabilities' },
+  ]},
+  { id: 'TA0001', name: 'Initial Access', techniques: [
+    { id: 'T1189', name: 'Drive-by Compromise' },
+    { id: 'T1190', name: 'Exploit Public App' },
+    { id: 'T1133', name: 'External Remote Services' },
+    { id: 'T1200', name: 'Hardware Additions' },
+    { id: 'T1566', name: 'Phishing' },
+    { id: 'T1091', name: 'Replication via Media' },
+    { id: 'T1195', name: 'Supply Chain Compromise' },
+    { id: 'T1199', name: 'Trusted Relationship' },
+    { id: 'T1078', name: 'Valid Accounts' },
+  ]},
+  { id: 'TA0002', name: 'Execution', techniques: [
+    { id: 'T1059', name: 'Command & Scripting' },
+    { id: 'T1609', name: 'Container Admin Cmd' },
+    { id: 'T1610', name: 'Deploy Container' },
+    { id: 'T1203', name: 'Exploitation for Client' },
+    { id: 'T1559', name: 'Inter-Process Comm' },
+    { id: 'T1106', name: 'Native API' },
+    { id: 'T1053', name: 'Scheduled Task/Job' },
+    { id: 'T1129', name: 'Shared Modules' },
+    { id: 'T1072', name: 'Software Deploy Tools' },
+    { id: 'T1569', name: 'System Services' },
+    { id: 'T1204', name: 'User Execution' },
+    { id: 'T1047', name: 'WMI' },
+  ]},
+  { id: 'TA0003', name: 'Persistence', techniques: [
+    { id: 'T1098', name: 'Account Manipulation' },
+    { id: 'T1197', name: 'BITS Jobs' },
+    { id: 'T1547', name: 'Boot/Logon Autostart' },
+    { id: 'T1037', name: 'Boot/Logon Init Scripts' },
+    { id: 'T1176', name: 'Browser Extensions' },
+    { id: 'T1554', name: 'Compromise Client SW' },
+    { id: 'T1136', name: 'Create Account' },
+    { id: 'T1543', name: 'Create/Modify Sys Proc' },
+    { id: 'T1546', name: 'Event Triggered Exec' },
+    { id: 'T1133', name: 'External Remote Services' },
+    { id: 'T1574', name: 'Hijack Execution Flow' },
+    { id: 'T1525', name: 'Implant Container Image' },
+    { id: 'T1556', name: 'Modify Auth Process' },
+    { id: 'T1137', name: 'Office App Startup' },
+    { id: 'T1542', name: 'Pre-OS Boot' },
+    { id: 'T1053', name: 'Scheduled Task/Job' },
+    { id: 'T1505', name: 'Server Software Comp' },
+    { id: 'T1078', name: 'Valid Accounts' },
+  ]},
+  { id: 'TA0004', name: 'Privilege Esc', techniques: [
+    { id: 'T1548', name: 'Abuse Elevation Ctrl' },
+    { id: 'T1134', name: 'Access Token Manip' },
+    { id: 'T1547', name: 'Boot/Logon Autostart' },
+    { id: 'T1543', name: 'Create/Modify Sys Proc' },
+    { id: 'T1484', name: 'Domain Policy Mod' },
+    { id: 'T1611', name: 'Escape to Host' },
+    { id: 'T1546', name: 'Event Triggered Exec' },
+    { id: 'T1068', name: 'Exploitation for Priv' },
+    { id: 'T1574', name: 'Hijack Execution Flow' },
+    { id: 'T1055', name: 'Process Injection' },
+    { id: 'T1053', name: 'Scheduled Task/Job' },
+    { id: 'T1078', name: 'Valid Accounts' },
+  ]},
+  { id: 'TA0005', name: 'Defense Evasion', techniques: [
+    { id: 'T1548', name: 'Abuse Elevation Ctrl' },
+    { id: 'T1134', name: 'Access Token Manip' },
+    { id: 'T1197', name: 'BITS Jobs' },
+    { id: 'T1140', name: 'Deobfuscate/Decode' },
+    { id: 'T1006', name: 'Direct Volume Access' },
+    { id: 'T1484', name: 'Domain Policy Mod' },
+    { id: 'T1480', name: 'Execution Guardrails' },
+    { id: 'T1211', name: 'Exploitation for Def' },
+    { id: 'T1222', name: 'File/Dir Permissions' },
+    { id: 'T1564', name: 'Hide Artifacts' },
+    { id: 'T1574', name: 'Hijack Execution Flow' },
+    { id: 'T1562', name: 'Impair Defenses' },
+    { id: 'T1070', name: 'Indicator Removal' },
+    { id: 'T1202', name: 'Indirect Command Exec' },
+    { id: 'T1036', name: 'Masquerading' },
+    { id: 'T1112', name: 'Modify Registry' },
+    { id: 'T1027', name: 'Obfuscated Files' },
+    { id: 'T1055', name: 'Process Injection' },
+    { id: 'T1207', name: 'Rogue Domain Ctrl' },
+    { id: 'T1014', name: 'Rootkit' },
+    { id: 'T1218', name: 'System Binary Proxy' },
+    { id: 'T1216', name: 'System Script Proxy' },
+    { id: 'T1221', name: 'Template Injection' },
+    { id: 'T1205', name: 'Traffic Signaling' },
+    { id: 'T1078', name: 'Valid Accounts' },
+    { id: 'T1497', name: 'Virtualization/Sandbox' },
+    { id: 'T1600', name: 'Weaken Encryption' },
+  ]},
+  { id: 'TA0006', name: 'Credential Access', techniques: [
+    { id: 'T1557', name: 'Adversary-in-the-Middle' },
+    { id: 'T1110', name: 'Brute Force' },
+    { id: 'T1555', name: 'Credentials from Stores' },
+    { id: 'T1212', name: 'Exploitation for Cred' },
+    { id: 'T1187', name: 'Forced Authentication' },
+    { id: 'T1606', name: 'Forge Web Credentials' },
+    { id: 'T1056', name: 'Input Capture' },
+    { id: 'T1556', name: 'Modify Auth Process' },
+    { id: 'T1111', name: 'Multi-Factor Intercept' },
+    { id: 'T1621', name: 'MFA Request Gen' },
+    { id: 'T1040', name: 'Network Sniffing' },
+    { id: 'T1003', name: 'OS Credential Dumping' },
+    { id: 'T1528', name: 'Steal App Access Token' },
+    { id: 'T1558', name: 'Steal/Forge Kerberos' },
+    { id: 'T1539', name: 'Steal Web Session' },
+    { id: 'T1552', name: 'Unsecured Credentials' },
+  ]},
+  { id: 'TA0007', name: 'Discovery', techniques: [
+    { id: 'T1087', name: 'Account Discovery' },
+    { id: 'T1010', name: 'Application Window' },
+    { id: 'T1217', name: 'Browser Information' },
+    { id: 'T1580', name: 'Cloud Infra Discovery' },
+    { id: 'T1538', name: 'Cloud Service Dashboard' },
+    { id: 'T1526', name: 'Cloud Service Discovery' },
+    { id: 'T1613', name: 'Container Discovery' },
+    { id: 'T1482', name: 'Domain Trust Discovery' },
+    { id: 'T1083', name: 'File/Dir Discovery' },
+    { id: 'T1046', name: 'Network Service Scan' },
+    { id: 'T1135', name: 'Network Share Discovery' },
+    { id: 'T1040', name: 'Network Sniffing' },
+    { id: 'T1201', name: 'Password Policy' },
+    { id: 'T1120', name: 'Peripheral Device' },
+    { id: 'T1069', name: 'Permission Groups' },
+    { id: 'T1057', name: 'Process Discovery' },
+    { id: 'T1012', name: 'Query Registry' },
+    { id: 'T1018', name: 'Remote System Discovery' },
+    { id: 'T1518', name: 'Software Discovery' },
+    { id: 'T1082', name: 'System Info Discovery' },
+    { id: 'T1016', name: 'System Network Config' },
+    { id: 'T1049', name: 'System Network Conns' },
+    { id: 'T1033', name: 'System Owner/User' },
+    { id: 'T1007', name: 'System Service Discovery' },
+    { id: 'T1124', name: 'System Time Discovery' },
+  ]},
+  { id: 'TA0008', name: 'Lateral Movement', techniques: [
+    { id: 'T1210', name: 'Exploitation of Remote' },
+    { id: 'T1534', name: 'Internal Spearphishing' },
+    { id: 'T1570', name: 'Lateral Tool Transfer' },
+    { id: 'T1563', name: 'Remote Service Hijack' },
+    { id: 'T1021', name: 'Remote Services' },
+    { id: 'T1091', name: 'Replication via Media' },
+    { id: 'T1072', name: 'Software Deploy Tools' },
+    { id: 'T1080', name: 'Taint Shared Content' },
+    { id: 'T1550', name: 'Use Alternate Auth' },
+  ]},
+  { id: 'TA0009', name: 'Collection', techniques: [
+    { id: 'T1557', name: 'Adversary-in-the-Middle' },
+    { id: 'T1560', name: 'Archive Collected Data' },
+    { id: 'T1123', name: 'Audio Capture' },
+    { id: 'T1119', name: 'Automated Collection' },
+    { id: 'T1185', name: 'Browser Session Hijack' },
+    { id: 'T1115', name: 'Clipboard Data' },
+    { id: 'T1530', name: 'Data from Cloud Storage' },
+    { id: 'T1602', name: 'Data from Config Repo' },
+    { id: 'T1213', name: 'Data from Info Repos' },
+    { id: 'T1005', name: 'Data from Local System' },
+    { id: 'T1039', name: 'Data from Network Share' },
+    { id: 'T1025', name: 'Data from Removable' },
+    { id: 'T1074', name: 'Data Staged' },
+    { id: 'T1114', name: 'Email Collection' },
+    { id: 'T1056', name: 'Input Capture' },
+    { id: 'T1113', name: 'Screen Capture' },
+    { id: 'T1125', name: 'Video Capture' },
+  ]},
+  { id: 'TA0011', name: 'Command & Control', techniques: [
+    { id: 'T1071', name: 'Application Layer Proto' },
+    { id: 'T1092', name: 'Communication via Media' },
+    { id: 'T1132', name: 'Data Encoding' },
+    { id: 'T1001', name: 'Data Obfuscation' },
+    { id: 'T1568', name: 'Dynamic Resolution' },
+    { id: 'T1573', name: 'Encrypted Channel' },
+    { id: 'T1008', name: 'Fallback Channels' },
+    { id: 'T1105', name: 'Ingress Tool Transfer' },
+    { id: 'T1104', name: 'Multi-Stage Channels' },
+    { id: 'T1095', name: 'Non-App Layer Proto' },
+    { id: 'T1571', name: 'Non-Standard Port' },
+    { id: 'T1572', name: 'Protocol Tunneling' },
+    { id: 'T1090', name: 'Proxy' },
+    { id: 'T1219', name: 'Remote Access Software' },
+    { id: 'T1205', name: 'Traffic Signaling' },
+    { id: 'T1102', name: 'Web Service' },
+  ]},
+  { id: 'TA0010', name: 'Exfiltration', techniques: [
+    { id: 'T1020', name: 'Automated Exfiltration' },
+    { id: 'T1030', name: 'Data Transfer Size' },
+    { id: 'T1048', name: 'Exfil Over Alt Protocol' },
+    { id: 'T1041', name: 'Exfil Over C2 Channel' },
+    { id: 'T1011', name: 'Exfil Over Other Medium' },
+    { id: 'T1052', name: 'Exfil Over Physical' },
+    { id: 'T1567', name: 'Exfil Over Web Service' },
+    { id: 'T1029', name: 'Scheduled Transfer' },
+    { id: 'T1537', name: 'Transfer to Cloud Acct' },
+  ]},
+  { id: 'TA0040', name: 'Impact', techniques: [
+    { id: 'T1531', name: 'Account Access Removal' },
+    { id: 'T1485', name: 'Data Destruction' },
+    { id: 'T1486', name: 'Data Encrypted Impact' },
+    { id: 'T1565', name: 'Data Manipulation' },
+    { id: 'T1491', name: 'Defacement' },
+    { id: 'T1561', name: 'Disk Wipe' },
+    { id: 'T1499', name: 'Endpoint DoS' },
+    { id: 'T1495', name: 'Firmware Corruption' },
+    { id: 'T1490', name: 'Inhibit System Recovery' },
+    { id: 'T1498', name: 'Network DoS' },
+    { id: 'T1496', name: 'Resource Hijacking' },
+    { id: 'T1489', name: 'Service Stop' },
+    { id: 'T1529', name: 'System Shutdown/Reboot' },
+  ]},
 ]
 
 export function CoveragePage() {
@@ -75,6 +289,7 @@ export function CoveragePage() {
   // Compute coverage stats
   const stats = useMemo(() => {
     if (!heatmap) return { total: 0, covered: 0, pct: 0, byTactic: {} as Record<string, { covered: number; total: number }> }
+    const totalTechniques = TACTICS.reduce((s, t) => s + t.techniques.length, 0)
     let total = 0
     let covered = 0
     const byTactic: Record<string, { covered: number; total: number }> = {}
@@ -89,7 +304,7 @@ export function CoveragePage() {
       }
     }
 
-    return { total, covered, pct: total > 0 ? Math.round((covered / total) * 100) : 0, byTactic }
+    return { total: totalTechniques, covered, pct: totalTechniques > 0 ? Math.round((covered / totalTechniques) * 100) : 0, byTactic }
   }, [heatmap])
 
   // Trend chart data
@@ -198,18 +413,12 @@ export function CoveragePage() {
             {TACTICS.map(tactic => {
               const tacticData = stats.byTactic[tactic.name] || { covered: 0, total: 0 }
               const tacticPct = tacticData.total > 0 ? Math.round((tacticData.covered / tacticData.total) * 100) : 0
-              // Get techniques for this tactic from heatmap data
-              const techniques: { id: string; covered: boolean }[] = []
-              if (heatmap) {
-                for (const row of heatmap) {
-                  const cell = row.cells.find(c => c.tactic === tactic.name || c.tactic === tactic.id.replace('TA00', ''))
-                  if (cell) {
-                    techniques.push({ id: row.technique_id, covered: cell.covered > 0 })
-                  }
-                }
-              }
-              // Show at least some technique slots
-              const slots = techniques.length > 0 ? techniques : Array.from({ length: 8 }, (_, i) => ({ id: `T${1000 + i}`, covered: false }))
+              // Use real techniques from ATT&CK data, check coverage from heatmap
+              const slots = tactic.techniques.map(tech => {
+                const row = heatmap?.find(r => r.technique_id === tech.id)
+                const cell = row?.cells.find(c => c.tactic === tactic.name || c.covered > 0)
+                return { id: tech.id, name: tech.name, covered: cell ? cell.covered > 0 : false }
+              })
 
               return (
                 <div key={tactic.id} className="flex flex-col w-[105px] shrink-0">
@@ -243,7 +452,7 @@ export function CoveragePage() {
                               ? 'bg-green-500/20 text-green-700 hover:bg-green-500/30'
                               : 'bg-page text-text-muted/50 hover:bg-border/30'
                         }`}
-                        title={`${tech.id} — Click to view logs`}
+                        title={`${tech.id}: ${tech.name} — Click to view logs`}
                       >
                         {tech.id}
                       </button>
