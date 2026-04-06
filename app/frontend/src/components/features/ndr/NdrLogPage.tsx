@@ -189,8 +189,11 @@ export function NdrLogPage() {
           <div className="flex items-center justify-center h-64 text-text-muted text-[12px]">Loading NDR flows…</div>
         ) : flows.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64">
+            <span className="text-text-muted text-2xl mb-3">⌕</span>
             <p className="text-[13px] font-semibold text-text-primary mb-1">No Network Flows</p>
-            <p className="text-[11px] text-text-muted">Connect an NDR source (Zeek, Suricata, or MxWatch) to start capturing flows.</p>
+            <p className="text-[11px] text-text-muted">
+              Connect an NDR source (Zeek, Suricata, or MxWatch) to start capturing flows.
+            </p>
           </div>
         ) : (
         <div className="bg-surface border border-border rounded-lg overflow-hidden">

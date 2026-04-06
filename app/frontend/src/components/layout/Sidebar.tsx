@@ -12,6 +12,8 @@ import {
   Sun,
   Moon,
   Binary,
+  HelpCircle,
+  Shield,
   type LucideProps,
 } from 'lucide-react'
 
@@ -126,18 +128,18 @@ export function Sidebar() {
         </div>
 
         <button
-          className="text-text-muted hover:text-text-secondary text-base"
+          className="text-text-muted hover:text-text-secondary transition-colors"
           title="Keyboard Shortcuts"
           onClick={openShortcutsModal}
         >
-          ?
+          <HelpCircle className="w-[16px] h-[16px]" />
         </button>
         <button
-          className="text-text-muted hover:text-text-secondary text-base"
-          title="Settings"
+          className="text-text-muted hover:text-text-secondary transition-colors"
+          title="Security"
           onClick={() => setShowMfaModal(true)}
         >
-          {'\u2699'}
+          <Shield className="w-[16px] h-[16px]" />
         </button>
         <button
           onClick={() => setShowMfaModal(true)}

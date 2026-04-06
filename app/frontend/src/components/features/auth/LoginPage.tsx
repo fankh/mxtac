@@ -37,7 +37,7 @@ export function LoginPage() {
 
   return (
     <div className="min-h-screen bg-page flex items-center justify-center">
-      <div className="bg-surface border border-border rounded-lg shadow-card w-full max-w-sm p-8">
+      <div className="bg-surface border border-border rounded-lg shadow-lg w-full max-w-sm p-8">
 
         {/* Logo */}
         <div className="flex items-center gap-3 mb-8">

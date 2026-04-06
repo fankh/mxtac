@@ -80,10 +80,24 @@ export function CoveragePage() {
   return (
     <>
       <TopBar crumb="ATT&CK Matrix" />
-      <div className="pt-[46px] px-5 pb-6 space-y-4">
+      <div className="pt-[46px] px-5 pb-6">
 
-      {/* Stats — inline text matching Hunt/NDR style */}
-      <div className="flex items-center gap-3 text-[11px] text-text-muted py-1">
+      {/* Search bar — matches Hunt/NDR layout */}
+      <div className="flex items-center gap-2 py-3 flex-wrap">
+        <div className="relative flex-1 min-w-[280px]">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[13px] select-none">⌕</span>
+          <input
+            type="text"
+            value={selectedTactic ?? ''}
+            onChange={e => setSelectedTactic(e.target.value || null)}
+            placeholder="Filter techniques — type a tactic name (e.g. Execution, Persistence)"
+            className="w-full h-[32px] pl-8 pr-3 text-[12px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
+          />
+        </div>
+      </div>
+
+      {/* Stats bar */}
+      <div className="flex items-center gap-3 text-[11px] text-text-muted mb-3">
         <span className={`font-bold text-[14px] ${stats.pct >= 80 ? 'text-green-500' : stats.pct >= 60 ? 'text-yellow-500' : 'text-red-500'}`}>
           {stats.pct}%
         </span>
