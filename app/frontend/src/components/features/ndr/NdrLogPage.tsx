@@ -144,17 +144,17 @@ export function NdrLogPage() {
             onClick={handleSearch}
             className="h-[32px] px-4 text-[12px] font-medium bg-blue text-white rounded-md hover:opacity-90 transition-opacity"
           >
-            Run Search
+            Run Query
           </button>
         </div>
 
-        {/* Filter toolbar — matches Hunt sub-bar */}
+        {/* Filter toolbar — matches Hunt sub-bar exactly */}
         <div className="flex items-center gap-2 mb-2 flex-wrap">
           {['TCP', 'UDP', 'ICMP', 'DNS', 'HTTP', 'TLS', 'SSH'].map(proto => (
             <button
               key={proto}
               onClick={() => setProtoFilter(protoFilter === proto ? null : proto)}
-              className={`px-2.5 h-[26px] text-[10px] font-medium rounded-md border transition-colors ${
+              className={`px-2.5 h-[26px] text-[11px] font-medium rounded-md border transition-colors ${
                 protoFilter === proto
                   ? 'bg-blue text-white border-blue'
                   : 'bg-surface border-border text-text-secondary hover:bg-page'
@@ -166,20 +166,11 @@ export function NdrLogPage() {
           {protoFilter && (
             <button
               onClick={() => setProtoFilter(null)}
-              className="text-[10px] text-text-muted hover:text-text-primary transition-colors ml-1"
+              className="text-[11px] text-text-muted hover:text-text-primary transition-colors ml-1"
             >
               ✕ Clear
             </button>
           )}
-        </div>
-
-        {/* Stats bar */}
-        <div className="flex items-center gap-3 mb-3 text-[11px]">
-          <span className="text-text-muted">
-            <strong className="text-text-primary">{(protoFilter ? flows.filter(f => f.protocol === protoFilter).length : flows.length).toLocaleString()}</strong> flows
-            {totalBytes > 0 && <> · <strong className="text-text-primary">{formatBytes(totalBytes)}</strong></>}
-            {topProtos.length > 0 && <> · {topProtos.map(([p, c]) => `${p}: ${c}`).slice(0, 4).join(', ')}</>}
-          </span>
         </div>
 
         {/* Protocol histogram */}
@@ -216,9 +207,11 @@ export function NdrLogPage() {
         ) : flows.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64">
             <span className="text-text-muted text-2xl mb-3">⌕</span>
-            <p className="text-[13px] font-semibold text-text-primary mb-1">No Network Flows</p>
-            <p className="text-[11px] text-text-muted">
-              Connect an NDR source (Zeek, Suricata, or MxWatch) to start capturing flows.
+            <p className="text-[13px] font-semibold text-text-primary mb-1">Start Searching</p>
+            <p className="text-[11px] text-text-muted text-center max-w-md">
+              Enter a query or select a protocol filter, choose a time range,
+              then click <span className="text-blue font-medium">Run Query</span>. Connect an NDR source
+              (Zeek, Suricata, or MxWatch) to start capturing flows.
             </p>
           </div>
         ) : (
