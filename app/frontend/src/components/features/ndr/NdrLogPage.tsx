@@ -13,10 +13,11 @@ import {
 } from 'recharts'
 
 const TIME_RANGES = [
-  { value: '1h', label: '1H' },
-  { value: '6h', label: '6H' },
-  { value: '24h', label: '24H' },
-  { value: '7d', label: '7D' },
+  { value: '1h', label: '1h' },
+  { value: '6h', label: '6h' },
+  { value: '24h', label: '24h' },
+  { value: '7d', label: '7d' },
+  { value: '30d', label: '30d' },
 ]
 
 const PROTO_COLORS: Record<string, string> = {
@@ -103,59 +104,56 @@ export function NdrLogPage() {
   return (
     <>
       <TopBar crumb="NDR Logs" />
-      <div className="pt-[46px] p-5 space-y-4">
+      <div className="pt-[46px] px-5 pb-6">
 
-        {/* Controls */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1">
+        {/* Search bar + time range — matches Hunt page layout */}
+        <div className="flex items-center gap-2 py-3 flex-wrap">
+          <div className="relative flex-1 min-w-[280px]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[13px] select-none">
+              ⌕
+            </span>
+            <input
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+              placeholder="Search flows — Lucene syntax (e.g. src_ip:10.0.* AND dst_port:443)"
+              className="w-full h-[32px] pl-8 pr-3 text-[12px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
+            />
+          </div>
+
+          {/* Time range chips — same style as Hunt */}
+          <div className="flex items-center border border-border rounded-md overflow-hidden">
             {TIME_RANGES.map(tr => (
               <button
                 key={tr.value}
                 onClick={() => setTimeRange(tr.value)}
-                className={`px-2.5 py-1 text-[11px] font-medium rounded border transition-colors ${
+                className={`px-3 h-[32px] text-[11px] font-medium border-r border-border last:border-r-0 transition-colors ${
                   timeRange === tr.value
-                    ? 'bg-blue text-white border-blue'
-                    : 'bg-surface border-border text-text-primary hover:bg-hover'
+                    ? 'bg-blue text-white'
+                    : 'bg-surface text-text-secondary hover:bg-page'
                 }`}
               >
                 {tr.label}
               </button>
             ))}
           </div>
-          <input
-            type="text"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            placeholder="Filter: src_ip:10.0.0.* dst_port:443 protocol:TCP"
-            className="flex-1 h-8 px-3 text-[11px] bg-surface border border-border rounded focus:outline-none focus:border-blue"
-          />
+
           <button
             onClick={handleSearch}
-            className="h-8 px-4 text-[11px] font-medium bg-blue text-white rounded hover:bg-blue/90 transition-colors"
+            className="h-[32px] px-4 text-[12px] font-medium bg-blue text-white rounded-md hover:opacity-90 transition-opacity"
           >
             Search
           </button>
         </div>
 
-        {/* Stats row */}
-        <div className="grid grid-cols-4 gap-3">
-          <div className="bg-surface border border-border rounded-lg p-3">
-            <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Total Flows</p>
-            <p className="text-lg font-bold mt-0.5">{flows.length.toLocaleString()}</p>
-          </div>
-          <div className="bg-surface border border-border rounded-lg p-3">
-            <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Traffic</p>
-            <p className="text-lg font-bold mt-0.5">{formatBytes(totalBytes)}</p>
-          </div>
-          <div className="bg-surface border border-border rounded-lg p-3">
-            <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Protocols</p>
-            <p className="text-lg font-bold mt-0.5">{topProtos.length}</p>
-          </div>
-          <div className="bg-surface border border-border rounded-lg p-3">
-            <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Top Protocol</p>
-            <p className="text-lg font-bold mt-0.5">{topProtos[0]?.[0] ?? '—'}</p>
-          </div>
+        {/* Toolbar — matches Hunt sub-bar style */}
+        <div className="flex items-center gap-3 mb-3 text-[11px]">
+          <span className="text-text-muted">
+            <strong className="text-text-primary">{flows.length.toLocaleString()}</strong> flows
+            {totalBytes > 0 && <> · <strong className="text-text-primary">{formatBytes(totalBytes)}</strong></>}
+            {topProtos.length > 0 && <> · {topProtos.map(([p, c]) => `${p}: ${c}`).slice(0, 4).join(', ')}</>}
+          </span>
         </div>
 
         {/* Protocol histogram */}
@@ -191,22 +189,25 @@ export function NdrLogPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-[11px]">
               <thead>
-                <tr className="border-b border-border bg-hover/30 text-[10px] font-medium text-text-muted uppercase tracking-wider">
-                  <th className="text-left p-2.5 w-[70px]">Time</th>
-                  <th className="text-left p-2.5">Source</th>
-                  <th className="text-left p-2.5">Destination</th>
-                  <th className="text-left p-2.5 w-[70px]">Protocol</th>
-                  <th className="text-left p-2.5 w-[70px]">Action</th>
-                  <th className="text-right p-2.5 w-[80px]">Bytes In</th>
-                  <th className="text-right p-2.5 w-[80px]">Bytes Out</th>
-                  <th className="text-right p-2.5 w-[70px]">Duration</th>
+                <tr className="border-b border-border text-[11px] font-medium text-text-muted">
+                  <th className="text-left p-2 w-[70px]">Time</th>
+                  <th className="text-left p-2">Source</th>
+                  <th className="text-left p-2">Destination</th>
+                  <th className="text-left p-2 w-[70px]">Protocol</th>
+                  <th className="text-left p-2 w-[70px]">Action</th>
+                  <th className="text-right p-2 w-[80px]">Bytes In</th>
+                  <th className="text-right p-2 w-[80px]">Bytes Out</th>
+                  <th className="text-right p-2 w-[70px]">Duration</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr><td colSpan={8} className="p-8 text-center text-text-muted text-[11px]">Loading NDR flows...</td></tr>
                 ) : flows.length === 0 ? (
-                  <tr><td colSpan={8} className="p-8 text-center text-text-muted text-[11px]">No network flows found. Connect an NDR source to start capturing.</td></tr>
+                  <tr><td colSpan={8} className="p-12 text-center">
+                    <p className="text-[13px] font-semibold text-text-primary mb-1">No Network Flows</p>
+                    <p className="text-[11px] text-text-muted">Connect an NDR source (Zeek, Suricata, or MxWatch) to start capturing flows.</p>
+                  </td></tr>
                 ) : (
                   flows.slice(0, 200).map((f, i) => (
                     <tr
@@ -216,12 +217,12 @@ export function NdrLogPage() {
                         selectedRow === i ? 'bg-blue/5' : 'hover:bg-hover/50'
                       } ${f.severity >= 4 ? 'border-l-2 border-l-red-500' : ''}`}
                     >
-                      <td className="p-2.5 font-mono text-text-muted tabular-nums">{f.time}</td>
-                      <td className="p-2.5 font-mono">
+                      <td className="p-2 font-mono text-text-muted tabular-nums">{f.time}</td>
+                      <td className="p-2 font-mono">
                         <span className="text-text-primary">{f.src_ip}</span>
                         {f.src_port ? <span className="text-text-muted">:{String(f.src_port)}</span> : null}
                       </td>
-                      <td className="p-2.5 font-mono">
+                      <td className="p-2 font-mono">
                         <span className="text-text-primary">{f.dst_ip}</span>
                         {f.dst_port ? <span className="text-text-muted">:{String(f.dst_port)}</span> : null}
                       </td>
