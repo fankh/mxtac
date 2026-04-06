@@ -97,7 +97,7 @@ const SOURCE_TEMPLATES: Omit<DataSource, 'status' | 'eventsPerMin' | 'lastSeen'>
 ]
 
 const TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  ndr: { label: 'NDR', color: 'bg-blue/10 text-blue border-blue/20' },
+  ndr: { label: 'NDR', color: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
   edr: { label: 'EDR', color: 'bg-green-500/10 text-green-600 border-green-500/20' },
   siem: { label: 'SIEM', color: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
   cloud: { label: 'Cloud', color: 'bg-orange-500/10 text-orange-600 border-orange-500/20' },
@@ -337,7 +337,7 @@ export function SourcesPage() {
                 {source.builtin ? (
                   <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-medium text-blue bg-blue/10 px-2 py-0.5 rounded border border-blue/20">Built-in</span>
+                      <span className="text-[10px] font-medium text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">Built-in</span>
                       <button
                         onClick={() => {
                           const key = `mxtac_source_${source.id}_enabled`
