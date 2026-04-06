@@ -82,26 +82,16 @@ export function CoveragePage() {
       <TopBar crumb="ATT&CK Matrix" />
       <div className="pt-[46px] px-5 pb-6 space-y-4">
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="bg-surface border border-border rounded-lg p-4">
-          <p className="text-[10px] font-medium text-muted uppercase tracking-wider">Techniques Covered</p>
-          <p className="text-xl font-bold mt-1">{stats.covered}</p>
-        </div>
-        <div className="bg-surface border border-border rounded-lg p-4">
-          <p className="text-[10px] font-medium text-muted uppercase tracking-wider">Total Techniques</p>
-          <p className="text-xl font-bold mt-1">{stats.total}</p>
-        </div>
-        <div className="bg-surface border border-border rounded-lg p-4">
-          <p className="text-[10px] font-medium text-muted uppercase tracking-wider">Coverage Score</p>
-          <p className={`text-xl font-bold mt-1 ${stats.pct >= 80 ? 'text-green-500' : stats.pct >= 60 ? 'text-yellow-500' : 'text-red-500'}`}>
-            {stats.pct}%
-          </p>
-        </div>
-        <div className="bg-surface border border-border rounded-lg p-4">
-          <p className="text-[10px] font-medium text-muted uppercase tracking-wider">Active Rules</p>
-          <p className="text-xl font-bold mt-1">{heatmap?.length ?? 0}</p>
-        </div>
+      {/* Stats — inline text matching Hunt/NDR style */}
+      <div className="flex items-center gap-3 text-[11px] text-text-muted py-1">
+        <span className={`font-bold text-[14px] ${stats.pct >= 80 ? 'text-green-500' : stats.pct >= 60 ? 'text-yellow-500' : 'text-red-500'}`}>
+          {stats.pct}%
+        </span>
+        <span>coverage</span>
+        <span>·</span>
+        <span><strong className="text-text-primary">{stats.covered}</strong> / {stats.total} techniques</span>
+        <span>·</span>
+        <span><strong className="text-text-primary">{heatmap?.length ?? 0}</strong> rules mapped</span>
       </div>
 
       {/* Coverage Trend + Tactic Breakdown */}

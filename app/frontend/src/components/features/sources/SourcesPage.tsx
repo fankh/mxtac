@@ -230,28 +230,20 @@ export function SourcesPage() {
     <>
       <TopBar crumb="Data Sources" />
       <div className="pt-[46px] px-5 pb-6 space-y-4">
-        {/* Stats */}
-        <div className="grid grid-cols-4 gap-3">
-          <div className="bg-surface border border-border rounded-lg p-4">
-            <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Connected</p>
-            <p className="text-xl font-bold mt-1 text-green-500">{connectedCount}</p>
-          </div>
-          <div className="bg-surface border border-border rounded-lg p-4">
-            <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider">NDR Sources</p>
-            <p className="text-xl font-bold mt-1">{sources.filter(s => s.type === 'ndr').length}</p>
-          </div>
-          <div className="bg-surface border border-border rounded-lg p-4">
-            <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider">EDR Sources</p>
-            <p className="text-xl font-bold mt-1">{sources.filter(s => s.type === 'edr').length}</p>
-          </div>
-          <div className="bg-surface border border-border rounded-lg p-4">
-            <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Total Sources</p>
-            <p className="text-xl font-bold mt-1">{sources.length}</p>
-          </div>
+        {/* Stats — inline text like Hunt/NDR */}
+        <div className="flex items-center gap-3 text-[11px] text-text-muted py-1">
+          <span><strong className="text-green-500">{connectedCount}</strong> connected</span>
+          <span>·</span>
+          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'ndr').length}</strong> NDR</span>
+          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'edr').length}</strong> EDR</span>
+          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'siem').length}</strong> SIEM</span>
+          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'cloud').length}</strong> Cloud</span>
+          <span>·</span>
+          <span><strong className="text-text-primary">{sources.length}</strong> total</span>
         </div>
 
-        {/* Filter tabs */}
-        <div className="flex items-center gap-2">
+        {/* Filter tabs — matches Hunt/NDR time chip style */}
+        <div className="flex items-center border border-border rounded-md overflow-hidden">
           {[
             { value: 'all', label: 'All' },
             { value: 'ndr', label: 'NDR' },
@@ -262,10 +254,10 @@ export function SourcesPage() {
             <button
               key={tab.value}
               onClick={() => setFilter(tab.value)}
-              className={`px-3 py-1 text-xs font-medium rounded border transition-colors ${
+              className={`px-3 h-[32px] text-[11px] font-medium border-r border-border last:border-r-0 transition-colors ${
                 filter === tab.value
-                  ? 'bg-blue text-white border-blue'
-                  : 'bg-surface border-border text-text-primary hover:bg-hover'
+                  ? 'bg-blue text-white'
+                  : 'bg-surface text-text-secondary hover:bg-page'
               }`}
             >
               {tab.label}
