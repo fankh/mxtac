@@ -1,7 +1,7 @@
 """
 NDR Detection Engine — network-based threat detection algorithms.
 
-Ported from KYRA MDR's NdrDetectionEngine.java.
+MxTac NDR detection algorithms.
 Runs as part of the event processing pipeline, analyzing network flow data
 for indicators of compromise.
 

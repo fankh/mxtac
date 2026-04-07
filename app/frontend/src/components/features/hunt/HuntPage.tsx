@@ -755,7 +755,7 @@ export function HuntPage() {
             onClick={handleSearch}
             className="h-[32px] px-4 text-[12px] font-medium bg-blue text-white rounded-md hover:opacity-90 transition-opacity"
           >
-            Run Hunt
+            Run Query
           </button>
         </div>
 
@@ -884,7 +884,7 @@ export function HuntPage() {
             <p className="text-[13px] font-semibold text-text-primary mb-1">Start Hunting</p>
             <p className="text-[11px] text-text-muted max-w-[400px] leading-relaxed">
               Enter a free-text query or add structured filters, choose a time range,
-              then click <span className="text-blue font-medium">Run Hunt</span>.
+              then click <span className="text-blue font-medium">Run Query</span>.
               Click any hostname, IP, or username to pivot to an entity timeline.
             </p>
           </div>

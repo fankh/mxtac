@@ -1,7 +1,7 @@
 """
 Scheduled Detection Engine — per-target aggregation with dedup.
 
-Ported from KYRA MDR's DetectionEngineService.java.
+MxTac detection engine with per-target aggregation.
 Runs every 60 seconds, evaluates active detection rules against OpenSearch,
 creates per-target alerts with 24-hour deduplication window.
 
@@ -30,7 +30,7 @@ from ..core.logging import get_logger
 logger = get_logger(__name__)
 
 # --- Constants ---
-CYCLE_INTERVAL_SECONDS = 300  # 5 minutes (KYRA uses 60s but MxTac is lighter)
+CYCLE_INTERVAL_SECONDS = 300  # 5 minutes
 FULL_RECHECK_INTERVAL = 30  # every 30 cycles, force all rules checked
 ALERT_DEDUP_HOURS = 24
 MAX_TARGETS_PER_RULE = 10

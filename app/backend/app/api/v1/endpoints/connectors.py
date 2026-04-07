@@ -19,7 +19,14 @@ from ....repositories.connector_repo import ConnectorRepo
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
 
-CONNECTOR_TYPES = ["wazuh", "zeek", "suricata", "prowler", "opencti", "syslog", "velociraptor", "osquery", "generic"]
+CONNECTOR_TYPES = [
+    "mxwatch", "mxguard",                           # built-in agents
+    "zeek", "suricata",                              # NDR
+    "wazuh", "velociraptor",                         # EDR
+    "elastic", "opensearch",                         # SIEM
+    "prowler", "cloudtrail",                         # Cloud
+    "opencti", "syslog", "osquery", "generic",       # misc
+]
 
 
 class ConnectorCreate(BaseModel):
@@ -106,6 +113,7 @@ async def get_connector(
 @router.post("", response_model=ConnectorResponse, status_code=201)
 async def create_connector(
     body: ConnectorCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("connectors:write")),
 ):
@@ -116,6 +124,19 @@ async def create_connector(
         config_json=json.dumps(body.config),
         enabled=body.enabled,
     )
+
+    # Auto-start connector if enabled and runtime queue is available
+    if body.enabled:
+        queue = getattr(request.app.state, "queue", None)
+        running: dict = getattr(request.app.state, "connectors", {})
+        if queue is not None and conn.id not in running:
+            connector = build_connector(conn, queue)
+            if connector is not None:
+                asyncio.create_task(connector.start(), name=f"connector-start-{conn.name}")
+                running[conn.id] = connector
+                await ConnectorRepo.update_status(db, conn.id, "connecting")
+                conn = await ConnectorRepo.get_by_id(db, conn.id)
+
     return _conn_to_response(conn)
 
 
