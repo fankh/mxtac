@@ -4,10 +4,10 @@ import { Download, RefreshCw } from 'lucide-react'
 import { Page } from '@/components/layout/Page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { coverageApi } from '@/lib/api'
+import { apiErrorMessage, coverageApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { useUIStore } from '@/stores/uiStore'
-import { downloadBlob, errorMessage } from '../hunt/huntUtils'
+import { downloadBlob } from '@/lib/download'
 import { CoverageBySource } from './CoverageBySource'
 import { CoverageMatrix } from './CoverageMatrix'
 import { CoverageStats } from './CoverageStats'
@@ -39,7 +39,7 @@ export function CoveragePage() {
       addNotification({
         type: 'error',
         title: 'Could not download the Navigator layer',
-        message: errorMessage(e, 'The request failed.'),
+        message: apiErrorMessage(e),
       })
     },
   })

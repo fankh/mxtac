@@ -25,7 +25,7 @@ vi.mock('../../components/layout/TopBar', () => ({
 }))
 
 // The MFA flow has its own test file.
-vi.mock('../../components/features/auth/MfaSetupModal', () => ({
+vi.mock('../../components/shared/MfaSetupModal', () => ({
   MfaSetupModal: ({ onClose }: { onClose: () => void }) => (
     <div data-testid="mfa-modal">
       <button onClick={onClose}>Close MFA</button>
@@ -43,9 +43,7 @@ import { authApi, usersApi } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useUIStore } from '../../stores/uiStore'
 import type { User } from '../../types/api'
-import { chooseOption, installRadixSelectPolyfills } from '../mocks/radixSelect'
-
-installRadixSelectPolyfills()
+import { chooseOption } from '../mocks/radixSelect'
 
 const meMock = vi.mocked(authApi.me)
 const mfaDisableMock = vi.mocked(authApi.mfaDisable)

@@ -8,9 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { eventsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { EventItem } from '@/types/api'
-import {
-  eventEntities, formatDateTime, severityInfo, timeRangeLabel, type EntityRef,
-} from './huntUtils'
+import { eventEntities, formatDateTime, severityInfo, timeRangeLabel, type EntityRef } from './huntUtils'
 
 type AddFilter = (field: string, value: string) => void
 

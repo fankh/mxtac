@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { Incident, IncidentCreate, SeverityLevel } from '@/types/api'
-import { incidentsApi } from '@/lib/api'
+import { apiErrorMessage, incidentsApi } from '@/lib/api'
 import { useUIStore } from '@/stores/uiStore'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,9 +15,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { OptionSelect } from '../detections/OptionSelect'
-import { SEVERITY_LABELS, SEVERITY_OPTIONS, apiErrorMessage, plural } from '../detections/utils'
-import { isValidEmail } from './incidentUtils'
+import { OptionSelect } from '@/components/shared/OptionSelect'
+import { SEVERITY_LABELS, SEVERITY_OPTIONS } from '@/lib/severity'
+import { isValidEmail, plural } from '@/lib/format'
 
 interface CreateIncidentDialogProps {
   open: boolean

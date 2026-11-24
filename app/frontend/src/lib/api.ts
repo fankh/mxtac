@@ -60,9 +60,6 @@ http.interceptors.response.use(
   }
 )
 
-// ── Raw axios instance (for pages that need direct access) ────────────────────
-export const apiClient = http
-
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 /**
@@ -154,9 +151,6 @@ export const detectionsApi = {
   list: (params: DetectionListParams = {}): Promise<PaginatedResponse<Detection>> =>
     http.get('/detections', { params }).then(r => r.data),
 
-  get: (id: string): Promise<Detection> =>
-    http.get(`/detections/${id}`).then(r => r.data),
-
   update: (id: string, body: DetectionUpdate): Promise<Detection> =>
     http.patch(`/detections/${id}`, body).then(r => r.data),
 
@@ -166,9 +160,6 @@ export const detectionsApi = {
   /** CSV of the filtered detections (max 10,000 rows). */
   export: (params: DetectionExportParams = {}): Promise<Blob> =>
     http.get('/detections/export', { params, responseType: 'blob' }).then(r => r.data),
-
-  delete: (id: string): Promise<void> =>
-    http.delete(`/detections/${id}`).then(r => r.data),
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -221,14 +212,8 @@ export const incidentsApi = {
   update: (id: number, body: IncidentUpdate): Promise<Incident> =>
     http.patch(`/incidents/${id}`, body).then(r => r.data),
 
-  delete: (id: number): Promise<void> =>
-    http.delete(`/incidents/${id}`).then(r => r.data),
-
   addNote: (id: number, content: string, note_type: NoteType = 'comment'): Promise<IncidentNote> =>
     http.post(`/incidents/${id}/notes`, { content, note_type }).then(r => r.data),
-
-  listNotes: (id: number): Promise<IncidentNote[]> =>
-    http.get(`/incidents/${id}/notes`).then(r => r.data),
 
   metrics: (from_date?: string, to_date?: string): Promise<IncidentMetrics> =>
     http.get('/incidents/metrics', { params: { from_date, to_date } }).then(r => r.data),
@@ -239,9 +224,6 @@ export const incidentsApi = {
 export const savedQueriesApi = {
   list: (): Promise<{ items: SavedQuery[]; total: number }> =>
     http.get('/hunt/queries').then(r => r.data),
-
-  get: (id: string): Promise<SavedQuery> =>
-    http.get(`/hunt/queries/${id}`).then(r => r.data),
 
   create: (body: SavedQueryCreate): Promise<SavedQuery> =>
     http.post('/hunt/queries', body).then(r => r.data),
@@ -323,9 +305,6 @@ export const connectorsApi = {
   list: (): Promise<Connector[]> =>
     http.get('/connectors').then(r => r.data),
 
-  get: (id: string): Promise<Connector> =>
-    http.get(`/connectors/${id}`).then(r => r.data),
-
   create: (body: ConnectorCreate): Promise<Connector> =>
     http.post('/connectors', body).then(r => r.data),
 
@@ -385,8 +364,11 @@ export const ingestApi = {
 
 // ── Error text ────────────────────────────────────────────────────────────────
 
-/** Readable message from a failed request: FastAPI `detail` (text or validation list), else the fallback. */
-export function apiErrorMessage(err: unknown, fallback: string): string {
+/**
+ * Readable message from a failed request: the FastAPI `detail` (text or validation list) when there is one.
+ * Otherwise the given fallback; without a fallback, the error's own message or a generic line.
+ */
+export function apiErrorMessage(err: unknown, fallback?: string): string {
   const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
   if (typeof detail === 'string' && detail) return detail
   if (Array.isArray(detail)) {
@@ -395,5 +377,7 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
       .filter((m): m is string => typeof m === 'string' && m.length > 0)
     if (parts.length > 0) return parts.join('; ')
   }
-  return fallback
+  if (fallback !== undefined) return fallback
+  if (err instanceof Error && err.message) return err.message
+  return 'The request failed. Try again.'
 }

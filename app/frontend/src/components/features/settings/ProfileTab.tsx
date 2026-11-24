@@ -10,7 +10,7 @@ import { authApi } from '@/lib/api'
 import { PASSWORD_POLICY_HINT, passwordErrorMessage, passwordProblem } from '@/lib/passwordPolicy'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
-import { MfaSetupModal } from '../auth/MfaSetupModal'
+import { MfaSetupModal } from '@/components/shared/MfaSetupModal'
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (

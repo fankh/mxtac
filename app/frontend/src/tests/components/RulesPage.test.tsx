@@ -58,9 +58,7 @@ import { rulesApi } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useUIStore } from '../../stores/uiStore'
 import type { Rule, RuleDetail } from '../../types/api'
-import { chooseOption, installRadixSelectPolyfills } from '../mocks/radixSelect'
-
-installRadixSelectPolyfills()
+import { chooseOption } from '../mocks/radixSelect'
 
 const api = vi.mocked(rulesApi)
 

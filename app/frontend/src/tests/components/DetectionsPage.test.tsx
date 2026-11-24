@@ -1,6 +1,7 @@
 // vi.mock is hoisted before imports — declare all module mocks first.
 
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof ApiModule>()),
   authApi: {},
   detectionsApi: {
     list: vi.fn(),
@@ -38,14 +39,13 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DetectionsPage } from '../../components/features/detections/DetectionsPage'
+import type * as ApiModule from '../../lib/api'
 import { detectionsApi, incidentsApi } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useDetectionStore } from '../../stores/detectionStore'
 import { useUIStore } from '../../stores/uiStore'
 import type { Detection, Incident, PaginatedResponse } from '../../types/api'
-import { chooseOption, installRadixSelectPolyfills } from '../mocks/radixSelect'
-
-installRadixSelectPolyfills()
+import { chooseOption } from '../mocks/radixSelect'
 
 const listMock = vi.mocked(detectionsApi.list)
 const bulkMock = vi.mocked(detectionsApi.bulk)
@@ -154,7 +154,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   listMock.mockResolvedValue(pageOf(DETECTIONS))
   useAuthStore.setState({ user: { email: 'analyst@mxtac.local', role: 'analyst' } })
-  useDetectionStore.setState({ liveAlerts: [], unreadCount: 0 })
+  useDetectionStore.setState({ liveAlerts: [] })
   useUIStore.setState({ notifications: [] })
 })
 
@@ -539,17 +539,6 @@ describe('DetectionsPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Show' }))
       await waitFor(() => expect(listMock.mock.calls.length).toBeGreaterThan(callsBefore))
       expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    })
-
-    it('clears the unread counter while the page is open', async () => {
-      useDetectionStore.setState({ unreadCount: 4 })
-      await renderLoaded()
-      expect(useDetectionStore.getState().unreadCount).toBe(0)
-
-      act(() => {
-        useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'det-live-3' }))
-      })
-      await waitFor(() => expect(useDetectionStore.getState().unreadCount).toBe(0))
     })
   })
 })

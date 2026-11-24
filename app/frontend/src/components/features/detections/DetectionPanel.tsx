@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { Detection, DetectionStatus, DetectionUpdate } from '@/types/api'
-import { detectionsApi } from '@/lib/api'
+import { apiErrorMessage, detectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { useUIStore } from '@/stores/uiStore'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,9 @@ import { Label } from '@/components/ui/label'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ScoreCircle, SeverityPill } from '@/components/shared/SeverityBadge'
 import { StatusPill } from '@/components/shared/StatusPill'
-import { DETECTION_STATUS_LABELS, apiErrorMessage, canWrite, formatDateTime } from './utils'
+import { DETECTION_STATUS_LABELS } from './utils'
+import { canWrite } from '@/lib/roles'
+import { formatDateTime } from '@/lib/format'
 
 interface DetectionPanelProps {
   /** Detection to show; the panel is closed while this is null. */

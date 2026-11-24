@@ -8,7 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { DETECTION_STATUS_LABELS, plural } from './utils'
+import { DETECTION_STATUS_LABELS } from './utils'
+import { plural } from '@/lib/format'
 
 interface BulkStatusDialogProps {
   /** Status to apply; the dialog is open while this is set. */

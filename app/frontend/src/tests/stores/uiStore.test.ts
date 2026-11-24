@@ -11,7 +11,6 @@ describe('uiStore', () => {
     useUIStore.setState({
       sidebarCollapsed: false,
       notifications: [],
-      globalError: null,
       showShortcutsModal: false,
     })
   })
@@ -113,16 +112,6 @@ describe('uiStore', () => {
     })
   })
 
-  describe('globalError', () => {
-    it('stores, overwrites and clears the error message', () => {
-      useUIStore.getState().setGlobalError('First error')
-      useUIStore.getState().setGlobalError('Second error')
-      expect(useUIStore.getState().globalError).toBe('Second error')
-      useUIStore.getState().setGlobalError(null)
-      expect(useUIStore.getState().globalError).toBeNull()
-    })
-  })
-
   describe('persistence', () => {
     it('saves the theme and the sidebar state under "mxtac-ui"', () => {
       useUIStore.getState().setTheme('dark')
@@ -131,7 +120,7 @@ describe('uiStore', () => {
     })
 
     it('does not save transient state', () => {
-      useUIStore.getState().setGlobalError('err')
+      useUIStore.getState().addNotification({ type: 'error', title: 'err' })
       useUIStore.getState().openShortcutsModal()
       expect(Object.keys(stored()).sort()).toEqual(['sidebarCollapsed', 'theme'])
     })

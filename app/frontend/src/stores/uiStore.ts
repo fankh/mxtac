@@ -14,7 +14,6 @@ interface UIState {
   theme: Theme
   sidebarCollapsed: boolean
   notifications: Notification[]
-  globalError: string | null
   showShortcutsModal: boolean
 
   setTheme: (t: Theme) => void
@@ -22,7 +21,6 @@ interface UIState {
   toggleSidebar: () => void
   addNotification: (n: Omit<Notification, 'id'>) => void
   removeNotification: (id: string) => void
-  setGlobalError: (msg: string | null) => void
   openShortcutsModal: () => void
   closeShortcutsModal: () => void
 }
@@ -47,7 +45,6 @@ export const useUIStore = create<UIState>()(
       theme: getSystemTheme(),
       sidebarCollapsed: false,
       notifications: [],
-      globalError: null,
       showShortcutsModal: false,
 
       setTheme: (theme) => {
@@ -76,8 +73,6 @@ export const useUIStore = create<UIState>()(
 
       removeNotification: (id) =>
         set((s) => ({ notifications: s.notifications.filter((x) => x.id !== id) })),
-
-      setGlobalError: (msg) => set({ globalError: msg }),
 
       openShortcutsModal: () => set({ showShortcutsModal: true }),
       closeShortcutsModal: () => set({ showShortcutsModal: false }),

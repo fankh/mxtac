@@ -13,7 +13,6 @@ describe('NotificationToast', () => {
       theme: 'light',
       sidebarCollapsed: false,
       notifications: [],
-      globalError: null,
     })
   })
 

@@ -1,6 +1,7 @@
 // vi.mock is hoisted before imports — declare all module mocks first.
 
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof ApiModule>()),
   eventsApi: {
     search: vi.fn(),
     aggregate: vi.fn(),
@@ -11,7 +12,6 @@ vi.mock('../../lib/api', () => ({
   },
   savedQueriesApi: {
     list: vi.fn(),
-    get: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
@@ -34,6 +34,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HuntPage } from '../../components/features/hunt/HuntPage'
 import { buildSearchRequest, newFilterRow, toFilterRows } from '../../components/features/hunt/huntUtils'
+import type * as ApiModule from '../../lib/api'
 import { eventsApi, savedQueriesApi } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useUIStore } from '../../stores/uiStore'

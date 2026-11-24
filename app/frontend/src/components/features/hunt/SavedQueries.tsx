@@ -11,11 +11,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { savedQueriesApi } from '@/lib/api'
+import { apiErrorMessage, savedQueriesApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
 import type { SavedQuery, SearchRequest } from '@/types/api'
-import { errorMessage, timeRangeLabel } from './huntUtils'
+import { timeRangeLabel } from './huntUtils'
 
 const QUERY_KEY = ['hunt', 'saved-queries']
 
@@ -85,7 +85,7 @@ export function SaveQueryDialog({ open, onOpenChange, search, editing, onSaved }
       addNotification({
         type: 'error',
         title: editing ? 'Could not update the saved query' : 'Could not save the query',
-        message: errorMessage(e, 'The request failed.'),
+        message: apiErrorMessage(e),
       })
     },
   })
@@ -189,7 +189,7 @@ export function SavedQueriesPanel({ search, activeId, onLoad }: PanelProps) {
       addNotification({
         type: 'error',
         title: 'Could not delete the saved query',
-        message: errorMessage(e, 'The request failed.'),
+        message: apiErrorMessage(e),
       })
     },
   })

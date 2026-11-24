@@ -6,13 +6,13 @@ import {
 } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
-import { MfaSetupModal } from '../features/auth/MfaSetupModal'
+import { MfaSetupModal } from '../shared/MfaSetupModal'
 import { KYRA_MDR_URL } from '@/lib/links'
 import { cn } from '@/lib/utils'
 
 type NavItem = { to: string; Icon: ComponentType<LucideProps>; label: string }
 
-export const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
+const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Monitor',
     items: [

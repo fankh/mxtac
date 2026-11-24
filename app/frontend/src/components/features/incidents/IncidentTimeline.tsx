@@ -4,8 +4,8 @@ import type { IncidentNote, NoteType } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Textarea } from '@/components/ui/textarea'
-import { OptionSelect } from '../detections/OptionSelect'
-import { formatDateTime } from '../detections/utils'
+import { OptionSelect } from '@/components/shared/OptionSelect'
+import { formatDateTime } from '@/lib/format'
 import { NOTE_TYPE_LABELS } from './incidentUtils'
 
 const NOTE_ICONS: Record<NoteType, LucideIcon> = {

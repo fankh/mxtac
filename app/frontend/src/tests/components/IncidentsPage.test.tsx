@@ -1,6 +1,7 @@
 // vi.mock is hoisted before imports — declare all module mocks first.
 
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof ApiModule>()),
   authApi: {},
   incidentsApi: {
     list: vi.fn(),
@@ -34,13 +35,12 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { IncidentsPage } from '../../components/features/incidents/IncidentsPage'
+import type * as ApiModule from '../../lib/api'
 import { incidentsApi } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useUIStore } from '../../stores/uiStore'
 import type { Incident, IncidentMetrics, PaginatedResponse } from '../../types/api'
-import { chooseOption, installRadixSelectPolyfills } from '../mocks/radixSelect'
-
-installRadixSelectPolyfills()
+import { chooseOption } from '../mocks/radixSelect'
 
 const listMock = vi.mocked(incidentsApi.list)
 const metricsMock = vi.mocked(incidentsApi.metrics)

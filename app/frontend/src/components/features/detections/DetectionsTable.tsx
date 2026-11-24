@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { LiveBadge } from '@/components/shared/LiveBadge'
 import { ScoreCircle, SeverityPill } from '@/components/shared/SeverityBadge'
 import { StatusPill } from '@/components/shared/StatusPill'
-import { formatDateTime } from './utils'
+import { formatDateTime } from '@/lib/format'
 
 export type SortOrder = 'asc' | 'desc'
 

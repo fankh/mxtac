@@ -2,7 +2,7 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldAlert } from 'lucide-react'
 import type { Detection, Incident, IncidentUpdate } from '@/types/api'
-import { incidentsApi } from '@/lib/api'
+import { apiErrorMessage, incidentsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { useUIStore } from '@/stores/uiStore'
 import { Button } from '@/components/ui/button'
@@ -14,23 +14,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScoreCircle, SeverityPill } from '@/components/shared/SeverityBadge'
 import { StatusPill } from '@/components/shared/StatusPill'
-import { ErrorCard } from '../detections/ListControls'
-import { OptionSelect } from '../detections/OptionSelect'
-import {
-  SEVERITY_LABELS,
-  SEVERITY_OPTIONS,
-  apiErrorMessage,
-  canWrite,
-  formatDateTime,
-} from '../detections/utils'
+import { ErrorCard } from '@/components/shared/ListControls'
+import { OptionSelect } from '@/components/shared/OptionSelect'
+import { SEVERITY_LABELS, SEVERITY_OPTIONS } from '@/lib/severity'
+import { canWrite } from '@/lib/roles'
+import { formatDateTime, isValidEmail } from '@/lib/format'
 import { IncidentStatusPill } from './IncidentStatusPill'
 import { IncidentTimeline } from './IncidentTimeline'
-import {
-  INCIDENT_STATUS_LABELS,
-  formatDuration,
-  isValidEmail,
-  reachableStatuses,
-} from './incidentUtils'
+import { INCIDENT_STATUS_LABELS, formatDuration, reachableStatuses } from './incidentUtils'
 
 interface IncidentPanelProps {
   /** Incident to show; the panel is closed while this is null. */

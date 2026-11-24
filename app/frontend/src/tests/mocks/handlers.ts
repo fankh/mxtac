@@ -144,11 +144,6 @@ export const handlers = [
     ),
   ),
 
-  // Detection detail
-  http.get(`${BASE}/detections/:id`, ({ params }) =>
-    HttpResponse.json({ ...MOCK_DETECTION, id: params.id }),
-  ),
-
   // Detection bulk status update
   http.post(`${BASE}/detections/bulk`, async ({ request }) => {
     const body = await request.json() as { ids: string[]; status: string }
@@ -166,9 +161,6 @@ export const handlers = [
       priority: body.priority ?? null,
     })
   }),
-
-  // Detection delete
-  http.delete(`${BASE}/detections/:id`, () => new HttpResponse(null, { status: 204 })),
 
   // Incidents list
   http.get(`${BASE}/incidents`, () =>
@@ -233,12 +225,7 @@ export const handlers = [
     return HttpResponse.json({ ...MOCK_INCIDENT, ...body, id: Number(params.id) })
   }),
 
-  // Incident delete (soft: the backend closes the incident)
-  http.delete(`${BASE}/incidents/:id`, () => new HttpResponse(null, { status: 204 })),
-
-  // Incident notes
-  http.get(`${BASE}/incidents/:id/notes`, () => HttpResponse.json([MOCK_INCIDENT_NOTE])),
-
+  // Incident note
   http.post(`${BASE}/incidents/:id/notes`, async ({ request }) => {
     const body = await request.json() as { content: string; note_type?: string }
     return HttpResponse.json(

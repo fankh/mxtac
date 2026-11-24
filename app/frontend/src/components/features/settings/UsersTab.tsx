@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
 import { useUIStore } from '@/stores/uiStore'
 import type { User } from '@/types/api'
-import { ConfirmDialog } from './ConfirmDialog'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { CreateUserDialog, EditUserDialog } from './UserDialogs'
 
 type Confirm = { kind: 'deactivate' | 'reset-mfa'; user: User } | null

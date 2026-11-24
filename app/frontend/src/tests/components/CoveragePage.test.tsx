@@ -1,6 +1,7 @@
 // vi.mock is hoisted before imports — declare all module mocks first.
 
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof ApiModule>()),
   overviewApi: {
     heatmap: vi.fn(),
     tacticLabels: vi.fn(),
@@ -35,6 +36,7 @@ import { CoveragePage } from '../../components/features/coverage/CoveragePage'
 import {
   attackUrl, formatPct, groupTechniques, heatOpacity,
 } from '../../components/features/coverage/coverageUtils'
+import type * as ApiModule from '../../lib/api'
 import { coverageApi, overviewApi } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useUIStore } from '../../stores/uiStore'

@@ -1,5 +1,5 @@
 // vi.mock is hoisted before imports
-vi.mock('../../components/features/auth/MfaSetupModal', () => ({
+vi.mock('../../components/shared/MfaSetupModal', () => ({
   MfaSetupModal: ({ onClose }: { onClose: () => void }) => (
     <div data-testid="mfa-setup-modal">
       <button onClick={onClose}>Close MFA Modal</button>
@@ -46,7 +46,6 @@ describe('Sidebar', () => {
       theme: 'light',
       sidebarCollapsed: false,
       notifications: [],
-      globalError: null,
       showShortcutsModal: false,
     })
     useAuthStore.setState({ user: { email: 'analyst@mxtac.local', role: 'analyst' }, logout })

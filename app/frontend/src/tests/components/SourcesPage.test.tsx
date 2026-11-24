@@ -6,7 +6,6 @@ vi.mock('../../lib/api', async (importOriginal) => {
     ...actual,
     connectorsApi: {
       list: vi.fn(),
-      get: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -38,10 +37,6 @@ import type * as ApiModule from '../../lib/api'
 import { connectorsApi, ingestApi } from '../../lib/api'
 import { useUIStore } from '../../stores/uiStore'
 import type { Connector } from '../../types/api'
-import { installRadixSelectPolyfills } from '../mocks/radixSelect'
-
-// A Radix Switch inside a form measures itself with ResizeObserver, which jsdom lacks.
-installRadixSelectPolyfills()
 
 const api = vi.mocked(connectorsApi)
 const sendMock = vi.mocked(ingestApi.send)

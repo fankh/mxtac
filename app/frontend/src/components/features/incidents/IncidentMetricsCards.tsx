@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
-import { incidentsApi } from '@/lib/api'
+import { apiErrorMessage, incidentsApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { SEVERITY_LABELS, SEVERITY_OPTIONS, apiErrorMessage } from '../detections/utils'
+import { SEVERITY_LABELS, SEVERITY_OPTIONS } from '@/lib/severity'
 import { formatDuration } from './incidentUtils'
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint: string }) {

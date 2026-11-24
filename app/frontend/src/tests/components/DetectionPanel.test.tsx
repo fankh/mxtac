@@ -1,6 +1,7 @@
 // vi.mock is hoisted before imports — declare module mocks first.
 
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof ApiModule>()),
   authApi: {},
   detectionsApi: {
     update: vi.fn(),
@@ -11,6 +12,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DetectionPanel } from '../../components/features/detections/DetectionPanel'
+import type * as ApiModule from '../../lib/api'
 import { detectionsApi } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useUIStore } from '../../stores/uiStore'

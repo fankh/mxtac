@@ -5,7 +5,7 @@ import { Page } from '@/components/layout/Page'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
-import { eventsApi } from '@/lib/api'
+import { apiErrorMessage, eventsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { useUIStore } from '@/stores/uiStore'
 import type { EventItem, SavedQuery, SearchRequest } from '@/types/api'
@@ -14,10 +14,8 @@ import { HuntCharts } from './HuntCharts'
 import { HuntResults } from './HuntResults'
 import { HuntSearchForm } from './HuntSearchForm'
 import { SaveQueryDialog, SavedQueriesPanel } from './SavedQueries'
-import {
-  HUNT_ROLES, PAGE_SIZE, buildSearchRequest, downloadBlob, errorMessage, newFilterRow, toFilterRows,
-  type FilterRow,
-} from './huntUtils'
+import { HUNT_ROLES, PAGE_SIZE, buildSearchRequest, newFilterRow, toFilterRows, type FilterRow } from './huntUtils'
+import { downloadBlob } from '@/lib/download'
 
 const TITLE = 'Hunt'
 const DESCRIPTION = 'Search raw events and keep the queries you reuse'
@@ -54,7 +52,7 @@ function HuntWorkspace() {
       downloadBlob(blob, `events_${new Date().toISOString().slice(0, 10)}.csv`)
     },
     onError: (e: unknown) => {
-      addNotification({ type: 'error', title: 'Could not export events', message: errorMessage(e, 'The request failed.') })
+      addNotification({ type: 'error', title: 'Could not export events', message: apiErrorMessage(e) })
     },
   })
 

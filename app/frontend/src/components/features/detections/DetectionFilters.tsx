@@ -2,13 +2,9 @@ import { X } from 'lucide-react'
 import type { DetectionStatus, SeverityLevel } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { FilterChip, FilterGroup, SearchInput } from './ListControls'
-import {
-  DETECTION_STATUS_LABELS,
-  DETECTION_STATUS_OPTIONS,
-  SEVERITY_LABELS,
-  SEVERITY_OPTIONS,
-} from './utils'
+import { FilterChip, FilterGroup, SearchInput } from '@/components/shared/ListControls'
+import { DETECTION_STATUS_LABELS, DETECTION_STATUS_OPTIONS } from './utils'
+import { SEVERITY_LABELS, SEVERITY_OPTIONS } from '@/lib/severity'
 
 export interface DetectionFilterState {
   search: string

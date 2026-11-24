@@ -155,23 +155,3 @@ export function eventEntities(event: EventItem): EventEntity[] {
   if (event.process_hash) out.push({ type: 'hash', value: event.process_hash, label: 'Process hash', field: 'process_hash' })
   return out
 }
-
-/** Message from a failed request: the API's `detail` when it is a string, else a fallback. */
-export function errorMessage(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-  if (typeof detail === 'string' && detail) return detail
-  if (e instanceof Error && e.message) return e.message
-  return fallback
-}
-
-/** Save a blob to disk through a temporary link. */
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
-}

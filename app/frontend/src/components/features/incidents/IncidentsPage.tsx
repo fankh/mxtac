@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Plus, RefreshCw, Siren, X } from 'lucide-react'
 import type { Incident, IncidentSortField, IncidentStatus, SeverityLevel } from '@/types/api'
-import { incidentsApi, type IncidentListParams } from '@/lib/api'
+import { apiErrorMessage, type IncidentListParams, incidentsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { Page } from '@/components/layout/Page'
 import { Button } from '@/components/ui/button'
@@ -11,17 +11,13 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { SeverityPill } from '@/components/shared/SeverityBadge'
-import { ErrorCard, FilterChip, FilterGroup, Pager, SearchInput } from '../detections/ListControls'
-import { OptionSelect } from '../detections/OptionSelect'
-import {
-  SEVERITY_LABELS,
-  SEVERITY_OPTIONS,
-  apiErrorMessage,
-  canWrite,
-  formatDateTime,
-  useDebouncedValue,
-} from '../detections/utils'
-import { CreateIncidentDialog } from './CreateIncidentDialog'
+import { ErrorCard, FilterChip, FilterGroup, Pager, SearchInput } from '@/components/shared/ListControls'
+import { OptionSelect } from '@/components/shared/OptionSelect'
+import { SEVERITY_LABELS, SEVERITY_OPTIONS } from '@/lib/severity'
+import { canWrite } from '@/lib/roles'
+import { formatDateTime } from '@/lib/format'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { CreateIncidentDialog } from '@/components/shared/CreateIncidentDialog'
 import { IncidentMetricsCards } from './IncidentMetricsCards'
 import { IncidentPanel } from './IncidentPanel'
 import { IncidentStatusPill } from './IncidentStatusPill'

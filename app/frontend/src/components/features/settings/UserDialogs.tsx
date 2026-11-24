@@ -12,7 +12,7 @@ import { PASSWORD_POLICY_HINT, passwordProblem } from '@/lib/passwordPolicy'
 import { useUIStore } from '@/stores/uiStore'
 import type { User, UserRole } from '@/types/api'
 
-export const ROLES: { value: UserRole; label: string; description: string }[] = [
+const ROLES: { value: UserRole; label: string; description: string }[] = [
   { value: 'viewer', label: 'Viewer', description: 'Read detections and incidents' },
   { value: 'analyst', label: 'Analyst', description: 'Triage detections and incidents' },
   { value: 'hunter', label: 'Hunter', description: 'Analyst access plus event search and rule reading' },

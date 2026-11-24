@@ -23,13 +23,6 @@ export const NOTE_TYPE_LABELS: Record<NoteType, string> = {
   status_change: 'Status change',
 }
 
-/** Same check as the backend applies to `assigned_to`. */
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
-
-export function isValidEmail(value: string): boolean {
-  return EMAIL_RE.test(value)
-}
-
 /** Statuses the incident may be set to: the current one and every later one. */
 export function reachableStatuses(current: IncidentStatus): IncidentStatus[] {
   const index = INCIDENT_STATUS_FLOW.indexOf(current)

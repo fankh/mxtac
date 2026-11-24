@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Radio, RefreshCw, ShieldAlert } from 'lucide-react'
 import type {
@@ -8,7 +8,7 @@ import type {
   DetectionStatus,
   SeverityLevel,
 } from '@/types/api'
-import { detectionsApi, type DetectionExportParams } from '@/lib/api'
+import { apiErrorMessage, type DetectionExportParams, detectionsApi } from '@/lib/api'
 import { useNewAlertIds } from '@/hooks/useNewAlertIds'
 import { useAuthStore } from '@/stores/authStore'
 import { useDetectionStore } from '@/stores/detectionStore'
@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
-import { CreateIncidentDialog } from '../incidents/CreateIncidentDialog'
+import { CreateIncidentDialog } from '@/components/shared/CreateIncidentDialog'
 import { BulkStatusDialog } from './BulkStatusDialog'
 import {
   DetectionFilters,
@@ -28,16 +28,14 @@ import {
 } from './DetectionFilters'
 import { DetectionPanel } from './DetectionPanel'
 import { DetectionsTable, type SortOrder } from './DetectionsTable'
-import { ErrorCard, Pager } from './ListControls'
-import { OptionSelect } from './OptionSelect'
-import {
-  DETECTION_STATUS_LABELS,
-  SEVERITY_OPTIONS,
-  apiErrorMessage,
-  canWrite,
-  plural,
-  useDebouncedValue,
-} from './utils'
+import { ErrorCard, Pager } from '@/components/shared/ListControls'
+import { OptionSelect } from '@/components/shared/OptionSelect'
+import { DETECTION_STATUS_LABELS } from './utils'
+import { SEVERITY_OPTIONS } from '@/lib/severity'
+import { canWrite } from '@/lib/roles'
+import { downloadBlob } from '@/lib/download'
+import { plural } from '@/lib/format'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 /** Backend limit on `ids` for POST /detections/bulk and `detection_ids` for POST /incidents. */
 const MAX_BULK_IDS = 500
@@ -54,17 +52,6 @@ const BULK_ACTIONS: { status: DetectionStatus; label: string }[] = [
   { status: 'false_positive', label: 'False positive' },
   { status: 'active', label: 'Reopen' },
 ]
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
 
 export function DetectionsPage() {
   const queryClient = useQueryClient()
@@ -85,13 +72,7 @@ export function DetectionsPage() {
   // ── Live alerts (WebSocket) ───────────────────────────────────────────────
   const liveIds = useNewAlertIds()
   const liveAlerts = useDetectionStore((s) => s.liveAlerts)
-  const clearUnread = useDetectionStore((s) => s.clearUnread)
   const [ackLiveId, setAckLiveId] = useState<string | undefined>(() => liveAlerts[0]?.id)
-
-  // The user is looking at detections, so nothing streamed in counts as unread.
-  useEffect(() => {
-    clearUnread()
-  }, [clearUnread, liveAlerts])
 
   const ackIndex = ackLiveId === undefined ? -1 : liveAlerts.findIndex((alert) => alert.id === ackLiveId)
   const pendingLive = ackIndex === -1 ? liveAlerts.length : ackIndex
