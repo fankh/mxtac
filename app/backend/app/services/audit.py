@@ -176,61 +176,6 @@ class AuditLogger:
 
         return doc_id
 
-    async def search(
-        self,
-        actor: str | None = None,
-        action: str | None = None,
-        resource_type: str | None = None,
-        time_from: str = "now-7d",
-        time_to: str = "now",
-        size: int = 50,
-        from_: int = 0,
-    ) -> dict[str, Any]:
-        """
-        Query audit log entries with optional filters.
-
-        Searches across all monthly audit indices (``mxtac-audit-*``) so that
-        queries spanning multiple months or years work transparently.
-
-        Returns:
-            Dict with 'total' and 'items' keys.
-        """
-        await self._ensure_client()
-        if self._client is None:
-            return {"total": 0, "items": []}
-
-        must_clauses: list[dict[str, Any]] = []
-
-        if actor:
-            must_clauses.append({"term": {"actor": actor}})
-        if action:
-            must_clauses.append({"term": {"action": action}})
-        if resource_type:
-            must_clauses.append({"term": {"resource_type": resource_type}})
-
-        must_clauses.append({
-            "range": {"timestamp": {"gte": time_from, "lte": time_to}}
-        })
-
-        body = {
-            "query": {"bool": {"must": must_clauses}},
-            "sort":  [{"timestamp": {"order": "desc"}}],
-            "size":  size,
-            "from":  from_,
-        }
-
-        try:
-            # Wildcard pattern covers all monthly audit indices
-            resp = await self._client.search(index=f"{AUDIT_INDEX_TEMPLATE}-*", body=body)
-            hits = resp.get("hits", {})
-            return {
-                "total": hits.get("total", {}).get("value", 0),
-                "items": [h.get("_source", {}) for h in hits.get("hits", [])],
-            }
-        except Exception as exc:
-            logger.error("AuditLogger search failed: %s", exc)
-            return {"total": 0, "items": []}
-
     async def close(self) -> None:
         if self._client:
             await self._client.close()

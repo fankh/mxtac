@@ -13,7 +13,7 @@ Coverage:
     SigmaEngine, InMemoryQueue, NormalizerPipeline, real sigma_consumer,
     and AlertManager (mocked Valkey to avoid external dependency).
   - Enriched alert payload structure verified end-to-end: rule_id,
-    technique_ids, tactic_ids, score ∈ [0, 10], asset_criticality, host.
+    technique_ids, tactic_ids, score ∈ [0, 10], host.
   - Deduplication: identical synthetic events produce exactly one enriched
     alert; distinct hosts with the same rule produce two enriched alerts.
 """
@@ -679,41 +679,6 @@ class TestSyntheticEventPipelineEndToEnd:
         ps_alerts = [e for e in enriched if e["rule_id"] == RULE_ID_POWERSHELL]
         assert len(ps_alerts) >= 1
         assert ps_alerts[0]["host"] == "WIN-SENSITIVE-01"
-
-    async def test_enriched_alert_has_asset_criticality_field(self) -> None:
-        q, enriched, _ = await self._setup_full_pipeline()
-
-        raw = _wazuh_process_raw(
-            cmd_line="powershell.exe -enc dGVzdA==",
-            image=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
-        )
-        await q.publish(Topic.RAW_WAZUH, raw)
-        await asyncio.sleep(0.4)
-
-        assert len(enriched) >= 1
-        for alert in enriched:
-            assert "asset_criticality" in alert, (
-                "Enriched alert must contain the asset_criticality field"
-            )
-
-    async def test_dc_host_gets_highest_asset_criticality(self) -> None:
-        """Domain controller prefix 'dc' yields criticality 1.0 (the maximum default)."""
-        q, enriched, mgr = await self._setup_full_pipeline()
-
-        # Patch CMDB lookup: DC hosts always return criticality 1.0 (CMDB score 5)
-        mgr._asset_criticality = AsyncMock(return_value=1.0)
-
-        raw = _wazuh_process_raw(
-            cmd_line="powershell.exe -enc dGVzdA==",
-            image=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
-            agent_name="dc01.corp",
-        )
-        await q.publish(Topic.RAW_WAZUH, raw)
-        await asyncio.sleep(0.4)
-
-        ps_alerts = [e for e in enriched if e["rule_id"] == RULE_ID_POWERSHELL]
-        assert len(ps_alerts) >= 1
-        assert ps_alerts[0]["asset_criticality"] == 1.0
 
     async def test_critical_severity_rule_produces_high_score(self) -> None:
         """LSASS rule (critical severity) must produce a higher score than medium-level rules."""

@@ -30,10 +30,6 @@ Metrics exposed at GET /metrics (Prometheus text format):
   WebSocket
   ─────────
   mxtac_websocket_connections              Gauge    — active WebSocket connections
-
-  Threat intelligence
-  ───────────────────
-  mxtac_iocs_expired_total                 Counter  — IOCs deactivated by expiry task
 """
 
 from prometheus_client import Counter, Gauge, Histogram
@@ -109,15 +105,6 @@ websocket_connections = Gauge(
 )
 
 # ---------------------------------------------------------------------------
-# Threat intelligence
-# ---------------------------------------------------------------------------
-
-iocs_expired = Counter(
-    "mxtac_iocs_expired_total",
-    "Total IOCs deactivated by the IOC expiry background task (expires_at + stale-hit)",
-)
-
-# ---------------------------------------------------------------------------
 # OpenSearch storage — feature 38.2
 # ---------------------------------------------------------------------------
 
@@ -131,16 +118,6 @@ opensearch_events_per_day = Gauge(
     "mxtac_opensearch_events_per_day",
     "Number of events stored in each daily OpenSearch index",
     ["date"],  # ISO date string e.g. "2024-01-15"
-)
-
-# ---------------------------------------------------------------------------
-# Data retention — feature 38.4
-# ---------------------------------------------------------------------------
-
-retention_deleted = Counter(
-    "mxtac_retention_deleted_total",
-    "Total records hard-deleted by the data retention background task",
-    ["type"],  # "detection", "incident", "ioc"
 )
 
 # ---------------------------------------------------------------------------

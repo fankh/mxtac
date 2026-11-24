@@ -258,8 +258,8 @@ async def test_integrations_from_db(
         error_message="Token expired",
     )
     disabled = Connector(
-        name="OpenCTI",
-        connector_type="opencti",
+        name="Syslog",
+        connector_type="syslog",
         status="inactive",
         enabled=False,
         events_total=0,
@@ -281,7 +281,7 @@ async def test_integrations_from_db(
     assert by_name["Splunk"]["status"] == "warning"
     assert by_name["Splunk"]["detail"] == "Token expired"
 
-    assert by_name["OpenCTI"]["status"] == "disabled"
+    assert by_name["Syslog"]["status"] == "disabled"
 
 
 @pytest.mark.asyncio

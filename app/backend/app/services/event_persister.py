@@ -1,14 +1,11 @@
-"""Event persister — triple-write normalized events to PostgreSQL, DuckDB,
-and OpenSearch.
+"""Event persister — write normalized events to PostgreSQL and OpenSearch.
 
 Subscribes to ``mxtac.normalized`` and for each OCSF event:
   1. Extracts flat fields and persists a row to PostgreSQL (via EventRepo).
-  2. Mirrors the full OCSF dict to DuckDB (if enabled) using the PostgreSQL
-     UUID as the row ID so both stores share the same identifier.
-  3. Indexes the full OCSF dict to OpenSearch (if a client is available),
-     again using the PostgreSQL UUID as the document ID.
+  2. Indexes the full OCSF dict to OpenSearch (if a client is available),
+     using the PostgreSQL UUID as the document ID.
 
-All three operations are non-fatal: a failure in any store is logged and the
+Both operations are non-fatal: a failure in either store is logged and the
 pipeline continues.
 """
 
@@ -19,7 +16,6 @@ from typing import Any
 
 from ..core.logging import get_logger
 from ..pipeline.queue import MessageQueue, Topic
-from ..services.duckdb_store import DuckDBEventStore
 from ..services.opensearch_client import OpenSearchService
 
 logger = get_logger(__name__)
@@ -70,18 +66,12 @@ def _extract_event_fields(event_dict: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def event_persister(
-    queue: MessageQueue,
-    os_client: OpenSearchService,
-    duckdb_store: DuckDBEventStore | None = None,
-) -> None:
+async def event_persister(queue: MessageQueue, os_client: OpenSearchService) -> None:
     """Subscribe to ``mxtac.normalized`` and persist each event.
 
     Writes to:
       1. PostgreSQL (authoritative store, always attempted)
-      2. DuckDB     (embedded analytics, when *duckdb_store* is provided
-                     and ``duckdb_store.is_available`` is True)
-      3. OpenSearch (optional full-text search, when available)
+      2. OpenSearch (optional full-text search, when available)
     """
 
     async def _handle(event_dict: dict[str, Any]) -> None:
@@ -101,15 +91,7 @@ async def event_persister(
         except Exception:
             logger.exception("EventPersister PostgreSQL write failed (non-fatal)")
 
-        # 2. Mirror to DuckDB analytics store (if enabled and available)
-        try:
-            if duckdb_store is not None and duckdb_store.is_available:
-                await duckdb_store.index_event(event_dict, doc_id=pg_id)
-                logger.debug("EventPersister mirrored to DuckDB id=%s", pg_id)
-        except Exception:
-            logger.exception("EventPersister DuckDB write failed (non-fatal)")
-
-        # 3. Index to OpenSearch using the PostgreSQL UUID as document ID
+        # 2. Index to OpenSearch using the PostgreSQL UUID as document ID
         try:
             if os_client.is_available:
                 doc = {**event_dict}

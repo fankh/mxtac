@@ -179,8 +179,7 @@ class InviteResponse(BaseModel):
 async def _send_invite_email(to_email: str, role: str, invite_token: str) -> bool:
     """Send an invite email via SMTP.
 
-    Uses global smtp_* settings from config.  Mirrors the pattern used by
-    NotificationDispatcher._send_email: STARTTLS by default, implicit TLS
+    Uses global smtp_* settings from config: STARTTLS by default, implicit TLS
     when use_tls=True.  Returns True on success, False on any SMTP error.
     """
     base_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:5173"

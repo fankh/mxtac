@@ -3,19 +3,11 @@
 Search path (POST /search, POST /aggregate):
   1. Use OpenSearch when a live connection is available — enables full-text
      query_string DSL and nested-field filtering.
-  2. Fall back to DuckDB (embedded analytics) when OpenSearch is unavailable
-     and ``duckdb_enabled=True`` — no external service required.
-  3. Fall back to PostgreSQL (EventRepo) when both OpenSearch and DuckDB are
-     unavailable so the platform always works regardless of configuration.
+  2. Fall back to PostgreSQL (EventRepo) when OpenSearch is unavailable so
+     the platform always works regardless of configuration.
 
 All other endpoints (GET /{id}, GET /entity/…) always use PostgreSQL as the
 authoritative store.
-
-Ingest path (POST /ingest):
-  - Accepts batched OCSF events from agents authenticated with X-API-Key.
-  - Validates batch size (max 1000 per request).
-  - Rate limited to 10,000 events/minute per API key (distributed via Valkey).
-  - Publishes events to the internal message queue.
 """
 
 from __future__ import annotations
@@ -24,22 +16,17 @@ import csv
 import io
 import re
 from datetime import date, datetime
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ....core.api_key_auth import get_api_key
 from ....core.database import get_db
 from ....core.rbac import require_permission
-from ....core.valkey import check_ingest_rate_limit
-from ....models.api_key import APIKey
 from ....models.event import Event
-from ....pipeline.queue import MessageQueue, Topic, get_queue
 from ....repositories.event_repo import EventRepo
-from ....services.duckdb_store import DuckDBEventStore, get_duckdb_dep
 from ....services.opensearch_client import (
     OpenSearchService,
     filter_to_dsl,
@@ -48,13 +35,6 @@ from ....services.opensearch_client import (
 from ....services.query_builder import build_lucene_query
 
 router = APIRouter(prefix="/events", tags=["events"])
-
-# ── Rate limiting (distributed via Valkey) ────────────────────────────────────
-# The counter is stored in Valkey so the limit is shared across all API replicas.
-# Falls back to allowing requests when Valkey is unavailable (fail-open).
-
-_RATE_LIMIT_EVENTS = 10_000   # max events per window
-_RATE_WINDOW_SECS  = 60       # window duration in seconds
 
 # ── Time range validation ─────────────────────────────────────────────────────
 # Whitelist of characters allowed in time_from / time_to to prevent Lucene
@@ -89,10 +69,6 @@ EventOperator = Literal["eq", "ne", "gt", "lt", "gte", "lte", "contains"]
 AggType = Literal["terms", "date_histogram"]
 
 AggInterval = Literal["1m", "minute", "1h", "hour", "1d", "24h", "day", "1w", "week", "1M", "month"]
-
-
-class IngestRequest(BaseModel):
-    events: Annotated[list[dict[str, Any]], Field(min_length=1, max_length=1000)]
 
 
 class EventFilter(BaseModel):
@@ -185,15 +161,13 @@ async def search_events(
     body: SearchRequest,
     db: AsyncSession = Depends(get_db),
     os_client: OpenSearchService = Depends(get_opensearch_dep),
-    duckdb_store: DuckDBEventStore = Depends(get_duckdb_dep),
     _: dict = Depends(require_permission("events:search")),
 ):
     """Full-text + filtered event search with time range.
 
     Backend priority:
       1. OpenSearch — when a live connection is available (full-text DSL).
-      2. DuckDB     — embedded analytics when OpenSearch is unavailable.
-      3. PostgreSQL — always available as the authoritative fallback.
+      2. PostgreSQL — always available as the authoritative fallback.
     """
     if os_client.is_available:
         # Build OpenSearch DSL filter clauses from structured filters
@@ -222,25 +196,7 @@ async def search_events(
             "backend": "opensearch",
         }
 
-    # Fallback 1: DuckDB embedded analytics
-    if duckdb_store.is_available:
-        result = await duckdb_store.search_events(
-            query=body.query,
-            filters=body.filters,
-            time_from=body.time_from,
-            time_to=body.time_to,
-            size=body.size,
-            from_=body.from_,
-        )
-        return {
-            "total": result["total"],
-            "items": result["items"],
-            "from_": body.from_,
-            "size":  body.size,
-            "backend": "duckdb",
-        }
-
-    # Fallback 2: PostgreSQL
+    # Fallback: PostgreSQL
     items_pg, total = await EventRepo.search(
         db,
         query=body.query,
@@ -264,15 +220,13 @@ async def aggregate_events(
     body: AggregationRequest,
     db: AsyncSession = Depends(get_db),
     os_client: OpenSearchService = Depends(get_opensearch_dep),
-    duckdb_store: DuckDBEventStore = Depends(get_duckdb_dep),
     _: dict = Depends(require_permission("events:search")),
 ):
     """Aggregate events by field (terms) or over time (date_histogram).
 
     Backend priority:
       1. OpenSearch — when a live connection is available.
-      2. DuckDB     — embedded analytics when OpenSearch is unavailable.
-      3. PostgreSQL — always available as the authoritative fallback.
+      2. PostgreSQL — always available as the authoritative fallback.
 
     - ``agg_type=terms`` — count events grouped by a field value; requires *field*.
     - ``agg_type=date_histogram`` — count events bucketed by time; uses *interval*.
@@ -295,26 +249,7 @@ async def aggregate_events(
             }
         return {"field": body.field, "buckets": buckets, "backend": "opensearch"}
 
-    # Fallback 1: DuckDB embedded analytics
-    if duckdb_store.is_available:
-        buckets = await duckdb_store.aggregate(
-            body.agg_type,
-            field=body.field,
-            interval=body.interval,
-            time_from=body.time_from,
-            time_to=body.time_to,
-            size=body.size,
-        )
-        if body.agg_type == "date_histogram":
-            return {
-                "agg_type": "date_histogram",
-                "interval": body.interval,
-                "buckets":  buckets,
-                "backend":  "duckdb",
-            }
-        return {"field": body.field, "buckets": buckets, "backend": "duckdb"}
-
-    # Fallback 2: PostgreSQL
+    # Fallback: PostgreSQL
     if body.agg_type == "date_histogram":
         buckets = await EventRepo.histogram_by_time(
             db,
@@ -393,39 +328,6 @@ async def build_query_dsl(
     return {"lucene": lucene}
 
 
-@router.post("/ingest/test", status_code=200)
-async def ingest_test(
-    _api_key: APIKey = Depends(get_api_key),
-) -> dict[str, str]:
-    """Connectivity test for agents. Returns 200 when the API key is valid."""
-    return {"status": "ok"}
-
-
-@router.post("/ingest", status_code=202)
-async def ingest_events(
-    body: IngestRequest,
-    api_key: APIKey = Depends(get_api_key),
-    queue: MessageQueue = Depends(get_queue),
-) -> dict[str, Any]:
-    """Batch-ingest OCSF events from agents.
-
-    Validates batch size (≤ 1,000), enforces per-key rate limit (10,000 events/min)
-    via a shared Valkey counter so the limit is consistent across all replicas.
-    Returns 202 Accepted on success.
-    """
-    n = len(body.events)
-    if not await check_ingest_rate_limit(api_key.id, n, _RATE_LIMIT_EVENTS, _RATE_WINDOW_SECS):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Rate limit exceeded: 10,000 events per minute per API key",
-        )
-
-    for event in body.events:
-        await queue.publish(Topic.NORMALIZED, event)
-
-    return {"accepted": n, "status": "queued"}
-
-
 _EXPORT_MAX_ROWS = 10_000
 _EVENT_CSV_COLS = (
     "id", "time", "class_name", "severity_id",
@@ -438,7 +340,6 @@ async def export_events(
     body: SearchRequest,
     db: AsyncSession = Depends(get_db),
     os_client: OpenSearchService = Depends(get_opensearch_dep),
-    duckdb_store: DuckDBEventStore = Depends(get_duckdb_dep),
     _: dict = Depends(require_permission("events:search")),
 ):
     """Export event search results as CSV (max 10,000 rows).
@@ -462,17 +363,6 @@ async def export_events(
             from_=0,
         )
         items: list[dict] = [_os_hit_to_dict(h) for h in resp.get("hits", {}).get("hits", [])]
-
-    elif duckdb_store.is_available:
-        result = await duckdb_store.search_events(
-            query=body.query,
-            filters=body.filters,
-            time_from=body.time_from,
-            time_to=body.time_to,
-            size=_EXPORT_MAX_ROWS,
-            from_=0,
-        )
-        items = result["items"]
 
     else:
         items_pg, _ = await EventRepo.search(

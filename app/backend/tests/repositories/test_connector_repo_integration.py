@@ -100,7 +100,7 @@ class TestConnectorRepoCreateIntegration:
         assert conn.error_message is None
 
     async def test_connector_retrievable_after_create(self, db_session: AsyncSession) -> None:
-        conn = await _create_connector(db_session, name="opencti-prod")
+        conn = await _create_connector(db_session, name="syslog-prod")
         fetched = await ConnectorRepo.get_by_id(db_session, conn.id)
         assert fetched is not None
         assert fetched.id == conn.id
@@ -112,7 +112,7 @@ class TestConnectorRepoCreateIntegration:
 
     @pytest.mark.parametrize(
         "connector_type",
-        ["wazuh", "zeek", "suricata", "prowler", "opencti", "velociraptor", "osquery", "generic"],
+        ["wazuh", "zeek", "suricata", "syslog", "generic"],
     )
     async def test_all_connector_types_accepted(
         self, db_session: AsyncSession, connector_type: str

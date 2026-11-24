@@ -88,7 +88,7 @@ class TestConnectorRepoList:
 
     @pytest.mark.asyncio
     async def test_returns_all_connectors(self) -> None:
-        c1 = _make_connector(id="c1", name="opencti")
+        c1 = _make_connector(id="c1", name="syslog")
         c2 = _make_connector(id="c2", name="wazuh")
         session = _make_session()
         session.execute.return_value = _scalars_result([c1, c2])
@@ -224,10 +224,10 @@ class TestConnectorRepoCreate:
         session = _make_session()
 
         result = await ConnectorRepo.create(
-            session, name="velociraptor-hunt", connector_type="velociraptor"
+            session, name="syslog-main", connector_type="syslog"
         )
 
-        assert result.connector_type == "velociraptor"
+        assert result.connector_type == "syslog"
 
     @pytest.mark.asyncio
     async def test_add_receives_connector_object(self) -> None:

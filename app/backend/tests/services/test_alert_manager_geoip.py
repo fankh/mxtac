@@ -89,19 +89,14 @@ _GEO_RESULT = {
 
 
 def _make_manager() -> AlertManager:
-    """Create a minimal AlertManager with mocked Valkey and IOC matcher."""
+    """Create a minimal AlertManager with mocked Valkey."""
     queue = InMemoryQueue()
     mgr = AlertManager.__new__(AlertManager)
     mgr._queue = queue
-    mgr._dispatcher = None
     mgr._valkey = MagicMock()
     mgr._valkey.set = AsyncMock(return_value=True)
     mgr._valkey.aclose = AsyncMock()
     mgr._geoip_reader = None
-    # Mock IOC matcher so _enrich() doesn't require the real IOCMatcher
-    mgr._ioc_matcher = MagicMock()
-    mgr._ioc_matcher.match_event = AsyncMock(return_value=[])
-    mgr._ioc_matcher.update_hits = AsyncMock()
     return mgr
 
 
@@ -721,7 +716,6 @@ async def test_process_geo_ip_in_published_payload():
         patch.object(AlertManager, "_lookup_geoip", new=AsyncMock(return_value=_GEO_RESULT)),
         patch.object(AlertManager, "_get_recurrence_count", new=AsyncMock(return_value=0)),
         patch.object(AlertManager, "_persist_to_db", new=AsyncMock()),
-        patch.object(AlertManager, "_is_suppressed", new=AsyncMock(return_value=False)),
         patch.object(mgr._queue, "publish", side_effect=_capture),
     ):
         await mgr.process(_ALERT_DICT)
@@ -743,7 +737,6 @@ async def test_process_geo_ip_none_in_published_payload():
         patch.object(AlertManager, "_lookup_geoip", new=AsyncMock(return_value=None)),
         patch.object(AlertManager, "_get_recurrence_count", new=AsyncMock(return_value=0)),
         patch.object(AlertManager, "_persist_to_db", new=AsyncMock()),
-        patch.object(AlertManager, "_is_suppressed", new=AsyncMock(return_value=False)),
         patch.object(mgr._queue, "publish", side_effect=_capture),
     ):
         await mgr.process(_ALERT_DICT)
@@ -765,7 +758,6 @@ async def test_process_geoip_failure_does_not_block_pipeline():
         patch.object(AlertManager, "_lookup_geoip", new=AsyncMock(return_value=None)),
         patch.object(AlertManager, "_get_recurrence_count", new=AsyncMock(return_value=0)),
         patch.object(AlertManager, "_persist_to_db", new=AsyncMock()),
-        patch.object(AlertManager, "_is_suppressed", new=AsyncMock(return_value=False)),
         patch.object(mgr._queue, "publish", side_effect=_capture),
     ):
         await mgr.process(_ALERT_DICT)

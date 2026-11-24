@@ -49,7 +49,7 @@ class TestSearchEventsRBAC:
 
 
 class TestSearchEventsResponse:
-    """POST /events/search — response shape (PostgreSQL fallback when OS/DuckDB unavailable)."""
+    """POST /events/search — response shape (PostgreSQL fallback when OpenSearch is unavailable)."""
 
     _payload = {
         "query": None,
@@ -73,8 +73,8 @@ class TestSearchEventsResponse:
     async def test_response_has_backend(self, client, hunter_headers) -> None:
         resp = await client.post(f"{_BASE}/search", json=self._payload, headers=hunter_headers)
         body = resp.json()
-        # Fallback to postgres when OpenSearch + DuckDB are not available
-        assert body.get("backend") in ("opensearch", "duckdb", "postgres")
+        # Fallback to postgres when OpenSearch is not available
+        assert body.get("backend") in ("opensearch", "postgres")
 
     async def test_empty_results_when_no_events(self, client, hunter_headers) -> None:
         resp = await client.post(f"{_BASE}/search", json=self._payload, headers=hunter_headers)

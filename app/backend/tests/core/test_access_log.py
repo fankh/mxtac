@@ -209,7 +209,7 @@ class TestAccessLogMiddlewareDispatch:
 
     @pytest.mark.asyncio
     async def test_post_request_is_logged(self, middleware, caplog) -> None:
-        request = _make_request("POST", "/api/v1/events/ingest")
+        request = _make_request("POST", "/api/v1/ingest")
         call_next = await _call_next_factory(201)
         with caplog.at_level(logging.INFO, logger="mxtac.access"):
             await middleware.dispatch(request, call_next)

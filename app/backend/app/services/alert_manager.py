@@ -9,9 +9,9 @@ that multiple backend replicas share a single dedup state.
 
 Scoring formula:
     score = base_severity * weight_severity
-          + asset_criticality * weight_asset
+          + host_criticality * weight_host
           + recurrence_bonus
-    Normalized to 0-10 range.
+    Normalized to 0-10 range.  Every host is weighted as medium criticality.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import ipaddress
 import json
 import time
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import valkey.asyncio as aioredis
 
@@ -30,18 +30,17 @@ from ..core.logging import get_logger
 from ..core.metrics import alerts_deduplicated, alerts_processed, pipeline_latency
 from ..engine.sigma_engine import SigmaAlert, LEVEL_SEVERITY
 from ..pipeline.queue import MessageQueue, Topic
-from .ioc_matcher import IOCMatcher
-
-if TYPE_CHECKING:
-    from .notification_dispatcher import NotificationDispatcher
 
 logger = get_logger(__name__)
 
 # Score weights
 W_SEVERITY  = 0.60
-W_ASSET     = 0.25
+W_HOST      = 0.25
 W_RECUR     = 0.15
 MAX_SCORE   = 10.0
+
+# Every host is weighted as medium criticality (midpoint of the 0-1 range).
+HOST_CRITICALITY = 0.5
 
 # Deduplication window in seconds (5 minutes)
 DEDUP_WINDOW_SECONDS = 300
@@ -55,51 +54,14 @@ _DEDUP_PREFIX = "mxtac:dedup:"
 _GEOIP_NOT_AVAILABLE = object()
 _GEOIP_CACHE_PREFIX = "mxtac:geoip:"
 
-# Asset criticality defaults — kept for backward-compatibility with scoring tests.
-# The actual lookup now uses the CMDB (feature 9.9); these values are no longer
-# used by _asset_criticality() but remain importable so existing tests compile.
-DEFAULT_ASSET_CRITICALITY: dict[str, float] = {
-    "dc":  1.0,   # Domain Controller prefix
-    "srv": 0.8,
-    "win": 0.6,
-    "lin": 0.5,
-}
-
-# CMDB criticality scale — maps the Asset.criticality integer (1-5) to the
-# 0.0-1.0 float range using the linear formula (criticality - 1) / 4.
-# (feature 30.4 / mxtac-9.9)
-ASSET_CRITICALITY_SCALE: dict[int, float] = {
-    1: 0.00,  # Low          — (1-1)/4
-    2: 0.25,  # Medium-Low   — (2-1)/4
-    3: 0.50,  # Medium       — (3-1)/4  (also the default when asset not in CMDB)
-    4: 0.75,  # High         — (4-1)/4
-    5: 1.00,  # Mission-Critical — (5-1)/4
-}
-
-# Valkey caching for asset criticality lookups — avoids a DB hit on every alert
-# (feature 30.4). Stores the raw integer criticality (1-5) with a 5-minute TTL.
-_ASSET_CRIT_CACHE_PREFIX = "mxtac:asset_crit:"
-ASSET_CRIT_CACHE_TTL = 300  # 5-minute TTL (seconds)
-
 
 class AlertManager:
-    def __init__(
-        self,
-        queue: MessageQueue,
-        dispatcher: NotificationDispatcher | None = None,
-    ) -> None:
+    def __init__(self, queue: MessageQueue) -> None:
         self._queue = queue
-        self._dispatcher = dispatcher
-        # Valkey client for distributed deduplication (dedup-only, not shared)
+        # Valkey client for distributed deduplication and the GeoIP cache
         self._valkey: aioredis.Valkey = aioredis.from_url(
             settings.valkey_url, decode_responses=True
         )
-        # IOC matcher — separate Valkey client so IOC cache ops don't interfere
-        # with the dedup SET NX sequence expected by callers (feature 29.3)
-        self._ioc_valkey: aioredis.Valkey = aioredis.from_url(
-            settings.valkey_url, decode_responses=True
-        )
-        self._ioc_matcher = IOCMatcher(self._ioc_valkey)
         # GeoIP mmdb reader — lazy-loaded on first lookup.
         # Set to _GEOIP_NOT_AVAILABLE when the database is missing or not configured.
         self._geoip_reader: Any = None
@@ -131,13 +93,6 @@ class AlertManager:
                 logger.debug("AlertManager deduplicated rule_id=%s host=%s", alert.rule_id, alert.host)
                 return
 
-            if await self._is_suppressed(alert):
-                logger.info(
-                    "AlertManager suppressed rule_id=%s host=%s",
-                    alert.rule_id, alert.host,
-                )
-                return
-
             enriched = await self._enrich(alert)
             scored   = self._score(enriched)
 
@@ -146,16 +101,6 @@ class AlertManager:
                 "AlertManager published rule_id=%s host=%s score=%.1f",
                 alert.rule_id, alert.host, scored.get("score", 0),
             )
-
-            # Dispatch notifications — after enrichment, before storage (non-fatal)
-            if self._dispatcher is not None:
-                try:
-                    await self._dispatcher.dispatch(scored)
-                except Exception:
-                    logger.exception(
-                        "AlertManager notification dispatch failed (non-fatal) id=%s",
-                        scored.get("id"),
-                    )
 
             await self._persist_to_db(scored)
         except Exception:
@@ -191,64 +136,10 @@ class AlertManager:
         digest = hashlib.md5(raw).hexdigest()  # noqa: S324 (non-crypto use)
         return f"{_DEDUP_PREFIX}{digest}"
 
-    # -- Suppression (whitelist/tuning) ------------------------------------
-
-    async def _is_suppressed(self, alert: SigmaAlert) -> bool:
-        """Return True if a matching active suppression rule exists in the DB.
-
-        Fail-open: if the DB is unreachable the alert is allowed through so
-        that the pipeline remains available even when PostgreSQL is down.
-        """
-        try:
-            from ..core.database import AsyncSessionLocal
-            from ..repositories.suppression_repo import SuppressionRepo
-            technique_id = alert.technique_ids[0] if alert.technique_ids else ""
-            tactic = alert.tactic_ids[0] if alert.tactic_ids else ""
-            async with AsyncSessionLocal() as session:
-                matched = await SuppressionRepo.match(
-                    session,
-                    rule_id_val=alert.rule_id,
-                    host_val=alert.host,
-                    technique_id_val=technique_id,
-                    tactic_val=tactic,
-                    severity_val=alert.level,
-                )
-                if matched:
-                    await session.commit()
-                    return True
-            return False
-        except Exception:
-            logger.exception(
-                "AlertManager suppression check failed (fail-open) rule_id=%s host=%s",
-                alert.rule_id, alert.host,
-            )
-            return False
-
     # -- Enrichment --------------------------------------------------------
 
     async def _enrich(self, alert: SigmaAlert) -> dict[str, Any]:
-        """Add context that isn't in the raw alert.
-
-        Threat intel enrichment (feature 29.3): IOCMatcher.match_event() looks
-        up active IOCs matching IPs, domains, hashes, and URLs extracted from
-        the alert.  Matched IOCs are stored in ``threat_intel.matched_iocs`` and
-        the score is boosted by +1.5 per match (capped at +3.0).
-        """
-        # IOC matching — in-memory + Valkey cache (feature 29.3)
-        matches = await self._ioc_matcher.match_event(
-            alert.host, alert.event_snapshot or {}
-        )
-        await self._ioc_matcher.update_hits(matches)
-
-        if matches:
-            threat_score_boost = round(min(len(matches) * 1.5, 3.0), 1)
-            threat_intel: dict[str, Any] | None = {
-                "matched_iocs": [m.to_dict() for m in matches],
-                "threat_score_boost": threat_score_boost,
-            }
-        else:
-            threat_intel = None
-
+        """Add context that isn't in the raw alert."""
         d = {
             "id":            alert.id,
             "rule_id":       alert.rule_id,
@@ -261,9 +152,7 @@ class AlertManager:
             "time":          alert.time.isoformat(),
             "event_snapshot": alert.event_snapshot,
             # Enrichment
-            "asset_criticality":  await self._asset_criticality(alert.host),
             "recurrence_count":   await self._get_recurrence_count(alert),
-            "threat_intel":       threat_intel,
             "geo_ip":             await self._lookup_geoip(alert),
         }
         return d
@@ -289,63 +178,6 @@ class AlertManager:
                 alert.rule_id, alert.host,
             )
             return 0
-
-    async def _asset_criticality(self, hostname: str) -> float:
-        """Look up asset criticality from the CMDB with Valkey read-through cache.
-
-        Maps the Asset.criticality integer (1–5) stored in PostgreSQL to the
-        0.0–1.0 float range using the linear formula ``(criticality - 1) / 4``:
-
-            1 → 0.00  (Low)
-            2 → 0.25  (Medium-Low)
-            3 → 0.50  (Medium — default when the asset is not registered)
-            4 → 0.75  (High)
-            5 → 1.00  (Mission-Critical)
-
-        Lookup order:
-          1. Valkey cache (key: ``mxtac:asset_crit:{hostname}``, TTL 5 min).
-          2. AssetRepo.get_criticality() — exact hostname, then IP substring match.
-          3. Default criticality (3 → 0.50) when no record is found.
-
-        Fail-open: returns 0.50 on any DB or cache error so the pipeline is
-        never blocked by a missing or unreachable CMDB/Valkey.
-        (feature 30.4 / mxtac-9.9)
-        """
-        if not hostname:
-            return ASSET_CRITICALITY_SCALE[3]
-
-        cache_key = f"{_ASSET_CRIT_CACHE_PREFIX}{hostname}"
-
-        # Cache read (fail-open: AttributeError, connection error, etc. all caught)
-        try:
-            cached = await self._valkey.get(cache_key)
-            if cached is not None:
-                return ASSET_CRITICALITY_SCALE.get(int(cached), 0.5)
-        except Exception:
-            pass  # Valkey unavailable — fall through to DB
-
-        # DB lookup (fail-open)
-        try:
-            from ..core.database import AsyncSessionLocal
-            from ..repositories.asset_repo import AssetRepo
-            async with AsyncSessionLocal() as session:
-                db_criticality = await AssetRepo.get_criticality(session, hostname)
-
-            # Cache write (non-fatal — nested try so a Valkey failure doesn't
-            # prevent returning the DB-sourced value)
-            try:
-                await self._valkey.set(
-                    cache_key, str(db_criticality), ex=ASSET_CRIT_CACHE_TTL
-                )
-            except Exception:
-                pass
-
-            return ASSET_CRITICALITY_SCALE.get(db_criticality, 0.5)
-        except Exception:
-            logger.exception(
-                "AlertManager CMDB criticality lookup failed (non-fatal) host=%s", hostname
-            )
-            return 0.5
 
     # -- GeoIP enrichment (feature 9.8) ------------------------------------
 
@@ -524,50 +356,21 @@ class AlertManager:
             recur_bonus = min(recurrence_count / 10, 1.0)
         10 or more detections of the same (rule_id, host) in the last 24 hours
         yields the full 0.15 recurrence weight.
-
-        threat_score_boost (feature 29.3): +1.5 per matched IOC, capped at +3.0.
-        Added on top of the weighted base score before the MAX_SCORE cap.
         """
         severity_norm = (enriched["severity_id"] - 1) / 4   # 0-1
-        asset_crit    = enriched.get("asset_criticality", 0.5)
         recur_count   = enriched.get("recurrence_count", 0)
         recur_bonus   = min(recur_count / 10.0, 1.0)        # 0-1
 
         raw_score = (
-            severity_norm * W_SEVERITY
-            + asset_crit  * W_ASSET
-            + recur_bonus * W_RECUR
+            severity_norm      * W_SEVERITY
+            + HOST_CRITICALITY * W_HOST
+            + recur_bonus      * W_RECUR
         ) * MAX_SCORE
 
-        # IOC threat intel boost (feature 29.3)
-        ti = enriched.get("threat_intel")
-        threat_boost = ti["threat_score_boost"] if ti else 0.0
-
-        enriched["score"] = round(min(raw_score + threat_boost, MAX_SCORE), 1)
+        enriched["score"] = round(min(raw_score, MAX_SCORE), 1)
         return enriched
 
     # -- Persistence -------------------------------------------------------
-
-    async def _update_asset_stats(self, session: Any, hostname: str) -> None:
-        """Stamp last_seen_at and increment detection_count for the referenced asset.
-
-        Called within an open DB session after a detection is created.  Uses
-        bulk UPDATE so the operation is a no-op (0 rows affected) when the
-        hostname does not exist in the assets table.
-
-        Non-fatal: any exception is caught and logged so a CMDB update failure
-        never blocks detection persistence. (feature 30.4)
-        """
-        if not hostname:
-            return
-        try:
-            from ..repositories.asset_repo import AssetRepo
-            await AssetRepo.update_last_seen(session, hostname)
-            await AssetRepo.increment_detection_count(session, hostname)
-        except Exception:
-            logger.exception(
-                "AlertManager asset stats update failed (non-fatal) host=%s", hostname
-            )
 
     async def _persist_to_db(self, scored: dict[str, Any]) -> None:
         """Persist enriched alert to PostgreSQL. Non-fatal — pipeline continues on error."""
@@ -593,8 +396,6 @@ class AlertManager:
                     rule_name     = (scored["rule_id"] or "")[:500] or None,
                 )
                 await self._correlate_incident(session, scored)
-                # Update asset last_seen_at + detection_count (feature 30.4)
-                await self._update_asset_stats(session, scored.get("host", ""))
                 await session.commit()
             logger.debug("AlertManager persisted detection id=%s", scored["id"])
         except Exception:
@@ -688,8 +489,6 @@ class AlertManager:
         """Close Valkey connections and GeoIP reader."""
         if self._valkey:
             await self._valkey.aclose()
-        if self._ioc_valkey:
-            await self._ioc_valkey.aclose()
         if (
             self._geoip_reader is not None
             and self._geoip_reader is not _GEOIP_NOT_AVAILABLE
