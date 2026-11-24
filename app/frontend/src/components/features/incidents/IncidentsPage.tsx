@@ -12,11 +12,11 @@ const SEVERITY_OPTIONS: SeverityLevel[] = ['critical', 'high', 'medium', 'low']
 const STATUS_OPTIONS: IncidentStatus[]  = ['new', 'investigating', 'contained', 'resolved', 'closed']
 
 const STATUS_COLORS: Record<IncidentStatus, string> = {
-  new:           'bg-blue-light text-blue',
+  new:           'bg-primary/10 text-primary',
   investigating: 'bg-high-bg text-high-text',
   contained:     'bg-med-bg text-med-text',
   resolved:      'bg-resolved-bg text-resolved-text',
-  closed:        'bg-section text-text-muted',
+  closed:        'bg-muted/50 text-muted-foreground',
 }
 
 const STATUS_LABELS: Record<IncidentStatus, string> = {
@@ -51,8 +51,8 @@ function FilterChip({
       onClick={onClick}
       className={`px-3 h-[26px] rounded-[5px] text-[11px] font-medium border transition-colors ${
         active
-          ? 'bg-blue text-white border-blue'
-          : 'bg-surface text-text-secondary border-border hover:border-blue hover:text-blue'
+          ? 'bg-primary text-white border-primary'
+          : 'bg-card text-foreground/80 border-border hover:border-primary hover:text-primary'
       }`}
     >
       {label}
@@ -92,10 +92,10 @@ function StatsCards({
         { label: 'Avg MTTR',           value: fmtDuration(mttr),      sub: 'mean time to resolve' },
         { label: 'Critical / High',    value: `${critical} / ${high}`, sub: 'by severity' },
       ].map(({ label, value, sub }) => (
-        <div key={label} className="bg-surface rounded-md shadow-card px-4 py-3">
-          <p className="text-[10px] text-text-muted uppercase font-medium">{label}</p>
-          <p className="text-[22px] font-semibold text-text-primary leading-tight mt-0.5">{value}</p>
-          <p className="text-[10px] text-text-muted mt-0.5">{sub}</p>
+        <div key={label} className="bg-card rounded-md border shadow-sm px-4 py-3">
+          <p className="text-[10px] text-muted-foreground uppercase font-medium">{label}</p>
+          <p className="text-[22px] font-semibold text-foreground leading-tight mt-0.5">{value}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>
         </div>
       ))}
     </div>
@@ -115,7 +115,7 @@ const BLANK_FORM: IncidentCreate = {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-[10px] font-medium text-text-muted uppercase mb-1">{label}</label>
+      <label className="block text-[10px] font-medium text-muted-foreground uppercase mb-1">{label}</label>
       {children}
     </div>
   )
@@ -148,10 +148,10 @@ function CreateIncidentModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-surface rounded-lg shadow-panel w-[480px] max-h-[90vh] flex flex-col border border-border">
+      <div className="bg-card rounded-lg shadow-xl w-[480px] max-h-[90vh] flex flex-col border border-border">
         <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <h2 className="text-[13px] font-semibold text-text-primary">Create Incident</h2>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-lg leading-none">×</button>
+          <h2 className="text-[13px] font-semibold text-foreground">Create Incident</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-lg leading-none">×</button>
         </div>
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
           <Field label="Title *">
@@ -159,7 +159,7 @@ function CreateIncidentModal({ onClose }: { onClose: () => void }) {
               required
               value={form.title}
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-page w-full text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
+              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-background w-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
               placeholder="e.g. Lateral Movement via Pass-the-Hash"
             />
           </Field>
@@ -168,7 +168,7 @@ function CreateIncidentModal({ onClose }: { onClose: () => void }) {
             <select
               value={form.severity}
               onChange={e => setForm(f => ({ ...f, severity: e.target.value as SeverityLevel }))}
-              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-page w-full text-text-primary focus:outline-none focus:border-blue"
+              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-background w-full text-foreground focus:outline-none focus:border-primary"
             >
               {SEVERITY_OPTIONS.map(s => (
                 <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
@@ -181,7 +181,7 @@ function CreateIncidentModal({ onClose }: { onClose: () => void }) {
               value={form.description ?? ''}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               rows={3}
-              className="w-full text-[11px] border border-border rounded-md bg-page p-2 text-text-primary placeholder-text-muted focus:outline-none focus:border-blue resize-none"
+              className="w-full text-[11px] border border-border rounded-md bg-background p-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-none"
               placeholder="Describe the incident…"
             />
           </Field>
@@ -190,7 +190,7 @@ function CreateIncidentModal({ onClose }: { onClose: () => void }) {
             <input
               value={form.assigned_to ?? ''}
               onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}
-              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-page w-full text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
+              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-background w-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
               placeholder="analyst@org.com"
             />
           </Field>
@@ -199,7 +199,7 @@ function CreateIncidentModal({ onClose }: { onClose: () => void }) {
             <input
               value={detIds}
               onChange={e => setDetIds(e.target.value)}
-              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-page w-full text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
+              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-background w-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
               placeholder="det-abc123, det-def456"
             />
           </Field>
@@ -213,14 +213,14 @@ function CreateIncidentModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border">
           <button
             onClick={onClose}
-            className="h-[30px] px-4 text-[12px] border border-border rounded-md text-text-secondary hover:bg-page"
+            className="h-[30px] px-4 text-[12px] border border-border rounded-md text-foreground/80 hover:bg-background"
           >
             Cancel
           </button>
           <button
             onClick={(e) => handleSubmit(e as unknown as React.FormEvent)}
             disabled={mutation.isPending || !form.title}
-            className="h-[30px] px-4 text-[12px] bg-blue text-white rounded-md hover:opacity-90 disabled:opacity-50"
+            className="h-[30px] px-4 text-[12px] bg-primary text-white rounded-md hover:opacity-90 disabled:opacity-50"
           >
             {mutation.isPending ? 'Creating…' : 'Create Incident'}
           </button>
@@ -290,7 +290,7 @@ export function IncidentsPage() {
         <div className="flex items-center gap-2 py-3 flex-wrap">
           {/* Severity chips */}
           <div className="flex items-center gap-1">
-            <span className="text-[10px] text-text-muted mr-1">Severity:</span>
+            <span className="text-[10px] text-muted-foreground mr-1">Severity:</span>
             {SEVERITY_OPTIONS.map(s => (
               <FilterChip
                 key={s}
@@ -305,7 +305,7 @@ export function IncidentsPage() {
 
           {/* Status chips */}
           <div className="flex items-center gap-1">
-            <span className="text-[10px] text-text-muted mr-1">Status:</span>
+            <span className="text-[10px] text-muted-foreground mr-1">Status:</span>
             {STATUS_OPTIONS.map(s => (
               <FilterChip
                 key={s}
@@ -323,11 +323,11 @@ export function IncidentsPage() {
               placeholder="Search incidents…"
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue w-[200px]"
+              className="h-[28px] px-3 text-[11px] border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary w-[200px]"
             />
             <button
               onClick={() => setShowCreate(true)}
-              className="h-[28px] px-3 text-[11px] bg-blue text-white rounded-md hover:opacity-90 whitespace-nowrap"
+              className="h-[28px] px-3 text-[11px] bg-primary text-white rounded-md hover:opacity-90 whitespace-nowrap"
             >
               + New Incident
             </button>
@@ -337,7 +337,7 @@ export function IncidentsPage() {
         {/* Summary row */}
         {pagination && (
           <div className="flex items-center gap-3 mb-2">
-            <span className="text-[11px] text-text-muted">
+            <span className="text-[11px] text-muted-foreground">
               {pagination.total.toLocaleString()} incidents
               {severities.length > 0 && ` · ${severities.join(', ')}`}
               {statuses.length > 0   && ` · ${statuses.join(', ')}`}
@@ -346,16 +346,16 @@ export function IncidentsPage() {
         )}
 
         {/* Table */}
-        <div className="bg-surface rounded-md shadow-card overflow-hidden">
+        <div className="bg-card rounded-md border shadow-sm overflow-hidden">
           {/* Header */}
           <div className="grid grid-cols-[60px_1fr_100px_120px_130px_110px_80px] gap-2 px-3 py-2 border-b border-border">
             {['ID', 'Title', 'Severity', 'Status', 'Assigned To', 'Hosts', 'Created'].map(h => (
-              <span key={h} className="text-[10px] font-medium text-text-muted uppercase">{h}</span>
+              <span key={h} className="text-[10px] font-medium text-muted-foreground uppercase">{h}</span>
             ))}
           </div>
 
           {isLoading && (
-            <div className="flex items-center justify-center h-40 text-text-muted text-sm">Loading…</div>
+            <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">Loading…</div>
           )}
           {isError && (
             <div className="flex items-center justify-center h-40 text-crit-text text-sm">
@@ -369,30 +369,30 @@ export function IncidentsPage() {
               <div
                 key={inc.id}
                 onClick={() => setSelected(isSelected ? null : inc)}
-                className={`grid grid-cols-[60px_1fr_100px_120px_130px_110px_80px] gap-2 px-3 py-[7px] border-b border-section items-center cursor-pointer transition-colors ${
+                className={`grid grid-cols-[60px_1fr_100px_120px_130px_110px_80px] gap-2 px-3 py-[7px] border-b border-border items-center cursor-pointer transition-colors ${
                   isSelected
-                    ? 'bg-blue-faint border-l-[3px] border-l-blue'
-                    : 'hover:bg-page'
+                    ? 'bg-primary/5 border-l-[3px] border-l-blue'
+                    : 'hover:bg-background'
                 }`}
               >
-                <span className="text-[10px] text-text-muted font-mono">INC-{inc.id}</span>
+                <span className="text-[10px] text-muted-foreground font-mono">INC-{inc.id}</span>
                 <div className="min-w-0">
-                  <div className="text-[11px] text-text-primary font-medium truncate">{inc.title}</div>
+                  <div className="text-[11px] text-foreground font-medium truncate">{inc.title}</div>
                   {inc.tactic_ids.length > 0 && (
-                    <div className="text-[10px] text-text-muted truncate">{inc.tactic_ids.join(', ')}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{inc.tactic_ids.join(', ')}</div>
                   )}
                 </div>
                 <SeverityPill severity={inc.severity} />
                 <StatusPill status={inc.status} />
-                <span className="text-[11px] text-text-secondary truncate">
-                  {inc.assigned_to ?? <span className="text-text-muted italic">Unassigned</span>}
+                <span className="text-[11px] text-foreground/80 truncate">
+                  {inc.assigned_to ?? <span className="text-muted-foreground italic">Unassigned</span>}
                 </span>
-                <span className="text-[10px] text-text-muted truncate">
+                <span className="text-[10px] text-muted-foreground truncate">
                   {inc.hosts.length > 0
                     ? inc.hosts.slice(0, 2).join(', ') + (inc.hosts.length > 2 ? ' …' : '')
                     : '—'}
                 </span>
-                <span className="text-[10px] text-text-muted">
+                <span className="text-[10px] text-muted-foreground">
                   {new Date(inc.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                 </span>
               </div>
@@ -400,7 +400,7 @@ export function IncidentsPage() {
           })}
 
           {!isLoading && !isError && incidents.length === 0 && (
-            <div className="flex items-center justify-center h-32 text-text-muted text-sm">
+            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
               No incidents match the current filters.
             </div>
           )}
@@ -412,17 +412,17 @@ export function IncidentsPage() {
             <button
               disabled={page <= 1}
               onClick={() => setPage(p => p - 1)}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-text-secondary disabled:opacity-40 hover:bg-page"
+              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-foreground/80 disabled:opacity-40 hover:bg-background"
             >
               ← Prev
             </button>
-            <span className="text-[11px] text-text-muted">
+            <span className="text-[11px] text-muted-foreground">
               Page {pagination.page} of {pagination.total_pages}
             </span>
             <button
               disabled={page >= pagination.total_pages}
               onClick={() => setPage(p => p + 1)}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-text-secondary disabled:opacity-40 hover:bg-page"
+              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-foreground/80 disabled:opacity-40 hover:bg-background"
             >
               Next →
             </button>

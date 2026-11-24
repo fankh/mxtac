@@ -398,11 +398,11 @@ describe('RulesPage', () => {
       })
     })
 
-    it('activates the level button when clicked (adds bg-blue class)', async () => {
+    it('activates the level button when clicked (adds bg-primary class)', async () => {
       renderPage()
       const btn = await screen.findByRole('button', { name: 'critical' })
       fireEvent.click(btn)
-      expect(btn).toHaveClass('bg-blue')
+      expect(btn).toHaveClass('bg-primary')
     })
 
     it('deactivates the level button when clicked again (toggle off)', async () => {
@@ -410,7 +410,7 @@ describe('RulesPage', () => {
       const btn = await screen.findByRole('button', { name: 'critical' })
       fireEvent.click(btn) // activate
       fireEvent.click(btn) // deactivate
-      expect(btn).not.toHaveClass('bg-blue')
+      expect(btn).not.toHaveClass('bg-primary')
     })
 
     it('only one level button is active at a time', async () => {
@@ -419,8 +419,8 @@ describe('RulesPage', () => {
       const highBtn = screen.getByRole('button', { name: 'high' })
       fireEvent.click(critBtn)
       fireEvent.click(highBtn)
-      expect(critBtn).not.toHaveClass('bg-blue')
-      expect(highBtn).toHaveClass('bg-blue')
+      expect(critBtn).not.toHaveClass('bg-primary')
+      expect(highBtn).toHaveClass('bg-primary')
     })
 
     it('hides rules that do not match the selected level', async () => {
@@ -471,7 +471,7 @@ describe('RulesPage', () => {
       renderPage()
       const btn = await screen.findByRole('button', { name: 'Enabled only' })
       fireEvent.click(btn)
-      expect(btn).toHaveClass('bg-blue')
+      expect(btn).toHaveClass('bg-primary')
     })
 
     it('deactivates the "Enabled only" button when clicked again', async () => {
@@ -479,7 +479,7 @@ describe('RulesPage', () => {
       const btn = await screen.findByRole('button', { name: 'Enabled only' })
       fireEvent.click(btn)
       fireEvent.click(btn)
-      expect(btn).not.toHaveClass('bg-blue')
+      expect(btn).not.toHaveClass('bg-primary')
     })
 
     it('hides disabled rules when "Enabled only" is active', async () => {

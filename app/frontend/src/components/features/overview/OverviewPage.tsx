@@ -28,7 +28,7 @@ export function OverviewPage() {
       <TopBar crumb="Overview" updatedAt="just now" />
       <div className="pt-[46px]">
         {loading && (
-          <div className="flex items-center justify-center h-64 text-text-muted text-sm">Loading…</div>
+          <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">Loading…</div>
         )}
         {error && (
           <div className="flex items-center justify-center h-64 text-crit-text text-sm">

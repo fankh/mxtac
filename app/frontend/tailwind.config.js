@@ -25,43 +25,20 @@ export default {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
-        // Legacy names: removed once every page uses the tokens above
-        // Primary
-        blue: {
-          DEFAULT: 'var(--color-primary)',
-          dark: 'var(--color-primary-dark)',
-          light: 'var(--color-primary-light)',
-          faint: 'var(--color-primary-faint)',
-        },
-        // Severity
-        crit: { bg: 'var(--color-crit-bg)', text: 'var(--color-crit-text)' },
-        high: { bg: 'var(--color-high-bg)', text: 'var(--color-high-text)' },
-        med:  { bg: 'var(--color-med-bg)',  text: 'var(--color-med-text)' },
-        low:  { bg: 'var(--color-low-bg)',  text: 'var(--color-low-text)' },
-        warn: { bg: 'var(--color-warn-bg)', text: 'var(--color-warn-text)' },
-        // Status
-        resolved: { bg: 'var(--color-resolved-bg)', text: 'var(--color-resolved-text)' },
-        'status-ok':   { DEFAULT: 'var(--color-status-ok)',   bg: 'var(--color-status-ok-bg)',   text: 'var(--color-status-ok-text)' },
-        'status-warn': { DEFAULT: 'var(--color-status-warn)', bg: 'var(--color-status-warn-bg)', text: 'var(--color-status-warn-text)' },
-        // Neutrals
-        surface: 'var(--color-surface)',
-        page: 'var(--color-page)',
-        section: 'var(--color-section)',
-        'border-strong': 'var(--color-border-strong)',
-        'text-primary': 'var(--color-text-primary)',
-        'text-secondary': 'var(--color-text-secondary)',
-        'text-muted': 'var(--color-text-muted)',
-        'text-faint': 'var(--color-text-faint)',
-        'chart-grid': 'var(--color-chart-grid)',
-        overlay: 'var(--color-overlay)',
+        // Severity and status (values in src/index.css)
+        crit: { bg: 'var(--sev-critical-bg)', text: 'var(--sev-critical-text)', border: 'var(--sev-critical-border)' },
+        high: { bg: 'var(--sev-high-bg)', text: 'var(--sev-high-text)', border: 'var(--sev-high-border)' },
+        med: { bg: 'var(--sev-medium-bg)', text: 'var(--sev-medium-text)', border: 'var(--sev-medium-border)' },
+        low: { bg: 'var(--sev-low-bg)', text: 'var(--sev-low-text)', border: 'var(--sev-low-border)' },
+        info: { bg: 'var(--sev-info-bg)', text: 'var(--sev-info-text)', border: 'var(--sev-info-border)' },
+        warn: { bg: 'var(--sev-medium-bg)', text: 'var(--sev-medium-text)', border: 'var(--sev-medium-border)' },
+        resolved: { bg: 'var(--status-green-bg)', text: 'var(--status-green-text)', border: 'var(--status-green-border)' },
+        'status-ok': { DEFAULT: '#22c55e', bg: 'var(--status-green-bg)', text: 'var(--status-green-text)', border: 'var(--status-green-border)' },
+        'status-warn': { DEFAULT: '#f59e0b', bg: 'var(--sev-medium-bg)', text: 'var(--sev-medium-text)', border: 'var(--sev-medium-border)' },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '"Segoe UI"', 'sans-serif'],
         mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
-      },
-      boxShadow: {
-        card: 'var(--shadow-card)',
-        panel: 'var(--shadow-panel)',
       },
     },
   },

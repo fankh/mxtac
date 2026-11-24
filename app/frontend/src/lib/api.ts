@@ -3,16 +3,9 @@ import type {
   KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus,
   Detection, PaginatedResponse, DetectionUpdate, BulkDetectionRequest, BulkDetectionResult,
   SearchRequest, SearchResponse, AggregationRequest, AggregationResponse, EntityTimeline,
-  AuditLogEntry,
-  Asset, AssetCreate, AssetStats, BulkAssetResult,
   SavedQuery, SavedQueryCreate, SavedQueryUpdate,
   Incident, IncidentDetail, IncidentCreate, IncidentUpdate, IncidentNote, IncidentMetrics,
-  CoverageTrend,
-  IOC, IOCCreate, IOCUpdate, IOCStats, IOCBulkImportResult,
-  Report, ReportGenerateRequest, ReportGenerateResponse,
-  ReportSchedule, ReportScheduleCreate, ReportScheduleUpdate,
-  HuntSuggestionsResponse,
-  NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelTestResult,
+  CoverageTrend, EventItem,
 } from '../types/api'
 
 const http = axios.create({
@@ -150,72 +143,8 @@ export const eventsApi = {
   queryDsl: (body: SearchRequest): Promise<{ lucene: string }> =>
     http.post('/events/query-dsl', body).then(r => r.data),
 
-  get: (id: string): Promise<import('../types/api').EventItem> =>
+  get: (id: string): Promise<EventItem> =>
     http.get(`/events/${id}`).then(r => r.data),
-}
-
-// ── Hunting ───────────────────────────────────────────────────────────────────
-
-export const huntingApi = {
-  suggestions: (hours = 24, limit = 10): Promise<HuntSuggestionsResponse> =>
-    http.get('/hunting/suggestions', { params: { hours, limit } }).then(r => r.data),
-}
-
-// ── Audit Logs ────────────────────────────────────────────────────────────────
-
-export interface AuditLogListParams {
-  page?: number
-  page_size?: number
-  actor?: string
-  action?: string
-  resource_type?: string
-  from_ts?: string
-  to_ts?: string
-}
-
-export const auditLogsApi = {
-  list: (params: AuditLogListParams = {}): Promise<PaginatedResponse<AuditLogEntry>> =>
-    http.get('/audit-logs', { params }).then(r => r.data),
-
-  get: (id: string): Promise<AuditLogEntry> =>
-    http.get(`/audit-logs/${id}`).then(r => r.data),
-}
-
-// ── Assets ────────────────────────────────────────────────────────────────────
-
-export interface AssetListParams {
-  page?: number
-  page_size?: number
-  asset_type?: string
-  criticality?: number
-  is_active?: boolean
-  search?: string
-}
-
-export const assetsApi = {
-  list: (params: AssetListParams = {}): Promise<PaginatedResponse<Asset>> =>
-    http.get('/assets', { params }).then(r => r.data),
-
-  stats: (): Promise<AssetStats> =>
-    http.get('/assets/stats').then(r => r.data),
-
-  get: (id: number): Promise<Asset> =>
-    http.get(`/assets/${id}`).then(r => r.data),
-
-  create: (body: AssetCreate): Promise<Asset> =>
-    http.post('/assets', body).then(r => r.data),
-
-  update: (id: number, body: Partial<AssetCreate>): Promise<Asset> =>
-    http.patch(`/assets/${id}`, body).then(r => r.data),
-
-  bulkImport: (assets: AssetCreate[]): Promise<BulkAssetResult> =>
-    http.post('/assets/bulk', assets).then(r => r.data),
-
-  getDetections: (id: number, params: { page?: number; page_size?: number } = {}): Promise<PaginatedResponse<Record<string, unknown>>> =>
-    http.get(`/assets/${id}/detections`, { params }).then(r => r.data),
-
-  getIncidents: (id: number, params: { page?: number; page_size?: number } = {}): Promise<PaginatedResponse<Record<string, unknown>>> =>
-    http.get(`/assets/${id}/incidents`, { params }).then(r => r.data),
 }
 
 // ── Incidents ─────────────────────────────────────────────────────────────────
@@ -280,105 +209,4 @@ export const savedQueriesApi = {
 export const coverageApi = {
   trend: (days = 30): Promise<CoverageTrend> =>
     http.get('/coverage/trend', { params: { days } }).then(r => r.data),
-}
-
-// ── Threat Intel ──────────────────────────────────────────────────────────────
-
-export interface IOCListParams {
-  page?: number
-  page_size?: number
-  ioc_type?: string
-  source?: string
-  is_active?: boolean
-  search?: string
-}
-
-export const threatIntelApi = {
-  list: (params: IOCListParams = {}): Promise<PaginatedResponse<IOC>> =>
-    http.get('/threat-intel/iocs', { params }).then(r => r.data),
-
-  get: (id: number): Promise<IOC> =>
-    http.get(`/threat-intel/iocs/${id}`).then(r => r.data),
-
-  stats: (): Promise<IOCStats> =>
-    http.get('/threat-intel/stats').then(r => r.data),
-
-  create: (body: IOCCreate): Promise<IOC> =>
-    http.post('/threat-intel/iocs', body).then(r => r.data),
-
-  bulkImport: (items: IOCCreate[]): Promise<IOCBulkImportResult> =>
-    http.post('/threat-intel/iocs/bulk', items).then(r => r.data),
-
-  update: (id: number, body: IOCUpdate): Promise<IOC> =>
-    http.patch(`/threat-intel/iocs/${id}`, body).then(r => r.data),
-
-  deactivate: (id: number): Promise<IOC> =>
-    http.delete(`/threat-intel/iocs/${id}`).then(r => r.data),
-}
-
-// ── Reports ───────────────────────────────────────────────────────────────────
-
-export interface ReportListParams {
-  page?: number
-  page_size?: number
-  template_type?: string
-  status?: string
-}
-
-export const reportsApi = {
-  list: (params: ReportListParams = {}): Promise<PaginatedResponse<Report>> =>
-    http.get('/reports', { params }).then(r => r.data),
-
-  get: (id: string): Promise<Report> =>
-    http.get(`/reports/${id}`).then(r => r.data),
-
-  generate: (body: ReportGenerateRequest): Promise<ReportGenerateResponse> =>
-    http.post('/reports/generate', body).then(r => r.data),
-
-  download: (id: string): Promise<{ blob: Blob; filename: string }> =>
-    http.get(`/reports/${id}/download`, { responseType: 'blob' }).then(r => ({
-      blob: r.data as Blob,
-      filename:
-        (r.headers['content-disposition'] as string | undefined)
-          ?.match(/filename="(.+?)"/)?.[1] ??
-        `report_${id.slice(0, 8)}.json`,
-    })),
-
-  delete: (id: string): Promise<void> =>
-    http.delete(`/reports/${id}`).then(r => r.data),
-
-  // Scheduled reports (backend feature — gracefully handled if unavailable)
-  listSchedules: (): Promise<PaginatedResponse<ReportSchedule>> =>
-    http.get('/reports/schedules').then(r => r.data),
-
-  createSchedule: (body: ReportScheduleCreate): Promise<ReportSchedule> =>
-    http.post('/reports/schedules', body).then(r => r.data),
-
-  updateSchedule: (id: string, body: ReportScheduleUpdate): Promise<ReportSchedule> =>
-    http.patch(`/reports/schedules/${id}`, body).then(r => r.data),
-
-  deleteSchedule: (id: string): Promise<void> =>
-    http.delete(`/reports/schedules/${id}`).then(r => r.data),
-}
-
-// ── Notification Channels ──────────────────────────────────────────────────────
-
-export const notificationChannelsApi = {
-  list: (params: { page?: number; page_size?: number } = {}): Promise<PaginatedResponse<NotificationChannel>> =>
-    http.get('/notifications/channels', { params }).then(r => r.data),
-
-  get: (id: number): Promise<NotificationChannel> =>
-    http.get(`/notifications/channels/${id}`).then(r => r.data),
-
-  create: (body: NotificationChannelCreate): Promise<NotificationChannel> =>
-    http.post('/notifications/channels', body).then(r => r.data),
-
-  update: (id: number, body: NotificationChannelUpdate): Promise<NotificationChannel> =>
-    http.patch(`/notifications/channels/${id}`, body).then(r => r.data),
-
-  delete: (id: number): Promise<void> =>
-    http.delete(`/notifications/channels/${id}`).then(r => r.data),
-
-  test: (id: number): Promise<NotificationChannelTestResult> =>
-    http.post(`/notifications/channels/${id}/test`).then(r => r.data),
 }

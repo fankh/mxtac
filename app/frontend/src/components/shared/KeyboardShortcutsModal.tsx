@@ -34,7 +34,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
 
 function Key({ label }: { label: string }) {
   return (
-    <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded border border-border bg-section text-[11px] font-mono font-semibold text-text-secondary leading-none">
+    <kbd className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded border border-border bg-muted/50 text-[11px] font-mono font-semibold text-foreground/80 leading-none">
       {label}
     </kbd>
   )
@@ -68,14 +68,14 @@ export function KeyboardShortcutsModal() {
       />
 
       {/* Panel */}
-      <div className="relative bg-surface border border-border rounded-lg shadow-panel w-full max-w-sm mx-4 p-5">
+      <div className="relative bg-card border border-border rounded-lg shadow-xl w-full max-w-sm mx-4 p-5">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-text-primary">Keyboard Shortcuts</h2>
+          <h2 className="text-sm font-semibold text-foreground">Keyboard Shortcuts</h2>
           <button
             onClick={closeShortcutsModal}
             aria-label="Close"
-            className="text-text-muted hover:text-text-secondary text-lg leading-none"
+            className="text-muted-foreground hover:text-foreground/80 text-lg leading-none"
           >
             ×
           </button>
@@ -85,7 +85,7 @@ export function KeyboardShortcutsModal() {
         <div className="flex flex-col gap-5">
           {SHORTCUT_GROUPS.map((group) => (
             <div key={group.heading}>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
                 {group.heading}
               </p>
               <div className="flex flex-col gap-1">
@@ -94,12 +94,12 @@ export function KeyboardShortcutsModal() {
                     key={row.description}
                     className="flex items-center justify-between py-1"
                   >
-                    <span className="text-xs text-text-secondary">{row.description}</span>
+                    <span className="text-xs text-foreground/80">{row.description}</span>
                     <div className="flex items-center gap-1">
                       {row.keys.map((k, idx) => (
                         <span key={idx} className="flex items-center gap-1">
                           {idx > 0 && (
-                            <span className="text-[10px] text-text-muted">then</span>
+                            <span className="text-[10px] text-muted-foreground">then</span>
                           )}
                           <Key label={k} />
                         </span>

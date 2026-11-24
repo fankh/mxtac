@@ -491,11 +491,11 @@ describe('IncidentsPage', () => {
       mockApi.list.mockResolvedValue(makeResponse())
     })
 
-    it('activates a severity chip when clicked (adds bg-blue class)', async () => {
+    it('activates a severity chip when clicked (adds bg-primary class)', async () => {
       renderPage()
       const chip = await screen.findByRole('button', { name: 'Critical' })
       fireEvent.click(chip)
-      expect(chip).toHaveClass('bg-blue')
+      expect(chip).toHaveClass('bg-primary')
     })
 
     it('deactivates an active severity chip when clicked again', async () => {
@@ -503,7 +503,7 @@ describe('IncidentsPage', () => {
       const chip = await screen.findByRole('button', { name: 'Critical' })
       fireEvent.click(chip) // activate
       fireEvent.click(chip) // deactivate
-      expect(chip).not.toHaveClass('bg-blue')
+      expect(chip).not.toHaveClass('bg-primary')
     })
 
     it('allows multiple severity chips to be active simultaneously', async () => {
@@ -512,8 +512,8 @@ describe('IncidentsPage', () => {
       const high = screen.getByRole('button', { name: 'High' })
       fireEvent.click(critical)
       fireEvent.click(high)
-      expect(critical).toHaveClass('bg-blue')
-      expect(high).toHaveClass('bg-blue')
+      expect(critical).toHaveClass('bg-primary')
+      expect(high).toHaveClass('bg-primary')
     })
 
     it('deactivating one severity chip keeps others active', async () => {
@@ -523,8 +523,8 @@ describe('IncidentsPage', () => {
       fireEvent.click(critical)
       fireEvent.click(high)
       fireEvent.click(critical) // deactivate critical only
-      expect(critical).not.toHaveClass('bg-blue')
-      expect(high).toHaveClass('bg-blue')
+      expect(critical).not.toHaveClass('bg-primary')
+      expect(high).toHaveClass('bg-primary')
     })
 
     it('triggers a new API call when a severity chip is clicked', async () => {
@@ -583,7 +583,7 @@ describe('IncidentsPage', () => {
       renderPage()
       const chip = await screen.findByRole('button', { name: 'New' })
       fireEvent.click(chip)
-      expect(chip).toHaveClass('bg-blue')
+      expect(chip).toHaveClass('bg-primary')
     })
 
     it('deactivates the status chip when clicked again (toggle off)', async () => {
@@ -591,7 +591,7 @@ describe('IncidentsPage', () => {
       const chip = await screen.findByRole('button', { name: 'New' })
       fireEvent.click(chip) // activate
       fireEvent.click(chip) // deactivate
-      expect(chip).not.toHaveClass('bg-blue')
+      expect(chip).not.toHaveClass('bg-primary')
     })
 
     it('allows multiple status chips to be active simultaneously', async () => {
@@ -600,8 +600,8 @@ describe('IncidentsPage', () => {
       const resolved = screen.getByRole('button', { name: 'Resolved' })
       fireEvent.click(newChip)
       fireEvent.click(resolved)
-      expect(newChip).toHaveClass('bg-blue')
-      expect(resolved).toHaveClass('bg-blue')
+      expect(newChip).toHaveClass('bg-primary')
+      expect(resolved).toHaveClass('bg-primary')
     })
 
     it('deactivating one status chip keeps others active', async () => {
@@ -611,8 +611,8 @@ describe('IncidentsPage', () => {
       fireEvent.click(newChip)
       fireEvent.click(resolved)
       fireEvent.click(newChip) // deactivate New only
-      expect(newChip).not.toHaveClass('bg-blue')
-      expect(resolved).toHaveClass('bg-blue')
+      expect(newChip).not.toHaveClass('bg-primary')
+      expect(resolved).toHaveClass('bg-primary')
     })
 
     it('passes the selected status array to the API call', async () => {

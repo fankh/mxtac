@@ -38,8 +38,8 @@ function FilterChip({
       onClick={onClick}
       className={`px-3 h-[26px] rounded-[5px] text-[11px] font-medium border transition-colors ${
         active
-          ? 'bg-blue text-white border-blue'
-          : 'bg-surface text-text-secondary border-border hover:border-blue hover:text-blue'
+          ? 'bg-primary text-white border-primary'
+          : 'bg-card text-foreground/80 border-border hover:border-primary hover:text-primary'
       }`}
     >
       {label}
@@ -208,7 +208,7 @@ export function DetectionsPage() {
       <button
         onClick={() => toggleSort(col)}
         className={`text-[10px] font-medium uppercase text-left flex items-center gap-1 ${
-          active ? 'text-blue' : 'text-text-muted hover:text-text-secondary'
+          active ? 'text-primary' : 'text-muted-foreground hover:text-foreground/80'
         }`}
       >
         {label}
@@ -225,7 +225,7 @@ export function DetectionsPage() {
         {/* Filter bar */}
         <div className="flex items-center gap-2 py-3 flex-wrap">
           <div className="flex items-center gap-1">
-            <span className="text-[10px] text-text-muted mr-1">Severity:</span>
+            <span className="text-[10px] text-muted-foreground mr-1">Severity:</span>
             {SEVERITY_OPTIONS.map((s) => (
               <FilterChip
                 key={s}
@@ -239,7 +239,7 @@ export function DetectionsPage() {
           <div className="w-px h-[20px] bg-border mx-1" />
 
           <div className="flex items-center gap-1">
-            <span className="text-[10px] text-text-muted mr-1">Status:</span>
+            <span className="text-[10px] text-muted-foreground mr-1">Status:</span>
             {STATUS_OPTIONS.map((s) => (
               <FilterChip
                 key={s}
@@ -256,7 +256,7 @@ export function DetectionsPage() {
               placeholder="Search detections…"
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue w-[220px]"
+              className="h-[28px] px-3 text-[11px] border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary w-[220px]"
             />
           </div>
         </div>
@@ -265,14 +265,14 @@ export function DetectionsPage() {
         <div className="flex items-center gap-3 mb-2 min-h-[26px]">
           {checkedCount > 0 ? (
             <div className="flex items-center gap-2 flex-wrap w-full" data-testid="bulk-toolbar">
-              <span className="text-[11px] font-medium text-blue whitespace-nowrap" data-testid="checked-count">
+              <span className="text-[11px] font-medium text-primary whitespace-nowrap" data-testid="checked-count">
                 {checkedCount} selected
               </span>
               <div className="w-px h-[16px] bg-border" />
 
               <button
                 onClick={() => setConfirmState({ action: 'resolve' })}
-                className="h-[26px] px-3 text-[11px] font-medium border border-border rounded-md text-text-secondary hover:bg-page hover:border-blue hover:text-blue"
+                className="h-[26px] px-3 text-[11px] font-medium border border-border rounded-md text-foreground/80 hover:bg-background hover:border-primary hover:text-primary"
                 data-testid="bulk-resolve"
               >
                 Resolve Selected
@@ -280,7 +280,7 @@ export function DetectionsPage() {
 
               <button
                 onClick={() => setConfirmState({ action: 'false_positive' })}
-                className="h-[26px] px-3 text-[11px] font-medium border border-border rounded-md text-text-secondary hover:bg-page hover:border-blue hover:text-blue"
+                className="h-[26px] px-3 text-[11px] font-medium border border-border rounded-md text-foreground/80 hover:bg-background hover:border-primary hover:text-primary"
                 data-testid="bulk-fp"
               >
                 Mark False Positive
@@ -292,7 +292,7 @@ export function DetectionsPage() {
                   placeholder="Assign to…"
                   value={assignInput}
                   onChange={(e) => setAssignInput(e.target.value)}
-                  className="h-[26px] px-2 text-[11px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue w-[120px]"
+                  className="h-[26px] px-2 text-[11px] border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary w-[120px]"
                   data-testid="assign-input"
                 />
                 <button
@@ -302,7 +302,7 @@ export function DetectionsPage() {
                     }
                   }}
                   disabled={!assignInput.trim()}
-                  className="h-[26px] px-2 text-[11px] font-medium border border-border rounded-md text-text-secondary hover:bg-page hover:border-blue hover:text-blue disabled:opacity-40"
+                  className="h-[26px] px-2 text-[11px] font-medium border border-border rounded-md text-foreground/80 hover:bg-background hover:border-primary hover:text-primary disabled:opacity-40"
                   data-testid="assign-apply"
                 >
                   Assign
@@ -311,7 +311,7 @@ export function DetectionsPage() {
 
               <button
                 onClick={() => setConfirmState({ action: 'create_incident' })}
-                className="h-[26px] px-3 text-[11px] font-medium border border-border rounded-md text-text-secondary hover:bg-page hover:border-blue hover:text-blue"
+                className="h-[26px] px-3 text-[11px] font-medium border border-border rounded-md text-foreground/80 hover:bg-background hover:border-primary hover:text-primary"
                 data-testid="bulk-create-incident"
               >
                 Create Incident
@@ -319,7 +319,7 @@ export function DetectionsPage() {
 
               <button
                 onClick={() => { setCheckedIds(new Set()); setAssignInput('') }}
-                className="ml-auto text-[11px] text-text-muted hover:text-text-secondary"
+                className="ml-auto text-[11px] text-muted-foreground hover:text-foreground/80"
                 data-testid="clear-selection"
               >
                 Clear selection
@@ -327,7 +327,7 @@ export function DetectionsPage() {
             </div>
           ) : (
             pagination && (
-              <span className="text-[11px] text-text-muted">
+              <span className="text-[11px] text-muted-foreground">
                 {pagination.total.toLocaleString()} detections
                 {severities.length > 0 && ` · ${severities.join(', ')}`}
                 {status && ` · ${status}`}
@@ -337,7 +337,7 @@ export function DetectionsPage() {
         </div>
 
         {/* Table */}
-        <div className="bg-surface rounded-md shadow-card overflow-hidden">
+        <div className="bg-card rounded-md border shadow-sm overflow-hidden">
           {/* Header */}
           <div className={`grid ${GRID} gap-2 px-3 py-2 border-b border-border items-center`}>
             <div className="flex items-center justify-center">
@@ -353,17 +353,17 @@ export function DetectionsPage() {
                 aria-label="Select all on page"
               />
             </div>
-            <span className="text-[10px] font-medium text-text-muted uppercase">Score</span>
-            <span className="text-[10px] font-medium text-text-muted uppercase">Detection</span>
-            <span className="text-[10px] font-medium text-text-muted uppercase">Technique</span>
+            <span className="text-[10px] font-medium text-muted-foreground uppercase">Score</span>
+            <span className="text-[10px] font-medium text-muted-foreground uppercase">Detection</span>
+            <span className="text-[10px] font-medium text-muted-foreground uppercase">Technique</span>
             <SortHeader col="host"   label="Host" />
             <SortHeader col="tactic" label="Tactic" />
-            <span className="text-[10px] font-medium text-text-muted uppercase">Status</span>
+            <span className="text-[10px] font-medium text-muted-foreground uppercase">Status</span>
             <SortHeader col="time"   label="Time" />
           </div>
 
           {isLoading && (
-            <div className="flex items-center justify-center h-40 text-text-muted text-sm">Loading…</div>
+            <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">Loading…</div>
           )}
           {isError && (
             <div className="flex items-center justify-center h-40 text-crit-text text-sm">
@@ -378,10 +378,10 @@ export function DetectionsPage() {
               <div
                 key={d.id}
                 onClick={() => setSelected(isSelected ? null : d)}
-                className={`grid ${GRID} gap-2 px-3 py-[7px] border-b border-section items-center cursor-pointer transition-colors ${
+                className={`grid ${GRID} gap-2 px-3 py-[7px] border-b border-border items-center cursor-pointer transition-colors ${
                   isSelected
-                    ? 'bg-blue-faint border-l-[3px] border-l-blue'
-                    : 'hover:bg-page'
+                    ? 'bg-primary/5 border-l-[3px] border-l-blue'
+                    : 'hover:bg-background'
                 }`}
               >
                 <div className="flex items-center justify-center">
@@ -397,20 +397,20 @@ export function DetectionsPage() {
                 </div>
                 <ScoreCircle score={d.score} severity={d.severity} />
                 <div className="min-w-0">
-                  <div className="text-[11px] text-text-primary font-medium flex items-center gap-1.5 min-w-0">
+                  <div className="text-[11px] text-foreground font-medium flex items-center gap-1.5 min-w-0">
                     <span className="truncate">{d.name}</span>
                     {newIds.has(d.id) && <LiveBadge />}
                   </div>
-                  <div className="text-[10px] text-text-muted truncate">{d.rule_name}</div>
+                  <div className="text-[10px] text-muted-foreground truncate">{d.rule_name}</div>
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[11px] text-text-primary truncate">{d.technique_id}</div>
-                  <div className="text-[10px] text-text-muted truncate">{d.technique_name}</div>
+                  <div className="text-[11px] text-foreground truncate">{d.technique_id}</div>
+                  <div className="text-[10px] text-muted-foreground truncate">{d.technique_name}</div>
                 </div>
-                <span className="text-[11px] text-text-primary truncate">{d.host}</span>
-                <span className="text-[10px] text-text-muted truncate">{d.tactic}</span>
+                <span className="text-[11px] text-foreground truncate">{d.host}</span>
+                <span className="text-[10px] text-muted-foreground truncate">{d.tactic}</span>
                 <StatusPill status={d.status} />
-                <span className="text-[10px] text-text-muted">
+                <span className="text-[10px] text-muted-foreground">
                   {new Date(d.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
@@ -418,7 +418,7 @@ export function DetectionsPage() {
           })}
 
           {!isLoading && !isError && detections.length === 0 && (
-            <div className="flex items-center justify-center h-32 text-text-muted text-sm">
+            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
               No detections match the current filters.
             </div>
           )}
@@ -430,17 +430,17 @@ export function DetectionsPage() {
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-text-secondary disabled:opacity-40 hover:bg-page"
+              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-foreground/80 disabled:opacity-40 hover:bg-background"
             >
               ← Prev
             </button>
-            <span className="text-[11px] text-text-muted">
+            <span className="text-[11px] text-muted-foreground">
               Page {pagination.page} of {pagination.total_pages}
             </span>
             <button
               disabled={page >= pagination.total_pages}
               onClick={() => setPage((p) => p + 1)}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-text-secondary disabled:opacity-40 hover:bg-page"
+              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-foreground/80 disabled:opacity-40 hover:bg-background"
             >
               Next →
             </button>
@@ -461,12 +461,12 @@ export function DetectionsPage() {
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
             <div
-              className="bg-surface rounded-lg shadow-panel border border-border w-full max-w-sm pointer-events-auto"
+              className="bg-card rounded-lg shadow-xl border border-border w-full max-w-sm pointer-events-auto"
               data-testid="confirm-modal"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                <h3 className="text-[13px] font-semibold text-text-primary">
+                <h3 className="text-[13px] font-semibold text-foreground">
                   {confirmState.action === 'resolve'         && 'Resolve Detections'}
                   {confirmState.action === 'false_positive'  && 'Mark as False Positive'}
                   {confirmState.action === 'assign'          && 'Assign Detections'}
@@ -474,7 +474,7 @@ export function DetectionsPage() {
                 </h3>
                 <button
                   onClick={() => setConfirmState(null)}
-                  className="text-text-muted hover:text-text-secondary text-[16px] leading-none"
+                  className="text-muted-foreground hover:text-foreground/80 text-[16px] leading-none"
                   data-testid="modal-close"
                 >
                   ×
@@ -484,53 +484,53 @@ export function DetectionsPage() {
               {/* Body */}
               <div className="px-4 py-4 space-y-3">
                 {confirmState.action === 'resolve' && (
-                  <p className="text-[12px] text-text-secondary">
+                  <p className="text-[12px] text-foreground/80">
                     Resolve{' '}
-                    <span className="font-medium text-text-primary">{checkedCount}</span>{' '}
+                    <span className="font-medium text-foreground">{checkedCount}</span>{' '}
                     detection{checkedCount !== 1 ? 's' : ''}? This will set their status to{' '}
                     <span className="font-medium">resolved</span>.
                   </p>
                 )}
                 {confirmState.action === 'false_positive' && (
-                  <p className="text-[12px] text-text-secondary">
+                  <p className="text-[12px] text-foreground/80">
                     Mark{' '}
-                    <span className="font-medium text-text-primary">{checkedCount}</span>{' '}
+                    <span className="font-medium text-foreground">{checkedCount}</span>{' '}
                     detection{checkedCount !== 1 ? 's' : ''} as{' '}
                     <span className="font-medium">false positive</span>?
                   </p>
                 )}
                 {confirmState.action === 'assign' && (
-                  <p className="text-[12px] text-text-secondary">
+                  <p className="text-[12px] text-foreground/80">
                     Assign{' '}
-                    <span className="font-medium text-text-primary">{checkedCount}</span>{' '}
+                    <span className="font-medium text-foreground">{checkedCount}</span>{' '}
                     detection{checkedCount !== 1 ? 's' : ''} to{' '}
-                    <span className="font-medium text-text-primary">{confirmState.assignee}</span>?
+                    <span className="font-medium text-foreground">{confirmState.assignee}</span>?
                   </p>
                 )}
                 {confirmState.action === 'create_incident' && (
                   <div className="space-y-3">
-                    <p className="text-[12px] text-text-secondary">
+                    <p className="text-[12px] text-foreground/80">
                       Create an incident from{' '}
-                      <span className="font-medium text-text-primary">{checkedCount}</span>{' '}
+                      <span className="font-medium text-foreground">{checkedCount}</span>{' '}
                       detection{checkedCount !== 1 ? 's' : ''}.
                     </p>
                     <div>
-                      <label className="text-[11px] text-text-muted block mb-1">Incident Title</label>
+                      <label className="text-[11px] text-muted-foreground block mb-1">Incident Title</label>
                       <input
                         type="text"
                         placeholder="Enter incident title…"
                         value={incidentTitle}
                         onChange={(e) => setIncidentTitle(e.target.value)}
-                        className="w-full h-[32px] px-3 text-[12px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
+                        className="w-full h-[32px] px-3 text-[12px] border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
                         data-testid="incident-title-input"
                       />
                     </div>
                     <div>
-                      <label className="text-[11px] text-text-muted block mb-1">Severity</label>
+                      <label className="text-[11px] text-muted-foreground block mb-1">Severity</label>
                       <select
                         value={incidentSeverity}
                         onChange={(e) => setIncidentSeverity(e.target.value as SeverityLevel)}
-                        className="w-full h-[32px] px-3 text-[12px] border border-border rounded-md bg-surface text-text-primary focus:outline-none focus:border-blue"
+                        className="w-full h-[32px] px-3 text-[12px] border border-border rounded-md bg-card text-foreground focus:outline-none focus:border-primary"
                         data-testid="incident-severity-select"
                       >
                         {SEVERITY_OPTIONS.map((s) => (
@@ -548,7 +548,7 @@ export function DetectionsPage() {
               <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
                 <button
                   onClick={() => setConfirmState(null)}
-                  className="h-[30px] px-4 text-[12px] font-medium border border-border rounded-md text-text-secondary hover:bg-page"
+                  className="h-[30px] px-4 text-[12px] font-medium border border-border rounded-md text-foreground/80 hover:bg-background"
                   data-testid="modal-cancel"
                 >
                   Cancel
@@ -559,7 +559,7 @@ export function DetectionsPage() {
                     isMutating ||
                     (confirmState.action === 'create_incident' && !incidentTitle.trim())
                   }
-                  className="h-[30px] px-4 text-[12px] font-medium bg-blue text-white rounded-md hover:opacity-90 disabled:opacity-40"
+                  className="h-[30px] px-4 text-[12px] font-medium bg-primary text-white rounded-md hover:opacity-90 disabled:opacity-40"
                   data-testid="confirm-button"
                 >
                   {isMutating ? 'Working…' : 'Confirm'}

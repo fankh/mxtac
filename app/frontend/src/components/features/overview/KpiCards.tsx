@@ -4,8 +4,8 @@ import { useUIStore } from '../../../stores/uiStore'
 
 function Card({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="bg-surface rounded-md shadow-card p-4 flex flex-col gap-1">
-      <span className="text-[10px] font-medium text-text-muted uppercase tracking-wide">{label}</span>
+    <div className="bg-card rounded-md border shadow-sm p-4 flex flex-col gap-1">
+      <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
       {children}
     </div>
   )
@@ -24,10 +24,10 @@ export function KpiCards({ data }: Props) {
     <div className="grid grid-cols-6 gap-3 px-5 pt-3">
       {/* Total Detections */}
       <Card label="Total Detections">
-        <span className="text-[32px] font-bold text-text-primary leading-none">
+        <span className="text-[32px] font-bold text-foreground leading-none">
           {data.total_detections.toLocaleString()}
         </span>
-        <span className="text-[11px] text-text-muted">
+        <span className="text-[11px] text-muted-foreground">
           {'\u2191'} {data.total_detections_delta_pct}% vs prev week
         </span>
       </Card>
@@ -37,7 +37,7 @@ export function KpiCards({ data }: Props) {
         <span className="text-[32px] font-bold text-crit-text leading-none">
           {data.critical_alerts}
         </span>
-        <span className="text-[11px] text-text-muted">{data.critical_alerts_new_today} new today</span>
+        <span className="text-[11px] text-muted-foreground">{data.critical_alerts_new_today} new today</span>
       </Card>
 
       {/* ATT&CK Coverage */}
@@ -58,8 +58,8 @@ export function KpiCards({ data }: Props) {
             </text>
           </svg>
           <div>
-            <div className="text-[11px] text-text-muted">{data.attack_covered} / {data.attack_total} techniques</div>
-            <div className="text-[10px] text-text-muted">+{data.attack_coverage_delta} this week</div>
+            <div className="text-[11px] text-muted-foreground">{data.attack_covered} / {data.attack_total} techniques</div>
+            <div className="text-[10px] text-muted-foreground">+{data.attack_coverage_delta} this week</div>
           </div>
         </div>
       </Card>
@@ -67,10 +67,10 @@ export function KpiCards({ data }: Props) {
       {/* MTTD */}
       <Card label="Mean Time to Detect">
         <div className="flex items-baseline gap-1">
-          <span className="text-[32px] font-bold text-text-primary leading-none">{data.mttd_minutes}</span>
-          <span className="text-[14px] text-text-muted">min</span>
+          <span className="text-[32px] font-bold text-foreground leading-none">{data.mttd_minutes}</span>
+          <span className="text-[14px] text-muted-foreground">min</span>
         </div>
-        <span className="text-[11px] text-text-muted">
+        <span className="text-[11px] text-muted-foreground">
           {'\u2193'} {Math.abs(data.mttd_delta_minutes)}m improved
         </span>
       </Card>
@@ -78,24 +78,24 @@ export function KpiCards({ data }: Props) {
       {/* Integrations */}
       <Card label="Integrations">
         <div className="flex items-baseline gap-1">
-          <span className="text-[32px] font-bold text-text-primary leading-none">{data.integrations_active}</span>
-          <span className="text-[14px] text-text-muted">/ {data.integrations_total}</span>
+          <span className="text-[32px] font-bold text-foreground leading-none">{data.integrations_active}</span>
+          <span className="text-[14px] text-muted-foreground">/ {data.integrations_total}</span>
         </div>
         <div className="h-[5px] rounded bg-border mt-1">
-          <div className="h-full rounded bg-blue" style={{ width: `${intPct}%` }} />
+          <div className="h-full rounded bg-primary" style={{ width: `${intPct}%` }} />
         </div>
-        <span className="text-[10px] text-text-muted">Splunk: auth error</span>
+        <span className="text-[10px] text-muted-foreground">Splunk: auth error</span>
       </Card>
 
       {/* Sigma Rules */}
       <Card label="Sigma Rules Active">
-        <span className="text-[32px] font-bold text-text-primary leading-none">
+        <span className="text-[32px] font-bold text-foreground leading-none">
           {data.sigma_rules_active.toLocaleString()}
         </span>
-        <span className="text-[11px] text-text-muted">
+        <span className="text-[11px] text-muted-foreground">
           {data.sigma_rules_critical} critical · {data.sigma_rules_high} high
         </span>
-        <span className="text-[10px] text-text-muted">+{data.sigma_rules_deployed_this_week} deployed this week</span>
+        <span className="text-[10px] text-muted-foreground">+{data.sigma_rules_deployed_this_week} deployed this week</span>
       </Card>
     </div>
   )

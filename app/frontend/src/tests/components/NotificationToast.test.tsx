@@ -87,7 +87,7 @@ describe('NotificationToast', () => {
   // ---------------------------------------------------------------------------
   describe('notification types', () => {
     const TYPE_CASES = [
-      { type: 'info',    classes: ['border-blue', 'bg-blue-light', 'text-blue'] },
+      { type: 'info',    classes: ['border-primary', 'bg-primary/10', 'text-primary'] },
       { type: 'success', classes: ['border-status-ok', 'bg-status-ok-bg', 'text-status-ok-text'] },
       { type: 'warning', classes: ['border-status-warn', 'bg-status-warn-bg', 'text-status-warn-text'] },
       { type: 'error',   classes: ['border-crit-text', 'bg-crit-bg', 'text-crit-text'] },

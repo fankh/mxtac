@@ -370,19 +370,19 @@ describe('IncidentPanel', () => {
 
     it('Details tab is active by default', () => {
       renderPanel(makeIncident())
-      expect(screen.getByRole('button', { name: 'Details' })).toHaveClass('border-blue')
+      expect(screen.getByRole('button', { name: 'Details' })).toHaveClass('border-primary')
     })
 
     it('switches to Timeline tab when clicked', () => {
       renderPanel(makeIncident())
       fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      expect(screen.getByRole('button', { name: /Timeline/ })).toHaveClass('border-blue')
+      expect(screen.getByRole('button', { name: /Timeline/ })).toHaveClass('border-primary')
     })
 
     it('switches to Detections tab when clicked', () => {
       renderPanel(makeIncident())
       fireEvent.click(screen.getByRole('button', { name: /Detections/ }))
-      expect(screen.getByRole('button', { name: /Detections/ })).toHaveClass('border-blue')
+      expect(screen.getByRole('button', { name: /Detections/ })).toHaveClass('border-primary')
     })
   })
 

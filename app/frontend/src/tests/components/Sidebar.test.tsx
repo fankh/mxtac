@@ -77,26 +77,26 @@ describe('Sidebar', () => {
 
     it('active route link receives active styles', () => {
       renderSidebar('/detections')
-      expect(screen.getByTitle('Detections').className).toContain('bg-blue-light')
-      expect(screen.getByTitle('Detections').className).toContain('text-blue')
+      expect(screen.getByTitle('Detections').className).toContain('bg-primary/10')
+      expect(screen.getByTitle('Detections').className).toContain('text-primary')
     })
 
     it('inactive links receive muted styles', () => {
       renderSidebar('/detections')
-      expect(screen.getByTitle('Overview').className).not.toContain('bg-blue-light')
-      expect(screen.getByTitle('Overview').className).toContain('text-text-muted')
+      expect(screen.getByTitle('Overview').className).not.toContain('bg-primary/10')
+      expect(screen.getByTitle('Overview').className).toContain('text-muted-foreground')
     })
 
     it('Overview link is inactive when visiting a sub-route (end matching)', () => {
       // Because `end={true}` is applied only to the root link, "/detections"
       // must not mark "/" as active.
       renderSidebar('/detections')
-      expect(screen.getByTitle('Overview').className).not.toContain('bg-blue-light')
+      expect(screen.getByTitle('Overview').className).not.toContain('bg-primary/10')
     })
 
     it('Overview link is active on exact "/" path', () => {
       renderSidebar('/')
-      expect(screen.getByTitle('Overview').className).toContain('bg-blue-light')
+      expect(screen.getByTitle('Overview').className).toContain('bg-primary/10')
     })
 
     it('each nav link has a descriptive title attribute', () => {
@@ -198,7 +198,7 @@ describe('Sidebar', () => {
 
       // The "Dark" button should have the active class
       const darkBtn = screen.getByText('Dark').closest('button')!
-      expect(darkBtn.className).toContain('text-blue')
+      expect(darkBtn.className).toContain('text-primary')
     })
   })
 

@@ -267,7 +267,7 @@ describe('TopBar', () => {
       mockUseAlertStream.mockReturnValue('disconnected')
       renderTopBar('Dashboard')
       const liveWrapper = screen.getByTitle('Disconnected')
-      expect(liveWrapper.querySelector('.bg-text-muted')).toBeInTheDocument()
+      expect(liveWrapper.querySelector('.bg-muted-foreground')).toBeInTheDocument()
     })
 
     it('only one live dot is rendered', () => {

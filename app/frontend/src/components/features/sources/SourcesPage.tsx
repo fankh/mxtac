@@ -114,7 +114,7 @@ const TYPE_LABELS: Record<string, { label: string; color: string }> = {
 
 const STATUS_ICON: Record<string, { Icon: ComponentType<LucideProps>; color: string }> = {
   connected: { Icon: Check, color: 'text-green-500' },
-  disconnected: { Icon: X, color: 'text-text-muted' },
+  disconnected: { Icon: X, color: 'text-muted-foreground' },
   error: { Icon: AlertTriangle, color: 'text-red-500' },
 }
 
@@ -244,11 +244,11 @@ export function SourcesPage() {
         {/* Search bar + filter chips — matches Hunt/NDR layout */}
         <div className="flex items-center gap-2 py-3 flex-wrap">
           <div className="relative flex-1 min-w-[280px]">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[13px] select-none">⌕</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-[13px] select-none">⌕</span>
             <input
               type="text"
               placeholder="Search sources — e.g. Zeek, Wazuh, CloudTrail"
-              className="w-full h-[32px] pl-8 pr-3 text-[12px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
+              className="w-full h-[32px] pl-8 pr-3 text-[12px] border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
               onChange={e => {
                 const q = e.target.value.toLowerCase()
                 setFilter(q ? 'search:' + q : 'all')
@@ -268,8 +268,8 @@ export function SourcesPage() {
               onClick={() => setFilter(tab.value)}
               className={`px-3 h-[32px] text-[11px] font-medium border-r border-border last:border-r-0 transition-colors ${
                 filter === tab.value
-                  ? 'bg-blue text-white'
-                  : 'bg-surface text-text-secondary hover:bg-page'
+                  ? 'bg-primary text-white'
+                  : 'bg-card text-foreground/80 hover:bg-background'
               }`}
             >
               {tab.label}
@@ -279,18 +279,18 @@ export function SourcesPage() {
         </div>
 
         {/* Stats bar */}
-        <div className="flex items-center gap-3 text-[11px] text-text-muted mb-3">
-          <span><strong className={connectedCount > 0 ? 'text-status-ok' : 'text-text-muted'}>{connectedCount}</strong> connected</span>
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground mb-3">
+          <span><strong className={connectedCount > 0 ? 'text-status-ok' : 'text-muted-foreground'}>{connectedCount}</strong> connected</span>
           <span>·</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'ndr').length}</strong> NDR</span>
+          <span><strong className="text-foreground">{sources.filter(s => s.type === 'ndr').length}</strong> NDR</span>
           <span>·</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'edr').length}</strong> EDR</span>
+          <span><strong className="text-foreground">{sources.filter(s => s.type === 'edr').length}</strong> EDR</span>
           <span>·</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'siem').length}</strong> SIEM</span>
+          <span><strong className="text-foreground">{sources.filter(s => s.type === 'siem').length}</strong> SIEM</span>
           <span>·</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'cloud').length}</strong> Cloud</span>
+          <span><strong className="text-foreground">{sources.filter(s => s.type === 'cloud').length}</strong> Cloud</span>
           <span>·</span>
-          <span><strong className="text-text-primary">{sources.length}</strong> total</span>
+          <span><strong className="text-foreground">{sources.length}</strong> total</span>
         </div>
 
         {/* Source cards */}
@@ -303,17 +303,17 @@ export function SourcesPage() {
             return (
               <div
                 key={source.id}
-                className={`bg-surface border rounded-lg p-4 transition-colors hover:border-blue/30 ${
+                className={`bg-card border rounded-lg p-4 transition-colors hover:border-primary/30 ${
                   source.status === 'connected' ? 'border-green-500/30' : 'border-border'
                 }`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                      source.status === 'connected' ? 'bg-green-500/10' : 'bg-section'
+                      source.status === 'connected' ? 'bg-green-500/10' : 'bg-muted/50'
                     }`}>
                       <source.Icon className={`w-[18px] h-[18px] ${
-                        source.status === 'connected' ? 'text-green-500' : 'text-text-muted'
+                        source.status === 'connected' ? 'text-green-500' : 'text-muted-foreground'
                       }`} strokeWidth={1.8} />
                     </div>
                     <div>
@@ -323,7 +323,7 @@ export function SourcesPage() {
                           {typeInfo.label}
                         </span>
                       </div>
-                      <p className="text-[10px] text-text-muted mt-0.5 max-w-[300px]">{source.description}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 max-w-[300px]">{source.description}</p>
                     </div>
                   </div>
                   {!source.builtin && (
@@ -337,7 +337,7 @@ export function SourcesPage() {
                 </div>
 
                 {source.status === 'connected' && source.eventsPerMin != null && (
-                  <div className="mt-3 pt-3 border-t border-border flex items-center gap-4 text-[10px] text-text-muted">
+                  <div className="mt-3 pt-3 border-t border-border flex items-center gap-4 text-[10px] text-muted-foreground">
                     <span>{source.eventsPerMin.toLocaleString()} events/min</span>
                     {source.lastSeen && <span>Last seen: {new Date(source.lastSeen).toLocaleTimeString()}</span>}
                   </div>
@@ -357,23 +357,23 @@ export function SourcesPage() {
                         className={`text-[10px] font-medium px-2 py-0.5 rounded border transition-colors ${
                           localStorage.getItem(`mxtac_source_${source.id}_enabled`) !== 'false'
                             ? 'bg-green-500/10 text-green-600 border-green-500/20'
-                            : 'bg-page text-text-muted border-border'
+                            : 'bg-background text-muted-foreground border-border'
                         }`}
                       >
                         {localStorage.getItem(`mxtac_source_${source.id}_enabled`) !== 'false' ? 'Enabled' : 'Disabled'}
                       </button>
                     </div>
                     {source.agentCount != null && source.agentCount > 0 ? (
-                      <span className="text-[10px] text-text-muted">{source.agentCount} agent{source.agentCount > 1 ? 's' : ''}</span>
+                      <span className="text-[10px] text-muted-foreground">{source.agentCount} agent{source.agentCount > 1 ? 's' : ''}</span>
                     ) : (
-                      <span className="text-[10px] text-text-muted">deploy: <code className="bg-page px-1 rounded">mxtac/{source.id}</code></span>
+                      <span className="text-[10px] text-muted-foreground">deploy: <code className="bg-background px-1 rounded">mxtac/{source.id}</code></span>
                     )}
                   </div>
                 ) : source.status === 'disconnected' ? (
                   <div className="mt-3 pt-3 border-t border-border">
                     <button
                       onClick={() => openConfig(source.id)}
-                      className="flex items-center gap-1 text-[11px] text-blue hover:text-blue/80 font-medium transition-colors"
+                      className="flex items-center gap-1 text-[11px] text-primary hover:text-primary/80 font-medium transition-colors"
                     >
                       <Plus className="w-3 h-3" />
                       Configure
@@ -391,19 +391,19 @@ export function SourcesPage() {
           if (!source) return null
           return (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => { setConfigOpen(null); setConfigError('') }}>
-              <div className="bg-surface border border-border rounded-lg p-6 w-[480px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
+              <div className="bg-card border border-border rounded-lg p-6 w-[480px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-2 mb-1">
-                  <source.Icon className="w-4 h-4 text-blue" />
+                  <source.Icon className="w-4 h-4 text-primary" />
                   <h3 className="text-sm font-bold">Configure {source.name}</h3>
                   <span className={`px-1.5 py-0 text-[9px] font-bold rounded border ${TYPE_LABELS[source.type].color}`}>
                     {TYPE_LABELS[source.type].label}
                   </span>
                 </div>
-                <p className="text-[10px] text-text-muted mb-4">{source.description}</p>
+                <p className="text-[10px] text-muted-foreground mb-4">{source.description}</p>
                 <div className="space-y-3">
                   {source.fields.map(field => (
                     <div key={field.key}>
-                      <label className="text-[11px] font-medium text-text-muted">
+                      <label className="text-[11px] font-medium text-muted-foreground">
                         {field.label}{field.required && <span className="text-red-500 ml-0.5">*</span>}
                       </label>
                       <input
@@ -412,7 +412,7 @@ export function SourcesPage() {
                         onChange={e => setConfigValues(prev => ({ ...prev, [field.key]: e.target.value }))}
                         placeholder={field.placeholder}
                         autoComplete="off"
-                        className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue"
+                        className="w-full mt-1 h-8 px-3 text-xs bg-background border border-border rounded focus:outline-none focus:border-primary"
                       />
                     </div>
                   ))}
@@ -425,7 +425,7 @@ export function SourcesPage() {
                   <button
                     onClick={handleConnect}
                     disabled={configSaving}
-                    className="px-3 py-1.5 text-xs bg-blue text-white rounded hover:bg-blue/90 transition-colors disabled:opacity-50"
+                    className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
                   >
                     {configSaving ? 'Connecting...' : 'Connect'}
                   </button>

@@ -34,8 +34,8 @@ const LEVEL_COLOR: Record<string, string> = {
   critical: 'text-crit-text bg-crit-bg',
   high:     'text-high-text bg-high-bg',
   medium:   'text-warn-text bg-warn-bg',
-  low:      'text-text-muted bg-page',
-  informational: 'text-text-muted bg-page',
+  low:      'text-muted-foreground bg-background',
+  informational: 'text-muted-foreground bg-background',
 }
 
 const REQUIRED_SIGMA_FIELDS = ['title', 'detection', 'logsource'] as const
@@ -353,7 +353,7 @@ export function RulesPage() {
               key={l}
               onClick={() => setLevelFilter(levelFilter === l ? null : l)}
               className={`px-3 h-[26px] rounded-[5px] text-[11px] font-medium border capitalize transition-colors ${
-                levelFilter === l ? 'bg-blue text-white border-blue' : 'bg-surface border-border text-text-secondary hover:border-blue'
+                levelFilter === l ? 'bg-primary text-white border-primary' : 'bg-card border-border text-foreground/80 hover:border-primary'
               }`}
             >
               {l}
@@ -363,52 +363,52 @@ export function RulesPage() {
           <button
             onClick={() => setEnabledFilter(enabledFilter === true ? null : true)}
             className={`px-3 h-[26px] rounded-[5px] text-[11px] border transition-colors ${
-              enabledFilter === true ? 'bg-blue text-white border-blue' : 'bg-surface border-border text-text-secondary'
+              enabledFilter === true ? 'bg-primary text-white border-primary' : 'bg-card border-border text-foreground/80'
             }`}
           >
             Enabled only
           </button>
           <input
-            className="ml-auto h-[28px] px-3 text-[11px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue w-[220px]"
+            className="ml-auto h-[28px] px-3 text-[11px] border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary w-[220px]"
             placeholder="Search rules..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <button
             onClick={handleFileImport}
-            className="h-[28px] px-4 border border-border text-[12px] text-text-secondary rounded-md hover:border-blue transition-colors"
+            className="h-[28px] px-4 border border-border text-[12px] text-foreground/80 rounded-md hover:border-primary transition-colors"
           >
             Import YAML
           </button>
           <button
             onClick={() => { setEditingRuleId(null); setEditorYaml(EXAMPLE_SIGMA); setShowEditor(true); setValidationErrors([]); setSaveError(null); setTestResult(null) }}
-            className="h-[28px] px-4 bg-blue text-white text-[12px] rounded-md hover:opacity-90"
+            className="h-[28px] px-4 bg-primary text-white text-[12px] rounded-md hover:opacity-90"
           >
             + New Rule
           </button>
         </div>
 
         {/* Stats */}
-        <div className="text-[11px] text-text-muted mb-2">
+        <div className="text-[11px] text-muted-foreground mb-2">
           {visible.length} of {data.length} rules
         </div>
 
         {/* Table */}
-        <div className="bg-surface rounded-md shadow-card overflow-hidden">
+        <div className="bg-card rounded-md border shadow-sm overflow-hidden">
           <div className="grid grid-cols-[1fr_70px_100px_80px_80px_80px_60px] gap-2 px-3 py-2 border-b border-border">
             {['Rule Title', 'Level', 'Techniques', 'Status', 'Hits', 'FP', 'Active'].map((h) => (
-              <span key={h} className="text-[10px] font-medium text-text-muted uppercase">{h}</span>
+              <span key={h} className="text-[10px] font-medium text-muted-foreground uppercase">{h}</span>
             ))}
           </div>
 
           {isLoading && (
-            <div className="flex items-center justify-center h-32 text-text-muted text-sm">Loading rules...</div>
+            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">Loading rules...</div>
           )}
 
           {!isLoading && visible.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-32 gap-2 text-text-muted text-sm">
+            <div className="flex flex-col items-center justify-center h-32 gap-2 text-muted-foreground text-sm">
               <div>No rules loaded</div>
-              <button onClick={() => setShowEditor(true)} className="text-blue text-[11px] hover:underline">
+              <button onClick={() => setShowEditor(true)} className="text-primary text-[11px] hover:underline">
                 Create your first rule
               </button>
             </div>
@@ -421,29 +421,29 @@ export function RulesPage() {
               tabIndex={0}
               onClick={() => void handleRuleClick(rule)}
               onKeyDown={(e) => e.key === 'Enter' && void handleRuleClick(rule)}
-              className="grid grid-cols-[1fr_70px_100px_80px_80px_80px_60px] gap-2 px-3 py-[6px] border-b border-section items-center hover:bg-page cursor-pointer"
+              className="grid grid-cols-[1fr_70px_100px_80px_80px_80px_60px] gap-2 px-3 py-[6px] border-b border-border items-center hover:bg-background cursor-pointer"
             >
               <div className="min-w-0">
-                <div className="text-[11px] text-text-primary truncate font-medium">{rule.title}</div>
-                <div className="text-[10px] text-text-muted">{rule.id}</div>
+                <div className="text-[11px] text-foreground truncate font-medium">{rule.title}</div>
+                <div className="text-[10px] text-muted-foreground">{rule.id}</div>
               </div>
-              <span className={`text-[10px] font-medium px-2 py-[2px] rounded capitalize w-fit ${LEVEL_COLOR[rule.level] ?? 'text-text-muted'}`}>
+              <span className={`text-[10px] font-medium px-2 py-[2px] rounded capitalize w-fit ${LEVEL_COLOR[rule.level] ?? 'text-muted-foreground'}`}>
                 {rule.level}
               </span>
               <div className="flex flex-wrap gap-1">
                 {rule.technique_ids.slice(0, 2).map((t) => (
-                  <span key={t} className="text-[9px] text-text-secondary bg-page border border-border rounded px-1">{t}</span>
+                  <span key={t} className="text-[9px] text-foreground/80 bg-background border border-border rounded px-1">{t}</span>
                 ))}
                 {rule.technique_ids.length > 2 && (
-                  <span className="text-[9px] text-text-muted">+{rule.technique_ids.length - 2}</span>
+                  <span className="text-[9px] text-muted-foreground">+{rule.technique_ids.length - 2}</span>
                 )}
               </div>
-              <span className="text-[10px] text-text-muted capitalize">{rule.status}</span>
-              <span className="text-[11px] text-text-primary">{rule.hit_count.toLocaleString()}</span>
-              <span className="text-[11px] text-text-muted">{rule.fp_count}</span>
+              <span className="text-[10px] text-muted-foreground capitalize">{rule.status}</span>
+              <span className="text-[11px] text-foreground">{rule.hit_count.toLocaleString()}</span>
+              <span className="text-[11px] text-muted-foreground">{rule.fp_count}</span>
               <div className="flex items-center">
                 {loadingRuleId === rule.id
-                  ? <div className="w-[6px] h-[6px] rounded-full bg-blue animate-pulse" />
+                  ? <div className="w-[6px] h-[6px] rounded-full bg-primary animate-pulse" />
                   : <div className={`w-[6px] h-[6px] rounded-full ${rule.enabled ? 'bg-status-ok' : 'bg-border'}`} />
                 }
               </div>
@@ -453,20 +453,20 @@ export function RulesPage() {
 
         {/* Editor modal */}
         {showEditor && (
-          <div className="fixed inset-0 bg-overlay z-50 flex items-center justify-center">
-            <div className="bg-surface rounded-lg shadow-panel w-[800px] max-h-[85vh] flex flex-col">
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+            <div className="bg-card rounded-lg shadow-xl w-[800px] max-h-[85vh] flex flex-col">
               <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-                <h2 className="text-[13px] font-semibold text-text-primary">
+                <h2 className="text-[13px] font-semibold text-foreground">
                   {editingRuleId ? 'Edit Rule' : 'New Sigma Rule'}
                 </h2>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleFileImport}
-                    className="text-[11px] text-blue hover:underline"
+                    className="text-[11px] text-primary hover:underline"
                   >
                     Import file
                   </button>
-                  <button onClick={handleEditorClose} className="text-text-muted text-lg leading-none">&times;</button>
+                  <button onClick={handleEditorClose} className="text-muted-foreground text-lg leading-none">&times;</button>
                 </div>
               </div>
 
@@ -482,7 +482,7 @@ export function RulesPage() {
                     onMount={handleEditorMount}
                     theme={getMonacoTheme(theme)}
                     loading={
-                      <div className="flex items-center justify-center h-[400px] bg-page text-text-muted text-[11px]">
+                      <div className="flex items-center justify-center h-[400px] bg-background text-muted-foreground text-[11px]">
                         Loading editor...
                       </div>
                     }
@@ -544,14 +544,14 @@ export function RulesPage() {
               <div className="flex items-center gap-2 px-5 py-3 border-t border-border">
                 {/* Left: utility actions */}
                 <button
-                  className="h-[28px] px-3 border border-border text-[11px] text-text-secondary rounded-md hover:border-blue transition-colors"
+                  className="h-[28px] px-3 border border-border text-[11px] text-foreground/80 rounded-md hover:border-primary transition-colors"
                   onClick={handleFormat}
                   title="Auto-format YAML"
                 >
                   Format
                 </button>
                 <button
-                  className="h-[28px] px-3 border border-border text-[11px] text-text-secondary rounded-md hover:border-blue transition-colors disabled:opacity-50"
+                  className="h-[28px] px-3 border border-border text-[11px] text-foreground/80 rounded-md hover:border-primary transition-colors disabled:opacity-50"
                   onClick={handleTest}
                   disabled={testMutation.isPending}
                   title="Test rule against a sample event"
@@ -561,13 +561,13 @@ export function RulesPage() {
                 <div className="flex-1" />
                 {/* Right: primary actions */}
                 <button
-                  className="h-[30px] px-4 border border-border text-[12px] text-text-secondary rounded-md"
+                  className="h-[30px] px-4 border border-border text-[12px] text-foreground/80 rounded-md"
                   onClick={handleEditorClose}
                 >
                   Cancel
                 </button>
                 <button
-                  className="h-[30px] px-4 bg-blue text-white text-[12px] rounded-md hover:opacity-90 disabled:opacity-50"
+                  className="h-[30px] px-4 bg-primary text-white text-[12px] rounded-md hover:opacity-90 disabled:opacity-50"
                   onClick={handleSave}
                   disabled={saveMutation.isPending}
                 >

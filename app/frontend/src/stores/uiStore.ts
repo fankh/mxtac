@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type Theme = 'light' | 'dark' | 'matrix'
+export type Theme = 'light' | 'dark'
 
 interface Notification {
   id: string
@@ -86,7 +86,7 @@ export const useUIStore = create<UIState>()(
       name: 'mxtac-ui',
       partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed, theme: s.theme }),
       onRehydrateStorage: () => (state) => {
-        if (state?.theme) applyTheme(state.theme)
+        if (state?.theme) applyTheme(state.theme === 'light' ? 'light' : 'dark')
       },
     },
   ),

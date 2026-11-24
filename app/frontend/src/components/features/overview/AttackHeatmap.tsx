@@ -12,17 +12,17 @@ export function AttackHeatmap({ rows, tacticLabels }: Props) {
   const c = chartColors()
 
   return (
-    <div className="bg-surface rounded-md shadow-card p-4">
+    <div className="bg-card rounded-md border shadow-sm p-4">
       <div className="mb-3">
-        <h3 className="text-[12px] font-semibold text-text-primary">ATT&amp;CK Coverage Heatmap</h3>
-        <p className="text-[11px] text-text-muted">Detection coverage by tactic &amp; sub-technique</p>
+        <h3 className="text-[12px] font-semibold text-foreground">ATT&amp;CK Coverage Heatmap</h3>
+        <p className="text-[11px] text-muted-foreground">Detection coverage by tactic &amp; sub-technique</p>
       </div>
 
       {/* Tactic column headers */}
       <div className="grid gap-[3px] mb-1" style={{ gridTemplateColumns: `80px repeat(${tacticLabels.length}, 1fr)` }}>
         <div />
         {tacticLabels.map((label) => (
-          <div key={label} className="text-[9px] text-text-muted text-center leading-tight truncate" title={label}>
+          <div key={label} className="text-[9px] text-muted-foreground text-center leading-tight truncate" title={label}>
             {label}
           </div>
         ))}
@@ -32,7 +32,7 @@ export function AttackHeatmap({ rows, tacticLabels }: Props) {
       <div className="flex flex-col gap-[3px]">
         {rows.map((row) => (
           <div key={row.technique_id} className="grid gap-[3px] items-center" style={{ gridTemplateColumns: `80px repeat(${row.cells.length}, 1fr)` }}>
-            <span className="text-[9px] text-text-muted truncate pr-1" title={row.technique_id}>{row.technique_id}</span>
+            <span className="text-[9px] text-muted-foreground truncate pr-1" title={row.technique_id}>{row.technique_id}</span>
             {row.cells.map((cell, i) => (
               <div
                 key={i}
@@ -51,7 +51,7 @@ export function AttackHeatmap({ rows, tacticLabels }: Props) {
 
       {/* Legend */}
       <div className="flex items-center gap-2 mt-3">
-        <span className="text-[10px] text-text-muted">Coverage:</span>
+        <span className="text-[10px] text-muted-foreground">Coverage:</span>
         <div className="flex items-center gap-[2px]">
           {[0, 0.15, 0.35, 0.6, 0.85].map((op) => (
             <div
@@ -61,7 +61,7 @@ export function AttackHeatmap({ rows, tacticLabels }: Props) {
             />
           ))}
         </div>
-        <span className="text-[10px] text-text-muted">None {'\u2192'} Full</span>
+        <span className="text-[10px] text-muted-foreground">None {'\u2192'} Full</span>
       </div>
     </div>
   )

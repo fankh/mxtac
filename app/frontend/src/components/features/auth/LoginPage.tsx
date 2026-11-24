@@ -36,21 +36,21 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-page flex items-center justify-center">
-      <div className="bg-surface border border-border rounded-lg shadow-lg w-full max-w-sm p-8">
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="bg-card border border-border rounded-lg shadow-lg w-full max-w-sm p-8">
 
         {/* Logo */}
         <div className="flex items-center gap-3 mb-8">
-          <div className="w-8 h-8 rounded-[6px] bg-blue flex items-center justify-center text-white text-sm font-bold">
+          <div className="w-8 h-8 rounded-[6px] bg-primary flex items-center justify-center text-white text-sm font-bold">
             M
           </div>
-          <span className="text-text-primary font-semibold text-lg">MxTac</span>
+          <span className="text-foreground font-semibold text-lg">MxTac</span>
         </div>
 
         {mfaPending ? (
           <>
-            <h1 className="text-text-primary font-semibold text-xl mb-1">Two-factor authentication</h1>
-            <p className="text-text-muted text-sm mb-6">
+            <h1 className="text-foreground font-semibold text-xl mb-1">Two-factor authentication</h1>
+            <p className="text-muted-foreground text-sm mb-6">
               {useBackup
                 ? 'Enter one of your backup codes.'
                 : 'Enter the 6-digit code from your authenticator app.'}
@@ -58,7 +58,7 @@ export function LoginPage() {
 
             <form onSubmit={handleMfaSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
-                <label htmlFor="mfa-code" className="text-text-secondary text-[11px] font-medium">
+                <label htmlFor="mfa-code" className="text-foreground/80 text-[11px] font-medium">
                   {useBackup ? 'Backup code' : 'Authentication code'}
                 </label>
                 <input
@@ -77,8 +77,8 @@ export function LoginPage() {
                       submitMfa(val)
                     }
                   }}
-                  className="border border-border rounded-md px-3 py-2 text-[12px] text-text-primary bg-surface
-                             focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue placeholder:text-text-muted
+                  className="border border-border rounded-md px-3 py-2 text-[12px] text-foreground bg-card
+                             focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary placeholder:text-muted-foreground
                              tracking-widest text-center"
                   placeholder={useBackup ? 'XXXXXXXX' : '000000'}
                   maxLength={useBackup ? 8 : 6}
@@ -94,8 +94,8 @@ export function LoginPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="bg-blue text-white rounded-md py-2 text-[12px] font-medium
-                           hover:bg-blue-dark disabled:opacity-50 disabled:cursor-not-allowed
+                className="bg-primary text-white rounded-md py-2 text-[12px] font-medium
+                           hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed
                            transition-colors mt-1"
               >
                 {isLoading ? 'Verifying…' : 'Verify'}
@@ -106,14 +106,14 @@ export function LoginPage() {
               <button
                 type="button"
                 onClick={() => { setUseBackup(b => !b); setMfaCode(''); if (error) clearError() }}
-                className="text-xs text-blue hover:underline"
+                className="text-xs text-primary hover:underline"
               >
                 {useBackup ? 'Use authenticator app instead' : 'Use a backup code'}
               </button>
               <button
                 type="button"
                 onClick={handleCancelMfa}
-                className="text-xs text-text-muted hover:underline"
+                className="text-xs text-muted-foreground hover:underline"
               >
                 Back to sign in
               </button>
@@ -121,12 +121,12 @@ export function LoginPage() {
           </>
         ) : (
           <>
-            <h1 className="text-text-primary font-semibold text-xl mb-1">Sign in</h1>
-            <p className="text-text-muted text-sm mb-6">MITRE ATT&CK Security Platform</p>
+            <h1 className="text-foreground font-semibold text-xl mb-1">Sign in</h1>
+            <p className="text-muted-foreground text-sm mb-6">MITRE ATT&CK Security Platform</p>
 
             <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
-                <label htmlFor="email" className="text-text-secondary text-[11px] font-medium">
+                <label htmlFor="email" className="text-foreground/80 text-[11px] font-medium">
                   Email
                 </label>
                 <input
@@ -136,14 +136,14 @@ export function LoginPage() {
                   required
                   value={email}
                   onChange={e => { setEmail(e.target.value); if (error) clearError() }}
-                  className="border border-border rounded-md px-3 py-2 text-[12px] text-text-primary bg-surface
-                             focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue placeholder:text-text-muted"
+                  className="border border-border rounded-md px-3 py-2 text-[12px] text-foreground bg-card
+                             focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
                   placeholder="you@example.com"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
-                <label htmlFor="password" className="text-text-secondary text-[11px] font-medium">
+                <label htmlFor="password" className="text-foreground/80 text-[11px] font-medium">
                   Password
                 </label>
                 <input
@@ -153,8 +153,8 @@ export function LoginPage() {
                   required
                   value={password}
                   onChange={e => { setPassword(e.target.value); if (error) clearError() }}
-                  className="border border-border rounded-md px-3 py-2 text-[12px] text-text-primary bg-surface
-                             focus:outline-none focus:border-blue focus:ring-1 focus:ring-blue placeholder:text-text-muted"
+                  className="border border-border rounded-md px-3 py-2 text-[12px] text-foreground bg-card
+                             focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
                   placeholder="••••••••"
                 />
               </div>
@@ -168,8 +168,8 @@ export function LoginPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="bg-blue text-white rounded-md py-2 text-[12px] font-medium
-                           hover:bg-blue-dark disabled:opacity-50 disabled:cursor-not-allowed
+                className="bg-primary text-white rounded-md py-2 text-[12px] font-medium
+                           hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed
                            transition-colors mt-1"
               >
                 {isLoading ? 'Signing in…' : 'Sign in'}

@@ -111,7 +111,7 @@ describe('DetectionTimeline', () => {
   describe('layout structure', () => {
     it('renders the outer surface card container', () => {
       const { container } = render(<DetectionTimeline data={mockData} />)
-      expect(container.querySelector('.bg-surface')).toBeInTheDocument()
+      expect(container.querySelector('.bg-card')).toBeInTheDocument()
     })
 
     it('renders the header flex row with heading and legend side-by-side', () => {

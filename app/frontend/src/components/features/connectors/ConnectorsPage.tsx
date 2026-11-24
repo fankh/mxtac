@@ -56,31 +56,31 @@ export function ConnectorsPage() {
         {/* Header */}
         <div className="flex items-center justify-between py-3">
           <div>
-            <h2 className="text-[13px] font-semibold text-text-primary">Data Source Connectors</h2>
-            <p className="text-[11px] text-text-muted">Configure connections to your security tools</p>
+            <h2 className="text-[13px] font-semibold text-foreground">Data Source Connectors</h2>
+            <p className="text-[11px] text-muted-foreground">Configure connections to your security tools</p>
           </div>
-          <button className="h-[30px] px-4 bg-blue text-white text-[12px] rounded-md hover:opacity-90">
+          <button className="h-[30px] px-4 bg-primary text-white text-[12px] rounded-md hover:opacity-90">
             + Add Connector
           </button>
         </div>
 
         {/* Connector grid */}
         {isLoading && (
-          <div className="text-center text-text-muted py-16 text-sm">Loading connectors…</div>
+          <div className="text-center text-muted-foreground py-16 text-sm">Loading connectors…</div>
         )}
         <div className="grid grid-cols-3 gap-3">
           {data.map((conn) => (
             <div
               key={conn.id}
-              className={`bg-surface rounded-md shadow-card p-4 cursor-pointer border-2 transition-colors ${
-                selected?.id === conn.id ? 'border-blue' : 'border-transparent hover:border-border'
+              className={`bg-card rounded-md border shadow-sm p-4 cursor-pointer border-2 transition-colors ${
+                selected?.id === conn.id ? 'border-primary' : 'border-transparent hover:border-border'
               }`}
               onClick={() => setSelected(selected?.id === conn.id ? null : conn)}
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <span className={`w-[8px] h-[8px] rounded-full ${STATUS_DOT[conn.status] ?? 'bg-border'}`} />
-                  <span className="text-[12px] font-semibold text-text-primary">{conn.name}</span>
+                  <span className="text-[12px] font-semibold text-foreground">{conn.name}</span>
                 </div>
                 <button
                   onClick={(e) => {
@@ -90,18 +90,18 @@ export function ConnectorsPage() {
                   className={`text-[10px] px-2 py-[2px] rounded border transition-colors ${
                     conn.enabled
                       ? 'border-status-ok text-status-ok'
-                      : 'border-border text-text-muted'
+                      : 'border-border text-muted-foreground'
                   }`}
                 >
                   {conn.enabled ? 'Enabled' : 'Disabled'}
                 </button>
               </div>
 
-              <div className="text-[10px] text-text-muted mb-3">
+              <div className="text-[10px] text-muted-foreground mb-3">
                 {TYPE_LABELS[conn.connector_type] ?? conn.connector_type}
               </div>
 
-              <div className="flex items-center gap-4 text-[10px] text-text-muted">
+              <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
                 <span>{conn.events_total.toLocaleString()} events</span>
                 {conn.errors_total > 0 && (
                   <span className="text-crit-text">{conn.errors_total} errors</span>
@@ -121,20 +121,20 @@ export function ConnectorsPage() {
 
           {/* Add connector placeholder */}
           {data.length < 8 && (
-            <div className="bg-surface rounded-md border-2 border-dashed border-border p-4 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-blue min-h-[120px]">
-              <span className="text-[24px] text-text-muted">+</span>
-              <span className="text-[11px] text-text-muted">Add connector</span>
+            <div className="bg-card rounded-md border-2 border-dashed border-border p-4 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-primary min-h-[120px]">
+              <span className="text-[24px] text-muted-foreground">+</span>
+              <span className="text-[11px] text-muted-foreground">Add connector</span>
             </div>
           )}
         </div>
 
         {/* Connector detail panel */}
         {selected && (
-          <div className="mt-4 bg-surface rounded-md shadow-card p-4">
+          <div className="mt-4 bg-card rounded-md border shadow-sm p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[12px] font-semibold text-text-primary">{selected.name} — Configuration</h3>
+              <h3 className="text-[12px] font-semibold text-foreground">{selected.name} — Configuration</h3>
               <button
-                className="h-[28px] px-4 text-[11px] border border-blue text-blue rounded-md hover:bg-blue-light"
+                className="h-[28px] px-4 text-[11px] border border-primary text-primary rounded-md hover:bg-primary/10"
                 onClick={() => {/* TODO: test connection */}}
               >
                 Test Connection
@@ -142,23 +142,23 @@ export function ConnectorsPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-[10px] text-text-muted uppercase block mb-1">Type</label>
-                <div className="text-[11px] text-text-primary">{TYPE_LABELS[selected.connector_type]}</div>
+                <label className="text-[10px] text-muted-foreground uppercase block mb-1">Type</label>
+                <div className="text-[11px] text-foreground">{TYPE_LABELS[selected.connector_type]}</div>
               </div>
               <div>
-                <label className="text-[10px] text-text-muted uppercase block mb-1">Status</label>
+                <label className="text-[10px] text-muted-foreground uppercase block mb-1">Status</label>
                 <div className="flex items-center gap-2">
                   <span className={`w-[6px] h-[6px] rounded-full ${STATUS_DOT[selected.status]}`} />
-                  <span className="text-[11px] text-text-primary capitalize">{selected.status}</span>
+                  <span className="text-[11px] text-foreground capitalize">{selected.status}</span>
                 </div>
               </div>
               <div>
-                <label className="text-[10px] text-text-muted uppercase block mb-1">Events Processed</label>
-                <div className="text-[11px] text-text-primary">{selected.events_total.toLocaleString()}</div>
+                <label className="text-[10px] text-muted-foreground uppercase block mb-1">Events Processed</label>
+                <div className="text-[11px] text-foreground">{selected.events_total.toLocaleString()}</div>
               </div>
               <div>
-                <label className="text-[10px] text-text-muted uppercase block mb-1">Errors</label>
-                <div className={`text-[11px] ${selected.errors_total > 0 ? 'text-crit-text' : 'text-text-primary'}`}>
+                <label className="text-[10px] text-muted-foreground uppercase block mb-1">Errors</label>
+                <div className={`text-[11px] ${selected.errors_total > 0 ? 'text-crit-text' : 'text-foreground'}`}>
                   {selected.errors_total}
                 </div>
               </div>

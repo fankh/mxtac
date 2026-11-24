@@ -29,12 +29,12 @@ export class ErrorBoundary extends Component<Props, State> {
       if (this.props.fallback) return this.props.fallback
       return (
         <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-3 p-6">
-          <div className="text-[13px] font-semibold text-text-primary">Something went wrong</div>
-          <div className="text-[11px] text-text-muted max-w-md text-center">
+          <div className="text-[13px] font-semibold text-foreground">Something went wrong</div>
+          <div className="text-[11px] text-muted-foreground max-w-md text-center">
             {this.state.error?.message ?? 'An unexpected rendering error occurred.'}
           </div>
           <button
-            className="px-4 h-[30px] bg-blue text-white text-[12px] rounded-md hover:opacity-90"
+            className="px-4 h-[30px] bg-primary text-white text-[12px] rounded-md hover:opacity-90"
             onClick={() => this.setState({ hasError: false, error: null })}
           >
             Try again

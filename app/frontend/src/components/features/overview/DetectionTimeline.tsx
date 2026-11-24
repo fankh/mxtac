@@ -11,13 +11,13 @@ export function DetectionTimeline({ data }: Props) {
   const c = chartColors()
 
   return (
-    <div className="bg-surface rounded-md shadow-card p-4">
+    <div className="bg-card rounded-md border shadow-sm p-4">
       <div className="flex items-start justify-between mb-3">
         <div>
-          <h3 className="text-[12px] font-semibold text-text-primary">Detection Timeline</h3>
-          <p className="text-[11px] text-text-muted">Alerts over past 7 days</p>
+          <h3 className="text-[12px] font-semibold text-foreground">Detection Timeline</h3>
+          <p className="text-[11px] text-muted-foreground">Alerts over past 7 days</p>
         </div>
-        <div className="flex items-center gap-4 text-[10px] text-text-muted">
+        <div className="flex items-center gap-4 text-[10px] text-muted-foreground">
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-crit-text inline-block" />Critical</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-border inline-block" />Other</span>
         </div>

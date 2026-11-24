@@ -106,7 +106,7 @@ export function SettingsPage() {
                 key={t.key}
                 onClick={() => setTab(t.key)}
                 className={`px-3 h-[32px] text-[11px] font-medium border-r border-border last:border-r-0 transition-colors ${
-                  tab === t.key ? 'bg-blue text-white' : 'bg-surface text-text-secondary hover:bg-page'
+                  tab === t.key ? 'bg-primary text-white' : 'bg-card text-foreground/80 hover:bg-background'
                 }`}
               >
                 {t.label}
@@ -119,30 +119,30 @@ export function SettingsPage() {
         {tab === 'users' && (
           <div>
             <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] text-text-muted">
-                <strong className="text-text-primary">{users?.length ?? 0}</strong> users
+              <span className="text-[11px] text-muted-foreground">
+                <strong className="text-foreground">{users?.length ?? 0}</strong> users
               </span>
               <button
                 onClick={() => setShowCreateUser(true)}
-                className="h-[26px] px-3 text-[11px] font-medium bg-blue text-white rounded-md hover:opacity-90 transition-opacity"
+                className="h-[26px] px-3 text-[11px] font-medium bg-primary text-white rounded-md hover:opacity-90 transition-opacity"
               >
                 + Add User
               </button>
             </div>
 
             {usersLoading ? (
-              <div className="flex items-center justify-center h-32 text-[11px] text-text-muted">Loading users…</div>
+              <div className="flex items-center justify-center h-32 text-[11px] text-muted-foreground">Loading users…</div>
             ) : !users || users.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48">
-                <span className="text-text-muted text-2xl mb-3">⌕</span>
-                <p className="text-[13px] font-semibold text-text-primary mb-1">No Users</p>
-                <p className="text-[11px] text-text-muted">Add your first team member to get started.</p>
+                <span className="text-muted-foreground text-2xl mb-3">⌕</span>
+                <p className="text-[13px] font-semibold text-foreground mb-1">No Users</p>
+                <p className="text-[11px] text-muted-foreground">Add your first team member to get started.</p>
               </div>
             ) : (
-              <div className="bg-surface border border-border rounded-lg overflow-hidden">
+              <div className="bg-card border border-border rounded-lg overflow-hidden">
                 <table className="w-full text-[11px]">
                   <thead>
-                    <tr className="border-b border-border text-[11px] font-medium text-text-muted">
+                    <tr className="border-b border-border text-[11px] font-medium text-muted-foreground">
                       <th className="text-left p-2">Email</th>
                       <th className="text-left p-2">Name</th>
                       <th className="text-left p-2 w-[90px]">Role</th>
@@ -155,17 +155,17 @@ export function SettingsPage() {
                     {users.map(u => (
                       <tr key={u.id} className="border-b border-border/50 hover:bg-hover/50 transition-colors">
                         <td className="p-2 font-mono">{u.email}</td>
-                        <td className="p-2 text-text-muted">{u.full_name || '—'}</td>
+                        <td className="p-2 text-muted-foreground">{u.full_name || '—'}</td>
                         <td className="p-2">
                           <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${
                             u.role === 'admin' ? 'bg-purple-500/10 text-purple-600 border-purple-500/20' :
                             u.role === 'hunter' ? 'bg-orange-500/10 text-orange-600 border-orange-500/20' :
                             u.role === 'analyst' ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' :
-                            'bg-section text-text-muted border-border'
+                            'bg-muted/50 text-muted-foreground border-border'
                           }`}>{u.role}</span>
                         </td>
                         <td className="p-2">
-                          <span className={`text-[10px] ${u.mfa_enabled ? 'text-status-ok' : 'text-text-muted'}`}>
+                          <span className={`text-[10px] ${u.mfa_enabled ? 'text-status-ok' : 'text-muted-foreground'}`}>
                             {u.mfa_enabled ? '✓ On' : 'Off'}
                           </span>
                         </td>
@@ -174,7 +174,7 @@ export function SettingsPage() {
                             {u.is_active ? 'Active' : 'Locked'}
                           </span>
                         </td>
-                        <td className="p-2 text-[10px] text-text-muted">
+                        <td className="p-2 text-[10px] text-muted-foreground">
                           {u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : 'Never'}
                         </td>
                       </tr>
@@ -187,34 +187,34 @@ export function SettingsPage() {
             {/* Create User Modal */}
             {showCreateUser && (
               <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowCreateUser(false)}>
-                <div className="bg-surface border border-border rounded-lg p-6 w-[420px]" onClick={e => e.stopPropagation()}>
+                <div className="bg-card border border-border rounded-lg p-6 w-[420px]" onClick={e => e.stopPropagation()}>
                   <h3 className="text-[12px] font-bold mb-4">Add User</h3>
                   <div className="space-y-3">
                     <div>
-                      <label className="text-[11px] font-medium text-text-muted">Email<span className="text-crit-text ml-0.5">*</span></label>
+                      <label className="text-[11px] font-medium text-muted-foreground">Email<span className="text-crit-text ml-0.5">*</span></label>
                       <input type="email" value={newUser.email} onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))}
                         placeholder="user@company.com" autoComplete="off"
-                        className="w-full mt-1 h-[32px] pl-3 pr-3 text-[12px] border border-border rounded-md bg-surface text-text-primary focus:outline-none focus:border-blue" />
+                        className="w-full mt-1 h-[32px] pl-3 pr-3 text-[12px] border border-border rounded-md bg-card text-foreground focus:outline-none focus:border-primary" />
                     </div>
                     <div>
-                      <label className="text-[11px] font-medium text-text-muted">Full Name</label>
+                      <label className="text-[11px] font-medium text-muted-foreground">Full Name</label>
                       <input type="text" value={newUser.full_name} onChange={e => setNewUser(p => ({ ...p, full_name: e.target.value }))}
                         placeholder="Jane Doe" autoComplete="off"
-                        className="w-full mt-1 h-[32px] pl-3 pr-3 text-[12px] border border-border rounded-md bg-surface text-text-primary focus:outline-none focus:border-blue" />
+                        className="w-full mt-1 h-[32px] pl-3 pr-3 text-[12px] border border-border rounded-md bg-card text-foreground focus:outline-none focus:border-primary" />
                     </div>
                     <div>
-                      <label className="text-[11px] font-medium text-text-muted">Password<span className="text-crit-text ml-0.5">*</span></label>
+                      <label className="text-[11px] font-medium text-muted-foreground">Password<span className="text-crit-text ml-0.5">*</span></label>
                       <input type="password" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))}
                         placeholder="Min 8 characters" autoComplete="off"
-                        className="w-full mt-1 h-[32px] pl-3 pr-3 text-[12px] border border-border rounded-md bg-surface text-text-primary focus:outline-none focus:border-blue" />
+                        className="w-full mt-1 h-[32px] pl-3 pr-3 text-[12px] border border-border rounded-md bg-card text-foreground focus:outline-none focus:border-primary" />
                     </div>
                     <div>
-                      <label className="text-[11px] font-medium text-text-muted">Role</label>
+                      <label className="text-[11px] font-medium text-muted-foreground">Role</label>
                       <div className="flex items-center border border-border rounded-md overflow-hidden mt-1">
                         {ROLES.map(r => (
                           <button key={r} onClick={() => setNewUser(p => ({ ...p, role: r }))}
                             className={`flex-1 h-[32px] text-[10px] font-medium border-r border-border last:border-r-0 transition-colors capitalize ${
-                              newUser.role === r ? 'bg-blue text-white' : 'bg-surface text-text-secondary hover:bg-page'
+                              newUser.role === r ? 'bg-primary text-white' : 'bg-card text-foreground/80 hover:bg-background'
                             }`}>
                             {r}
                           </button>
@@ -228,7 +228,7 @@ export function SettingsPage() {
                   <div className="flex justify-end gap-2 mt-4">
                     <button onClick={() => setShowCreateUser(false)} className="h-[32px] px-3 text-[12px] border border-border rounded-md hover:bg-hover transition-colors">Cancel</button>
                     <button onClick={() => createUserMut.mutate()} disabled={createUserMut.isPending || !newUser.email || !newUser.password}
-                      className="h-[32px] px-4 text-[12px] font-medium bg-blue text-white rounded-md hover:opacity-90 transition-opacity disabled:opacity-50">
+                      className="h-[32px] px-4 text-[12px] font-medium bg-primary text-white rounded-md hover:opacity-90 transition-opacity disabled:opacity-50">
                       {createUserMut.isPending ? 'Creating…' : 'Create User'}
                     </button>
                   </div>
@@ -241,40 +241,40 @@ export function SettingsPage() {
         {/* ── System Tab ── */}
         {tab === 'system' && (
           <div>
-            <div className="text-[11px] text-text-muted mb-3">
-              <strong className="text-text-primary">System Configuration</strong> — infrastructure connection settings
+            <div className="text-[11px] text-muted-foreground mb-3">
+              <strong className="text-foreground">System Configuration</strong> — infrastructure connection settings
             </div>
 
             <div className="space-y-4">
               {/* OpenSearch */}
-              <div className="bg-surface border border-border rounded-lg p-4">
+              <div className="bg-card border border-border rounded-lg p-4">
                 <h3 className="text-[11px] font-semibold mb-3">OpenSearch</h3>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[11px] font-medium text-text-muted">Host</label>
+                    <label className="text-[11px] font-medium text-muted-foreground">Host</label>
                     <input type="text" value={config.opensearch_host} onChange={e => setConfig(p => ({ ...p, opensearch_host: e.target.value }))}
-                      className="w-full mt-1 h-[32px] pl-3 text-[12px] border border-border rounded-md bg-surface text-text-primary focus:outline-none focus:border-blue" />
+                      className="w-full mt-1 h-[32px] pl-3 text-[12px] border border-border rounded-md bg-card text-foreground focus:outline-none focus:border-primary" />
                   </div>
                   <div>
-                    <label className="text-[11px] font-medium text-text-muted">Port</label>
+                    <label className="text-[11px] font-medium text-muted-foreground">Port</label>
                     <input type="number" value={config.opensearch_port} onChange={e => setConfig(p => ({ ...p, opensearch_port: Number(e.target.value) }))}
-                      className="w-full mt-1 h-[32px] pl-3 text-[12px] border border-border rounded-md bg-surface text-text-primary focus:outline-none focus:border-blue" />
+                      className="w-full mt-1 h-[32px] pl-3 text-[12px] border border-border rounded-md bg-card text-foreground focus:outline-none focus:border-primary" />
                   </div>
                 </div>
               </div>
 
               {/* Valkey / Redis */}
-              <div className="bg-surface border border-border rounded-lg p-4">
+              <div className="bg-card border border-border rounded-lg p-4">
                 <h3 className="text-[11px] font-semibold mb-3">Valkey (Cache & Queue)</h3>
                 <div>
-                  <label className="text-[11px] font-medium text-text-muted">Host</label>
+                  <label className="text-[11px] font-medium text-muted-foreground">Host</label>
                   <input type="text" value={config.valkey_host} onChange={e => setConfig(p => ({ ...p, valkey_host: e.target.value }))}
-                    className="w-full mt-1 h-[32px] pl-3 text-[12px] border border-border rounded-md bg-surface text-text-primary focus:outline-none focus:border-blue" />
+                    className="w-full mt-1 h-[32px] pl-3 text-[12px] border border-border rounded-md bg-card text-foreground focus:outline-none focus:border-primary" />
                 </div>
               </div>
 
               {/* Syslog Receiver */}
-              <div className="bg-surface border border-border rounded-lg p-4">
+              <div className="bg-card border border-border rounded-lg p-4">
                 <h3 className="text-[11px] font-semibold mb-3">Syslog Receiver</h3>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex items-center gap-2">
@@ -285,20 +285,20 @@ export function SettingsPage() {
                     <span className="text-[11px]">{config.syslog_enabled ? 'Enabled' : 'Disabled'}</span>
                   </div>
                   <div>
-                    <label className="text-[11px] font-medium text-text-muted">Port</label>
+                    <label className="text-[11px] font-medium text-muted-foreground">Port</label>
                     <input type="number" value={config.syslog_port} onChange={e => setConfig(p => ({ ...p, syslog_port: Number(e.target.value) }))}
                       disabled={!config.syslog_enabled}
-                      className="w-full mt-1 h-[32px] pl-3 text-[12px] border border-border rounded-md bg-surface text-text-primary focus:outline-none focus:border-blue disabled:opacity-50" />
+                      className="w-full mt-1 h-[32px] pl-3 text-[12px] border border-border rounded-md bg-card text-foreground focus:outline-none focus:border-primary disabled:opacity-50" />
                   </div>
                 </div>
               </div>
 
               {/* Debug Mode */}
-              <div className="bg-surface border border-border rounded-lg p-4">
+              <div className="bg-card border border-border rounded-lg p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-[11px] font-semibold">Debug Mode</h3>
-                    <p className="text-[10px] text-text-muted mt-0.5">Enable verbose logging and SQL query output</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Enable verbose logging and SQL query output</p>
                   </div>
                   <button onClick={() => setConfig(p => ({ ...p, debug: !p.debug }))}
                     className={`w-8 h-[18px] rounded-full transition-colors ${config.debug ? 'bg-high-text' : 'bg-border'}`}>
@@ -313,13 +313,13 @@ export function SettingsPage() {
         {/* ── Authentication Tab ── */}
         {tab === 'auth' && (
           <div>
-            <div className="text-[11px] text-text-muted mb-3">
-              <strong className="text-text-primary">Authentication Settings</strong> — security policies for user access
+            <div className="text-[11px] text-muted-foreground mb-3">
+              <strong className="text-foreground">Authentication Settings</strong> — security policies for user access
             </div>
 
             <div className="space-y-4">
               {/* Password Policy */}
-              <div className="bg-surface border border-border rounded-lg p-4">
+              <div className="bg-card border border-border rounded-lg p-4">
                 <h3 className="text-[11px] font-semibold mb-3">Password Policy</h3>
                 <div className="space-y-2">
                   {[
@@ -331,15 +331,15 @@ export function SettingsPage() {
                     { label: 'History (no reuse)', value: 'Last 2 passwords', key: 'history' },
                   ].map(rule => (
                     <div key={rule.key} className="flex items-center justify-between text-[11px]">
-                      <span className="text-text-muted">{rule.label}</span>
-                      <span className="text-text-primary font-medium">{rule.value}</span>
+                      <span className="text-muted-foreground">{rule.label}</span>
+                      <span className="text-foreground font-medium">{rule.value}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* Session Policy */}
-              <div className="bg-surface border border-border rounded-lg p-4">
+              <div className="bg-card border border-border rounded-lg p-4">
                 <h3 className="text-[11px] font-semibold mb-3">Session Policy</h3>
                 <div className="space-y-2">
                   {[
@@ -349,15 +349,15 @@ export function SettingsPage() {
                     { label: 'Inactivity lock', value: '90 days' },
                   ].map(rule => (
                     <div key={rule.label} className="flex items-center justify-between text-[11px]">
-                      <span className="text-text-muted">{rule.label}</span>
-                      <span className="text-text-primary font-medium">{rule.value}</span>
+                      <span className="text-muted-foreground">{rule.label}</span>
+                      <span className="text-foreground font-medium">{rule.value}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* MFA */}
-              <div className="bg-surface border border-border rounded-lg p-4">
+              <div className="bg-card border border-border rounded-lg p-4">
                 <h3 className="text-[11px] font-semibold mb-3">Multi-Factor Authentication</h3>
                 <div className="space-y-2">
                   {[
@@ -367,8 +367,8 @@ export function SettingsPage() {
                     { label: 'Enforce MFA for admins', value: 'Recommended' },
                   ].map(rule => (
                     <div key={rule.label} className="flex items-center justify-between text-[11px]">
-                      <span className="text-text-muted">{rule.label}</span>
-                      <span className="text-text-primary font-medium">{rule.value}</span>
+                      <span className="text-muted-foreground">{rule.label}</span>
+                      <span className="text-foreground font-medium">{rule.value}</span>
                     </div>
                   ))}
                 </div>

@@ -85,10 +85,10 @@ describe('TacticsTable', () => {
     })
 
     it('applies muted color class when trend is not significantly up', () => {
-      // trend_pct=-3 for Persistence — isUp=false → text-text-muted
+      // trend_pct=-3 for Persistence — isUp=false → text-muted-foreground
       render(<TacticsTable data={mockData} />)
       const trendEl = screen.getByText('-3%')
-      expect(trendEl.className).toContain('text-text-muted')
+      expect(trendEl.className).toContain('text-muted-foreground')
     })
   })
 })

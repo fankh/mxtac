@@ -370,28 +370,28 @@ export function CoveragePage() {
       <div className="pt-[46px] flex h-[calc(100vh-46px)] overflow-hidden">
 
       {/* ═══ COLUMN 1: Left Panel — Coverage Stats ═══ */}
-      <div className="w-[260px] shrink-0 border-r border-border bg-surface overflow-y-auto">
+      <div className="w-[260px] shrink-0 border-r border-border bg-card overflow-y-auto">
 
         {/* Coverage Ring */}
         <div className="p-3 border-b border-border">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">ATT&CK Coverage</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">ATT&CK Coverage</p>
           <div className="flex items-center gap-3">
             <ProgressRing pct={stats.pct} color={ringColor} />
             <div className="space-y-1">
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-[10px] text-text-muted">Covered</span>
-                <span className="text-[11px] font-bold text-text-primary ml-auto">{stats.covered}</span>
+                <span className="text-[10px] text-muted-foreground">Covered</span>
+                <span className="text-[11px] font-bold text-foreground ml-auto">{stats.covered}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-border" />
-                <span className="text-[10px] text-text-muted">Gaps</span>
-                <span className="text-[11px] font-bold text-text-primary ml-auto">{stats.total - stats.covered}</span>
+                <span className="text-[10px] text-muted-foreground">Gaps</span>
+                <span className="text-[11px] font-bold text-foreground ml-auto">{stats.total - stats.covered}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue" />
-                <span className="text-[10px] text-text-muted">Total</span>
-                <span className="text-[11px] font-bold text-text-primary ml-auto">{stats.total}</span>
+                <span className="w-2 h-2 rounded-full bg-primary" />
+                <span className="text-[10px] text-muted-foreground">Total</span>
+                <span className="text-[11px] font-bold text-foreground ml-auto">{stats.total}</span>
               </div>
             </div>
           </div>
@@ -399,7 +399,7 @@ export function CoveragePage() {
 
         {/* Coverage by Tactic */}
         <div className="p-3 border-b border-border">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">Coverage by Tactic</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Coverage by Tactic</p>
           <div className="space-y-1.5">
             {TACTICS.map(tactic => {
               const data = stats.byTactic[tactic.name] || { covered: 0, total: 0 }
@@ -412,12 +412,12 @@ export function CoveragePage() {
                     setActiveTechnique(null)
                   }}
                   className={`w-full text-left rounded px-1.5 py-0.5 transition-colors ${
-                    activeTactic?.id === tactic.id ? 'bg-blue-light' : 'hover:bg-hover'
+                    activeTactic?.id === tactic.id ? 'bg-primary/10' : 'hover:bg-hover'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-text-primary truncate flex-1">{tactic.name}</span>
-                    <span className="text-[9px] text-text-muted font-mono ml-1">{pct}%</span>
+                    <span className="text-[10px] text-foreground truncate flex-1">{tactic.name}</span>
+                    <span className="text-[9px] text-muted-foreground font-mono ml-1">{pct}%</span>
                   </div>
                   <div className="w-full h-1 rounded-full bg-border overflow-hidden mt-0.5">
                     <div
@@ -433,7 +433,7 @@ export function CoveragePage() {
 
         {/* Technique Distribution Donut */}
         <div className="p-3 border-b border-border">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">Technique Distribution</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Technique Distribution</p>
           <div className="flex items-center justify-center">
             <ResponsiveContainer width={80} height={80}>
               <PieChart>
@@ -448,8 +448,8 @@ export function CoveragePage() {
               {donutData.map((d, i) => (
                 <div key={d.name} className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full" style={{ background: i === 0 ? '#22c55e' : 'var(--color-border, #e2e8f0)' }} />
-                  <span className="text-[9px] text-text-muted">{d.name}</span>
-                  <span className="text-[10px] font-bold text-text-primary ml-auto">{d.value}</span>
+                  <span className="text-[9px] text-muted-foreground">{d.name}</span>
+                  <span className="text-[10px] font-bold text-foreground ml-auto">{d.value}</span>
                 </div>
               ))}
             </div>
@@ -458,7 +458,7 @@ export function CoveragePage() {
 
         {/* Top Tactics Bar */}
         <div className="p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">Top Tactics by Size</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Top Tactics by Size</p>
           <ResponsiveContainer width="100%" height={140}>
             <BarChart data={topTacticData} layout="vertical" margin={{ left: 0, right: 8, top: 0, bottom: 0 }}>
               <XAxis type="number" hide />
@@ -477,26 +477,26 @@ export function CoveragePage() {
 
           {/* KPI Cards */}
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-page border border-border rounded-lg p-3">
-              <p className="text-[10px] text-text-muted uppercase tracking-wider">Coverage</p>
+            <div className="bg-background border border-border rounded-lg p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Coverage</p>
               <p className={`text-lg font-bold ${stats.pct >= 80 ? 'text-green-500' : stats.pct >= 60 ? 'text-yellow-500' : 'text-red-500'}`}>{stats.pct}%</p>
-              <p className="text-[10px] text-text-muted">{stats.covered} of {stats.total} techniques</p>
+              <p className="text-[10px] text-muted-foreground">{stats.covered} of {stats.total} techniques</p>
             </div>
-            <div className="bg-page border border-border rounded-lg p-3">
-              <p className="text-[10px] text-text-muted uppercase tracking-wider">Tactics</p>
-              <p className="text-lg font-bold text-text-primary">{TACTICS.length}</p>
-              <p className="text-[10px] text-text-muted">MITRE ATT&CK Enterprise</p>
+            <div className="bg-background border border-border rounded-lg p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Tactics</p>
+              <p className="text-lg font-bold text-foreground">{TACTICS.length}</p>
+              <p className="text-[10px] text-muted-foreground">MITRE ATT&CK Enterprise</p>
             </div>
-            <div className="bg-page border border-border rounded-lg p-3">
-              <p className="text-[10px] text-text-muted uppercase tracking-wider">Rules Active</p>
-              <p className="text-lg font-bold text-text-primary">{heatmap?.length ?? 0}</p>
-              <p className="text-[10px] text-text-muted">Sigma detection rules</p>
+            <div className="bg-background border border-border rounded-lg p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Rules Active</p>
+              <p className="text-lg font-bold text-foreground">{heatmap?.length ?? 0}</p>
+              <p className="text-[10px] text-muted-foreground">Sigma detection rules</p>
             </div>
           </div>
 
           {/* Coverage Trend Chart */}
-          <div className="bg-page border border-border rounded-lg p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">Coverage Trend (30d)</p>
+          <div className="bg-background border border-border rounded-lg p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Coverage Trend (30d)</p>
             {trendData.length > 0 ? (
               <ResponsiveContainer width="100%" height={140}>
                 <AreaChart data={trendData}>
@@ -508,13 +508,13 @@ export function CoveragePage() {
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-[140px] flex items-center justify-center text-[11px] text-text-muted">No trend data</div>
+              <div className="h-[140px] flex items-center justify-center text-[11px] text-muted-foreground">No trend data</div>
             )}
           </div>
 
           {/* MITRE ATT&CK Enterprise Matrix */}
-          <div className="bg-page border border-border rounded-lg p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">MITRE ATT&CK Enterprise Matrix</p>
+          <div className="bg-background border border-border rounded-lg p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">MITRE ATT&CK Enterprise Matrix</p>
             <div className="grid grid-cols-14 gap-[2px]" style={{ gridTemplateColumns: `repeat(${TACTICS.length}, minmax(0, 1fr))` }}>
               {TACTICS.map(tactic => {
                 const tacticData = stats.byTactic[tactic.name] || { covered: 0, total: 0 }
@@ -533,15 +533,15 @@ export function CoveragePage() {
                         setActiveTechnique(null)
                       }}
                       className={`px-0.5 py-1 rounded-t text-center border-b-2 w-full transition-colors cursor-pointer ${
-                        activeTactic?.id === tactic.id ? 'bg-blue-light border-blue ring-1 ring-blue/30' :
-                        tacticPct >= 80 ? 'bg-section border-green-500 hover:opacity-80' :
-                        tacticPct >= 50 ? 'bg-section border-yellow-500 hover:opacity-80' :
-                        tacticPct > 0 ? 'bg-section border-red-500 hover:opacity-80' :
-                        'bg-section border-border hover:bg-hover'
+                        activeTactic?.id === tactic.id ? 'bg-primary/10 border-primary ring-1 ring-primary/30' :
+                        tacticPct >= 80 ? 'bg-muted/50 border-green-500 hover:opacity-80' :
+                        tacticPct >= 50 ? 'bg-muted/50 border-yellow-500 hover:opacity-80' :
+                        tacticPct > 0 ? 'bg-muted/50 border-red-500 hover:opacity-80' :
+                        'bg-muted/50 border-border hover:bg-hover'
                       }`}
                     >
-                      <p className="text-[7px] font-bold text-text-primary leading-tight truncate" title={tactic.name}>{tactic.name}</p>
-                      <p className="text-[6px] text-text-muted font-mono">{tactic.id}</p>
+                      <p className="text-[7px] font-bold text-foreground leading-tight truncate" title={tactic.name}>{tactic.name}</p>
+                      <p className="text-[6px] text-muted-foreground font-mono">{tactic.id}</p>
                     </button>
                     <div className="flex flex-col gap-[1px] mt-[1px]">
                       {slots.slice(0, 10).map((tech, i) => (
@@ -553,10 +553,10 @@ export function CoveragePage() {
                           }}
                           className={`px-0.5 py-[2px] rounded-[2px] cursor-pointer transition-colors text-left w-full ${
                             activeTechnique === tech.id
-                              ? 'bg-blue-light text-blue ring-1 ring-blue/40'
+                              ? 'bg-primary/10 text-primary ring-1 ring-primary/40'
                               : tech.covered
                                 ? 'bg-resolved-bg text-resolved-text hover:opacity-80'
-                                : 'bg-section text-text-muted hover:bg-hover'
+                                : 'bg-muted/50 text-muted-foreground hover:bg-hover'
                           }`}
                           title={`${tech.id}: ${tech.name}`}
                         >
@@ -565,7 +565,7 @@ export function CoveragePage() {
                         </button>
                       ))}
                       {slots.length > 10 && (
-                        <div className="text-[6px] text-text-muted text-center py-0.5">+{slots.length - 10}</div>
+                        <div className="text-[6px] text-muted-foreground text-center py-0.5">+{slots.length - 10}</div>
                       )}
                     </div>
                   </div>
@@ -573,9 +573,9 @@ export function CoveragePage() {
               })}
             </div>
             {/* Legend */}
-            <div className="flex items-center gap-3 mt-2 text-[9px] text-text-muted">
+            <div className="flex items-center gap-3 mt-2 text-[9px] text-muted-foreground">
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-resolved-bg border border-resolved-text/30" /> Covered</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-section border border-border" /> Not Covered</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-[2px] bg-muted/50 border border-border" /> Not Covered</span>
               <span className="ml-auto">Click tactic or technique to view findings</span>
             </div>
           </div>
@@ -584,49 +584,49 @@ export function CoveragePage() {
       </div>
 
       {/* ═══ COLUMN 3: Right Panel — Finding Logs ═══ */}
-      <div className="w-[300px] shrink-0 overflow-y-auto bg-surface">
+      <div className="w-[300px] shrink-0 overflow-y-auto bg-card">
         <div className="p-4 space-y-4">
 
           {/* Finding Logs */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">Finding Logs</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Finding Logs</p>
             {(!activeTactic && !activeTechnique) ? (
-              <div className="border border-border rounded-lg p-4 bg-page">
+              <div className="border border-border rounded-lg p-4 bg-background">
                 <div className="flex flex-col items-center justify-center h-40">
-                  <div className="w-10 h-10 rounded-full bg-section flex items-center justify-center mb-2">
-                    <span className="text-[16px] text-text-muted">?</span>
+                  <div className="w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center mb-2">
+                    <span className="text-[16px] text-muted-foreground">?</span>
                   </div>
-                  <p className="text-[11px] font-semibold text-text-primary mb-1">Select a Tactic or Technique</p>
-                  <p className="text-[10px] text-text-muted text-center">Click on a tactic header or technique cell in the matrix to view related finding logs.</p>
+                  <p className="text-[11px] font-semibold text-foreground mb-1">Select a Tactic or Technique</p>
+                  <p className="text-[10px] text-muted-foreground text-center">Click on a tactic header or technique cell in the matrix to view related finding logs.</p>
                 </div>
               </div>
             ) : (
-              <div className="border border-border rounded-lg bg-page">
+              <div className="border border-border rounded-lg bg-background">
                 <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-                  <h3 className="text-[11px] font-semibold text-text-primary truncate">
+                  <h3 className="text-[11px] font-semibold text-foreground truncate">
                     {activeTechnique ? (
-                      <><span className="text-blue font-mono">{activeTechnique}</span><span className="text-text-muted ml-1">in {activeTactic?.name}</span></>
+                      <><span className="text-primary font-mono">{activeTechnique}</span><span className="text-muted-foreground ml-1">in {activeTactic?.name}</span></>
                     ) : (
-                      <><span className="text-blue">{activeTactic!.name}</span><span className="text-text-muted font-mono ml-1">({activeTactic!.id})</span></>
+                      <><span className="text-primary">{activeTactic!.name}</span><span className="text-muted-foreground font-mono ml-1">({activeTactic!.id})</span></>
                     )}
                   </h3>
                   <button
                     onClick={() => { setActiveTactic(null); setActiveTechnique(null) }}
-                    className="text-[10px] text-text-muted hover:text-text-primary transition-colors ml-2 shrink-0"
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors ml-2 shrink-0"
                   >
                     Clear
                   </button>
                 </div>
                 <div className="p-2 max-h-[calc(100vh-260px)] overflow-y-auto">
                   {logsLoading ? (
-                    <div className="flex items-center justify-center h-24 text-[11px] text-text-muted">Loading…</div>
+                    <div className="flex items-center justify-center h-24 text-[11px] text-muted-foreground">Loading…</div>
                   ) : (() => {
                     const events = (tacticLogs?.events ?? []) as Record<string, unknown>[]
                     if (events.length === 0) {
                       return (
                         <div className="flex flex-col items-center justify-center h-24">
-                          <p className="text-[11px] font-semibold text-text-primary mb-1">No findings</p>
-                          <p className="text-[10px] text-text-muted">No events in the last 30 days.</p>
+                          <p className="text-[11px] font-semibold text-foreground mb-1">No findings</p>
+                          <p className="text-[10px] text-muted-foreground">No events in the last 30 days.</p>
                         </div>
                       )
                     }
@@ -640,17 +640,17 @@ export function CoveragePage() {
                           const severity = Number(raw.severity_id ?? evt.severity_id ?? 0)
                           const sevColor = severity >= 4 ? 'border-l-red-500' : severity >= 3 ? 'border-l-yellow-500' : severity >= 2 ? 'border-l-blue' : 'border-l-border'
                           return (
-                            <div key={i} className={`border-l-2 ${sevColor} bg-surface rounded-r px-2 py-1.5 hover:bg-hover/50 transition-colors`}>
+                            <div key={i} className={`border-l-2 ${sevColor} bg-card rounded-r px-2 py-1.5 hover:bg-hover/50 transition-colors`}>
                               <div className="flex items-center justify-between">
-                                <span className="text-[9px] font-mono text-text-muted">{time}</span>
-                                <span className="text-[8px] font-mono text-text-muted truncate ml-2">{host}</span>
+                                <span className="text-[9px] font-mono text-muted-foreground">{time}</span>
+                                <span className="text-[8px] font-mono text-muted-foreground truncate ml-2">{host}</span>
                               </div>
-                              <p className="text-[10px] text-text-primary truncate mt-0.5" title={summary}>{summary}</p>
+                              <p className="text-[10px] text-foreground truncate mt-0.5" title={summary}>{summary}</p>
                             </div>
                           )
                         })}
                         {events.length > 30 && (
-                          <p className="text-center text-[9px] text-text-muted pt-1">+{events.length - 30} more</p>
+                          <p className="text-center text-[9px] text-muted-foreground pt-1">+{events.length - 30} more</p>
                         )}
                       </div>
                     )
@@ -662,8 +662,8 @@ export function CoveragePage() {
 
           {/* Quick Navigation */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-2">Quick Navigation</p>
-            <div className="border border-border rounded-lg bg-page divide-y divide-border">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Quick Navigation</p>
+            <div className="border border-border rounded-lg bg-background divide-y divide-border">
               {[
                 { href: '/hunt', label: 'Hunt', desc: 'Search detections & alerts' },
                 { href: '/ndr', label: 'NDR Logs', desc: 'Network flow analysis' },
@@ -673,10 +673,10 @@ export function CoveragePage() {
                 <a key={link.href} href={link.href}
                   className="flex items-center justify-between px-3 py-2 hover:bg-hover transition-colors">
                   <div>
-                    <p className="text-[11px] font-medium text-text-primary">{link.label}</p>
-                    <p className="text-[9px] text-text-muted">{link.desc}</p>
+                    <p className="text-[11px] font-medium text-foreground">{link.label}</p>
+                    <p className="text-[9px] text-muted-foreground">{link.desc}</p>
                   </div>
-                  <span className="text-[10px] text-text-muted">&rarr;</span>
+                  <span className="text-[10px] text-muted-foreground">&rarr;</span>
                 </a>
               ))}
             </div>
