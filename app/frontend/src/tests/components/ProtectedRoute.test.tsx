@@ -13,7 +13,6 @@ import { useAuthStore } from '../../stores/authStore'
 const mockUseAuthStore = useAuthStore as unknown as ReturnType<typeof vi.fn>
 
 function renderWithRouter(
-  isAuthenticated: boolean,
   initialPath = '/',
 ) {
   return render(
@@ -55,12 +54,12 @@ describe('ProtectedRoute', () => {
     })
 
     it('renders children when user is authenticated', () => {
-      renderWithRouter(true)
+      renderWithRouter()
       expect(screen.getByText('Protected content')).toBeInTheDocument()
     })
 
     it('does not redirect when user is authenticated', () => {
-      renderWithRouter(true)
+      renderWithRouter()
       expect(screen.queryByText('Login page')).not.toBeInTheDocument()
     })
   })
@@ -74,22 +73,22 @@ describe('ProtectedRoute', () => {
     })
 
     it('redirects to /login when user is not authenticated', () => {
-      renderWithRouter(false)
+      renderWithRouter()
       expect(screen.getByText('Login page')).toBeInTheDocument()
     })
 
     it('does not render protected children when user is not authenticated', () => {
-      renderWithRouter(false)
+      renderWithRouter()
       expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
     })
 
     it('redirects to /login from any protected path', () => {
-      renderWithRouter(false, '/detections')
+      renderWithRouter('/detections')
       expect(screen.getByText('Login page')).toBeInTheDocument()
     })
 
     it('redirects to /login from the root path when unauthenticated', () => {
-      renderWithRouter(false, '/')
+      renderWithRouter('/')
       expect(screen.getByText('Login page')).toBeInTheDocument()
     })
   })

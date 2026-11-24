@@ -3,6 +3,11 @@
 # MxTac — Automated Server Setup
 # Target: Ubuntu 22.04 / 24.04 LTS
 # Usage:  sudo bash setup.sh
+#         sudo MXTAC_HOST=mxtac.example.com bash setup.sh
+#
+# MXTAC_HOST is the hostname or IP address users will open in the browser.
+# It is used for CORS, the self-signed certificate and the printed URLs.
+# Default: the first address reported by `hostname -I`.
 #
 # What this script does (idempotent — safe to re-run):
 #   1. System prerequisites + UFW firewall
@@ -37,6 +42,13 @@ DEPLOY_DIR="/opt/mxtac"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"   # directory where setup.sh lives
 ENV_FILE="${DEPLOY_DIR}/.env"
 COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.yml"
+MXTAC_HOST="${MXTAC_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+MXTAC_HOST="${MXTAC_HOST:-localhost}"
+if [[ "${MXTAC_HOST}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  CERT_SAN="IP:${MXTAC_HOST}"
+else
+  CERT_SAN="DNS:${MXTAC_HOST}"
+fi
 
 # ── Detect OS ─────────────────────────────────────────────────────────────────
 if [[ ! -f /etc/os-release ]]; then
@@ -177,7 +189,7 @@ OPENSEARCH_PORT=9200
 OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
-CORS_ORIGINS=["http://localhost","http://115.90.24.199"]
+CORS_ORIGINS=["https://${MXTAC_HOST}"]
 EOF
 
   chmod 600 "${ENV_FILE}"
@@ -334,7 +346,7 @@ services:
       opensearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=4)"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -504,8 +516,8 @@ if [[ ! -f "${SSL_DIR}/server.crt" ]]; then
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "${SSL_DIR}/server.key" \
     -out    "${SSL_DIR}/server.crt" \
-    -subj "/C=KR/ST=Seoul/L=Seoul/O=MxTac/CN=115.90.24.199" \
-    -addext "subjectAltName=IP:115.90.24.199" \
+    -subj "/O=MxTac/CN=${MXTAC_HOST}" \
+    -addext "subjectAltName=${CERT_SAN}" \
     2>/dev/null
   chmod 600 "${SSL_DIR}/server.key"
   log "Self-signed certificate created. Replace with Let's Encrypt for production."
@@ -574,6 +586,11 @@ docker compose exec -T backend \
   && log "Migrations complete" \
   || warn "Migration failed — check: docker compose logs backend"
 
+# The backend creates the default accounts at startup, which needs the schema.
+log "Restarting backend so that it starts on the migrated database..."
+docker compose restart backend
+wait_healthy "backend" 60
+
 # =============================================================================
 # STEP 10 — Health verification
 # =============================================================================
@@ -600,7 +617,7 @@ check_url "Backend /health"      "http://localhost:8080/health"
 check_url "OpenSearch cluster"   "http://localhost:9200/_cluster/health"
 check_url "Nginx HTTP"           "http://localhost:80/"
 check_url "Nginx HTTPS"          "https://localhost:443/" --insecure 2>/dev/null || \
-  check_url "Nginx HTTPS"        "https://115.90.24.199/" --insecure 2>/dev/null
+  check_url "Nginx HTTPS"        "https://${MXTAC_HOST}/" --insecure 2>/dev/null
 
 # Port binding check — internal services must NOT be on 0.0.0.0
 echo ""
@@ -624,9 +641,9 @@ echo -e "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━�
 echo -e "${BOLD}${GREEN}  MxTac deployed successfully!${NC}"
 echo -e "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "  ${BOLD}Dashboard:${NC}  https://115.90.24.199/"
-echo -e "  ${BOLD}API docs:${NC}   https://115.90.24.199/api/docs"
-echo -e "  ${BOLD}Health:${NC}     https://115.90.24.199/api/health"
+echo -e "  ${BOLD}Dashboard:${NC}  https://${MXTAC_HOST}/"
+echo -e "  ${BOLD}Health:${NC}     curl http://localhost:8080/health   (on this server)"
+echo -e "  ${BOLD}API docs:${NC}   http://localhost:8080/docs          (on this server; not proxied by Nginx)"
 echo ""
 echo -e "  ${BOLD}Secrets:${NC}    ${ENV_FILE}"
 echo -e "  ${BOLD}Logs:${NC}       docker compose -f ${COMPOSE_FILE} logs -f"

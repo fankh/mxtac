@@ -53,9 +53,9 @@ describe('KeyboardShortcutsModal', () => {
 
   // ── Navigation shortcuts ─────────────────────────────────────────────────────
 
-  it('shows "Go to Dashboard" shortcut', () => {
+  it('shows "Go to Overview" shortcut', () => {
     renderModal()
-    expect(screen.getByText('Go to Dashboard')).toBeInTheDocument()
+    expect(screen.getByText('Go to Overview')).toBeInTheDocument()
   })
 
   it('shows "Go to Detections" shortcut', () => {
@@ -68,9 +68,9 @@ describe('KeyboardShortcutsModal', () => {
     expect(screen.getByText('Go to Rules')).toBeInTheDocument()
   })
 
-  it('shows "Go to Connectors" shortcut', () => {
+  it('shows "Go to Sources" shortcut', () => {
     renderModal()
-    expect(screen.getByText('Go to Connectors')).toBeInTheDocument()
+    expect(screen.getByText('Go to Sources')).toBeInTheDocument()
   })
 
   it('shows "Go to Incidents" shortcut', () => {

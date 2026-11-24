@@ -1,68 +1,77 @@
-# MxTac App
+# MxTac application
 
-MITRE ATT&CK security operations platform — FastAPI backend + React/TypeScript frontend.
+This directory contains the application and its deployment files. For an introduction and the quick start, see the [repository README](../README.md).
 
-## Quick Start
+## Contents
 
-### Option A: Docker Compose (recommended)
+| Path | Content |
+|------|---------|
+| `backend/` | FastAPI backend (Python 3.12) |
+| `frontend/` | React frontend (TypeScript, Vite, Tailwind CSS) |
+| `docker-compose.yml` | Development and evaluation stack |
+| `docker-compose.prod.yml` | Production-style single-host stack. Incomplete, see [docs/deployment.md](../docs/deployment.md#known-gaps) |
+| `docker-stack.yml`, `.env.swarm.example` | Docker Swarm stack |
+| `setup.sh`, `update.sh`, `enable-https.sh` | Install, update and TLS scripts for one Ubuntu server |
+| `nginx/` | Nginx configurations for `docker-compose.prod.yml` and the Swarm stack |
+| `deploy/` | Swarm, k3s, systemd, HAProxy and monitoring files |
+
+## Run
+
 ```bash
-docker-compose up
-```
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:8080
-- API docs: http://localhost:8080/docs
-
-### Option B: Manual
-
-**Backend**
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8080
+docker compose up -d --build
 ```
 
-**Frontend**
-```bash
-cd frontend
-npm install
-npm run dev
+| Service | URL |
+|---------|-----|
+| Web UI | <http://localhost:15001> |
+| Backend API | <http://localhost:15000> |
+| Swagger UI | <http://localhost:15000/docs> |
+
+Sign-in accounts are described under [First login](../README.md#first-login).
+
+## Backend layout
+
+```
+backend/
+  app/
+    api/v1/endpoints/   route handlers
+    core/               settings, security, RBAC, rate limiting
+    connectors/         Wazuh, Zeek, Suricata, syslog
+    engine/             Sigma engine
+    services/           pipeline services and normalizers
+    pipeline/           queue abstraction
+    repositories/       database queries
+    models/             SQLAlchemy models
+    schemas/            Pydantic schemas
+    db/                 seed and SQLite migration helper
+  alembic/              database migrations
+  sigma_rules/          rules loaded at startup
+  tests/                pytest tests
 ```
 
-## Structure
+## Frontend layout
+
 ```
-app/
-├── backend/
-│   ├── app/
-│   │   ├── api/v1/endpoints/   # auth, overview, detections
-│   │   ├── core/               # config, security (JWT)
-│   │   ├── schemas/            # Pydantic models
-│   │   └── services/           # mock_data
-│   └── requirements.txt
-├── frontend/
-│   └── src/
-│       ├── components/
-│       │   ├── layout/         # Sidebar, TopBar
-│       │   ├── shared/         # SeverityBadge, StatusPill
-│       │   └── features/
-│       │       ├── overview/   # KpiCards, Timeline, Heatmap, ...
-│       │       └── detections/ # DetectionsPage, DetectionPanel
-│       ├── lib/api.ts          # API client (axios)
-│       └── types/api.ts        # TypeScript interfaces
-└── docker-compose.yml
+frontend/
+  src/
+    components/
+      features/         one directory per page
+      layout/           sidebar, top bar, page frame
+      shared/           badges, route guard, error boundary
+      ui/               base components
+    hooks/              WebSocket stream, keyboard shortcuts
+    lib/                API client and helpers
+    stores/             Zustand stores
+    types/              API types
+    index.css           design tokens
 ```
 
-## API Endpoints
+## More documentation
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/v1/auth/login` | Login (analyst@mxtac.local / mxtac2026) |
-| GET | `/api/v1/overview/kpis` | Dashboard KPI metrics |
-| GET | `/api/v1/overview/timeline` | 7-day detection timeline |
-| GET | `/api/v1/overview/tactics` | Top ATT&CK tactics |
-| GET | `/api/v1/overview/coverage/heatmap` | Coverage heatmap |
-| GET | `/api/v1/overview/integrations` | Integration status |
-| GET | `/api/v1/detections` | Paginated detections (filter + sort) |
-| GET | `/api/v1/detections/{id}` | Detection detail |
-| PATCH | `/api/v1/detections/{id}` | Update status/assignment |
+| Topic | Document |
+|-------|----------|
+| API routes | [docs/api.md](../docs/api.md) |
+| Architecture | [docs/architecture.md](../docs/architecture.md) |
+| Development | [docs/development.md](../docs/development.md) |
+| Deployment | [docs/deployment.md](../docs/deployment.md) |
+| Settings | [ENV-REFERENCE.md](../ENV-REFERENCE.md) |

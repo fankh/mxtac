@@ -19,7 +19,9 @@ services:
       - CORS_ORIGINS=["http://localhost:15001","http://localhost:3000"]
     volumes:
       - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+    # Apply database migrations, then start the API. The first start also
+    # creates the default accounts (see README, "First login").
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,7 +30,7 @@ services:
       opensearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ready', timeout=4)"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -43,8 +45,6 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    environment:
-      - VITE_API_BASE_URL=http://localhost:15000
     depends_on:
       - backend
     command: npm run dev -- --host 0.0.0.0

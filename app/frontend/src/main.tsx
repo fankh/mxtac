@@ -9,7 +9,8 @@ import './index.css'
 try {
   const stored = JSON.parse(localStorage.getItem('mxtac-ui') || '{}')
   const savedTheme = stored?.state?.theme
-  const theme = savedTheme || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+  const preferred = savedTheme || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+  const theme = preferred === 'light' ? 'light' : 'dark'
   document.documentElement.setAttribute('data-theme', theme)
   document.documentElement.classList.toggle('dark', theme !== 'light')
 } catch {

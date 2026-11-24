@@ -54,7 +54,7 @@ const DEFAULT_FILTERS: DetectionFilters = {
   pageSize: 20,
 }
 
-export const useDetectionStore = create<DetectionState>()((set, get) => ({
+export const useDetectionStore = create<DetectionState>()((set) => ({
   filters: { ...DEFAULT_FILTERS },
   selected: null,
   liveAlerts: [],

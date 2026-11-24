@@ -85,8 +85,13 @@ export const useUIStore = create<UIState>()(
     {
       name: 'mxtac-ui',
       partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed, theme: s.theme }),
+      // A theme stored by an older version (for example 'matrix') falls back to dark
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<UIState>
+        return { ...current, ...saved, theme: saved.theme === 'light' ? 'light' : saved.theme ? 'dark' : current.theme }
+      },
       onRehydrateStorage: () => (state) => {
-        if (state?.theme) applyTheme(state.theme === 'light' ? 'light' : 'dark')
+        if (state?.theme) applyTheme(state.theme)
       },
     },
   ),

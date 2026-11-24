@@ -1,398 +1,339 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 
-// vi.mock is hoisted — runs before imports
+// vi.mock is hoisted before imports
 vi.mock('../../stores/authStore', () => ({
   useAuthStore: vi.fn(),
 }))
 
-vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
-  return {
-    ...actual,
-    useNavigate: vi.fn(),
-  }
-})
+vi.mock('react-router-dom', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router-dom')>()),
+  useNavigate: vi.fn(),
+}))
 
 import { LoginPage } from '../../components/features/auth/LoginPage'
 import { useAuthStore } from '../../stores/authStore'
 import { useNavigate } from 'react-router-dom'
+import { KYRA_MDR_URL, MXTAC_REPO_URL } from '../../lib/links'
 
 const mockUseAuthStore = useAuthStore as unknown as ReturnType<typeof vi.fn>
-const mockUseNavigate  = useNavigate  as unknown as ReturnType<typeof vi.fn>
+const mockUseNavigate = useNavigate as unknown as ReturnType<typeof vi.fn>
 
 function makeStore(overrides: Record<string, unknown> = {}) {
   return {
     login: vi.fn(),
     submitMfa: vi.fn(),
     cancelMfa: vi.fn(),
+    submitNewPassword: vi.fn(),
+    cancelPasswordChange: vi.fn(),
     isLoading: false,
     error: null,
     isAuthenticated: false,
     mfaPending: false,
+    passwordChangePending: false,
     clearError: vi.fn(),
     ...overrides,
   }
 }
 
-function renderLoginPage() {
-  return render(
+function renderLoginPage(overrides: Record<string, unknown> = {}) {
+  const store = makeStore(overrides)
+  mockUseAuthStore.mockReturnValue(store)
+  render(
     <MemoryRouter>
       <LoginPage />
     </MemoryRouter>,
   )
+  return store
 }
 
+const type = (label: string, value: string) =>
+  fireEvent.change(screen.getByLabelText(label), { target: { value } })
+
 describe('LoginPage', () => {
-  let mockNavigate: ReturnType<typeof vi.fn>
+  let navigate: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    mockNavigate = vi.fn()
-    mockUseNavigate.mockReturnValue(mockNavigate)
-    mockUseAuthStore.mockReturnValue(makeStore())
+    navigate = vi.fn()
+    mockUseNavigate.mockReturnValue(navigate)
   })
 
-  // ---------------------------------------------------------------------------
-  // Branding
-  // ---------------------------------------------------------------------------
-  describe('Branding', () => {
-    it('renders the "M" logo mark', () => {
-      renderLoginPage()
-      expect(screen.getByText('M')).toBeInTheDocument()
-    })
-
-    it('renders the MxTac product name', () => {
+  describe('sign-in form', () => {
+    it('shows the product name, heading and tagline', () => {
       renderLoginPage()
       expect(screen.getByText('MxTac')).toBeInTheDocument()
-    })
-
-    it('renders the "Sign in" heading', () => {
-      renderLoginPage()
       expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+      expect(screen.getByText('Open-source ATT&CK detection platform')).toBeInTheDocument()
     })
 
-    it('renders the platform subtitle', () => {
+    it('has required email and password fields that password managers can fill', () => {
       renderLoginPage()
-      expect(screen.getByText('MITRE ATT&CK Security Platform')).toBeInTheDocument()
-    })
-  })
-
-  // ---------------------------------------------------------------------------
-  // Form fields
-  // ---------------------------------------------------------------------------
-  describe('Form fields', () => {
-    it('renders an email input', () => {
-      renderLoginPage()
-      expect(screen.getByLabelText('Email')).toBeInTheDocument()
+      const email = screen.getByLabelText('Email')
+      expect(email).toHaveAttribute('type', 'email')
+      expect(email).toHaveAttribute('autocomplete', 'email')
+      expect(email).toBeRequired()
+      const password = screen.getByLabelText('Password')
+      expect(password).toHaveAttribute('type', 'password')
+      expect(password).toHaveAttribute('autocomplete', 'current-password')
+      expect(password).toBeRequired()
     })
 
-    it('email input has type="email"', () => {
-      renderLoginPage()
-      expect(screen.getByLabelText('Email')).toHaveAttribute('type', 'email')
+    it('submits the typed email and password', () => {
+      const store = renderLoginPage()
+      type('Email', 'analyst@mxtac.local')
+      type('Password', 'Analyst-Passw0rd')
+      fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+      expect(store.login).toHaveBeenCalledTimes(1)
+      expect(store.login).toHaveBeenCalledWith('analyst@mxtac.local', 'Analyst-Passw0rd')
     })
 
-    it('email input has autocomplete="email"', () => {
-      renderLoginPage()
-      expect(screen.getByLabelText('Email')).toHaveAttribute('autocomplete', 'email')
-    })
-
-    it('renders a password input', () => {
-      renderLoginPage()
-      expect(screen.getByLabelText('Password')).toBeInTheDocument()
-    })
-
-    it('password input has type="password"', () => {
-      renderLoginPage()
-      expect(screen.getByLabelText('Password')).toHaveAttribute('type', 'password')
-    })
-
-    it('password input has autocomplete="current-password"', () => {
-      renderLoginPage()
-      expect(screen.getByLabelText('Password')).toHaveAttribute('autocomplete', 'current-password')
-    })
-
-    it('renders a submit button labelled "Sign in"', () => {
-      renderLoginPage()
-      expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
-    })
-  })
-
-  // ---------------------------------------------------------------------------
-  // Loading state
-  // ---------------------------------------------------------------------------
-  describe('Loading state', () => {
-    it('shows "Signing in…" text on the button while isLoading is true', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ isLoading: true }))
-      renderLoginPage()
-      expect(screen.getByRole('button', { name: 'Signing in…' })).toBeInTheDocument()
-    })
-
-    it('disables the submit button while isLoading is true', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ isLoading: true }))
-      renderLoginPage()
+    it('disables the submit button and shows progress while signing in', () => {
+      renderLoginPage({ isLoading: true })
       expect(screen.getByRole('button', { name: 'Signing in…' })).toBeDisabled()
     })
 
-    it('enables the submit button when isLoading is false', () => {
-      renderLoginPage()
-      expect(screen.getByRole('button', { name: 'Sign in' })).not.toBeDisabled()
-    })
-  })
-
-  // ---------------------------------------------------------------------------
-  // Error display
-  // ---------------------------------------------------------------------------
-  describe('Error display', () => {
-    it('shows an error message when error is set in the store', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ error: 'Invalid credentials' }))
-      renderLoginPage()
-      expect(screen.getByRole('alert')).toBeInTheDocument()
+    it('shows the error as an alert', () => {
+      renderLoginPage({ error: 'Invalid credentials' })
       expect(screen.getByRole('alert')).toHaveTextContent('Invalid credentials')
     })
 
-    it('does not render an error alert when error is null', () => {
+    it('shows no alert when there is no error', () => {
       renderLoginPage()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })
 
-    it('calls clearError when the email field changes while an error is displayed', () => {
-      const clearError = vi.fn()
-      mockUseAuthStore.mockReturnValue(makeStore({ error: 'Bad creds', clearError }))
-      renderLoginPage()
-      fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'a@b.com' } })
-      expect(clearError).toHaveBeenCalled()
+    it.each(['Email', 'Password'])('clears the error when the %s field is edited', (label) => {
+      const store = renderLoginPage({ error: 'Invalid credentials' })
+      type(label, 'x')
+      expect(store.clearError).toHaveBeenCalledTimes(1)
     })
 
-    it('calls clearError when the password field changes while an error is displayed', () => {
-      const clearError = vi.fn()
-      mockUseAuthStore.mockReturnValue(makeStore({ error: 'Bad creds', clearError }))
-      renderLoginPage()
-      fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'newpass' } })
-      expect(clearError).toHaveBeenCalled()
-    })
-
-    it('does not call clearError on field change when error is null', () => {
-      const clearError = vi.fn()
-      mockUseAuthStore.mockReturnValue(makeStore({ error: null, clearError }))
-      renderLoginPage()
-      fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'x@y.com' } })
-      expect(clearError).not.toHaveBeenCalled()
+    it('does not call clearError while there is no error', () => {
+      const store = renderLoginPage()
+      type('Email', 'x')
+      expect(store.clearError).not.toHaveBeenCalled()
     })
   })
 
-  // ---------------------------------------------------------------------------
-  // Form submission
-  // ---------------------------------------------------------------------------
-  describe('Form submission', () => {
-    it('calls login with email and password on form submit', async () => {
-      const login = vi.fn().mockResolvedValue(undefined)
-      mockUseAuthStore.mockReturnValue(makeStore({ login }))
-      renderLoginPage()
-
-      fireEvent.change(screen.getByLabelText('Email'),    { target: { value: 'admin@example.com' } })
-      fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
-
-      await waitFor(() => {
-        expect(login).toHaveBeenCalledWith('admin@example.com', 'secret')
-      })
+  describe('redirect', () => {
+    it('goes to the overview when already authenticated', () => {
+      renderLoginPage({ isAuthenticated: true })
+      expect(navigate).toHaveBeenCalledWith('/', { replace: true })
     })
 
-    it('calls login exactly once per submission', async () => {
-      const login = vi.fn().mockResolvedValue(undefined)
-      mockUseAuthStore.mockReturnValue(makeStore({ login }))
+    it('stays on the page when not authenticated', () => {
       renderLoginPage()
-
-      fireEvent.change(screen.getByLabelText('Email'),    { target: { value: 'u@e.com' } })
-      fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pass' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
-
-      await waitFor(() => expect(login).toHaveBeenCalledTimes(1))
+      expect(navigate).not.toHaveBeenCalled()
     })
   })
 
-  // ---------------------------------------------------------------------------
-  // Redirect on authentication
-  // ---------------------------------------------------------------------------
-  describe('Redirect on authentication', () => {
-    it('redirects to "/" when isAuthenticated becomes true', async () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ isAuthenticated: true }))
-      renderLoginPage()
-
-      await waitFor(() => {
-        expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true })
-      })
-    })
-
-    it('does not navigate when isAuthenticated is false', () => {
-      renderLoginPage()
-      expect(mockNavigate).not.toHaveBeenCalled()
-    })
-  })
-
-  // ---------------------------------------------------------------------------
-  // MFA step — rendering
-  // ---------------------------------------------------------------------------
-  describe('MFA step rendering', () => {
-    it('renders the MFA heading when mfaPending is true', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
-      renderLoginPage()
+  describe('two-factor step', () => {
+    it('replaces the sign-in form with the code prompt', () => {
+      renderLoginPage({ mfaPending: true })
       expect(screen.getByRole('heading', { name: 'Two-factor authentication' })).toBeInTheDocument()
-    })
-
-    it('does not render the password form when mfaPending is true', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
-      renderLoginPage()
+      expect(screen.getByText('Enter the 6-digit code from your authenticator app.')).toBeInTheDocument()
+      expect(screen.getByLabelText('Authentication code')).toHaveAttribute('autocomplete', 'one-time-code')
+      expect(screen.queryByLabelText('Email')).not.toBeInTheDocument()
       expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
     })
 
-    it('renders the authentication code input when mfaPending is true', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
-      renderLoginPage()
-      expect(screen.getByLabelText('Authentication code')).toBeInTheDocument()
+    it('submits as soon as six digits are typed', () => {
+      const store = renderLoginPage({ mfaPending: true })
+      type('Authentication code', '12345')
+      expect(store.submitMfa).not.toHaveBeenCalled()
+      type('Authentication code', '123456')
+      expect(store.submitMfa).toHaveBeenCalledTimes(1)
+      expect(store.submitMfa).toHaveBeenCalledWith('123456')
     })
 
-    it('renders the Verify submit button when mfaPending is true', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
-      renderLoginPage()
-      expect(screen.getByRole('button', { name: 'Verify' })).toBeInTheDocument()
-    })
-
-    it('renders the "Use a backup code" link when mfaPending is true', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
-      renderLoginPage()
-      expect(screen.getByText('Use a backup code')).toBeInTheDocument()
-    })
-
-    it('renders the "Back to sign in" link when mfaPending is true', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
-      renderLoginPage()
-      expect(screen.getByText('Back to sign in')).toBeInTheDocument()
-    })
-
-    it('renders the password form (not MFA) when mfaPending is false', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: false }))
-      renderLoginPage()
-      expect(screen.getByLabelText('Password')).toBeInTheDocument()
-      expect(screen.queryByRole('heading', { name: 'Two-factor authentication' })).not.toBeInTheDocument()
-    })
-  })
-
-  // ---------------------------------------------------------------------------
-  // MFA step — submission
-  // ---------------------------------------------------------------------------
-  describe('MFA step submission', () => {
-    it('calls submitMfa with the entered code', async () => {
-      const submitMfa = vi.fn().mockResolvedValue(undefined)
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, submitMfa }))
-      renderLoginPage()
-
-      fireEvent.change(screen.getByLabelText('Authentication code'), { target: { value: '123456' } })
+    it('submits the code with the Verify button', () => {
+      const store = renderLoginPage({ mfaPending: true })
+      type('Authentication code', '1234')
       fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
-
-      await waitFor(() => {
-        expect(submitMfa).toHaveBeenCalledWith('123456')
-      })
+      expect(store.submitMfa).toHaveBeenCalledWith('1234')
     })
 
-    it('shows "Verifying…" on the button while isLoading is true during MFA', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, isLoading: true }))
-      renderLoginPage()
-      expect(screen.getByRole('button', { name: 'Verifying…' })).toBeInTheDocument()
-    })
-
-    it('disables the Verify button while isLoading is true', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, isLoading: true }))
-      renderLoginPage()
+    it('disables the Verify button and shows progress while verifying', () => {
+      renderLoginPage({ mfaPending: true, isLoading: true })
       expect(screen.getByRole('button', { name: 'Verifying…' })).toBeDisabled()
     })
+
+    it('shows the error as an alert and clears it when the code is edited', () => {
+      const store = renderLoginPage({ mfaPending: true, error: 'Invalid code' })
+      expect(screen.getByRole('alert')).toHaveTextContent('Invalid code')
+      type('Authentication code', '1')
+      expect(store.clearError).toHaveBeenCalledTimes(1)
+    })
+
+    it('switches to a backup code, which is submitted only with the button', () => {
+      const store = renderLoginPage({ mfaPending: true })
+      type('Authentication code', '123')
+      fireEvent.click(screen.getByRole('button', { name: 'Use a backup code' }))
+
+      const input = screen.getByLabelText('Backup code')
+      expect(input).toHaveValue('')
+      expect(input).toHaveAttribute('maxlength', '8')
+      expect(screen.getByText('Enter one of your backup codes.')).toBeInTheDocument()
+
+      type('Backup code', 'ABCDEF')
+      expect(store.submitMfa).not.toHaveBeenCalled()
+      type('Backup code', 'ABCDEFGH')
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+      expect(store.submitMfa).toHaveBeenCalledTimes(1)
+      expect(store.submitMfa).toHaveBeenCalledWith('ABCDEFGH')
+    })
+
+    it('switches back from a backup code to the authenticator app', () => {
+      renderLoginPage({ mfaPending: true })
+      fireEvent.click(screen.getByRole('button', { name: 'Use a backup code' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Use authenticator app instead' }))
+      expect(screen.getByLabelText('Authentication code')).toHaveAttribute('maxlength', '6')
+    })
+
+    it('cancels the two-factor step with "Back to sign in"', () => {
+      const store = renderLoginPage({ mfaPending: true })
+      fireEvent.click(screen.getByRole('button', { name: 'Back to sign in' }))
+      expect(store.cancelMfa).toHaveBeenCalledTimes(1)
+    })
   })
 
-  // ---------------------------------------------------------------------------
-  // MFA step — backup code toggle
-  // ---------------------------------------------------------------------------
-  describe('MFA backup code toggle', () => {
-    it('switches label to "Backup code" when "Use a backup code" is clicked', () => {
+  describe('set a new password step', () => {
+    const NEW = 'Brand-New-Passw0rd'
+
+    function fill(newPassword: string, confirm = newPassword) {
+      type('New password', newPassword)
+      type('Confirm new password', confirm)
+    }
+    const submit = () => fireEvent.click(screen.getByRole('button', { name: 'Set password and sign in' }))
+
+    it('replaces the sign-in form when the login asks for a password change', () => {
+      renderLoginPage({ passwordChangePending: true })
+      expect(screen.getByRole('heading', { name: 'Set a new password' })).toBeInTheDocument()
+      expect(screen.queryByLabelText('Email')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+      for (const label of ['New password', 'Confirm new password']) {
+        const input = screen.getByLabelText(label)
+        expect(input).toHaveAttribute('type', 'password')
+        expect(input).toHaveAttribute('autocomplete', 'new-password')
+      }
+    })
+
+    it('states the password policy in one line', () => {
+      renderLoginPage({ passwordChangePending: true })
+      expect(screen.getByText('At least 8 characters with 3 of: uppercase, lowercase, digits, symbols.')).toBeInTheDocument()
+    })
+
+    it('takes priority over the two-factor step', () => {
+      renderLoginPage({ passwordChangePending: true, mfaPending: true })
+      expect(screen.getByRole('heading', { name: 'Set a new password' })).toBeInTheDocument()
+      expect(screen.queryByLabelText('Authentication code')).not.toBeInTheDocument()
+    })
+
+    it('submits the new password', () => {
+      const store = renderLoginPage({ passwordChangePending: true })
+      fill(NEW)
+      submit()
+      expect(store.submitNewPassword).toHaveBeenCalledTimes(1)
+      expect(store.submitNewPassword).toHaveBeenCalledWith(NEW)
+    })
+
+    it('does not send when the two passwords differ', () => {
+      const store = renderLoginPage({ passwordChangePending: true })
+      fill(NEW, 'Another-Passw0rd')
+      submit()
+      expect(screen.getByRole('alert')).toHaveTextContent('The passwords do not match')
+      expect(store.submitNewPassword).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['Ab1!', 'at least 8 characters'],
+      ['alllowercase', 'Use at least 3 of'],
+      ['Abcd1111efgh', 'more than 3 times in a row'],
+    ])('does not send "%s", which breaks the policy', (weak, message) => {
+      const store = renderLoginPage({ passwordChangePending: true })
+      fill(weak)
+      submit()
+      expect(screen.getByRole('alert')).toHaveTextContent(message)
+      expect(store.submitNewPassword).not.toHaveBeenCalled()
+    })
+
+    it('clears the browser-side problem when a field is edited', () => {
+      renderLoginPage({ passwordChangePending: true })
+      fill('short')
+      submit()
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+      type('New password', NEW)
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('shows the validation error of the server and clears it when a field is edited', () => {
+      const store = renderLoginPage({ passwordChangePending: true, error: 'Cannot reuse one of your last 2 passwords' })
+      expect(screen.getByRole('alert')).toHaveTextContent('Cannot reuse one of your last 2 passwords')
+      type('New password', 'x')
+      expect(store.clearError).toHaveBeenCalledTimes(1)
+    })
+
+    it('disables the button and shows progress while saving', () => {
+      renderLoginPage({ passwordChangePending: true, isLoading: true })
+      expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled()
+    })
+
+    it('cancels with "Back to sign in"', () => {
+      const store = renderLoginPage({ passwordChangePending: true })
+      fireEvent.click(screen.getByRole('button', { name: 'Back to sign in' }))
+      expect(store.cancelPasswordChange).toHaveBeenCalledTimes(1)
+      expect(store.submitNewPassword).not.toHaveBeenCalled()
+    })
+
+    it('continues with the two-factor step when the server asks for it afterwards', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ passwordChangePending: true }))
+      const view = render(<MemoryRouter><LoginPage /></MemoryRouter>)
+      fill(NEW)
+
       mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
-      renderLoginPage()
+      view.rerender(<MemoryRouter><LoginPage /></MemoryRouter>)
 
-      fireEvent.click(screen.getByText('Use a backup code'))
-      expect(screen.getByLabelText('Backup code')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Two-factor authentication' })).toBeInTheDocument()
+      expect(screen.queryByLabelText('New password')).not.toBeInTheDocument()
     })
 
-    it('shows "Use authenticator app instead" after switching to backup mode', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
-      renderLoginPage()
+    it('forgets the typed passwords when the step ends', () => {
+      mockUseAuthStore.mockReturnValue(makeStore({ passwordChangePending: true }))
+      const view = render(<MemoryRouter><LoginPage /></MemoryRouter>)
+      fill(NEW)
 
-      fireEvent.click(screen.getByText('Use a backup code'))
-      expect(screen.getByText('Use authenticator app instead')).toBeInTheDocument()
+      mockUseAuthStore.mockReturnValue(makeStore())
+      view.rerender(<MemoryRouter><LoginPage /></MemoryRouter>)
+      expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+
+      mockUseAuthStore.mockReturnValue(makeStore({ passwordChangePending: true }))
+      view.rerender(<MemoryRouter><LoginPage /></MemoryRouter>)
+      expect(screen.getByLabelText('New password')).toHaveValue('')
+      expect(screen.getByLabelText('Confirm new password')).toHaveValue('')
     })
-  })
 
-  // ---------------------------------------------------------------------------
-  // MFA step — cancel / back to sign in
-  // ---------------------------------------------------------------------------
-  describe('MFA step — cancel', () => {
-    it('calls cancelMfa when "Back to sign in" is clicked', () => {
-      const cancelMfa = vi.fn()
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, cancelMfa }))
-      renderLoginPage()
-
-      fireEvent.click(screen.getByText('Back to sign in'))
-      expect(cancelMfa).toHaveBeenCalled()
+    it('goes to the overview once the new password signed the user in', () => {
+      renderLoginPage({ isAuthenticated: true })
+      expect(navigate).toHaveBeenCalledWith('/', { replace: true })
     })
   })
 
-  // ---------------------------------------------------------------------------
-  // MFA step — auto-focus
-  // ---------------------------------------------------------------------------
-  describe('MFA step — auto-focus', () => {
-    it('the MFA code input receives focus when rendered', () => {
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true }))
+  describe('footer links', () => {
+    it.each([
+      ['Source on GitHub', MXTAC_REPO_URL],
+      ['Managed 24/7 monitoring: KYRA MDR', KYRA_MDR_URL],
+    ])('"%s" opens in a new tab without leaking the opener', (name, href) => {
       renderLoginPage()
-      // React's autoFocus calls element.focus() — jsdom tracks this as document.activeElement
-      expect(screen.getByLabelText('Authentication code')).toHaveFocus()
-    })
-  })
-
-  // ---------------------------------------------------------------------------
-  // MFA step — auto-advance (auto-submit on full TOTP code)
-  // ---------------------------------------------------------------------------
-  describe('MFA step — auto-advance', () => {
-    it('calls submitMfa automatically when 6 digits are typed in TOTP mode', async () => {
-      const submitMfa = vi.fn().mockResolvedValue(undefined)
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, submitMfa }))
-      renderLoginPage()
-
-      fireEvent.change(screen.getByLabelText('Authentication code'), { target: { value: '123456' } })
-
-      await waitFor(() => {
-        expect(submitMfa).toHaveBeenCalledWith('123456')
-      })
+      const link = screen.getByRole('link', { name })
+      expect(link).toHaveAttribute('href', href)
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(link.getAttribute('rel')).toContain('noopener')
     })
 
-    it('does not auto-submit in backup code mode (requires explicit submit)', async () => {
-      const submitMfa = vi.fn().mockResolvedValue(undefined)
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, submitMfa }))
-      renderLoginPage()
-
-      // Switch to backup code mode first
-      fireEvent.click(screen.getByText('Use a backup code'))
-      // Type an 8-char backup code — should NOT auto-submit
-      fireEvent.change(screen.getByLabelText('Backup code'), { target: { value: 'AB12CD34' } })
-
-      expect(submitMfa).not.toHaveBeenCalled()
-    })
-
-    it('does not auto-submit when fewer than 6 digits are entered', async () => {
-      const submitMfa = vi.fn()
-      mockUseAuthStore.mockReturnValue(makeStore({ mfaPending: true, submitMfa }))
-      renderLoginPage()
-
-      fireEvent.change(screen.getByLabelText('Authentication code'), { target: { value: '12345' } })
-
-      expect(submitMfa).not.toHaveBeenCalled()
+    it('stay visible during the two-factor step', () => {
+      renderLoginPage({ mfaPending: true })
+      expect(screen.getByRole('link', { name: /KYRA MDR/ })).toHaveAttribute('href', KYRA_MDR_URL)
     })
   })
 })

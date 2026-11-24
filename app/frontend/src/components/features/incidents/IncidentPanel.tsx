@@ -1,539 +1,331 @@
-import { useState, useRef, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { Incident, IncidentStatus, Detection } from '../../../types/api'
-import { incidentsApi } from '../../../lib/api'
-import { SeverityPill } from '../../shared/SeverityBadge'
+import { useState, type FormEvent, type ReactNode } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ShieldAlert } from 'lucide-react'
+import type { Detection, Incident, IncidentUpdate } from '@/types/api'
+import { incidentsApi } from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
+import { useUIStore } from '@/stores/uiStore'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ScoreCircle, SeverityPill } from '@/components/shared/SeverityBadge'
+import { StatusPill } from '@/components/shared/StatusPill'
+import { ErrorCard } from '../detections/ListControls'
+import { OptionSelect } from '../detections/OptionSelect'
+import {
+  SEVERITY_LABELS,
+  SEVERITY_OPTIONS,
+  apiErrorMessage,
+  canWrite,
+  formatDateTime,
+} from '../detections/utils'
+import { IncidentStatusPill } from './IncidentStatusPill'
+import { IncidentTimeline } from './IncidentTimeline'
+import {
+  INCIDENT_STATUS_LABELS,
+  formatDuration,
+  isValidEmail,
+  reachableStatuses,
+} from './incidentUtils'
 
-interface Props {
+interface IncidentPanelProps {
+  /** Incident to show; the panel is closed while this is null. */
   incident: Incident | null
   onClose: () => void
-  onDetectionClick?: (d: Detection) => void
 }
 
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
+const SEVERITY_SELECT_OPTIONS = SEVERITY_OPTIONS.map((value) => ({ value, label: SEVERITY_LABELS[value] }))
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[130px_1fr] gap-2 py-[5px] border-b border-border">
-      <span className="text-[10px] font-medium text-muted-foreground uppercase">{label}</span>
-      <span className="text-[11px] text-foreground break-words">{value ?? '—'}</span>
+    <div className="grid grid-cols-[110px_1fr] gap-2 border-b border-border py-1.5 last:border-0">
+      <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
+      <dd className="break-words text-[12px] text-foreground">{children}</dd>
     </div>
   )
 }
 
-const STATUS_COLORS: Record<IncidentStatus, string> = {
-  new:           'bg-primary/10 text-primary',
-  investigating: 'bg-high-bg text-high-text',
-  contained:     'bg-med-bg text-med-text',
-  resolved:      'bg-resolved-bg text-resolved-text',
-  closed:        'bg-muted/50 text-muted-foreground',
-}
-
-const STATUS_LABELS: Record<IncidentStatus, string> = {
-  new:           'New',
-  investigating: 'Investigating',
-  contained:     'Contained',
-  resolved:      'Resolved',
-  closed:        'Closed',
-}
-
-const STATUS_FLOW: IncidentStatus[] = ['new', 'investigating', 'contained', 'resolved', 'closed']
-
-function StatusBadge({ status }: { status: IncidentStatus }) {
+function Chips({ values }: { values: string[] }) {
+  if (values.length === 0) return <span className="text-muted-foreground">—</span>
   return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-medium ${STATUS_COLORS[status]}`}>
-      {STATUS_LABELS[status]}
+    <span className="flex flex-wrap gap-1">
+      {values.map((value) => (
+        <span key={value} className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px]">
+          {value}
+        </span>
+      ))}
     </span>
   )
 }
 
-function fmtDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
-  if (seconds < 86400) return `${(seconds / 3600).toFixed(1)}h`
-  return `${(seconds / 86400).toFixed(1)}d`
+function LinkedDetections({ detections, missing }: { detections: Detection[]; missing: number }) {
+  if (detections.length === 0 && missing === 0) {
+    return (
+      <EmptyState
+        icon={ShieldAlert}
+        title="No linked detections"
+        description="Link detections by creating an incident from the detections list."
+      />
+    )
+  }
+  return (
+    <div className="space-y-2">
+      <ul className="space-y-2">
+        {detections.map((d) => (
+          <li key={d.id} className="flex items-start gap-2.5 rounded-lg border border-border p-2.5">
+            <ScoreCircle score={d.score} severity={d.severity} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12px] font-medium text-foreground">{d.name}</p>
+              <p className="truncate text-[11px] text-muted-foreground">
+                <span className="font-mono">{d.technique_id}</span> · {d.host} · {formatDateTime(d.time)}
+              </p>
+            </div>
+            <StatusPill status={d.status} />
+          </li>
+        ))}
+      </ul>
+      {missing > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          {missing} linked detection{missing === 1 ? ' has' : 's have'} been deleted.
+        </p>
+      )}
+    </div>
+  )
 }
 
-const TIMELINE_DOT: Record<string, string> = {
-  status_change: 'bg-primary',
-  evidence:      'bg-med-text',
-  comment:       'bg-muted-foreground',
-}
-
-type Tab = 'details' | 'timeline' | 'detections'
-
-export function IncidentPanel({ incident, onClose, onDetectionClick }: Props) {
-  const [tab, setTab] = useState<Tab>('details')
-  const [statusPickerOpen, setStatusPickerOpen] = useState(false)
-  const [pendingStatus, setPendingStatus] = useState<IncidentStatus | null>(null)
-  const [expandedDetId, setExpandedDetId] = useState<string | null>(null)
-  const [noteContent, setNoteContent] = useState('')
-  const statusPickerRef = useRef<HTMLDivElement>(null)
+function PanelBody({ incident }: { incident: Incident }) {
   const queryClient = useQueryClient()
-
-  // Close status picker when clicking outside
-  useEffect(() => {
-    if (!statusPickerOpen) return
-    function handleOutsideClick(e: MouseEvent) {
-      if (statusPickerRef.current && !statusPickerRef.current.contains(e.target as Node)) {
-        setStatusPickerOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleOutsideClick)
-    return () => document.removeEventListener('mousedown', handleOutsideClick)
-  }, [statusPickerOpen])
+  const addNotification = useUIStore((s) => s.addNotification)
+  const writable = canWrite(useAuthStore((s) => s.user?.role))
+  const [tab, setTab] = useState('details')
 
   const detailQuery = useQuery({
-    queryKey: ['incident-detail', incident?.id],
-    queryFn: () => incidentsApi.get(incident!.id),
-    enabled: !!incident,
+    queryKey: ['incident-detail', incident.id],
+    queryFn: () => incidentsApi.get(incident.id),
+  })
+  const detail = detailQuery.data
+  const current: Incident = detail ?? incident
+
+  const [assignee, setAssignee] = useState(incident.assigned_to ?? '')
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ['incidents'] })
+    queryClient.invalidateQueries({ queryKey: ['incident-metrics'] })
+    queryClient.invalidateQueries({ queryKey: ['incident-detail', incident.id] })
+  }
+
+  const updateMutation = useMutation({
+    mutationFn: (body: IncidentUpdate) => incidentsApi.update(incident.id, body),
+    onSuccess: (updated) => {
+      addNotification({ type: 'success', title: `Incident INC-${updated.id} updated` })
+      setAssignee(updated.assigned_to ?? '')
+      invalidate()
+    },
+    onError: (error: unknown) => {
+      addNotification({
+        type: 'error',
+        title: 'Could not update the incident',
+        message: apiErrorMessage(error),
+      })
+    },
   })
 
   const noteMutation = useMutation({
-    mutationFn: (content: string) => incidentsApi.addNote(incident!.id, content),
+    mutationFn: (note: { content: string; noteType: 'comment' | 'evidence' }) =>
+      incidentsApi.addNote(incident.id, note.content, note.noteType),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['incident-detail', incident?.id] })
-      setNoteContent('')
+      queryClient.invalidateQueries({ queryKey: ['incident-detail', incident.id] })
+    },
+    onError: (error: unknown) => {
+      addNotification({ type: 'error', title: 'Could not add the note', message: apiErrorMessage(error) })
     },
   })
 
-  const updateMutation = useMutation({
-    mutationFn: (update: { status?: IncidentStatus; assigned_to?: string | null }) =>
-      incidentsApi.update(incident!.id, update),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['incidents'] })
-      queryClient.invalidateQueries({ queryKey: ['incident-detail', incident?.id] })
-      setPendingStatus(null)
-      setStatusPickerOpen(false)
-    },
-  })
+  const trimmedAssignee = assignee.trim()
+  const assigneeInvalid = trimmedAssignee !== '' && !isValidEmail(trimmedAssignee)
+  const assigneeChanged = trimmedAssignee !== '' && trimmedAssignee !== (current.assigned_to ?? '')
 
-  if (!incident) return null
+  function handleAssign(event: FormEvent) {
+    event.preventDefault()
+    if (assigneeChanged && !assigneeInvalid && !updateMutation.isPending) {
+      updateMutation.mutate({ assigned_to: trimmedAssignee })
+    }
+  }
 
-  const detail = detailQuery.data
-  const currentIdx = STATUS_FLOW.indexOf(incident.status)
-  const nextStatus = currentIdx < STATUS_FLOW.length - 1 ? STATUS_FLOW[currentIdx + 1] : null
-
-  const TABS: { key: Tab; label: string }[] = [
-    { key: 'details',    label: 'Details' },
-    { key: 'timeline',   label: `Timeline${detail ? ` (${detail.notes.length})` : ''}` },
-    { key: 'detections', label: `Detections${detail ? ` (${detail.detections.length})` : ''}` },
-  ]
+  const statusOptions = reachableStatuses(current.status).map((value) => ({
+    value,
+    label: INCIDENT_STATUS_LABELS[value],
+  }))
+  const busy = updateMutation.isPending
 
   return (
     <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 z-30 bg-transparent" onClick={onClose} />
-
-      {/* Panel */}
-      <div className="fixed top-[46px] right-0 bottom-0 w-[480px] bg-card shadow-xl z-40 flex flex-col overflow-hidden border-l border-border">
-
-        {/* Header */}
-        <div className="flex items-start justify-between px-4 py-3 border-b border-border">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] text-muted-foreground font-mono">INC-{incident.id}</span>
-              <SeverityPill severity={incident.severity} />
-              <StatusBadge status={incident.status} />
-            </div>
-            <h2 className="text-[13px] font-semibold text-foreground leading-snug mt-1 pr-2">
-              {incident.title}
-            </h2>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
-              {incident.assigned_to
-                ? <>Assigned: <span className="text-foreground/80">{incident.assigned_to}</span></>
-                : <span className="italic">Unassigned</span>
-              }
-            </p>
-          </div>
-          <button
-            className="text-muted-foreground hover:text-foreground ml-2 text-lg leading-none flex-shrink-0"
-            onClick={onClose}
-            title="Close"
-          >
-            ×
-          </button>
+      <SheetHeader className="space-y-2 border-b border-border p-4 pr-10">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono text-[11px] text-muted-foreground">INC-{current.id}</span>
+          <SeverityPill severity={current.severity} />
+          <IncidentStatusPill status={current.status} />
         </div>
+        <SheetTitle className="text-[13px] leading-snug">{current.title}</SheetTitle>
+        <SheetDescription>
+          Opened by {current.created_by} on {formatDateTime(current.created_at)}
+        </SheetDescription>
+      </SheetHeader>
 
-        {/* Quick action bar */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
-          {nextStatus && (
-            <button
-              onClick={() => updateMutation.mutate({ status: nextStatus })}
-              disabled={updateMutation.isPending}
-              className="h-[26px] px-3 text-[11px] bg-primary text-white rounded-md hover:opacity-90 disabled:opacity-50"
-            >
-              → {STATUS_LABELS[nextStatus]}
-            </button>
-          )}
-
-          {/* Status change dropdown */}
-          <div className="relative" ref={statusPickerRef}>
-            <button
-              onClick={() => {
-                setStatusPickerOpen(v => !v)
-                setPendingStatus(null)
-              }}
-              disabled={updateMutation.isPending}
-              className="h-[26px] px-3 text-[11px] border border-border rounded-md text-foreground/80 hover:bg-background disabled:opacity-50"
-            >
-              Set Status ▾
-            </button>
-            {statusPickerOpen && (
-              <div className="absolute left-0 top-full mt-0.5 bg-card border border-border rounded-md shadow-xl z-50 py-1 min-w-[150px]">
-                {STATUS_FLOW.map(s => (
-                  <button
-                    key={s}
-                    onClick={() => {
-                      setPendingStatus(s)
-                      setStatusPickerOpen(false)
-                    }}
-                    className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-background transition-colors flex items-center gap-2 ${
-                      s === incident.status ? 'opacity-50 cursor-default' : ''
-                    }`}
-                    disabled={s === incident.status}
-                  >
-                    <StatusBadge status={s} />
-                  </button>
-                ))}
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        {writable && (
+          <div className="space-y-3 rounded-lg border border-border p-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <span className="block text-[12px] font-medium">Status</span>
+                <OptionSelect
+                  label="Incident status"
+                  value={current.status}
+                  options={statusOptions}
+                  disabled={busy || statusOptions.length < 2}
+                  onChange={(status) => {
+                    if (status !== current.status) updateMutation.mutate({ status })
+                  }}
+                  className="w-full"
+                />
               </div>
-            )}
-          </div>
-
-          {incident.status === 'closed' && !nextStatus && (
-            <span className="text-[11px] text-muted-foreground">Incident closed</span>
-          )}
-          {detail && detail.duration_seconds > 0 && (
-            <span className="text-[10px] text-muted-foreground ml-auto">
-              Open {fmtDuration(detail.duration_seconds)}
-            </span>
-          )}
-        </div>
-
-        {/* Status change confirmation bar */}
-        {pendingStatus && (
-          <div data-testid="status-confirm-bar" className="flex items-center gap-2 px-4 py-2 bg-primary/5 border-b border-border">
-            <span className="text-[11px] text-foreground flex-1 flex items-center gap-1.5">
-              Change to <StatusBadge status={pendingStatus} />?
-            </span>
-            <button
-              onClick={() => updateMutation.mutate({ status: pendingStatus })}
-              disabled={updateMutation.isPending}
-              className="h-[24px] px-3 text-[11px] bg-primary text-white rounded-md hover:opacity-90 disabled:opacity-50"
-            >
-              {updateMutation.isPending ? 'Saving…' : 'Confirm'}
-            </button>
-            <button
-              onClick={() => setPendingStatus(null)}
-              className="h-[24px] px-2 text-[11px] text-muted-foreground hover:text-foreground/80"
-            >
-              Cancel
-            </button>
+              <div className="space-y-1">
+                <span className="block text-[12px] font-medium">Severity</span>
+                <OptionSelect
+                  label="Incident severity"
+                  value={current.severity}
+                  options={SEVERITY_SELECT_OPTIONS}
+                  disabled={busy}
+                  onChange={(severity) => {
+                    if (severity !== current.severity) updateMutation.mutate({ severity })
+                  }}
+                  className="w-full"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Status only moves forward: new, investigating, contained, resolved, closed.
+            </p>
+            <form onSubmit={handleAssign} className="space-y-1">
+              <Label htmlFor="incident-panel-assignee" className="text-[12px] font-medium">Assignee email</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="incident-panel-assignee"
+                  type="email"
+                  maxLength={254}
+                  value={assignee}
+                  onChange={(e) => setAssignee(e.target.value)}
+                  placeholder="analyst@example.com"
+                  aria-invalid={assigneeInvalid}
+                  className="h-8"
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  className="h-8"
+                  disabled={!assigneeChanged || assigneeInvalid || busy}
+                >
+                  Assign
+                </Button>
+                {current.assigned_to && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-8"
+                    disabled={busy}
+                    onClick={() => updateMutation.mutate({ assigned_to: null })}
+                  >
+                    Unassign
+                  </Button>
+                )}
+              </div>
+              {assigneeInvalid && <p className="text-[11px] text-destructive">Enter a valid email address.</p>}
+            </form>
           </div>
         )}
 
-        {/* Metrics strip */}
-        <div data-testid="metrics-strip" className="grid grid-cols-3 divide-x divide-border border-b border-border">
-          <MetricCell
-            label="Time Open"
-            value={detail ? fmtDuration(detail.duration_seconds) : '—'}
-          />
-          <MetricCell
-            label="TTD"
-            value={incident.ttd_seconds != null ? fmtDuration(incident.ttd_seconds) : '—'}
-          />
-          <MetricCell
-            label="TTR"
-            value={incident.ttr_seconds != null ? fmtDuration(incident.ttr_seconds) : 'Open'}
-          />
-        </div>
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="timeline">Timeline{detail ? ` (${detail.notes.length})` : ''}</TabsTrigger>
+            <TabsTrigger value="detections">
+              Detections ({detail ? detail.detections.length : current.detection_ids.length})
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Tabs */}
-        <div className="flex border-b border-border">
-          {TABS.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`px-4 py-2 text-[11px] font-medium border-b-2 transition-colors ${
-                tab === key
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground/80'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+          <TabsContent value="details" className="space-y-3">
+            {current.description && (
+              <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-foreground">{current.description}</p>
+            )}
+            <dl>
+              <Row label="Assigned to">
+                {current.assigned_to || <span className="text-muted-foreground">Unassigned</span>}
+              </Row>
+              <Row label="Priority">P{current.priority}</Row>
+              <Row label="Hosts"><Chips values={current.hosts} /></Row>
+              <Row label="Techniques"><Chips values={current.technique_ids} /></Row>
+              <Row label="Tactics"><Chips values={current.tactic_ids} /></Row>
+              <Row label="Open for">{detail ? formatDuration(detail.duration_seconds) : '—'}</Row>
+              <Row label="Time to detect">{formatDuration(current.ttd_seconds)}</Row>
+              <Row label="Time to resolve">{formatDuration(current.ttr_seconds)}</Row>
+              <Row label="Updated">{formatDateTime(current.updated_at)}</Row>
+              <Row label="Closed">{formatDateTime(current.closed_at)}</Row>
+            </dl>
+          </TabsContent>
 
-        {/* Tab content */}
-        <div className="flex-1 overflow-y-auto px-4 py-2">
-
-          {/* ── Details tab ─────────────────────────────────────────── */}
-          {tab === 'details' && (
-            <div>
-              <Row label="ID"          value={`INC-${incident.id}`} />
-              <Row label="Severity"    value={<SeverityPill severity={incident.severity} />} />
-              <Row label="Status"      value={<StatusBadge status={incident.status} />} />
-              <Row label="Priority"    value={incident.priority} />
-              <Row label="Assigned To" value={
-                <AssignedToField
-                  current={incident.assigned_to}
-                  onSave={(val) => updateMutation.mutate({ assigned_to: val || null })}
-                  pending={updateMutation.isPending}
-                />
-              } />
-              <Row label="Created By"  value={incident.created_by} />
-              <Row label="Hosts"       value={
-                incident.hosts.length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
-                    {incident.hosts.map(h => (
-                      <span key={h} className="text-[10px] bg-background border border-border rounded px-1.5 py-px text-foreground/80">{h}</span>
-                    ))}
-                  </div>
-                ) : '—'
-              } />
-              <Row label="Tactics"     value={
-                incident.tactic_ids.length > 0
-                  ? incident.tactic_ids.join(', ')
-                  : '—'
-              } />
-              <Row label="Techniques"  value={
-                incident.technique_ids.length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
-                    {incident.technique_ids.map(t => (
-                      <span key={t} className="text-[10px] bg-background border border-border rounded px-1.5 py-px font-mono text-foreground/80">{t}</span>
-                    ))}
-                  </div>
-                ) : '—'
-              } />
-              <Row label="TTD"         value={incident.ttd_seconds != null ? fmtDuration(incident.ttd_seconds) : '—'} />
-              <Row label="TTR"         value={incident.ttr_seconds != null ? fmtDuration(incident.ttr_seconds) : 'Open'} />
-              <Row label="Created"     value={new Date(incident.created_at).toLocaleString()} />
-              <Row label="Updated"     value={new Date(incident.updated_at).toLocaleString()} />
-              {incident.closed_at && (
-                <Row label="Closed"    value={new Date(incident.closed_at).toLocaleString()} />
-              )}
-              {incident.description && (
-                <div className="mt-3">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase mb-1">Description</p>
-                  <p className="text-[11px] text-foreground/80 leading-relaxed whitespace-pre-wrap">
-                    {incident.description}
-                  </p>
-                </div>
-              )}
+          {(tab === 'timeline' || tab === 'detections') && detailQuery.isLoading && (
+            <div className="mt-2 space-y-2" aria-label="Loading incident detail">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          )}
+          {(tab === 'timeline' || tab === 'detections') && detailQuery.isError && (
+            <div className="mt-2">
+              <ErrorCard
+                title="Could not load the incident detail"
+                message={apiErrorMessage(detailQuery.error)}
+                onRetry={() => void detailQuery.refetch()}
+              />
             </div>
           )}
 
-          {/* ── Timeline tab ─────────────────────────────────────────── */}
-          {tab === 'timeline' && (
-            <div>
-              {detailQuery.isLoading && (
-                <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">Loading…</div>
-              )}
+          <TabsContent value="timeline">
+            {detail && (
+              <IncidentTimeline
+                notes={detail.notes}
+                writable={writable}
+                pending={noteMutation.isPending}
+                onAddNote={(content, noteType) => noteMutation.mutateAsync({ content, noteType })}
+              />
+            )}
+          </TabsContent>
 
-              {detail && detail.notes.length === 0 && (
-                <div className="text-muted-foreground text-[11px] py-6 text-center">No timeline events yet.</div>
-              )}
-
-              {detail && detail.notes.length > 0 && (
-                <div className="relative pl-5 ml-1 mt-2">
-                  {/* Vertical timeline line */}
-                  <div className="absolute left-[3px] top-2 bottom-2 w-px bg-border" aria-hidden />
-
-                  {detail.notes.map(note => (
-                    <div key={note.id} className="relative mb-5 last:mb-2">
-                      {/* Event dot */}
-                      <div
-                        className={`absolute left-[-14px] top-[4px] w-[10px] h-[10px] rounded-full ring-2 ring-card ${TIMELINE_DOT[note.note_type] ?? 'bg-muted-foreground'}`}
-                        aria-hidden
-                      />
-                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                        <span className="text-[10px] font-medium text-foreground">{note.author}</span>
-                        {note.note_type !== 'comment' && (
-                          <span className={`text-[9px] px-1.5 py-px rounded font-medium ${
-                            note.note_type === 'status_change'
-                              ? 'bg-primary/10 text-primary'
-                              : 'bg-med-bg text-med-text'
-                          }`}>
-                            {note.note_type === 'status_change' ? 'Status Change' : 'Evidence'}
-                          </span>
-                        )}
-                        <span className="text-[10px] text-muted-foreground ml-auto">
-                          {new Date(note.created_at).toLocaleString()}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-foreground/80 leading-relaxed whitespace-pre-wrap">
-                        {note.content}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Add note form */}
-              <div className="mt-4 pt-3 border-t border-border">
-                <textarea
-                  value={noteContent}
-                  onChange={e => setNoteContent(e.target.value)}
-                  placeholder="Add a comment or observation…"
-                  rows={3}
-                  className="w-full text-[11px] bg-background border border-border rounded-md p-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-none"
-                />
-                <div className="flex justify-end mt-1.5">
-                  <button
-                    onClick={() => noteMutation.mutate(noteContent)}
-                    disabled={noteMutation.isPending || !noteContent.trim()}
-                    className="h-[28px] px-3 text-[11px] bg-primary text-white rounded-md hover:opacity-90 disabled:opacity-50"
-                  >
-                    {noteMutation.isPending ? 'Adding…' : 'Add Note'}
-                  </button>
-                </div>
-                {noteMutation.isError && (
-                  <p className="text-[11px] text-crit-text mt-1">
-                    {(noteMutation.error as Error)?.message ?? 'Failed to add note.'}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── Detections tab ───────────────────────────────────────── */}
-          {tab === 'detections' && (
-            <div>
-              {detailQuery.isLoading && (
-                <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">Loading…</div>
-              )}
-
-              {detail && detail.detections.length === 0 && (
-                <div className="text-muted-foreground text-[11px] py-6 text-center">No linked detections.</div>
-              )}
-
-              {detail && detail.detections.map(d => {
-                const isExpanded = !onDetectionClick && expandedDetId === d.id
-                return (
-                  <div key={d.id} className="border-b border-border">
-                    <button
-                      className="w-full text-left py-2 px-1 hover:bg-background transition-colors rounded"
-                      onClick={() => {
-                        if (onDetectionClick) {
-                          onDetectionClick(d)
-                        } else {
-                          setExpandedDetId(isExpanded ? null : d.id)
-                        }
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-foreground font-medium truncate">{d.name}</span>
-                        <span className={`flex-shrink-0 text-[9px] px-1.5 py-px rounded font-medium ${
-                          d.severity === 'critical' ? 'bg-crit-bg text-crit-text' :
-                          d.severity === 'high'     ? 'bg-high-bg text-high-text' :
-                          d.severity === 'medium'   ? 'bg-med-bg text-med-text'   :
-                                                      'bg-low-bg text-low-text'
-                        }`}>{d.severity}</span>
-                      </div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                        <span className="font-mono">{d.technique_id}</span>
-                        <span>·</span>
-                        <span>{d.host}</span>
-                        <span>·</span>
-                        <span>{new Date(d.time).toLocaleString()}</span>
-                      </div>
-                    </button>
-
-                    {/* Inline expanded detection detail */}
-                    {isExpanded && (
-                      <div className="pb-2 px-1 space-y-[3px]">
-                        <DetectionDetailRow label="Technique"   value={`${d.technique_id} – ${d.technique_name}`} />
-                        <DetectionDetailRow label="Tactic"      value={d.tactic} />
-                        <DetectionDetailRow label="Status"      value={d.status} />
-                        {d.user        && <DetectionDetailRow label="User"       value={d.user} />}
-                        {d.process     && <DetectionDetailRow label="Process"    value={<code className="text-[10px] bg-background px-1 rounded">{d.process}</code>} />}
-                        {d.rule_name   && <DetectionDetailRow label="Rule"       value={d.rule_name} />}
-                        {d.description && (
-                          <p className="text-[10px] text-foreground/80 leading-relaxed mt-1 pt-1 border-t border-border">
-                            {d.description}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+          <TabsContent value="detections">
+            {detail && (
+              <LinkedDetections
+                detections={detail.detections}
+                missing={Math.max(0, detail.detection_ids.length - detail.detections.length)}
+              />
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
     </>
   )
 }
 
-// ── Small helpers ─────────────────────────────────────────────────────────────
-
-function MetricCell({ label, value }: { label: string; value: React.ReactNode }) {
+/** Right-side detail panel for one incident: status, assignee, notes and linked detections. */
+export function IncidentPanel({ incident, onClose }: IncidentPanelProps) {
   return (
-    <div className="px-4 py-2 text-center">
-      <p className="text-[9px] font-medium text-muted-foreground uppercase">{label}</p>
-      <p className="text-[13px] font-semibold text-foreground leading-snug mt-px">{value}</p>
-    </div>
-  )
-}
-
-function DetectionDetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[80px_1fr] gap-1 text-[10px]">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-foreground/80 break-words">{value}</span>
-    </div>
-  )
-}
-
-// ── Inline assigned-to editor ─────────────────────────────────────────────────
-
-function AssignedToField({
-  current,
-  onSave,
-  pending,
-}: {
-  current: string | null
-  onSave: (val: string) => void
-  pending: boolean
-}) {
-  const [editing, setEditing] = useState(false)
-  const [value, setValue] = useState(current ?? '')
-
-  if (!editing) {
-    return (
-      <span
-        className="cursor-pointer hover:text-primary transition-colors"
-        onClick={() => { setValue(current ?? ''); setEditing(true) }}
-        title="Click to edit"
-      >
-        {current ?? <span className="text-muted-foreground italic">Unassigned</span>}
-      </span>
-    )
-  }
-
-  return (
-    <div className="flex items-center gap-1.5">
-      <input
-        autoFocus
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        placeholder="analyst@org.com"
-        className="h-[24px] px-2 text-[11px] border border-border rounded bg-background text-foreground focus:outline-none focus:border-primary flex-1"
-        onKeyDown={e => {
-          if (e.key === 'Enter') { onSave(value); setEditing(false) }
-          if (e.key === 'Escape') setEditing(false)
-        }}
-      />
-      <button
-        onClick={() => { onSave(value); setEditing(false) }}
-        disabled={pending}
-        className="text-[10px] text-primary hover:opacity-80 disabled:opacity-50"
-      >
-        Save
-      </button>
-      <button onClick={() => setEditing(false)} className="text-[10px] text-muted-foreground hover:text-foreground/80">
-        ✕
-      </button>
-    </div>
+    <Sheet open={incident !== null} onOpenChange={(next) => { if (!next) onClose() }}>
+      <SheetContent side="right" className="flex w-full flex-col gap-0 bg-card p-0 sm:max-w-lg">
+        {incident && <PanelBody key={incident.id} incident={incident} />}
+      </SheetContent>
+    </Sheet>
   )
 }

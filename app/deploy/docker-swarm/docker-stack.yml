@@ -53,7 +53,7 @@ services:
       - mxtac_secret_key
       - mxtac_pg_password
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/ready"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ready', timeout=4)"]
       interval: 15s
       timeout: 5s
       retries: 5

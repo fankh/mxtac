@@ -1,440 +1,273 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { Incident, IncidentStatus, SeverityLevel, IncidentCreate } from '../../../types/api'
-import { incidentsApi } from '../../../lib/api'
-import { TopBar } from '../../layout/TopBar'
-import { SeverityPill } from '../../shared/SeverityBadge'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { Plus, RefreshCw, Siren, X } from 'lucide-react'
+import type { Incident, IncidentSortField, IncidentStatus, SeverityLevel } from '@/types/api'
+import { incidentsApi, type IncidentListParams } from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
+import { Page } from '@/components/layout/Page'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { SeverityPill } from '@/components/shared/SeverityBadge'
+import { ErrorCard, FilterChip, FilterGroup, Pager, SearchInput } from '../detections/ListControls'
+import { OptionSelect } from '../detections/OptionSelect'
+import {
+  SEVERITY_LABELS,
+  SEVERITY_OPTIONS,
+  apiErrorMessage,
+  canWrite,
+  formatDateTime,
+  useDebouncedValue,
+} from '../detections/utils'
+import { CreateIncidentDialog } from './CreateIncidentDialog'
+import { IncidentMetricsCards } from './IncidentMetricsCards'
 import { IncidentPanel } from './IncidentPanel'
+import { IncidentStatusPill } from './IncidentStatusPill'
+import { INCIDENT_SORT_LABELS, INCIDENT_STATUS_FLOW, INCIDENT_STATUS_LABELS } from './incidentUtils'
 
-// ── Type maps ─────────────────────────────────────────────────────────────────
+const PAGE_SIZE = 20
 
-const SEVERITY_OPTIONS: SeverityLevel[] = ['critical', 'high', 'medium', 'low']
-const STATUS_OPTIONS: IncidentStatus[]  = ['new', 'investigating', 'contained', 'resolved', 'closed']
+const SORT_OPTIONS: { value: IncidentSortField; label: string }[] = [
+  { value: 'created_at', label: `Sort: ${INCIDENT_SORT_LABELS.created_at.toLowerCase()}` },
+  { value: 'severity', label: `Sort: ${INCIDENT_SORT_LABELS.severity.toLowerCase()}` },
+  { value: 'status', label: `Sort: ${INCIDENT_SORT_LABELS.status.toLowerCase()}` },
+]
 
-const STATUS_COLORS: Record<IncidentStatus, string> = {
-  new:           'bg-primary/10 text-primary',
-  investigating: 'bg-high-bg text-high-text',
-  contained:     'bg-med-bg text-med-text',
-  resolved:      'bg-resolved-bg text-resolved-text',
-  closed:        'bg-muted/50 text-muted-foreground',
+function toggle<T>(list: T[], item: T): T[] {
+  return list.includes(item) ? list.filter((entry) => entry !== item) : [...list, item]
 }
-
-const STATUS_LABELS: Record<IncidentStatus, string> = {
-  new:           'New',
-  investigating: 'Investigating',
-  contained:     'Contained',
-  resolved:      'Resolved',
-  closed:        'Closed',
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function StatusPill({ status }: { status: IncidentStatus }) {
-  return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-medium ${STATUS_COLORS[status]}`}>
-      {STATUS_LABELS[status]}
-    </span>
-  )
-}
-
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 h-[26px] rounded-[5px] text-[11px] font-medium border transition-colors ${
-        active
-          ? 'bg-primary text-white border-primary'
-          : 'bg-card text-foreground/80 border-border hover:border-primary hover:text-primary'
-      }`}
-    >
-      {label}
-    </button>
-  )
-}
-
-function fmtDuration(seconds: number | null): string {
-  if (seconds == null) return '—'
-  if (seconds < 60) return `${seconds}s`
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
-  if (seconds < 86400) return `${(seconds / 3600).toFixed(1)}h`
-  return `${(seconds / 86400).toFixed(1)}d`
-}
-
-// ── Stats cards ───────────────────────────────────────────────────────────────
-
-function StatsCards({
-  total,
-  open,
-  mttr,
-  bySeverity,
-}: {
-  total: number
-  open: number
-  mttr: number | null
-  bySeverity: Record<string, number>
-}) {
-  const critical = bySeverity['critical'] ?? 0
-  const high     = bySeverity['high'] ?? 0
-
-  return (
-    <div className="grid grid-cols-4 gap-3 mb-4">
-      {[
-        { label: 'Total Incidents',    value: total,                  sub: 'last 30 days' },
-        { label: 'Open',               value: open,                   sub: 'active incidents' },
-        { label: 'Avg MTTR',           value: fmtDuration(mttr),      sub: 'mean time to resolve' },
-        { label: 'Critical / High',    value: `${critical} / ${high}`, sub: 'by severity' },
-      ].map(({ label, value, sub }) => (
-        <div key={label} className="bg-card rounded-md border shadow-sm px-4 py-3">
-          <p className="text-[10px] text-muted-foreground uppercase font-medium">{label}</p>
-          <p className="text-[22px] font-semibold text-foreground leading-tight mt-0.5">{value}</p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Create incident modal ─────────────────────────────────────────────────────
-
-const BLANK_FORM: IncidentCreate = {
-  title: '',
-  description: '',
-  severity: 'medium',
-  detection_ids: [],
-  assigned_to: null,
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-[10px] font-medium text-muted-foreground uppercase mb-1">{label}</label>
-      {children}
-    </div>
-  )
-}
-
-function CreateIncidentModal({ onClose }: { onClose: () => void }) {
-  const queryClient = useQueryClient()
-  const [form, setForm] = useState<IncidentCreate>({ ...BLANK_FORM })
-  const [detIds, setDetIds] = useState('')
-
-  const mutation = useMutation({
-    mutationFn: (body: IncidentCreate) => incidentsApi.create(body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['incidents'] })
-      queryClient.invalidateQueries({ queryKey: ['incident-metrics'] })
-      onClose()
-    },
-  })
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const ids = detIds.split(',').map(s => s.trim()).filter(Boolean)
-    mutation.mutate({
-      ...form,
-      detection_ids: ids,
-      description:  form.description || null,
-      assigned_to:  form.assigned_to || null,
-    })
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-card rounded-lg shadow-xl w-[480px] max-h-[90vh] flex flex-col border border-border">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <h2 className="text-[13px] font-semibold text-foreground">Create Incident</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-lg leading-none">×</button>
-        </div>
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-          <Field label="Title *">
-            <input
-              required
-              value={form.title}
-              onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-background w-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-              placeholder="e.g. Lateral Movement via Pass-the-Hash"
-            />
-          </Field>
-
-          <Field label="Severity *">
-            <select
-              value={form.severity}
-              onChange={e => setForm(f => ({ ...f, severity: e.target.value as SeverityLevel }))}
-              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-background w-full text-foreground focus:outline-none focus:border-primary"
-            >
-              {SEVERITY_OPTIONS.map(s => (
-                <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Description">
-            <textarea
-              value={form.description ?? ''}
-              onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              rows={3}
-              className="w-full text-[11px] border border-border rounded-md bg-background p-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-none"
-              placeholder="Describe the incident…"
-            />
-          </Field>
-
-          <Field label="Assigned To">
-            <input
-              value={form.assigned_to ?? ''}
-              onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}
-              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-background w-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-              placeholder="analyst@org.com"
-            />
-          </Field>
-
-          <Field label="Linked Detection IDs (comma-separated)">
-            <input
-              value={detIds}
-              onChange={e => setDetIds(e.target.value)}
-              className="h-[28px] px-2 text-[11px] border border-border rounded-md bg-background w-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-              placeholder="det-abc123, det-def456"
-            />
-          </Field>
-
-          {mutation.isError && (
-            <p className="text-[11px] text-crit-text">
-              {(mutation.error as Error)?.message ?? 'Failed to create incident.'}
-            </p>
-          )}
-        </form>
-        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border">
-          <button
-            onClick={onClose}
-            className="h-[30px] px-4 text-[12px] border border-border rounded-md text-foreground/80 hover:bg-background"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={(e) => handleSubmit(e as unknown as React.FormEvent)}
-            disabled={mutation.isPending || !form.title}
-            className="h-[30px] px-4 text-[12px] bg-primary text-white rounded-md hover:opacity-90 disabled:opacity-50"
-          >
-            {mutation.isPending ? 'Creating…' : 'Create Incident'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────────
 
 export function IncidentsPage() {
+  const user = useAuthStore((s) => s.user)
+  const writable = canWrite(user?.role)
+
+  const [search, setSearch] = useState('')
+  const [assignee, setAssignee] = useState('')
   const [severities, setSeverities] = useState<SeverityLevel[]>([])
-  const [statuses,   setStatuses]   = useState<IncidentStatus[]>([])
-  const [search,     setSearch]     = useState('')
-  const [page,       setPage]       = useState(1)
-  const [selected,   setSelected]   = useState<Incident | null>(null)
-  const [showCreate, setShowCreate] = useState(false)
+  const [statuses, setStatuses] = useState<IncidentStatus[]>([])
+  const [sort, setSort] = useState<IncidentSortField>('created_at')
+  const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState<Incident | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
 
-  function toggleSeverity(s: SeverityLevel) {
-    setSeverities(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
-    setPage(1)
+  const debouncedSearch = useDebouncedValue(search.trim())
+  const debouncedAssignee = useDebouncedValue(assignee.trim())
+
+  const params: IncidentListParams = {
+    severity: severities.length > 0 ? severities : undefined,
+    status: statuses.length > 0 ? statuses : undefined,
+    assigned_to: debouncedAssignee || undefined,
+    search: debouncedSearch || undefined,
+    sort,
+    page,
+    page_size: PAGE_SIZE,
   }
 
-  function toggleStatus(s: IncidentStatus) {
-    setStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
-    setPage(1)
-  }
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['incidents', { severities, statuses, search, page }],
-    queryFn: () =>
-      incidentsApi.list({
-        severity:  severities.length > 0 ? severities : undefined,
-        status:    statuses.length > 0   ? statuses   : undefined,
-        search:    search || undefined,
-        page,
-        page_size: 20,
-        sort:      'created_at',
-      }),
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
+    queryKey: ['incidents', params],
+    queryFn: () => incidentsApi.list(params),
+    placeholderData: keepPreviousData,
   })
 
-  const { data: metrics } = useQuery({
-    queryKey: ['incident-metrics'],
-    queryFn: () => incidentsApi.metrics(),
-  })
-
-  const incidents  = data?.items ?? []
+  const incidents = data?.items ?? []
   const pagination = data?.pagination
+  const activeFilters =
+    severities.length + statuses.length + (search.trim() ? 1 : 0) + (assignee.trim() ? 1 : 0)
+
+  function resetFilters() {
+    setSearch('')
+    setAssignee('')
+    setSeverities([])
+    setStatuses([])
+    setPage(1)
+  }
+
+  const myEmail = user?.email ?? ''
+  const mineActive = myEmail !== '' && assignee.trim() === myEmail
 
   return (
-    <>
-      <TopBar crumb="Incidents" />
-      <div className="pt-[46px] px-5 pb-6">
+    <Page
+      title="Incidents"
+      description="Investigations that group related detections"
+      actions={
+        <>
+          <Button variant="outline" size="icon" title="Refresh" onClick={() => void refetch()} disabled={isFetching}>
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+          </Button>
+          {writable && (
+            <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              New incident
+            </Button>
+          )}
+        </>
+      }
+    >
+      <IncidentMetricsCards />
 
-        {/* Stats */}
-        {metrics && (
-          <StatsCards
-            total={Object.values(metrics.total_incidents).reduce((a, b) => a + b, 0)}
-            open={metrics.open_incidents_count}
-            mttr={metrics.mttr_seconds}
-            bySeverity={metrics.incidents_by_severity}
-          />
-        )}
-
-        {/* Filter bar */}
-        <div className="flex items-center gap-2 py-3 flex-wrap">
-          {/* Severity chips */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground mr-1">Severity:</span>
-            {SEVERITY_OPTIONS.map(s => (
-              <FilterChip
-                key={s}
-                label={s.charAt(0).toUpperCase() + s.slice(1)}
-                active={severities.includes(s)}
-                onClick={() => toggleSeverity(s)}
-              />
-            ))}
-          </div>
-
-          <div className="w-px h-[20px] bg-border mx-1" />
-
-          {/* Status chips */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground mr-1">Status:</span>
-            {STATUS_OPTIONS.map(s => (
-              <FilterChip
-                key={s}
-                label={STATUS_LABELS[s]}
-                active={statuses.includes(s)}
-                onClick={() => toggleStatus(s)}
-              />
-            ))}
-          </div>
-
-          {/* Search + Create */}
-          <div className="ml-auto flex items-center gap-2">
-            <input
-              type="text"
-              placeholder="Search incidents…"
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchInput
               value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary w-[200px]"
+              onChange={(value) => { setSearch(value); setPage(1) }}
+              placeholder="Search title or description"
+              label="Search incidents"
+              className="sm:w-72"
             />
-            <button
-              onClick={() => setShowCreate(true)}
-              className="h-[28px] px-3 text-[11px] bg-primary text-white rounded-md hover:opacity-90 whitespace-nowrap"
-            >
-              + New Incident
-            </button>
+            <SearchInput
+              value={assignee}
+              onChange={(value) => { setAssignee(value); setPage(1) }}
+              placeholder="Assignee email (exact)"
+              label="Assignee filter"
+              icon={false}
+              className="sm:w-52"
+            />
+            {myEmail && (
+              <FilterChip
+                label="Assigned to me"
+                active={mineActive}
+                onClick={() => { setAssignee(mineActive ? '' : myEmail); setPage(1) }}
+              />
+            )}
+            <OptionSelect
+              label="Sort incidents"
+              value={sort}
+              options={SORT_OPTIONS}
+              onChange={(value) => { setSort(value); setPage(1) }}
+            />
+            {activeFilters > 0 && (
+              <Button variant="ghost" onClick={resetFilters} className="ml-auto gap-1 text-muted-foreground">
+                <X className="h-3.5 w-3.5" />
+                Clear filters ({activeFilters})
+              </Button>
+            )}
           </div>
-        </div>
-
-        {/* Summary row */}
-        {pagination && (
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-[11px] text-muted-foreground">
-              {pagination.total.toLocaleString()} incidents
-              {severities.length > 0 && ` · ${severities.join(', ')}`}
-              {statuses.length > 0   && ` · ${statuses.join(', ')}`}
-            </span>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <FilterGroup label="Severity">
+              {SEVERITY_OPTIONS.map((severity) => (
+                <FilterChip
+                  key={severity}
+                  label={SEVERITY_LABELS[severity]}
+                  active={severities.includes(severity)}
+                  onClick={() => { setSeverities((prev) => toggle(prev, severity)); setPage(1) }}
+                />
+              ))}
+            </FilterGroup>
+            <FilterGroup label="Status">
+              {INCIDENT_STATUS_FLOW.map((status) => (
+                <FilterChip
+                  key={status}
+                  label={INCIDENT_STATUS_LABELS[status]}
+                  active={statuses.includes(status)}
+                  onClick={() => { setStatuses((prev) => toggle(prev, status)); setPage(1) }}
+                />
+              ))}
+            </FilterGroup>
           </div>
-        )}
+        </CardContent>
+      </Card>
 
-        {/* Table */}
-        <div className="bg-card rounded-md border shadow-sm overflow-hidden">
-          {/* Header */}
-          <div className="grid grid-cols-[60px_1fr_100px_120px_130px_110px_80px] gap-2 px-3 py-2 border-b border-border">
-            {['ID', 'Title', 'Severity', 'Status', 'Assigned To', 'Hosts', 'Created'].map(h => (
-              <span key={h} className="text-[10px] font-medium text-muted-foreground uppercase">{h}</span>
-            ))}
-          </div>
-
-          {isLoading && (
-            <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">Loading…</div>
-          )}
-          {isError && (
-            <div className="flex items-center justify-center h-40 text-crit-text text-sm">
-              Failed to load. Is the backend running?
+      {isError ? (
+        <ErrorCard
+          title="Could not load incidents"
+          message={apiErrorMessage(error)}
+          onRetry={() => void refetch()}
+        />
+      ) : (
+        <Card className="overflow-hidden">
+          {isLoading ? (
+            <div className="space-y-2 p-4" aria-label="Loading incidents">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <Skeleton key={index} className="h-8 w-full" />
+              ))}
             </div>
+          ) : incidents.length === 0 ? (
+            <EmptyState
+              icon={Siren}
+              title={activeFilters > 0 ? 'No incidents match the filters' : 'No incidents yet'}
+              description={
+                activeFilters > 0
+                  ? 'Change or clear the filters to see more.'
+                  : 'Create an incident here or from selected detections.'
+              }
+              action={
+                activeFilters > 0 ? (
+                  <Button variant="outline" onClick={resetFilters}>
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-20">ID</TableHead>
+                  <TableHead>Title</TableHead>
+                  <TableHead>Severity</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Assigned to</TableHead>
+                  <TableHead>Hosts</TableHead>
+                  <TableHead>Detections</TableHead>
+                  <TableHead>Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {incidents.map((incident) => (
+                  <TableRow
+                    key={incident.id}
+                    tabIndex={0}
+                    data-state={selected?.id === incident.id ? 'selected' : undefined}
+                    onClick={() => setSelected(incident)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && e.target === e.currentTarget) setSelected(incident)
+                    }}
+                    className="cursor-pointer text-[12px] focus-visible:bg-muted/50 focus-visible:outline-none"
+                  >
+                    <TableCell className="font-mono text-muted-foreground">INC-{incident.id}</TableCell>
+                    <TableCell className="max-w-[320px]">
+                      <div className="truncate font-medium text-foreground">{incident.title}</div>
+                      {incident.tactic_ids.length > 0 && (
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {incident.tactic_ids.join(', ')}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell><SeverityPill severity={incident.severity} /></TableCell>
+                    <TableCell><IncidentStatusPill status={incident.status} /></TableCell>
+                    <TableCell className="max-w-[180px] truncate">
+                      {incident.assigned_to ?? <span className="text-muted-foreground">Unassigned</span>}
+                    </TableCell>
+                    <TableCell className="max-w-[160px] truncate text-muted-foreground">
+                      {incident.hosts.length === 0
+                        ? '—'
+                        : incident.hosts.slice(0, 2).join(', ') +
+                          (incident.hosts.length > 2 ? ` +${incident.hosts.length - 2}` : '')}
+                    </TableCell>
+                    <TableCell className="tabular-nums text-muted-foreground">
+                      {incident.detection_ids.length}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatDateTime(incident.created_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
+        </Card>
+      )}
 
-          {!isLoading && !isError && incidents.map(inc => {
-            const isSelected = selected?.id === inc.id
-            return (
-              <div
-                key={inc.id}
-                onClick={() => setSelected(isSelected ? null : inc)}
-                className={`grid grid-cols-[60px_1fr_100px_120px_130px_110px_80px] gap-2 px-3 py-[7px] border-b border-border items-center cursor-pointer transition-colors ${
-                  isSelected
-                    ? 'bg-primary/5 border-l-[3px] border-l-blue'
-                    : 'hover:bg-background'
-                }`}
-              >
-                <span className="text-[10px] text-muted-foreground font-mono">INC-{inc.id}</span>
-                <div className="min-w-0">
-                  <div className="text-[11px] text-foreground font-medium truncate">{inc.title}</div>
-                  {inc.tactic_ids.length > 0 && (
-                    <div className="text-[10px] text-muted-foreground truncate">{inc.tactic_ids.join(', ')}</div>
-                  )}
-                </div>
-                <SeverityPill severity={inc.severity} />
-                <StatusPill status={inc.status} />
-                <span className="text-[11px] text-foreground/80 truncate">
-                  {inc.assigned_to ?? <span className="text-muted-foreground italic">Unassigned</span>}
-                </span>
-                <span className="text-[10px] text-muted-foreground truncate">
-                  {inc.hosts.length > 0
-                    ? inc.hosts.slice(0, 2).join(', ') + (inc.hosts.length > 2 ? ' …' : '')
-                    : '—'}
-                </span>
-                <span className="text-[10px] text-muted-foreground">
-                  {new Date(inc.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                </span>
-              </div>
-            )
-          })}
+      {pagination && !isError && pagination.total > 0 && (
+        <Pager pagination={pagination} onPageChange={setPage} />
+      )}
 
-          {!isLoading && !isError && incidents.length === 0 && (
-            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-              No incidents match the current filters.
-            </div>
-          )}
-        </div>
-
-        {/* Pagination */}
-        {pagination && pagination.total_pages > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-4">
-            <button
-              disabled={page <= 1}
-              onClick={() => setPage(p => p - 1)}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-foreground/80 disabled:opacity-40 hover:bg-background"
-            >
-              ← Prev
-            </button>
-            <span className="text-[11px] text-muted-foreground">
-              Page {pagination.page} of {pagination.total_pages}
-            </span>
-            <button
-              disabled={page >= pagination.total_pages}
-              onClick={() => setPage(p => p + 1)}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-foreground/80 disabled:opacity-40 hover:bg-background"
-            >
-              Next →
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Slide-out panel */}
       <IncidentPanel incident={selected} onClose={() => setSelected(null)} />
 
-      {/* Create modal */}
-      {showCreate && <CreateIncidentModal onClose={() => setShowCreate(false)} />}
-    </>
+      <CreateIncidentDialog open={createOpen} onClose={() => setCreateOpen(false)} />
+    </Page>
   )
 }

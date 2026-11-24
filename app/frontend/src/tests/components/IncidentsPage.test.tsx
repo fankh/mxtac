@@ -1,1047 +1,409 @@
 // vi.mock is hoisted before imports — declare all module mocks first.
 
 vi.mock('../../lib/api', () => ({
+  authApi: {},
   incidentsApi: {
-    list:    vi.fn(),
+    list: vi.fn(),
     metrics: vi.fn(),
-    create:  vi.fn(),
+    create: vi.fn(),
   },
 }))
 
+// The real TopBar opens the alert WebSocket; the page frame only needs its slots.
 vi.mock('../../components/layout/TopBar', () => ({
-  TopBar: ({ crumb }: { crumb: string }) => (
-    <header data-testid="topbar">{crumb}</header>
+  TopBar: ({ crumb, actions }: { crumb: string; actions?: ReactNode }) => (
+    <header>
+      <h1>{crumb}</h1>
+      {actions}
+    </header>
   ),
 }))
 
 vi.mock('../../components/features/incidents/IncidentPanel', () => ({
-  IncidentPanel: ({
-    incident,
-    onClose,
-  }: {
-    incident: { id: number; title: string } | null
-    onClose: () => void
-  }) =>
+  IncidentPanel: ({ incident, onClose }: { incident: Incident | null; onClose: () => void }) =>
     incident ? (
-      <div data-testid="incident-panel" data-incident-id={String(incident.id)}>
-        <button onClick={onClose} data-testid="panel-close">Close</button>
+      <div data-testid="incident-panel">
+        <span>Panel: {incident.title}</span>
+        <button onClick={onClose}>Close panel</button>
       </div>
     ) : null,
 }))
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { ReactNode } from 'react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { IncidentsPage } from '../../components/features/incidents/IncidentsPage'
 import { incidentsApi } from '../../lib/api'
+import { useAuthStore } from '../../stores/authStore'
+import { useUIStore } from '../../stores/uiStore'
+import type { Incident, IncidentMetrics, PaginatedResponse } from '../../types/api'
+import { chooseOption, installRadixSelectPolyfills } from '../mocks/radixSelect'
 
-// ---------------------------------------------------------------------------
-// Typed reference to the mocked API
-// ---------------------------------------------------------------------------
+installRadixSelectPolyfills()
 
-const mockApi = incidentsApi as {
-  list:    ReturnType<typeof vi.fn>
-  metrics: ReturnType<typeof vi.fn>
-  create:  ReturnType<typeof vi.fn>
+const listMock = vi.mocked(incidentsApi.list)
+const metricsMock = vi.mocked(incidentsApi.metrics)
+const createMock = vi.mocked(incidentsApi.create)
+
+function makeIncident(overrides: Partial<Incident> = {}): Incident {
+  return {
+    id: 101,
+    title: 'Credential theft on the domain controller',
+    description: 'LSASS dump followed by lateral movement.',
+    severity: 'critical',
+    status: 'new',
+    priority: 2,
+    assigned_to: 'kim@mxtac.local',
+    created_by: 'analyst@mxtac.local',
+    detection_ids: ['det-001', 'det-002'],
+    technique_ids: ['T1003.001'],
+    tactic_ids: ['TA0006'],
+    hosts: ['WIN-DC01', 'WS-114', 'SRV-FILE02'],
+    ttd_seconds: 120,
+    ttr_seconds: null,
+    closed_at: null,
+    created_at: '2026-02-19T09:00:00Z',
+    updated_at: '2026-02-19T09:30:00Z',
+    ...overrides,
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Fixture helpers
-// ---------------------------------------------------------------------------
+const INCIDENTS: Incident[] = [
+  makeIncident(),
+  makeIncident({
+    id: 102,
+    title: 'Phishing campaign against finance',
+    severity: 'high',
+    status: 'investigating',
+    assigned_to: null,
+    hosts: [],
+    tactic_ids: [],
+    detection_ids: [],
+  }),
+]
 
-const makeIncident = (overrides: Record<string, unknown> = {}) => ({
-  id: 1,
-  title: 'Lateral Movement via Pass-the-Hash',
-  description: null,
-  severity: 'high' as const,
-  status: 'new' as const,
-  priority: 2,
-  assigned_to: null,
-  created_by: 'analyst@mxtac.local',
-  detection_ids: [],
-  technique_ids: ['T1550.002'],
-  tactic_ids: ['lateral_movement'],
-  hosts: ['WIN-DC01'],
-  ttd_seconds: null,
-  ttr_seconds: null,
-  closed_at: null,
-  created_at: '2026-02-19T08:30:00Z',
-  updated_at: '2026-02-19T08:30:00Z',
-  ...overrides,
-})
-
-const makeResponse = (
-  items = [makeIncident()],
-  paginationOverrides: Record<string, unknown> = {},
-) => ({
-  items,
-  pagination: {
-    page: 1,
-    page_size: 20,
-    total: items.length,
-    total_pages: 1,
-    ...paginationOverrides,
-  },
-})
-
-const makeMetrics = (overrides: Record<string, unknown> = {}) => ({
-  total_incidents: { new: 5, investigating: 3, contained: 2, resolved: 10, closed: 8 },
+const METRICS: IncidentMetrics = {
+  total_incidents: { new: 3, investigating: 2, contained: 1, resolved: 4, closed: 5 },
   mttr_seconds: 7200,
-  mttd_seconds: 1800,
-  open_incidents_count: 10,
-  incidents_by_severity: { critical: 3, high: 5, medium: 7, low: 13 },
-  incidents_this_week: 8,
-  incidents_this_month: 28,
-  from_date: '2026-01-22T00:00:00Z',
-  to_date: '2026-02-21T00:00:00Z',
-  ...overrides,
-})
+  mttd_seconds: 300,
+  open_incidents_count: 6,
+  incidents_by_severity: { critical: 2, high: 5, medium: 6, low: 2 },
+  incidents_this_week: 4,
+  incidents_this_month: 11,
+  from_date: '2026-01-20T00:00:00Z',
+  to_date: '2026-02-19T00:00:00Z',
+}
 
-// ---------------------------------------------------------------------------
-// Render helper
-// ---------------------------------------------------------------------------
+function pageOf(items: Incident[], pagination: Partial<PaginatedResponse<Incident>['pagination']> = {}) {
+  return {
+    items,
+    pagination: { page: 1, page_size: 20, total: items.length, total_pages: 1, ...pagination },
+  }
+}
 
 function renderPage() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        staleTime: Infinity,
-      },
-    },
-  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={client}>
       <IncidentsPage />
     </QueryClientProvider>,
   )
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+async function renderLoaded() {
+  const view = renderPage()
+  await screen.findByText('Credential theft on the domain controller')
+  return view
+}
+
+function lastListParams() {
+  const calls = listMock.mock.calls
+  return calls[calls.length - 1][0]
+}
+
+function notifications() {
+  return useUIStore.getState().notifications
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  listMock.mockResolvedValue(pageOf(INCIDENTS))
+  metricsMock.mockResolvedValue(METRICS)
+  useAuthStore.setState({ user: { email: 'analyst@mxtac.local', role: 'analyst' } })
+  useUIStore.setState({ notifications: [] })
+})
 
 describe('IncidentsPage', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    // Default: list pending forever → loading state
-    mockApi.list.mockReturnValue(new Promise<never>(() => {}))
-    // Metrics pending by default (no stats cards until specific tests)
-    mockApi.metrics.mockReturnValue(new Promise<never>(() => {}))
+  describe('metrics', () => {
+    it('shows the figures from the metrics endpoint', async () => {
+      renderPage()
+      const open = (await screen.findByText('Open incidents')).parentElement as HTMLElement
+      expect(open).toHaveTextContent('6')
+      expect(open).toHaveTextContent('15 in the last 30 days')
+
+      const week = screen.getByText('New this week').parentElement as HTMLElement
+      expect(week).toHaveTextContent('4')
+      expect(week).toHaveTextContent('11 this month')
+
+      expect(screen.getByText('Mean time to resolve').parentElement).toHaveTextContent('2.0h')
+      const mttd = screen.getByText('Mean time to detect').parentElement as HTMLElement
+      expect(mttd).toHaveTextContent('5m')
+      expect(mttd).toHaveTextContent('2 critical · 5 high · 6 medium · 2 low')
+    })
+
+    it('shows a dash when there is no resolve time yet', async () => {
+      metricsMock.mockResolvedValue({ ...METRICS, mttr_seconds: null })
+      renderPage()
+      const mttr = (await screen.findByText('Mean time to resolve')).parentElement as HTMLElement
+      expect(mttr).toHaveTextContent('—')
+      expect(mttr).toHaveTextContent('No closed incidents in range')
+    })
+
+    it('shows an error with a retry when the metrics fail, and keeps the list', async () => {
+      metricsMock.mockRejectedValueOnce(new Error('Metrics unavailable'))
+      await renderLoaded()
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('Could not load incident metrics')
+      expect(alert).toHaveTextContent('Metrics unavailable')
+
+      fireEvent.click(within(alert).getByRole('button', { name: /retry/i }))
+      expect(await screen.findByText('Open incidents')).toBeInTheDocument()
+    })
   })
 
-  // =========================================================================
-  // Loading state
-  // =========================================================================
-  describe('loading state', () => {
-    it('shows "Loading…" while the query is pending', () => {
-      renderPage()
-      expect(screen.getByText('Loading…')).toBeInTheDocument()
+  describe('list', () => {
+    it('shows one row per incident', async () => {
+      await renderLoaded()
+      expect(screen.getByRole('heading', { name: 'Incidents' })).toBeInTheDocument()
+
+      const first = screen.getByText('INC-101').closest('tr') as HTMLElement
+      expect(first).toHaveTextContent('Credential theft on the domain controller')
+      expect(first).toHaveTextContent('Critical')
+      expect(first).toHaveTextContent('New')
+      expect(first).toHaveTextContent('kim@mxtac.local')
+      expect(first).toHaveTextContent('WIN-DC01, WS-114 +1')
+
+      const second = screen.getByText('INC-102').closest('tr') as HTMLElement
+      expect(second).toHaveTextContent('Investigating')
+      expect(second).toHaveTextContent('Unassigned')
     })
 
-    it('does not show the error message while loading', () => {
-      renderPage()
-      expect(screen.queryByText(/Failed to load/)).not.toBeInTheDocument()
+    it('requests the first page, newest first, with no filters', async () => {
+      await renderLoaded()
+      expect(lastListParams()).toEqual({
+        severity: undefined,
+        status: undefined,
+        assigned_to: undefined,
+        search: undefined,
+        sort: 'created_at',
+        page: 1,
+        page_size: 20,
+      })
     })
 
-    it('does not show incident rows while loading', () => {
+    it('shows a loading placeholder until the first response', () => {
+      listMock.mockReturnValue(new Promise(() => {}))
       renderPage()
-      expect(
-        screen.queryByText('Lateral Movement via Pass-the-Hash'),
-      ).not.toBeInTheDocument()
+      expect(screen.getByLabelText('Loading incidents')).toBeInTheDocument()
     })
 
-    it('does not show the empty-state message while loading', () => {
+    it('shows an error card and retries on request', async () => {
+      listMock.mockRejectedValueOnce(new Error('Network down'))
       renderPage()
-      expect(
-        screen.queryByText('No incidents match the current filters.'),
-      ).not.toBeInTheDocument()
+      const title = await screen.findByText('Could not load incidents')
+      const alert = title.closest('[role="alert"]') as HTMLElement
+      expect(alert).toHaveTextContent('Network down')
+
+      fireEvent.click(within(alert).getByRole('button', { name: /retry/i }))
+      expect(await screen.findByText('INC-101')).toBeInTheDocument()
     })
 
-    it('does not show the incident panel while loading', () => {
+    it('shows an empty state when there are no incidents', async () => {
+      listMock.mockResolvedValue(pageOf([]))
       renderPage()
+      expect(await screen.findByText('No incidents yet')).toBeInTheDocument()
+    })
+
+    it('moves to the next page', async () => {
+      listMock.mockImplementation(async (params = {}) =>
+        pageOf(INCIDENTS, { page: params.page ?? 1, total: 40, total_pages: 2 }),
+      )
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+      expect(await screen.findByText('Page 2 of 2')).toBeInTheDocument()
+      expect(lastListParams()?.page).toBe(2)
+    })
+  })
+
+  describe('filters', () => {
+    it('sends severities and statuses as lists', async () => {
+      await renderLoaded()
+      fireEvent.click(within(screen.getByRole('group', { name: 'Severity' })).getByRole('button', { name: 'High' }))
+      const statusGroup = screen.getByRole('group', { name: 'Status' })
+      fireEvent.click(within(statusGroup).getByRole('button', { name: 'New' }))
+      fireEvent.click(within(statusGroup).getByRole('button', { name: 'Contained' }))
+
+      await waitFor(() =>
+        expect(lastListParams()).toMatchObject({ severity: ['high'], status: ['new', 'contained'], page: 1 }),
+      )
+    })
+
+    it('sends the search text and clears it on Escape', async () => {
+      await renderLoaded()
+      const input = screen.getByRole('textbox', { name: 'Search incidents' })
+      fireEvent.change(input, { target: { value: 'phishing' } })
+      await waitFor(() => expect(lastListParams()?.search).toBe('phishing'))
+
+      fireEvent.keyDown(input, { key: 'Escape' })
+      expect(input).toHaveValue('')
+      await waitFor(() => expect(lastListParams()?.search).toBeUndefined())
+    })
+
+    it('filters by assignee, with a shortcut for the signed-in user', async () => {
+      await renderLoaded()
+      fireEvent.change(screen.getByRole('textbox', { name: 'Assignee filter' }), {
+        target: { value: 'kim@mxtac.local' },
+      })
+      await waitFor(() => expect(lastListParams()?.assigned_to).toBe('kim@mxtac.local'))
+
+      const mine = screen.getByRole('button', { name: 'Assigned to me' })
+      fireEvent.click(mine)
+      await waitFor(() => expect(lastListParams()?.assigned_to).toBe('analyst@mxtac.local'))
+      expect(mine).toHaveAttribute('aria-pressed', 'true')
+
+      fireEvent.click(mine)
+      await waitFor(() => expect(lastListParams()?.assigned_to).toBeUndefined())
+    })
+
+    it('changes the sort field', async () => {
+      await renderLoaded()
+      await chooseOption('Sort incidents', 'Sort: severity')
+      await waitFor(() => expect(lastListParams()?.sort).toBe('severity'))
+    })
+
+    it('clears every filter at once', async () => {
+      listMock.mockResolvedValue(pageOf([]))
+      renderPage()
+      await screen.findByText('No incidents yet')
+      fireEvent.click(screen.getByRole('button', { name: 'Low' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Closed' }))
+      expect(await screen.findByText('No incidents match the filters')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear filters (2)' }))
+      await waitFor(() => expect(lastListParams()).toMatchObject({ severity: undefined, status: undefined }))
+    })
+  })
+
+  describe('detail panel', () => {
+    it('opens the panel for the clicked incident and closes it again', async () => {
+      await renderLoaded()
+      fireEvent.click(screen.getByText('Phishing campaign against finance'))
+      expect(screen.getByTestId('incident-panel')).toHaveTextContent('Panel: Phishing campaign against finance')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close panel' }))
       expect(screen.queryByTestId('incident-panel')).not.toBeInTheDocument()
     })
-
-    it('does not show the summary row while loading', () => {
-      renderPage()
-      expect(screen.queryByText(/incidents/)).not.toBeInTheDocument()
-    })
   })
 
-  // =========================================================================
-  // Error state
-  // =========================================================================
-  describe('error state', () => {
-    it('shows the error message when the query fails', async () => {
-      mockApi.list.mockRejectedValue(new Error('Network error'))
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.getByText('Failed to load. Is the backend running?'),
-        ).toBeInTheDocument()
-      })
-    })
+  describe('create incident', () => {
+    async function openDialog() {
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: /new incident/i }))
+      return screen.getByRole('dialog', { name: 'Create incident' })
+    }
 
-    it('does not show "Loading…" in error state', async () => {
-      mockApi.list.mockRejectedValue(new Error('fail'))
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
-      })
-    })
+    it('creates an incident from the form', async () => {
+      createMock.mockResolvedValue(makeIncident({ id: 103, detection_ids: ['det-9', 'det-10'] }))
+      const dialog = await openDialog()
 
-    it('does not show incident rows in error state', async () => {
-      mockApi.list.mockRejectedValue(new Error('fail'))
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.queryByText('Lateral Movement via Pass-the-Hash'),
-        ).not.toBeInTheDocument()
-      })
-    })
+      fireEvent.change(within(dialog).getByLabelText('Title'), { target: { value: ' Ransomware precursor ' } })
+      await chooseOption('Incident severity', 'Critical')
+      fireEvent.change(within(dialog).getByLabelText('Description'), { target: { value: 'Shadow copies deleted.' } })
+      fireEvent.change(within(dialog).getByLabelText('Assignee email'), { target: { value: 'lee@mxtac.local' } })
+      fireEvent.change(within(dialog).getByLabelText('Detection IDs'), { target: { value: 'det-9, det-10 det-9' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Create incident' }))
 
-    it('does not show the empty-state message in error state', async () => {
-      mockApi.list.mockRejectedValue(new Error('fail'))
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.queryByText('No incidents match the current filters.'),
-        ).not.toBeInTheDocument()
-      })
-    })
-  })
-
-  // =========================================================================
-  // Success state — table rendering
-  // =========================================================================
-  describe('success state', () => {
-    beforeEach(() => {
-      mockApi.list.mockResolvedValue(makeResponse())
-    })
-
-    it('renders the incident title', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.getByText('Lateral Movement via Pass-the-Hash'),
-        ).toBeInTheDocument()
-      })
-    })
-
-    it('renders the incident ID as INC-{id}', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('INC-1')).toBeInTheDocument()
-      })
-    })
-
-    it('renders the tactic as secondary text under the title', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('lateral_movement')).toBeInTheDocument()
-      })
-    })
-
-    it('renders the host', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('WIN-DC01')).toBeInTheDocument()
-      })
-    })
-
-    it('renders "Unassigned" when assigned_to is null', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Unassigned')).toBeInTheDocument()
-      })
-    })
-
-    it('renders the assigned_to value when set', async () => {
-      mockApi.list.mockResolvedValue(
-        makeResponse([makeIncident({ assigned_to: 'analyst@mxtac.local' })]),
+      await waitFor(() =>
+        expect(createMock).toHaveBeenCalledWith({
+          title: 'Ransomware precursor',
+          severity: 'critical',
+          description: 'Shadow copies deleted.',
+          assigned_to: 'lee@mxtac.local',
+          detection_ids: ['det-9', 'det-10'],
+        }),
       )
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('analyst@mxtac.local')).toBeInTheDocument()
-      })
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(notifications()).toEqual([
+        expect.objectContaining({
+          type: 'success',
+          title: 'Incident INC-103 created',
+          message: '2 detections linked.',
+        }),
+      ])
     })
 
-    it('renders multiple incident rows', async () => {
-      mockApi.list.mockResolvedValue(
-        makeResponse([
-          makeIncident({ id: 1, title: 'Incident Alpha' }),
-          makeIncident({ id: 2, title: 'Incident Beta' }),
+    it('sends null for the optional fields left empty', async () => {
+      createMock.mockResolvedValue(makeIncident({ detection_ids: [] }))
+      const dialog = await openDialog()
+      fireEvent.change(within(dialog).getByLabelText('Title'), { target: { value: 'Minimal' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Create incident' }))
+
+      await waitFor(() =>
+        expect(createMock).toHaveBeenCalledWith({
+          title: 'Minimal',
+          severity: 'medium',
+          description: null,
+          assigned_to: null,
+          detection_ids: [],
+        }),
+      )
+    })
+
+    it('requires a title and a valid assignee email', async () => {
+      const dialog = await openDialog()
+      const submit = within(dialog).getByRole('button', { name: 'Create incident' })
+      expect(submit).toBeDisabled()
+
+      fireEvent.change(within(dialog).getByLabelText('Title'), { target: { value: 'Has a title' } })
+      expect(submit).toBeEnabled()
+
+      fireEvent.change(within(dialog).getByLabelText('Assignee email'), { target: { value: 'not-an-email' } })
+      expect(submit).toBeDisabled()
+      expect(within(dialog).getByText('Enter a valid email address.')).toBeInTheDocument()
+      expect(createMock).not.toHaveBeenCalled()
+    })
+
+    it('reports a failure and keeps the form open', async () => {
+      createMock.mockRejectedValue(new Error("Detection 'det-x' not found"))
+      const dialog = await openDialog()
+      fireEvent.change(within(dialog).getByLabelText('Title'), { target: { value: 'Broken link' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Create incident' }))
+
+      await waitFor(() =>
+        expect(notifications()).toEqual([
+          expect.objectContaining({
+            type: 'error',
+            title: 'Could not create the incident',
+            message: "Detection 'det-x' not found",
+          }),
         ]),
       )
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Incident Alpha')).toBeInTheDocument()
-        expect(screen.getByText('Incident Beta')).toBeInTheDocument()
-      })
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(within(dialog).getByLabelText('Title')).toHaveValue('Broken link')
     })
 
-    it('does not show "Loading…" in success state', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
-      })
+    it('closes without saving on Cancel', async () => {
+      const dialog = await openDialog()
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(createMock).not.toHaveBeenCalled()
     })
 
-    it('does not show the error message in success state', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText(/Failed to load/)).not.toBeInTheDocument()
-      })
-    })
-
-    it('does not show the empty-state message when there are incidents', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.queryByText('No incidents match the current filters.'),
-        ).not.toBeInTheDocument()
-      })
-    })
-  })
-
-  // =========================================================================
-  // Empty state
-  // =========================================================================
-  describe('empty state', () => {
-    it('shows the empty-state message when the list is empty', async () => {
-      mockApi.list.mockResolvedValue(makeResponse([]))
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.getByText('No incidents match the current filters.'),
-        ).toBeInTheDocument()
-      })
-    })
-
-    it('does not show the empty-state message when incidents are present', async () => {
-      mockApi.list.mockResolvedValue(makeResponse([makeIncident()]))
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.queryByText('No incidents match the current filters.'),
-        ).not.toBeInTheDocument()
-      })
-    })
-  })
-
-  // =========================================================================
-  // Summary row
-  // =========================================================================
-  describe('summary row', () => {
-    it('shows the total incident count', async () => {
-      mockApi.list.mockResolvedValue(
-        makeResponse(
-          Array.from({ length: 3 }, (_, i) => makeIncident({ id: i + 1 })),
-          { total: 42 },
-        ),
-      )
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText(/42 incidents/)).toBeInTheDocument()
-      })
-    })
-
-    it('does not show the summary row while loading', () => {
-      renderPage()
-      expect(screen.queryByText(/incidents/)).not.toBeInTheDocument()
-    })
-
-    it('appends active severity filters to the summary', async () => {
-      mockApi.list.mockResolvedValue(makeResponse([], { total: 0 }))
-      renderPage()
-      const criticalChip = await screen.findByRole('button', { name: 'Critical' })
-      fireEvent.click(criticalChip)
-      await waitFor(() => {
-        expect(screen.getByText(/· critical/)).toBeInTheDocument()
-      })
-    })
-
-    it('appends active status filters to the summary', async () => {
-      mockApi.list.mockResolvedValue(makeResponse([], { total: 0 }))
-      renderPage()
-      const newChip = await screen.findByRole('button', { name: 'New' })
-      fireEvent.click(newChip)
-      await waitFor(() => {
-        expect(screen.getByText(/· new/)).toBeInTheDocument()
-      })
-    })
-  })
-
-  // =========================================================================
-  // Filter bar — static rendering
-  // =========================================================================
-  describe('filter bar', () => {
-    beforeEach(() => {
-      mockApi.list.mockResolvedValue(makeResponse())
-    })
-
-    it('renders the Critical severity chip', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'Critical' })).toBeInTheDocument()
-    })
-
-    it('renders the High severity chip', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'High' })).toBeInTheDocument()
-    })
-
-    it('renders the Medium severity chip', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'Medium' })).toBeInTheDocument()
-    })
-
-    it('renders the Low severity chip', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'Low' })).toBeInTheDocument()
-    })
-
-    it('renders the New status chip', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'New' })).toBeInTheDocument()
-    })
-
-    it('renders the Investigating status chip', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'Investigating' })).toBeInTheDocument()
-    })
-
-    it('renders the Contained status chip', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'Contained' })).toBeInTheDocument()
-    })
-
-    it('renders the Resolved status chip', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'Resolved' })).toBeInTheDocument()
-    })
-
-    it('renders the Closed status chip', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'Closed' })).toBeInTheDocument()
-    })
-
-    it('renders the search input', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Search incidents…')).toBeInTheDocument()
-      })
-    })
-
-    it('renders the "+ New Incident" button', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: /New Incident/ })).toBeInTheDocument()
-    })
-  })
-
-  // =========================================================================
-  // Table column headers
-  // =========================================================================
-  describe('table column headers', () => {
-    beforeEach(() => {
-      mockApi.list.mockResolvedValue(makeResponse())
-    })
-
-    it('renders the ID column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('ID')).toBeInTheDocument())
-    })
-
-    it('renders the Title column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Title')).toBeInTheDocument())
-    })
-
-    it('renders the Severity column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Severity')).toBeInTheDocument())
-    })
-
-    it('renders the Status column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Status')).toBeInTheDocument())
-    })
-
-    it('renders the Assigned To column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Assigned To')).toBeInTheDocument())
-    })
-
-    it('renders the Hosts column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Hosts')).toBeInTheDocument())
-    })
-
-    it('renders the Created column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Created')).toBeInTheDocument())
-    })
-  })
-
-  // =========================================================================
-  // Severity filter — interaction
-  // =========================================================================
-  describe('severity filter', () => {
-    beforeEach(() => {
-      mockApi.list.mockResolvedValue(makeResponse())
-    })
-
-    it('activates a severity chip when clicked (adds bg-primary class)', async () => {
-      renderPage()
-      const chip = await screen.findByRole('button', { name: 'Critical' })
-      fireEvent.click(chip)
-      expect(chip).toHaveClass('bg-primary')
-    })
-
-    it('deactivates an active severity chip when clicked again', async () => {
-      renderPage()
-      const chip = await screen.findByRole('button', { name: 'Critical' })
-      fireEvent.click(chip) // activate
-      fireEvent.click(chip) // deactivate
-      expect(chip).not.toHaveClass('bg-primary')
-    })
-
-    it('allows multiple severity chips to be active simultaneously', async () => {
-      renderPage()
-      const critical = await screen.findByRole('button', { name: 'Critical' })
-      const high = screen.getByRole('button', { name: 'High' })
-      fireEvent.click(critical)
-      fireEvent.click(high)
-      expect(critical).toHaveClass('bg-primary')
-      expect(high).toHaveClass('bg-primary')
-    })
-
-    it('deactivating one severity chip keeps others active', async () => {
-      renderPage()
-      const critical = await screen.findByRole('button', { name: 'Critical' })
-      const high = screen.getByRole('button', { name: 'High' })
-      fireEvent.click(critical)
-      fireEvent.click(high)
-      fireEvent.click(critical) // deactivate critical only
-      expect(critical).not.toHaveClass('bg-primary')
-      expect(high).toHaveClass('bg-primary')
-    })
-
-    it('triggers a new API call when a severity chip is clicked', async () => {
-      renderPage()
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(1))
-      const chip = await screen.findByRole('button', { name: 'High' })
-      fireEvent.click(chip)
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(2))
-    })
-
-    it('passes the selected severity to the API call', async () => {
-      renderPage()
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(1))
-      const chip = await screen.findByRole('button', { name: 'Critical' })
-      fireEvent.click(chip)
-      await waitFor(() => {
-        const lastCall = mockApi.list.mock.calls.at(-1)![0]
-        expect(lastCall.severity).toContain('critical')
-      })
-    })
-
-    it('passes undefined severity when no chip is selected', async () => {
-      renderPage()
-      await waitFor(() => {
-        const firstCall = mockApi.list.mock.calls[0][0]
-        expect(firstCall.severity).toBeUndefined()
-      })
-    })
-
-    it('resets to page 1 when a severity chip is clicked', async () => {
-      mockApi.list
-        .mockResolvedValueOnce(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 1 }))
-        .mockResolvedValue(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 2 }))
-      renderPage()
-      const nextBtn = await screen.findByText(/Next →/)
-      fireEvent.click(nextBtn)
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(2))
-      const chip = screen.getByRole('button', { name: 'Critical' })
-      fireEvent.click(chip)
-      await waitFor(() => {
-        const lastCall = mockApi.list.mock.calls.at(-1)![0]
-        expect(lastCall.page).toBe(1)
-      })
-    })
-  })
-
-  // =========================================================================
-  // Status filter — interaction (multi-select)
-  // =========================================================================
-  describe('status filter', () => {
-    beforeEach(() => {
-      mockApi.list.mockResolvedValue(makeResponse())
-    })
-
-    it('activates a status chip when clicked', async () => {
-      renderPage()
-      const chip = await screen.findByRole('button', { name: 'New' })
-      fireEvent.click(chip)
-      expect(chip).toHaveClass('bg-primary')
-    })
-
-    it('deactivates the status chip when clicked again (toggle off)', async () => {
-      renderPage()
-      const chip = await screen.findByRole('button', { name: 'New' })
-      fireEvent.click(chip) // activate
-      fireEvent.click(chip) // deactivate
-      expect(chip).not.toHaveClass('bg-primary')
-    })
-
-    it('allows multiple status chips to be active simultaneously', async () => {
-      renderPage()
-      const newChip = await screen.findByRole('button', { name: 'New' })
-      const resolved = screen.getByRole('button', { name: 'Resolved' })
-      fireEvent.click(newChip)
-      fireEvent.click(resolved)
-      expect(newChip).toHaveClass('bg-primary')
-      expect(resolved).toHaveClass('bg-primary')
-    })
-
-    it('deactivating one status chip keeps others active', async () => {
-      renderPage()
-      const newChip = await screen.findByRole('button', { name: 'New' })
-      const resolved = screen.getByRole('button', { name: 'Resolved' })
-      fireEvent.click(newChip)
-      fireEvent.click(resolved)
-      fireEvent.click(newChip) // deactivate New only
-      expect(newChip).not.toHaveClass('bg-primary')
-      expect(resolved).toHaveClass('bg-primary')
-    })
-
-    it('passes the selected status array to the API call', async () => {
-      renderPage()
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(1))
-      const chip = await screen.findByRole('button', { name: 'Investigating' })
-      fireEvent.click(chip)
-      await waitFor(() => {
-        const lastCall = mockApi.list.mock.calls.at(-1)![0]
-        expect(lastCall.status).toContain('investigating')
-      })
-    })
-
-    it('passes undefined status when no status chip is selected', async () => {
-      renderPage()
-      await waitFor(() => {
-        const firstCall = mockApi.list.mock.calls[0][0]
-        expect(firstCall.status).toBeUndefined()
-      })
-    })
-
-    it('resets to page 1 when a status chip is clicked', async () => {
-      mockApi.list
-        .mockResolvedValueOnce(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 1 }))
-        .mockResolvedValue(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 2 }))
-      renderPage()
-      const nextBtn = await screen.findByText(/Next →/)
-      fireEvent.click(nextBtn)
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(2))
-      const statusChip = screen.getByRole('button', { name: 'New' })
-      fireEvent.click(statusChip)
-      await waitFor(() => {
-        const lastCall = mockApi.list.mock.calls.at(-1)![0]
-        expect(lastCall.page).toBe(1)
-      })
-    })
-  })
-
-  // =========================================================================
-  // Search input — interaction
-  // =========================================================================
-  describe('search input', () => {
-    beforeEach(() => {
-      mockApi.list.mockResolvedValue(makeResponse())
-    })
-
-    it('updates the input value as the user types', async () => {
-      renderPage()
-      const input = await screen.findByPlaceholderText('Search incidents…')
-      fireEvent.change(input, { target: { value: 'pass-the-hash' } })
-      expect(input).toHaveValue('pass-the-hash')
-    })
-
-    it('triggers a new API call after the search value changes', async () => {
-      renderPage()
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(1))
-      const input = await screen.findByPlaceholderText('Search incidents…')
-      fireEvent.change(input, { target: { value: 'lateral' } })
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(2))
-    })
-
-    it('passes the search term to the API call', async () => {
-      renderPage()
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(1))
-      const input = await screen.findByPlaceholderText('Search incidents…')
-      fireEvent.change(input, { target: { value: 'ransomware' } })
-      await waitFor(() => {
-        const lastCall = mockApi.list.mock.calls.at(-1)![0]
-        expect(lastCall.search).toBe('ransomware')
-      })
-    })
-
-    it('passes undefined search when the input is empty', async () => {
-      renderPage()
-      await waitFor(() => {
-        const firstCall = mockApi.list.mock.calls[0][0]
-        expect(firstCall.search).toBeUndefined()
-      })
-    })
-
-    it('resets to page 1 when the search value changes', async () => {
-      mockApi.list
-        .mockResolvedValueOnce(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 1 }))
-        .mockResolvedValue(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 2 }))
-      renderPage()
-      const nextBtn = await screen.findByText(/Next →/)
-      fireEvent.click(nextBtn)
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(2))
-      const input = screen.getByPlaceholderText('Search incidents…')
-      fireEvent.change(input, { target: { value: 'pivot' } })
-      await waitFor(() => {
-        const lastCall = mockApi.list.mock.calls.at(-1)![0]
-        expect(lastCall.page).toBe(1)
-      })
-    })
-  })
-
-  // =========================================================================
-  // Pagination
-  // =========================================================================
-  describe('pagination', () => {
-    it('does not show pagination controls when total_pages is 1', async () => {
-      mockApi.list.mockResolvedValue(makeResponse([makeIncident()], { total: 5, total_pages: 1 }))
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText(/← Prev/)).not.toBeInTheDocument()
-        expect(screen.queryByText(/Next →/)).not.toBeInTheDocument()
-      })
-    })
-
-    it('shows pagination controls when total_pages > 1', async () => {
-      mockApi.list.mockResolvedValue(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 1 }))
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText(/← Prev/)).toBeInTheDocument()
-        expect(screen.getByText(/Next →/)).toBeInTheDocument()
-      })
-    })
-
-    it('shows the current page and total pages', async () => {
-      mockApi.list.mockResolvedValue(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 1 }))
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Page 1 of 3')).toBeInTheDocument()
-      })
-    })
-
-    it('Prev button is disabled on page 1', async () => {
-      mockApi.list.mockResolvedValue(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 1 }))
-      renderPage()
-      const prevBtn = await screen.findByText(/← Prev/)
-      expect(prevBtn.closest('button')).toBeDisabled()
-    })
-
-    it('Next button is not disabled on page 1 of 3', async () => {
-      mockApi.list.mockResolvedValue(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 1 }))
-      renderPage()
-      const nextBtn = await screen.findByText(/Next →/)
-      expect(nextBtn.closest('button')).not.toBeDisabled()
-    })
-
-    it('clicking Next requests page 2', async () => {
-      mockApi.list.mockResolvedValue(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 1 }))
-      renderPage()
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(1))
-      fireEvent.click(await screen.findByText(/Next →/))
-      await waitFor(() => {
-        const lastCall = mockApi.list.mock.calls.at(-1)![0]
-        expect(lastCall.page).toBe(2)
-      })
-    })
-
-    it('clicking Next twice requests page 3', async () => {
-      mockApi.list
-        .mockResolvedValueOnce(makeResponse([makeIncident()], { total: 60, total_pages: 3, page: 1 }))
-        .mockResolvedValueOnce(makeResponse([makeIncident()], { total: 60, total_pages: 3, page: 2 }))
-        .mockResolvedValue(makeResponse([makeIncident()], { total: 60, total_pages: 3, page: 3 }))
-      renderPage()
-      fireEvent.click(await screen.findByText(/Next →/)) // page 1 → 2
-      fireEvent.click(await screen.findByText(/Next →/)) // page 2 → 3
-      await waitFor(() => {
-        expect(
-          mockApi.list.mock.calls.some((c: unknown[]) => (c[0] as Record<string, unknown>).page === 3),
-        ).toBe(true)
-      })
-    })
-
-    it('clicking Prev requests the previous page', async () => {
-      mockApi.list
-        .mockResolvedValueOnce(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 1 }))
-        .mockResolvedValueOnce(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 2 }))
-        .mockResolvedValue(makeResponse([makeIncident()], { total: 50, total_pages: 3, page: 1 }))
-      renderPage()
-      fireEvent.click(await screen.findByText(/Next →/))  // page 1 → 2
-      fireEvent.click(await screen.findByText(/← Prev/))  // page 2 → 1
-      await waitFor(() => {
-        expect(
-          mockApi.list.mock.calls.some((c: unknown[]) => (c[0] as Record<string, unknown>).page === 1),
-        ).toBe(true)
-      })
-    })
-
-    it('Next button is disabled on the last page', async () => {
-      mockApi.list
-        .mockResolvedValueOnce(makeResponse([makeIncident()], { total: 40, total_pages: 2, page: 1 }))
-        .mockResolvedValue(makeResponse([makeIncident()], { total: 40, total_pages: 2, page: 2 }))
-      renderPage()
-      fireEvent.click(await screen.findByText(/Next →/)) // advance to page 2
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(2))
-      await waitFor(() => {
-        const nextBtn = screen.getByText(/Next →/)
-        expect(nextBtn.closest('button')).toBeDisabled()
-      })
-    })
-
-    it('Prev button is enabled after navigating to page 2', async () => {
-      mockApi.list
-        .mockResolvedValueOnce(makeResponse([makeIncident()], { total: 40, total_pages: 2, page: 1 }))
-        .mockResolvedValue(makeResponse([makeIncident()], { total: 40, total_pages: 2, page: 2 }))
-      renderPage()
-      fireEvent.click(await screen.findByText(/Next →/))
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(2))
-      await waitFor(() => {
-        const prevBtn = screen.getByText(/← Prev/)
-        expect(prevBtn.closest('button')).not.toBeDisabled()
-      })
-    })
-  })
-
-  // =========================================================================
-  // TopBar
-  // =========================================================================
-  describe('TopBar', () => {
-    it('renders the TopBar with the "Incidents" crumb', () => {
-      renderPage()
-      expect(screen.getByTestId('topbar')).toHaveTextContent('Incidents')
-    })
-  })
-
-  // =========================================================================
-  // Initial API call parameters
-  // =========================================================================
-  describe('initial API call parameters', () => {
-    beforeEach(() => {
-      mockApi.list.mockResolvedValue(makeResponse())
-    })
-
-    it('calls incidentsApi.list once on mount', async () => {
-      renderPage()
-      await waitFor(() => expect(mockApi.list).toHaveBeenCalledTimes(1))
-    })
-
-    it('defaults to page=1', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(mockApi.list.mock.calls[0][0].page).toBe(1)
-      })
-    })
-
-    it('defaults to page_size=20', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(mockApi.list.mock.calls[0][0].page_size).toBe(20)
-      })
-    })
-
-    it('defaults to sort=created_at', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(mockApi.list.mock.calls[0][0].sort).toBe('created_at')
-      })
-    })
-
-    it('does not pass a severity filter by default', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(mockApi.list.mock.calls[0][0].severity).toBeUndefined()
-      })
-    })
-
-    it('does not pass a status filter by default', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(mockApi.list.mock.calls[0][0].status).toBeUndefined()
-      })
-    })
-
-    it('does not pass a search term by default', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(mockApi.list.mock.calls[0][0].search).toBeUndefined()
-      })
-    })
-  })
-
-  // =========================================================================
-  // Row selection / IncidentPanel
-  // =========================================================================
-  describe('row selection', () => {
-    beforeEach(() => {
-      mockApi.list.mockResolvedValue(
-        makeResponse([makeIncident({ id: 1, title: 'Lateral Movement via Pass-the-Hash' })]),
-      )
-    })
-
-    it('incident panel is not shown initially', () => {
-      renderPage()
-      expect(screen.queryByTestId('incident-panel')).not.toBeInTheDocument()
-    })
-
-    it('clicking a row opens the incident panel', async () => {
-      renderPage()
-      fireEvent.click(await screen.findByText('Lateral Movement via Pass-the-Hash'))
-      expect(screen.getByTestId('incident-panel')).toBeInTheDocument()
-    })
-
-    it('the panel receives the correct incident id', async () => {
-      renderPage()
-      fireEvent.click(await screen.findByText('Lateral Movement via Pass-the-Hash'))
-      expect(screen.getByTestId('incident-panel')).toHaveAttribute('data-incident-id', '1')
-    })
-
-    it('clicking a selected row closes the panel', async () => {
-      renderPage()
-      const row = await screen.findByText('Lateral Movement via Pass-the-Hash')
-      fireEvent.click(row) // open
-      expect(screen.getByTestId('incident-panel')).toBeInTheDocument()
-      fireEvent.click(row) // close (deselect same row)
-      expect(screen.queryByTestId('incident-panel')).not.toBeInTheDocument()
-    })
-
-    it('clicking the panel close button closes the panel', async () => {
-      renderPage()
-      fireEvent.click(await screen.findByText('Lateral Movement via Pass-the-Hash'))
-      expect(screen.getByTestId('incident-panel')).toBeInTheDocument()
-      fireEvent.click(screen.getByTestId('panel-close'))
-      expect(screen.queryByTestId('incident-panel')).not.toBeInTheDocument()
-    })
-
-    it('clicking a different row replaces the selected incident in the panel', async () => {
-      mockApi.list.mockResolvedValue(
-        makeResponse([
-          makeIncident({ id: 1, title: 'Incident Alpha' }),
-          makeIncident({ id: 2, title: 'Incident Beta' }),
-        ]),
-      )
-      renderPage()
-      fireEvent.click(await screen.findByText('Incident Alpha'))
-      expect(screen.getByTestId('incident-panel')).toHaveAttribute('data-incident-id', '1')
-      fireEvent.click(screen.getByText('Incident Beta'))
-      expect(screen.getByTestId('incident-panel')).toHaveAttribute('data-incident-id', '2')
-    })
-  })
-
-  // =========================================================================
-  // Create Incident modal
-  // =========================================================================
-  describe('create incident modal', () => {
-    beforeEach(() => {
-      mockApi.list.mockResolvedValue(makeResponse())
-    })
-
-    it('modal is not shown initially', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText('Create Incident')).not.toBeInTheDocument()
-      })
-    })
-
-    it('clicking "+ New Incident" opens the create modal', async () => {
-      renderPage()
-      const btn = await screen.findByRole('button', { name: /New Incident/ })
-      fireEvent.click(btn)
-      expect(screen.getByRole('heading', { name: 'Create Incident' })).toBeInTheDocument()
-    })
-
-    it('the modal contains the Title field', async () => {
-      renderPage()
-      const btn = await screen.findByRole('button', { name: /New Incident/ })
-      fireEvent.click(btn)
-      expect(
-        screen.getByPlaceholderText('e.g. Lateral Movement via Pass-the-Hash'),
-      ).toBeInTheDocument()
-    })
-
-    it('the modal contains the Severity select', async () => {
-      renderPage()
-      const btn = await screen.findByRole('button', { name: /New Incident/ })
-      fireEvent.click(btn)
-      expect(screen.getByRole('combobox')).toBeInTheDocument()
-    })
-
-    it('clicking Cancel closes the modal', async () => {
-      renderPage()
-      const btn = await screen.findByRole('button', { name: /New Incident/ })
-      fireEvent.click(btn)
-      expect(screen.getByRole('heading', { name: 'Create Incident' })).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-      await waitFor(() => {
-        expect(screen.queryByRole('heading', { name: 'Create Incident' })).not.toBeInTheDocument()
-      })
-    })
-  })
-
-  // =========================================================================
-  // Stats cards (metrics query)
-  // =========================================================================
-  describe('stats cards', () => {
-    it('does not show stats cards while metrics are loading', () => {
-      mockApi.list.mockResolvedValue(makeResponse())
-      // metrics is pending (default)
-      renderPage()
-      expect(screen.queryByText('Total Incidents')).not.toBeInTheDocument()
-    })
-
-    it('shows stats cards when metrics resolve', async () => {
-      mockApi.list.mockResolvedValue(makeResponse())
-      mockApi.metrics.mockResolvedValue(makeMetrics())
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Total Incidents')).toBeInTheDocument()
-      })
-    })
-
-    it('shows the open incidents count in the Open card', async () => {
-      mockApi.list.mockResolvedValue(makeResponse())
-      mockApi.metrics.mockResolvedValue(makeMetrics({ open_incidents_count: 10 }))
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Open')).toBeInTheDocument()
-      })
-    })
-
-    it('shows the Avg MTTR card', async () => {
-      mockApi.list.mockResolvedValue(makeResponse())
-      mockApi.metrics.mockResolvedValue(makeMetrics())
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Avg MTTR')).toBeInTheDocument()
-      })
-    })
-
-    it('shows the Critical / High card', async () => {
-      mockApi.list.mockResolvedValue(makeResponse())
-      mockApi.metrics.mockResolvedValue(makeMetrics())
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Critical / High')).toBeInTheDocument()
-      })
+    it('is not offered to a viewer', async () => {
+      useAuthStore.setState({ user: { email: 'viewer@mxtac.local', role: 'viewer' } })
+      await renderLoaded()
+      expect(screen.queryByRole('button', { name: /new incident/i })).not.toBeInTheDocument()
     })
   })
 })

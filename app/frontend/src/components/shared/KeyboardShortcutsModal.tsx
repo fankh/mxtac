@@ -15,10 +15,12 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     heading: 'Navigation',
     rows: [
-      { keys: ['g', 'd'], description: 'Go to Dashboard' },
+      { keys: ['g', 'd'], description: 'Go to Overview' },
       { keys: ['g', 'e'], description: 'Go to Detections' },
       { keys: ['g', 'r'], description: 'Go to Rules' },
-      { keys: ['g', 'c'], description: 'Go to Connectors' },
+      { keys: ['g', 'h'], description: 'Go to Hunt' },
+      { keys: ['g', 'c'], description: 'Go to ATT&CK coverage' },
+      { keys: ['g', 's'], description: 'Go to Sources' },
       { keys: ['g', 'i'], description: 'Go to Incidents' },
     ],
   },

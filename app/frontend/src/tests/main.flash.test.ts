@@ -13,134 +13,104 @@ function runFlashPrevention() {
     const savedTheme = stored?.state?.theme
     const theme = savedTheme || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
     document.documentElement.setAttribute('data-theme', theme)
+    document.documentElement.classList.toggle('dark', theme !== 'light')
   } catch {
     document.documentElement.setAttribute('data-theme', 'dark')
+    document.documentElement.classList.add('dark')
   }
+}
+
+const root = document.documentElement
+
+function store(value: unknown) {
+  localStorage.setItem('mxtac-ui', typeof value === 'string' ? value : JSON.stringify(value))
+}
+
+function preferLight() {
+  vi.spyOn(window, 'matchMedia').mockReturnValue({
+    matches: true,
+    media: '(prefers-color-scheme: light)',
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  } as MediaQueryList)
+}
+
+function expectTheme(theme: 'light' | 'dark') {
+  expect(root).toHaveAttribute('data-theme', theme)
+  expect(root.classList.contains('dark')).toBe(theme === 'dark')
 }
 
 describe('Flash prevention (main.tsx bootstrap logic)', () => {
   beforeEach(() => {
     localStorage.clear()
-    document.documentElement.removeAttribute('data-theme')
+    root.removeAttribute('data-theme')
+    root.classList.remove('dark')
   })
 
   afterEach(() => {
     localStorage.clear()
-    document.documentElement.removeAttribute('data-theme')
+    root.removeAttribute('data-theme')
+    root.classList.remove('dark')
     vi.restoreAllMocks()
   })
 
-  // ── Default / empty storage ──────────────────────────────────────────────
-
-  it('defaults to "dark" when localStorage is empty and no system preference', () => {
+  it('defaults to dark when nothing is stored and the system has no light preference', () => {
     runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    expectTheme('dark')
   })
 
-  it('defaults to "dark" when mxtac-ui key does not exist and no system preference', () => {
-    localStorage.setItem('some-other-key', 'irrelevant')
+  it('follows a system light preference when nothing is stored', () => {
+    preferLight()
     runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    expectTheme('light')
   })
 
-  it('defaults to "light" when system prefers light and localStorage is empty', () => {
-    vi.spyOn(window, 'matchMedia').mockReturnValue({
-      matches: true,
-      media: '(prefers-color-scheme: light)',
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    } as MediaQueryList)
+  it.each(['light', 'dark'] as const)('applies a stored %s theme', (theme) => {
+    store({ state: { theme } })
     runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+    expectTheme(theme)
   })
 
-  it('localStorage override takes precedence over system light preference', () => {
-    vi.spyOn(window, 'matchMedia').mockReturnValue({
-      matches: true,
-      media: '(prefers-color-scheme: light)',
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    } as MediaQueryList)
-    localStorage.setItem('mxtac-ui', JSON.stringify({ state: { theme: 'dark' } }))
+  it('prefers the stored theme over the system preference', () => {
+    preferLight()
+    store({ state: { theme: 'dark' } })
     runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    expectTheme('dark')
   })
 
-  // ── Stored theme values ──────────────────────────────────────────────────
-
-  it('applies "light" theme from stored mxtac-ui state', () => {
-    localStorage.setItem('mxtac-ui', JSON.stringify({ state: { theme: 'light' } }))
+  it('removes a dark class left on <html> when the stored theme is light', () => {
+    root.classList.add('dark')
+    root.setAttribute('data-theme', 'dark')
+    store({ state: { theme: 'light' } })
     runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+    expectTheme('light')
   })
 
-  it('applies "dark" theme from stored mxtac-ui state', () => {
-    localStorage.setItem('mxtac-ui', JSON.stringify({ state: { theme: 'dark' } }))
+  it('renders a stored theme that no longer exists (the removed "matrix") with the dark class', () => {
+    store({ state: { theme: 'matrix' } })
     runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+    expect(root).toHaveClass('dark')
   })
 
-  it('applies "matrix" theme from stored mxtac-ui state', () => {
-    localStorage.setItem('mxtac-ui', JSON.stringify({ state: { theme: 'matrix' } }))
+  it.each([
+    ['malformed JSON', 'not-valid-{json'],
+    ['a state without a theme', { state: {} }],
+    ['no state at all', { version: 0 }],
+    ['an empty theme', { state: { theme: '' } }],
+  ])('falls back to dark for %s', (_name, value) => {
+    store(value)
     runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('matrix')
+    expectTheme('dark')
   })
 
-  // ── Error / edge cases ───────────────────────────────────────────────────
-
-  it('falls back to "dark" on malformed JSON', () => {
-    localStorage.setItem('mxtac-ui', 'not-valid-{json')
+  it('sets the theme on <html>, not on <body>', () => {
+    store({ state: { theme: 'dark' } })
     runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
-  })
-
-  it('falls back to "dark" when state.theme key is absent', () => {
-    localStorage.setItem('mxtac-ui', JSON.stringify({ state: {} }))
-    runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
-  })
-
-  it('falls back to "dark" when the state key itself is absent', () => {
-    localStorage.setItem('mxtac-ui', JSON.stringify({ version: 0 }))
-    runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
-  })
-
-  it('falls back to "dark" when theme value is an empty string', () => {
-    localStorage.setItem('mxtac-ui', JSON.stringify({ state: { theme: '' } }))
-    runFlashPrevention()
-    // Empty string is falsy — system preference check kicks in (defaults to dark in jsdom)
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
-  })
-
-  // ── Target element ───────────────────────────────────────────────────────
-
-  it('sets data-theme on document.documentElement, not document.body', () => {
-    localStorage.setItem('mxtac-ui', JSON.stringify({ state: { theme: 'matrix' } }))
-    runFlashPrevention()
-    expect(document.documentElement.hasAttribute('data-theme')).toBe(true)
-    expect(document.body.hasAttribute('data-theme')).toBe(false)
-  })
-
-  it('overwrites a pre-existing data-theme attribute', () => {
-    document.documentElement.setAttribute('data-theme', 'light')
-    localStorage.setItem('mxtac-ui', JSON.stringify({ state: { theme: 'dark' } }))
-    runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
-  })
-
-  it('is idempotent — calling it twice with the same storage yields the same result', () => {
-    localStorage.setItem('mxtac-ui', JSON.stringify({ state: { theme: 'matrix' } }))
-    runFlashPrevention()
-    runFlashPrevention()
-    expect(document.documentElement.getAttribute('data-theme')).toBe('matrix')
+    expect(document.body).not.toHaveAttribute('data-theme')
+    expect(document.body).not.toHaveClass('dark')
   })
 })

@@ -1,279 +1,154 @@
-# MxTac Installation Guide
+# Installation
 
-MxTac is a MITRE ATT&CK-powered threat detection platform (FastAPI backend + React frontend) with PostgreSQL, Valkey, and OpenSearch.
+MxTac consists of a FastAPI backend, a React frontend, PostgreSQL, Valkey and OpenSearch. This guide covers the two supported ways to install it. Other deployment files in the repository are described in [docs/deployment.md](docs/deployment.md).
 
-## Prerequisites
-
-### Hardware
-
-| Resource | Minimum | Recommended |
-|----------|---------|-------------|
-| CPU | 2 cores | 4 cores |
-| Memory | 4 GB | 8 GB |
-| Disk | 20 GB SSD | 50 GB SSD |
-
-### Software
+## Requirements
 
 | Component | Version |
 |-----------|---------|
-| OS | Ubuntu 22.04 / 24.04 LTS |
-| Docker | 24.x + Compose V2 |
-| Python | 3.12+ (manual install only) |
-| Node.js | 20+ (manual install only) |
-| Git | 2.x |
-| OpenSSL | 3.x |
+| Docker | With the Compose v2 plugin (`docker compose`) |
+| Git | Any recent version |
+| Python | 3.12 or newer, for running the backend without Docker |
+| Node.js | 20 or newer, for running the frontend without Docker |
 
-> **Note:** OpenSearch requires `vm.max_map_count=262144`. The setup script configures this automatically; for manual installs run `sudo sysctl -w vm.max_map_count=262144`.
+OpenSearch is started with a 512 MB Java heap in the development Compose file. On Linux it needs `vm.max_map_count` of at least 262144:
 
----
+```bash
+sudo sysctl -w vm.max_map_count=262144
+```
 
-## Quick Start (Development)
+## Option A: local evaluation with Docker Compose
 
-### Option A — Docker Compose (Recommended)
+1. Clone the repository.
+
+   ```bash
+   git clone https://github.com/fankh/mxtac.git
+   cd mxtac/app
+   ```
+
+2. Start the stack.
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+   The backend applies the database migrations and then starts.
+
+3. Check that the backend is ready.
+
+   ```bash
+   curl http://localhost:15000/ready
+   ```
+
+4. Open <http://localhost:15001> and sign in. The default accounts and how to replace them are described in the [README](README.md#first-login).
+
+| Service | Address |
+|---------|---------|
+| Web UI | <http://localhost:15001> |
+| Backend API | <http://localhost:15000> |
+| Swagger UI | <http://localhost:15000/docs> |
+| PostgreSQL | `localhost:15002` (user `mxtac`, password `mxtac`) |
+| Valkey | `localhost:15003` |
+| OpenSearch | <http://localhost:15004> |
+| OpenSearch Dashboards | <http://localhost:15006> with `--profile dashboards` |
+| Redpanda (Kafka API) | `localhost:15007` with `--profile kafka` |
+| Prometheus | <http://localhost:15009> with `--profile monitoring` |
+| Grafana | <http://localhost:15010> with `--profile monitoring` |
+
+This setup is for a trusted machine. It uses fixed development credentials and publishes every port.
+
+## Option B: single Ubuntu server
+
+`app/setup.sh` installs Docker, generates secrets, starts the stack behind an Nginx reverse proxy with TLS, and runs the migrations. It targets Ubuntu 22.04 and 24.04 and must run as root. It resets the UFW firewall rules of the host.
 
 ```bash
 git clone https://github.com/fankh/mxtac.git
 cd mxtac/app
-
-# Copy environment files
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-
-# Start all services (backend, frontend, PostgreSQL 16, Valkey 8, OpenSearch 2.17)
-docker compose up --build
+sudo MXTAC_HOST=mxtac.example.com bash setup.sh
 ```
 
-Services available after startup:
+The installation is placed in `/opt/mxtac`. Read [docs/deployment.md](docs/deployment.md#automated-single-host-setup) for what the script does, the steps after it finishes, and its known gaps.
 
-| Service | URL |
-|---------|-----|
-| API / Swagger | http://localhost:8080/docs |
-| Frontend (Vite dev) | http://localhost:5173 |
-| OpenSearch Dashboards | http://localhost:5601 (optional: `docker compose --profile dashboards up`) |
-| Prometheus | http://localhost:9090 (optional: `docker compose --profile monitoring up`) |
-| Grafana | http://localhost:3001 (optional: `docker compose --profile monitoring up`) |
+## Running without Docker
 
-### Option B — Manual
-
-**Backend:**
+See [docs/development.md](docs/development.md). In short:
 
 ```bash
+# Backend with a local SQLite database
 cd app/backend
-python3.12 -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-
-# Note: python3-saml requires libxmlsec1-dev (apt install libxmlsec1-dev)
-
-cp .env.example .env
-# Edit .env — set DATABASE_URL, SECRET_KEY, etc.
-
-uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+SQLITE_MODE=true uvicorn app.main:app --port 8080
 ```
 
-**Frontend:**
+The frontend dev server expects the backend under the host name `backend`; see [docs/development.md](docs/development.md#option-3-frontend-on-the-host).
 
-```bash
-cd app/frontend
-cp .env.example .env
-# .env contains: VITE_API_BASE_URL=http://localhost:8080
+## Configuration
 
-npm install
-npm run dev
-# → http://localhost:5173
-```
+Settings are environment variables. [ENV-REFERENCE.md](ENV-REFERENCE.md) lists all of them. The ones to set for any shared deployment:
 
-You'll still need PostgreSQL 16, Valkey 8, and OpenSearch 2.17 running separately (or via `docker compose up postgres valkey opensearch`).
+| Variable | Value |
+|----------|-------|
+| `DEBUG` | `false` |
+| `SECRET_KEY` | Output of `openssl rand -hex 32` |
+| `DATABASE_URL` | Your PostgreSQL URL with a strong password |
+| `CORS_ORIGINS` | JSON array with the URL of the UI, for example `["https://mxtac.example.com"]` |
 
----
+## Verifying the installation
 
-## Production Deployment
+| Check | Command | Expected |
+|-------|---------|----------|
+| Backend is running | `curl http://localhost:15000/health` | `{"status":"ok","version":"..."}` |
+| Dependencies are reachable | `curl http://localhost:15000/ready` | `"status":"ready"` and `ok` for `db`, `valkey` and `opensearch`. The `backup` entry is informational |
+| Containers | `docker compose ps` | All services up |
+| Login | Sign in at <http://localhost:15001> | The Overview page opens |
 
-MxTac supports five production deployment options. See [21-DEPLOYMENT-GUIDE.md](21-DEPLOYMENT-GUIDE.md) for full procedures.
-
-### Option A — Automated Ubuntu Setup (Recommended)
-
-```bash
-sudo bash app/setup.sh
-```
-
-This script is idempotent and handles: system packages, UFW firewall, Docker, kernel tuning, secret generation, deployment to `/opt/mxtac/`, database migrations, and health checks.
-
-### Option B — Docker Compose (Single Host)
-
-```bash
-cd app
-cp backend/.env.example .env
-# Edit .env — generate secrets (see Configuration Reference below)
-docker compose -f docker-compose.prod.yml up -d
-```
-
-### Option C — Docker Swarm (Multi-Host HA)
-
-```bash
-docker stack deploy -c app/docker-stack.yml mxtac
-```
-
-Requires Docker Swarm initialized and node labels configured. See [21-DEPLOYMENT-GUIDE.md](21-DEPLOYMENT-GUIDE.md) § Docker Swarm.
-
-### Option D — Kubernetes / K3s
-
-```bash
-cd app/deploy/k3s
-bash deploy.sh
-```
-
-Manifests in `app/deploy/k3s/` include namespace, secrets, statefulsets, deployments, ingress, network policies, HPA, and PDB.
-
-### Option E — Systemd (Bare Metal)
-
-```bash
-cd app/deploy/systemd
-sudo bash install.sh
-```
-
-Uses `mxtac.service` with security hardening. Environment via `mxtac.env`.
-
-### TLS / HTTPS
-
-```bash
-sudo bash app/enable-https.sh
-```
-
-Obtains a Let's Encrypt certificate, configures Nginx for TLS 1.2/1.3, and sets up a daily auto-renewal cron job.
-
----
-
-## Configuration Reference
-
-### Environment Files
-
-| File | Purpose |
-|------|---------|
-| `app/backend/.env.example` | Backend config template |
-| `app/frontend/.env.example` | Frontend config template |
-| `app/.env.swarm.example` | Docker Swarm variables |
-| `app/deploy/systemd/mxtac.env.example` | Systemd environment |
-
-See [ENV-REFERENCE.md](ENV-REFERENCE.md) for the complete variable reference.
-
-### Key Variables
-
-```bash
-# Security — generate before first deploy
-SECRET_KEY=<openssl rand -hex 32>
-
-# Database
-DATABASE_URL=postgresql+asyncpg://mxtac:PASSWORD@localhost:5432/mxtac
-
-# Cache
-VALKEY_URL=redis://localhost:6379/0
-
-# Search
-OPENSEARCH_HOST=localhost
-OPENSEARCH_PORT=9200
-
-# Frontend
-VITE_API_BASE_URL=http://localhost:8080   # or https://your-domain.com
-
-# Production essentials
-DEBUG=false
-CORS_ORIGINS=["https://your-domain.com"]
-```
-
-### Port Map
-
-| Port | Service |
-|------|---------|
-| 80 / 443 | Nginx (HTTP / HTTPS) |
-| 8080 | Backend API |
-| 3000 | Frontend (production) |
-| 5173 | Frontend (Vite dev) |
-| 5432 | PostgreSQL |
-| 6379 | Valkey |
-| 9200 | OpenSearch |
-
----
-
-## Health Checks & Verification
-
-```bash
-# API health
-curl http://localhost:8080/health
-
-# API readiness (includes DB + cache connectivity)
-curl http://localhost:8080/ready
-
-# Frontend
-curl -I http://localhost:5173   # dev
-curl -I http://localhost:3000   # production
-
-# Database migrations
-cd app/backend
-alembic upgrade head
-
-# Docker service health
-docker compose ps
-docker compose logs -f backend
-```
-
----
+With the single-server setup, replace `http://localhost:15000` with `http://localhost:8080` on the server.
 
 ## Upgrading
 
-### Automated (Recommended)
+Development Compose setup:
 
 ```bash
+cd mxtac
+git pull
+cd app
+docker compose up -d --build
+```
+
+Migrations are applied when the backend container starts.
+
+Single-server setup:
+
+```bash
+cd mxtac
+git pull
 sudo bash app/update.sh
 ```
 
-Performs a zero-downtime rolling update: syncs source (preserves `.env`), rebuilds images, restarts backend → frontend, runs migrations, and reloads Nginx.
-
-### Manual
-
-```bash
-cd app
-git pull
-docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml up -d backend   # restart backend first
-docker compose -f docker-compose.prod.yml up -d frontend   # then frontend
-docker compose exec backend alembic upgrade head            # run migrations
-```
-
----
-
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| OpenSearch won't start | `sudo sysctl -w vm.max_map_count=262144` and add to `/etc/sysctl.conf` |
-| `SECRET_KEY` error on startup | Generate one: `openssl rand -hex 32` and set in `.env` |
-| Database connection refused | Ensure PostgreSQL is running and `DATABASE_URL` is correct |
-| Frontend can't reach API | Check `VITE_API_BASE_URL` matches the backend address; check `CORS_ORIGINS` includes the frontend origin |
-| Permission denied on Docker | Add your user to the `docker` group: `sudo usermod -aG docker $USER` |
-| Port already in use | Check with `ss -tlnp | grep <port>` and stop the conflicting process |
-| Alembic migration fails | Check DB connectivity; run `alembic history` to see migration state |
-| SAML/SSO import error | Install system dependency: `sudo apt install libxmlsec1-dev` |
+| Problem | What to check |
+|---------|---------------|
+| OpenSearch exits at startup on Linux | `sudo sysctl -w vm.max_map_count=262144` |
+| `/ready` returns `503` | The `checks` object in the response names the dependency that failed. OpenSearch can take a minute to start |
+| Backend exits with `FATAL: SECRET_KEY is set to the development default` | Set `SECRET_KEY` or, for local use only, `DEBUG=true` |
+| Backend exits with `error parsing value for field "cors_origins"` | `CORS_ORIGINS` must be a JSON array |
+| Backend container exits with `docker-entrypoint.sh: ... not found` on Windows | `app/backend/docker-entrypoint.sh` has CRLF line endings. Convert it to LF. `.gitattributes` keeps `*.sh` files in LF on a new clone |
+| Login returns `500` and the backend log shows `relation "users" does not exist` | The migrations did not run. Run `docker compose exec backend alembic upgrade head` and restart the backend |
+| Login returns `429` | Five failed logins lock the email address for 30 minutes. The login route also allows 10 requests per minute per IP |
+| UI loads but API calls fail | The frontend calls `/api/v1` on its own origin. Check that the proxy forwards `/api/` to the backend |
+| A port is already in use | Change the host port in `app/docker-compose.yml` |
 
-### Logs
+Logs:
 
 ```bash
-# Docker
 docker compose logs -f backend
 docker compose logs -f frontend
-
-# Systemd
-journalctl -u mxtac -f
-
-# Nginx
-tail -f /var/log/nginx/access.log /var/log/nginx/error.log
 ```
 
----
+## Further reading
 
-## Further Reading
-
-- [21-DEPLOYMENT-GUIDE.md](21-DEPLOYMENT-GUIDE.md) — Full production deployment procedures
-- [ENV-REFERENCE.md](ENV-REFERENCE.md) — Complete environment variable reference
-- [14-DEVELOPMENT-GUIDE.md](14-DEVELOPMENT-GUIDE.md) — Development workflow and conventions
-- [12-BACKEND-SECURITY-IMPLEMENTATION.md](12-BACKEND-SECURITY-IMPLEMENTATION.md) — Security implementation details
+- [docs/deployment.md](docs/deployment.md): deployment files and production notes
+- [docs/integration-guide.md](docs/integration-guide.md): connecting data sources
+- [docs/security.md](docs/security.md): security model and limitations

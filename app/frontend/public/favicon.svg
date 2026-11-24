@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <clipPath id="c"><rect width="32" height="32" rx="6"/></clipPath>
+    <pattern id="g" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="3.5" height="3.5" fill="#111111"/>
+    </pattern>
+  </defs>
+  <g clip-path="url(#c)">
+    <rect width="32" height="32" fill="#080808"/>
+    <rect width="32" height="32" fill="url(#g)"/>
+    <!-- M in 4px grid (8x8 cells) -->
+    <g fill="#00FF41">
+      <!-- Row 1: tops -->
+      <rect x="4" y="4" width="3.5" height="3.5"/><rect x="8" y="4" width="3.5" height="3.5"/>
+      <rect x="20" y="4" width="3.5" height="3.5"/><rect x="24" y="4" width="3.5" height="3.5"/>
+      <!-- Row 2: diagonal -->
+      <rect x="4" y="8" width="3.5" height="3.5"/><rect x="12" y="8" width="3.5" height="3.5"/>
+      <rect x="16" y="8" width="3.5" height="3.5"/><rect x="24" y="8" width="3.5" height="3.5"/>
+      <!-- Row 3: V bottom -->
+      <rect x="4" y="12" width="3.5" height="3.5"/><rect x="12" y="12" width="3.5" height="3.5"/>
+      <rect x="16" y="12" width="3.5" height="3.5"/><rect x="24" y="12" width="3.5" height="3.5"/>
+      <!-- Rows 4-6: legs -->
+      <rect x="4" y="16" width="3.5" height="3.5"/><rect x="24" y="16" width="3.5" height="3.5"/>
+      <rect x="4" y="20" width="3.5" height="3.5"/><rect x="24" y="20" width="3.5" height="3.5"/>
+      <rect x="4" y="24" width="3.5" height="3.5"/><rect x="24" y="24" width="3.5" height="3.5"/>
+    </g>
+    <!-- Rain hint -->
+    <g fill="#112211">
+      <rect x="0" y="4" width="3.5" height="3.5"/><rect x="0" y="16" width="3.5" height="3.5"/>
+      <rect x="28" y="8" width="3.5" height="3.5"/><rect x="28" y="20" width="3.5" height="3.5"/>
+    </g>
+  </g>
+</svg>

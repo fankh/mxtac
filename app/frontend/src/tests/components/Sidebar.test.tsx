@@ -12,6 +12,19 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { Sidebar } from '../../components/layout/Sidebar'
 import { useUIStore } from '../../stores/uiStore'
+import { useAuthStore } from '../../stores/authStore'
+import { KYRA_MDR_URL } from '../../lib/links'
+
+const NAV_ITEMS = [
+  { label: 'Overview', href: '/' },
+  { label: 'Detections', href: '/detections' },
+  { label: 'Incidents', href: '/incidents' },
+  { label: 'Hunt', href: '/hunt' },
+  { label: 'ATT&CK Coverage', href: '/coverage' },
+  { label: 'Sigma Rules', href: '/rules' },
+  { label: 'Sources', href: '/sources' },
+  { label: 'Settings', href: '/settings' },
+]
 
 function renderSidebar(initialPath = '/') {
   return render(
@@ -21,8 +34,14 @@ function renderSidebar(initialPath = '/') {
   )
 }
 
+/** The nav link for a label; the accessible name also holds when the sidebar is collapsed. */
+const navLink = (label: string) => screen.getByTitle(label)
+
 describe('Sidebar', () => {
+  const logout = vi.fn().mockResolvedValue(undefined)
+
   beforeEach(() => {
+    logout.mockClear()
     useUIStore.setState({
       theme: 'light',
       sidebarCollapsed: false,
@@ -30,228 +49,146 @@ describe('Sidebar', () => {
       globalError: null,
       showShortcutsModal: false,
     })
+    useAuthStore.setState({ user: { email: 'analyst@mxtac.local', role: 'analyst' }, logout })
   })
 
-  // ---------------------------------------------------------------------------
-  // Logo
-  // ---------------------------------------------------------------------------
-  describe('Logo', () => {
-    it('renders the "M" logo mark', () => {
+  describe('navigation', () => {
+    it('is a landmark named "Main navigation"', () => {
       renderSidebar()
-      expect(screen.getByText('M')).toBeInTheDocument()
+      expect(screen.getByRole('complementary', { name: 'Main navigation' })).toBeInTheDocument()
     })
-  })
 
-  // ---------------------------------------------------------------------------
-  // Navigation links
-  // ---------------------------------------------------------------------------
-  describe('Navigation links', () => {
-    const NAV_ITEMS = [
-      { label: 'Overview',        href: '/' },
-      { label: 'Detections',      href: '/detections' },
-      { label: 'Event Hunt',      href: '/hunt' },
-      { label: 'ATT&CK Coverage', href: '/attack' },
-      { label: 'Sigma Rules',     href: '/rules' },
-      { label: 'Incidents',       href: '/incidents' },
-      { label: 'Threat Intel',    href: '/intel' },
-      { label: 'Assets',          href: '/assets' },
-      { label: 'Reports',         href: '/reports' },
-      { label: 'Integrations',    href: '/integrations' },
-      { label: 'Admin',           href: '/admin' },
-    ]
-
-    it('renders exactly 11 nav links', () => {
+    it.each(NAV_ITEMS)('links "$label" to $href', ({ label, href }) => {
       renderSidebar()
-      const nav = screen.getByRole('navigation')
-      expect(nav.querySelectorAll('a')).toHaveLength(11)
+      expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', href)
     })
 
-    NAV_ITEMS.forEach(({ label, href }) => {
-      it(`"${label}" link points to "${href}"`, () => {
-        renderSidebar()
-        const link = screen.getByTitle(label)
-        expect(link).toBeInTheDocument()
-        expect(link).toHaveAttribute('href', href)
-      })
+    it('has no links other than the nav items and the KYRA MDR link', () => {
+      renderSidebar()
+      expect(screen.getAllByRole('link')).toHaveLength(NAV_ITEMS.length + 1)
     })
 
-    it('active route link receives active styles', () => {
+    it('shows the section titles', () => {
+      renderSidebar()
+      for (const title of ['Monitor', 'Investigate', 'Configure']) {
+        expect(screen.getByText(title)).toBeInTheDocument()
+      }
+    })
+
+    it('marks only the link for the current route as the current page', () => {
       renderSidebar('/detections')
-      expect(screen.getByTitle('Detections').className).toContain('bg-primary/10')
-      expect(screen.getByTitle('Detections').className).toContain('text-primary')
+      expect(navLink('Detections')).toHaveAttribute('aria-current', 'page')
+      expect(navLink('Overview')).not.toHaveAttribute('aria-current')
+      expect(navLink('Incidents')).not.toHaveAttribute('aria-current')
     })
 
-    it('inactive links receive muted styles', () => {
-      renderSidebar('/detections')
-      expect(screen.getByTitle('Overview').className).not.toContain('bg-primary/10')
-      expect(screen.getByTitle('Overview').className).toContain('text-muted-foreground')
-    })
-
-    it('Overview link is inactive when visiting a sub-route (end matching)', () => {
-      // Because `end={true}` is applied only to the root link, "/detections"
-      // must not mark "/" as active.
-      renderSidebar('/detections')
-      expect(screen.getByTitle('Overview').className).not.toContain('bg-primary/10')
-    })
-
-    it('Overview link is active on exact "/" path', () => {
+    it('marks Overview as current only on the exact root path', () => {
       renderSidebar('/')
-      expect(screen.getByTitle('Overview').className).toContain('bg-primary/10')
-    })
-
-    it('each nav link has a descriptive title attribute', () => {
-      renderSidebar()
-      NAV_ITEMS.forEach(({ label }) => {
-        expect(screen.getByTitle(label)).toBeInTheDocument()
-      })
+      expect(navLink('Overview')).toHaveAttribute('aria-current', 'page')
     })
   })
 
-  // ---------------------------------------------------------------------------
-  // Theme toggle
-  // ---------------------------------------------------------------------------
-  describe('Theme toggle', () => {
-    it('shows the theme button with current light theme label', () => {
+  describe('KYRA MDR link', () => {
+    it('opens the KYRA MDR site in a new tab without leaking the opener', () => {
       renderSidebar()
-      expect(screen.getByTitle('Theme: light')).toBeInTheDocument()
+      const link = screen.getByRole('link', { name: /KYRA MDR/ })
+      expect(link).toHaveAttribute('href', KYRA_MDR_URL)
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(link.getAttribute('rel')).toContain('noopener')
+      expect(link).toHaveTextContent(/managed service/i)
     })
 
-    it('shows the theme button with dark theme label when dark is active', () => {
-      useUIStore.setState({ theme: 'dark' })
+    it('stays available as an icon link when the sidebar is collapsed', () => {
+      useUIStore.setState({ sidebarCollapsed: true })
       renderSidebar()
-      expect(screen.getByTitle('Theme: dark')).toBeInTheDocument()
+      const link = screen.getByTitle(/^KYRA MDR/)
+      expect(link).toHaveAttribute('href', KYRA_MDR_URL)
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(link.getAttribute('rel')).toContain('noopener')
+    })
+  })
+
+  describe('collapse', () => {
+    it('hides labels, section titles and the brand text when collapsed, but keeps every link', () => {
+      renderSidebar()
+      fireEvent.click(screen.getByTitle('Collapse sidebar'))
+
+      expect(useUIStore.getState().sidebarCollapsed).toBe(true)
+      expect(screen.queryByText('Detections')).not.toBeInTheDocument()
+      expect(screen.queryByText('Monitor')).not.toBeInTheDocument()
+      expect(screen.queryByText('MxTac')).not.toBeInTheDocument()
+      for (const { label, href } of NAV_ITEMS) {
+        expect(navLink(label)).toHaveAttribute('href', href)
+      }
     })
 
-    it('shows the theme button with matrix theme label when matrix is active', () => {
-      useUIStore.setState({ theme: 'matrix' })
+    it('expands again from the collapsed state', () => {
+      useUIStore.setState({ sidebarCollapsed: true })
       renderSidebar()
-      expect(screen.getByTitle('Theme: matrix')).toBeInTheDocument()
-    })
+      fireEvent.click(screen.getByTitle('Expand sidebar'))
 
-    it('theme menu is hidden by default', () => {
-      renderSidebar()
-      expect(screen.queryByText('Light')).not.toBeInTheDocument()
-      expect(screen.queryByText('Dark')).not.toBeInTheDocument()
-      expect(screen.queryByText('Matrix')).not.toBeInTheDocument()
+      expect(useUIStore.getState().sidebarCollapsed).toBe(false)
+      expect(screen.getByText('MxTac')).toBeInTheDocument()
+      expect(screen.getByTitle('Collapse sidebar')).toBeInTheDocument()
     })
+  })
 
-    it('clicking the theme button opens the menu with all 3 options', () => {
+  describe('theme toggle', () => {
+    it('switches from light to dark and sets the dark class on <html>', () => {
       renderSidebar()
-      fireEvent.click(screen.getByTitle('Theme: light'))
-      expect(screen.getByText('Light')).toBeInTheDocument()
-      expect(screen.getByText('Dark')).toBeInTheDocument()
-      expect(screen.getByText('Matrix')).toBeInTheDocument()
-    })
+      fireEvent.click(screen.getByTitle('Switch to dark mode'))
 
-    it('clicking a theme option updates the store theme', () => {
-      renderSidebar()
-      fireEvent.click(screen.getByTitle('Theme: light'))
-      fireEvent.click(screen.getByText('Dark'))
       expect(useUIStore.getState().theme).toBe('dark')
+      expect(document.documentElement).toHaveClass('dark')
+      expect(screen.getByTitle('Switch to light mode')).toBeInTheDocument()
     })
 
-    it('selecting a theme applies data-theme to the document element', () => {
+    it('switches from dark back to light and removes the dark class', () => {
+      useUIStore.getState().setTheme('dark')
       renderSidebar()
-      fireEvent.click(screen.getByTitle('Theme: light'))
-      fireEvent.click(screen.getByText('Matrix'))
-      expect(document.documentElement.getAttribute('data-theme')).toBe('matrix')
-    })
+      fireEvent.click(screen.getByTitle('Switch to light mode'))
 
-    it('clicking a theme option closes the menu', () => {
-      renderSidebar()
-      fireEvent.click(screen.getByTitle('Theme: light'))
-      fireEvent.click(screen.getByText('Dark'))
-      expect(screen.queryByText('Light')).not.toBeInTheDocument()
-    })
-
-    it('clicking outside the theme menu closes it', () => {
-      renderSidebar()
-      fireEvent.click(screen.getByTitle('Theme: light'))
-      expect(screen.getByText('Light')).toBeInTheDocument()
-
-      fireEvent.mouseDown(document.body)
-      expect(screen.queryByText('Light')).not.toBeInTheDocument()
-    })
-
-    it('clicking inside the theme menu does not close it', () => {
-      renderSidebar()
-      fireEvent.click(screen.getByTitle('Theme: light'))
-
-      // mousedown inside the menu — should not close
-      fireEvent.mouseDown(screen.getByText('Light'))
-      expect(screen.getByText('Light')).toBeInTheDocument()
-    })
-
-    it('clicking the theme button again toggles the menu closed', () => {
-      renderSidebar()
-      fireEvent.click(screen.getByTitle('Theme: light'))
-      expect(screen.getByText('Light')).toBeInTheDocument()
-
-      fireEvent.click(screen.getByTitle('Theme: light'))
-      expect(screen.queryByText('Light')).not.toBeInTheDocument()
-    })
-
-    it('the currently active theme option receives highlight styles', () => {
-      useUIStore.setState({ theme: 'dark' })
-      renderSidebar()
-      fireEvent.click(screen.getByTitle('Theme: dark'))
-
-      // The "Dark" button should have the active class
-      const darkBtn = screen.getByText('Dark').closest('button')!
-      expect(darkBtn.className).toContain('text-primary')
+      expect(useUIStore.getState().theme).toBe('light')
+      expect(document.documentElement).not.toHaveClass('dark')
     })
   })
 
-  // ---------------------------------------------------------------------------
-  // Bottom controls
-  // ---------------------------------------------------------------------------
-  describe('Bottom controls', () => {
-    it('renders the Keyboard Shortcuts button', () => {
+  describe('account', () => {
+    it('shows the signed-in user, role and initials', () => {
       renderSidebar()
-      expect(screen.getByTitle('Keyboard Shortcuts')).toBeInTheDocument()
+      expect(screen.getByText('analyst@mxtac.local')).toBeInTheDocument()
+      expect(screen.getByText('analyst')).toBeInTheDocument()
+      expect(screen.getByText('AN')).toBeInTheDocument()
     })
 
-    it('clicking Keyboard Shortcuts button opens the modal', () => {
+    it('shows "Account" when no user is loaded', () => {
+      useAuthStore.setState({ user: null })
       renderSidebar()
-      fireEvent.click(screen.getByTitle('Keyboard Shortcuts'))
+      expect(screen.getByText('Account')).toBeInTheDocument()
+      expect(screen.getByTitle('Account security')).toBeInTheDocument()
+    })
+
+    it('opens and closes the MFA setup modal from the account button', () => {
+      renderSidebar()
+      expect(screen.queryByTestId('mfa-setup-modal')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByTitle('analyst@mxtac.local: account security'))
+      expect(screen.getByTestId('mfa-setup-modal')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByText('Close MFA Modal'))
+      expect(screen.queryByTestId('mfa-setup-modal')).not.toBeInTheDocument()
+    })
+
+    it('signs out', () => {
+      renderSidebar()
+      fireEvent.click(screen.getByTitle('Sign out'))
+      expect(logout).toHaveBeenCalledTimes(1)
+    })
+
+    it('opens the keyboard shortcuts modal', () => {
+      renderSidebar()
+      fireEvent.click(screen.getByTitle('Keyboard shortcuts'))
       expect(useUIStore.getState().showShortcutsModal).toBe(true)
-    })
-
-    it('renders the Settings button', () => {
-      renderSidebar()
-      expect(screen.getByTitle('Settings')).toBeInTheDocument()
-    })
-
-    it('renders the user avatar with KH initials', () => {
-      renderSidebar()
-      expect(screen.getByText('KH')).toBeInTheDocument()
-    })
-
-    it('MFA setup modal is not shown by default', () => {
-      renderSidebar()
-      expect(screen.queryByTestId('mfa-setup-modal')).not.toBeInTheDocument()
-    })
-
-    it('clicking the Settings button opens the MFA setup modal', () => {
-      renderSidebar()
-      fireEvent.click(screen.getByTitle('Settings'))
-      expect(screen.getByTestId('mfa-setup-modal')).toBeInTheDocument()
-    })
-
-    it('clicking the user avatar opens the MFA setup modal', () => {
-      renderSidebar()
-      const avatar = screen.getByText('KH').closest('button')!
-      fireEvent.click(avatar)
-      expect(screen.getByTestId('mfa-setup-modal')).toBeInTheDocument()
-    })
-
-    it('MFA modal closes when onClose is called', () => {
-      renderSidebar()
-      fireEvent.click(screen.getByTitle('Settings'))
-      expect(screen.getByTestId('mfa-setup-modal')).toBeInTheDocument()
-
-      fireEvent.click(screen.getByRole('button', { name: 'Close MFA Modal' }))
-      expect(screen.queryByTestId('mfa-setup-modal')).not.toBeInTheDocument()
     })
   })
 })

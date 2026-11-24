@@ -1,574 +1,370 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { Detection, SeverityLevel, DetectionStatus } from '../../../types/api'
-import { detectionsApi, incidentsApi } from '../../../lib/api'
-import { useUIStore } from '../../../stores/uiStore'
-import { TopBar } from '../../layout/TopBar'
-import { ScoreCircle, SeverityPill } from '../../shared/SeverityBadge'
-import { StatusPill } from '../../shared/StatusPill'
-import { LiveBadge } from '../../shared/LiveBadge'
+import { useEffect, useState } from 'react'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Download, Radio, RefreshCw, ShieldAlert } from 'lucide-react'
+import type {
+  BulkDetectionRequest,
+  Detection,
+  DetectionSortField,
+  DetectionStatus,
+  SeverityLevel,
+} from '@/types/api'
+import { detectionsApi, type DetectionExportParams } from '@/lib/api'
+import { useNewAlertIds } from '@/hooks/useNewAlertIds'
+import { useAuthStore } from '@/stores/authStore'
+import { useDetectionStore } from '@/stores/detectionStore'
+import { useUIStore } from '@/stores/uiStore'
+import { Page } from '@/components/layout/Page'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Skeleton } from '@/components/ui/skeleton'
+import { CreateIncidentDialog } from '../incidents/CreateIncidentDialog'
+import { BulkStatusDialog } from './BulkStatusDialog'
+import {
+  DetectionFilters,
+  EMPTY_DETECTION_FILTERS,
+  countActiveFilters,
+  type DetectionFilterState,
+} from './DetectionFilters'
 import { DetectionPanel } from './DetectionPanel'
-import { useNewAlertIds } from '../../../hooks/useNewAlertIds'
+import { DetectionsTable, type SortOrder } from './DetectionsTable'
+import { ErrorCard, Pager } from './ListControls'
+import { OptionSelect } from './OptionSelect'
+import {
+  DETECTION_STATUS_LABELS,
+  SEVERITY_OPTIONS,
+  apiErrorMessage,
+  canWrite,
+  plural,
+  useDebouncedValue,
+} from './utils'
 
-const SEVERITY_OPTIONS: SeverityLevel[] = ['critical', 'high', 'medium', 'low']
-const STATUS_OPTIONS: DetectionStatus[]  = ['active', 'investigating', 'resolved', 'false_positive']
+/** Backend limit on `ids` for POST /detections/bulk and `detection_ids` for POST /incidents. */
+const MAX_BULK_IDS = 500
 
-type SortKey = 'score' | 'time' | 'severity' | 'host' | 'tactic'
-type BulkAction = 'resolve' | 'false_positive' | 'assign' | 'create_incident'
+const PAGE_SIZE_OPTIONS = [
+  { value: '25', label: '25 per page' },
+  { value: '50', label: '50 per page' },
+  { value: '100', label: '100 per page' },
+]
 
-interface ConfirmState {
-  action: BulkAction
-  assignee?: string
-}
+const BULK_ACTIONS: { status: DetectionStatus; label: string }[] = [
+  { status: 'investigating', label: 'Investigate' },
+  { status: 'resolved', label: 'Resolve' },
+  { status: 'false_positive', label: 'False positive' },
+  { status: 'active', label: 'Reopen' },
+]
 
-// Grid column template — checkbox | score | detection | technique | host | tactic | status | time
-const GRID = 'grid-cols-[32px_44px_1fr_160px_110px_90px_100px_80px]'
-
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 h-[26px] rounded-[5px] text-[11px] font-medium border transition-colors ${
-        active
-          ? 'bg-primary text-white border-primary'
-          : 'bg-card text-foreground/80 border-border hover:border-primary hover:text-primary'
-      }`}
-    >
-      {label}
-    </button>
-  )
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 export function DetectionsPage() {
-  const [severities, setSeverities] = useState<SeverityLevel[]>([])
-  const [status, setStatus]         = useState<DetectionStatus | undefined>()
-  const [search, setSearch]         = useState('')
-  const [sortKey, setSortKey]       = useState<SortKey>('score')
-  const [sortOrder, setSortOrder]   = useState<'asc' | 'desc'>('desc')
-  const [selected, setSelected]     = useState<Detection | null>(null)
-  const [page, setPage]             = useState(1)
-
-  // Bulk selection state
-  const [checkedIds, setCheckedIds]     = useState<Set<string>>(new Set())
-  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)
-  const [assignInput, setAssignInput]   = useState('')
-
-  // Incident creation form (used inside confirm modal for create_incident action)
-  const [incidentTitle, setIncidentTitle]       = useState('')
-  const [incidentSeverity, setIncidentSeverity] = useState<SeverityLevel>('high')
-
-  const newIds          = useNewAlertIds()
-  const queryClient     = useQueryClient()
+  const queryClient = useQueryClient()
   const addNotification = useUIStore((s) => s.addNotification)
+  const writable = canWrite(useAuthStore((s) => s.user?.role))
 
-  function toggleSeverity(s: SeverityLevel) {
-    setSeverities((prev) =>
-      prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]
-    )
-    setPage(1)
+  const [filters, setFilters] = useState<DetectionFilterState>(EMPTY_DETECTION_FILTERS)
+  const [sort, setSort] = useState<DetectionSortField>('time')
+  const [order, setOrder] = useState<SortOrder>('desc')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState('25')
+
+  const [selected, setSelected] = useState<Detection | null>(null)
+  const [checked, setChecked] = useState<ReadonlyMap<string, SeverityLevel>>(new Map())
+  const [bulkStatus, setBulkStatus] = useState<DetectionStatus | null>(null)
+  const [incidentOpen, setIncidentOpen] = useState(false)
+
+  // ── Live alerts (WebSocket) ───────────────────────────────────────────────
+  const liveIds = useNewAlertIds()
+  const liveAlerts = useDetectionStore((s) => s.liveAlerts)
+  const clearUnread = useDetectionStore((s) => s.clearUnread)
+  const [ackLiveId, setAckLiveId] = useState<string | undefined>(() => liveAlerts[0]?.id)
+
+  // The user is looking at detections, so nothing streamed in counts as unread.
+  useEffect(() => {
+    clearUnread()
+  }, [clearUnread, liveAlerts])
+
+  const ackIndex = ackLiveId === undefined ? -1 : liveAlerts.findIndex((alert) => alert.id === ackLiveId)
+  const pendingLive = ackIndex === -1 ? liveAlerts.length : ackIndex
+
+  // ── List query ────────────────────────────────────────────────────────────
+  const search = useDebouncedValue(filters.search.trim())
+  const tactic = useDebouncedValue(filters.tactic.trim())
+  const host = useDebouncedValue(filters.host.trim())
+
+  const filterParams: DetectionExportParams = {
+    severity: filters.severities.length > 0 ? filters.severities : undefined,
+    status: filters.statuses.length > 0 ? filters.statuses : undefined,
+    tactic: tactic || undefined,
+    host: host || undefined,
+    search: search || undefined,
+    sort,
+    order,
   }
+  const listParams = { ...filterParams, page, page_size: Number(pageSize) }
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['detections', { severities, status, search, sortKey, sortOrder, page }],
-    queryFn: () =>
-      detectionsApi.list({
-        severity: severities.length > 0 ? severities : undefined,
-        status,
-        search: search || undefined,
-        sort: sortKey,
-        order: sortOrder,
-        page,
-        page_size: 20,
-      }),
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
+    queryKey: ['detections', listParams],
+    queryFn: () => detectionsApi.list(listParams),
+    placeholderData: keepPreviousData,
   })
 
   const detections = data?.items ?? []
   const pagination = data?.pagination
 
-  // ── Bulk mutations ────────────────────────────────────────────────────────
+  function refresh() {
+    setAckLiveId(liveAlerts[0]?.id)
+    void refetch()
+  }
 
-  const bulkMutation = useMutation({
-    mutationFn: (req: Parameters<typeof detectionsApi.bulk>[0]) =>
-      detectionsApi.bulk(req),
-    onSuccess: (_, req) => {
-      const count = req.ids.length
-      let title = `Updated ${count} detection${count !== 1 ? 's' : ''}`
-      if (req.data.status === 'resolved')
-        title = `Resolved ${count} detection${count !== 1 ? 's' : ''}`
-      else if (req.data.status === 'false_positive')
-        title = `Marked ${count} detection${count !== 1 ? 's' : ''} as false positive`
-      else if (req.data.assigned_to)
-        title = `Assigned ${count} detection${count !== 1 ? 's' : ''} to ${req.data.assigned_to}`
-      addNotification({ type: 'success', title })
-      setCheckedIds(new Set())
-      setAssignInput('')
-      setConfirmState(null)
-      queryClient.invalidateQueries({ queryKey: ['detections'] })
-    },
-    onError: () => {
-      addNotification({ type: 'error', title: 'Bulk action failed' })
-      setConfirmState(null)
-    },
-  })
+  function changeFilters(patch: Partial<DetectionFilterState>) {
+    setFilters((prev) => ({ ...prev, ...patch }))
+    setPage(1)
+  }
 
-  const createIncidentMutation = useMutation({
-    mutationFn: (req: Parameters<typeof incidentsApi.create>[0]) =>
-      incidentsApi.create(req),
-    onSuccess: (_, req) => {
-      const count = req.detection_ids?.length ?? 0
-      addNotification({
-        type: 'success',
-        title: `Incident created from ${count} detection${count !== 1 ? 's' : ''}`,
-      })
-      setCheckedIds(new Set())
-      setIncidentTitle('')
-      setIncidentSeverity('high')
-      setConfirmState(null)
-      queryClient.invalidateQueries({ queryKey: ['detections'] })
-    },
-    onError: () => {
-      addNotification({ type: 'error', title: 'Failed to create incident' })
-      setConfirmState(null)
-    },
-  })
+  function resetFilters() {
+    setFilters(EMPTY_DETECTION_FILTERS)
+    setPage(1)
+  }
 
-  const isMutating = bulkMutation.isPending || createIncidentMutation.isPending
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortOrder((o) => (o === 'desc' ? 'asc' : 'desc'))
+  function changeSort(field: DetectionSortField) {
+    if (field === sort) {
+      setOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'))
     } else {
-      setSortKey(key)
-      setSortOrder('desc')
+      setSort(field)
+      setOrder('desc')
     }
     setPage(1)
   }
 
-  function toggleCheck(id: string) {
-    setCheckedIds((prev) => {
-      const next = new Set(prev)
+  // ── Selection ─────────────────────────────────────────────────────────────
+  const checkedIds = new Set(checked.keys())
+  const checkedCount = checked.size
+  const overLimit = checkedCount > MAX_BULK_IDS
+
+  function toggleOne(id: string) {
+    const detection = detections.find((d) => d.id === id)
+    setChecked((prev) => {
+      const next = new Map(prev)
       if (next.has(id)) next.delete(id)
-      else next.add(id)
+      else if (detection) next.set(id, detection.severity)
       return next
     })
   }
 
-  const allOnPageChecked  = detections.length > 0 && detections.every((d) => checkedIds.has(d.id))
-  const someOnPageChecked = detections.some((d) => checkedIds.has(d.id))
-
   function toggleAllOnPage() {
-    if (allOnPageChecked) {
-      setCheckedIds((prev) => {
-        const next = new Set(prev)
-        detections.forEach((d) => next.delete(d.id))
-        return next
-      })
-    } else {
-      setCheckedIds((prev) => {
-        const next = new Set(prev)
-        detections.forEach((d) => next.add(d.id))
-        return next
-      })
-    }
+    const allChecked = detections.length > 0 && detections.every((d) => checked.has(d.id))
+    setChecked((prev) => {
+      const next = new Map(prev)
+      for (const d of detections) {
+        if (allChecked) next.delete(d.id)
+        else next.set(d.id, d.severity)
+      }
+      return next
+    })
   }
 
-  function executeAction() {
-    if (!confirmState) return
-    const ids = [...checkedIds]
-    if (confirmState.action === 'create_incident') {
-      createIncidentMutation.mutate({
-        title: incidentTitle,
-        severity: incidentSeverity,
-        detection_ids: ids,
+  /** Most severe level among the selected detections, used as the incident default. */
+  const selectedSeverities = new Set(checked.values())
+  const worstSeverity = SEVERITY_OPTIONS.find((level) => selectedSeverities.has(level)) ?? 'high'
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
+  const bulkMutation = useMutation({
+    mutationFn: (body: BulkDetectionRequest) => detectionsApi.bulk(body),
+    onSuccess: (result, body) => {
+      const missing = result.not_found.length
+      addNotification({
+        type: missing > 0 ? 'warning' : 'success',
+        title: `${plural(result.updated, 'detection')} set to ${DETECTION_STATUS_LABELS[body.status].toLowerCase()}`,
+        message: missing > 0 ? `${plural(missing, 'detection')} no longer exist.` : undefined,
       })
-    } else if (confirmState.action === 'resolve') {
-      bulkMutation.mutate({ ids, action: 'update', data: { status: 'resolved' } })
-    } else if (confirmState.action === 'false_positive') {
-      bulkMutation.mutate({ ids, action: 'update', data: { status: 'false_positive' } })
-    } else if (confirmState.action === 'assign') {
-      bulkMutation.mutate({ ids, action: 'update', data: { assigned_to: confirmState.assignee! } })
-    }
-  }
+      setChecked(new Map())
+      setBulkStatus(null)
+      queryClient.invalidateQueries({ queryKey: ['detections'] })
+    },
+    onError: (err: unknown) => {
+      addNotification({ type: 'error', title: 'Bulk update failed', message: apiErrorMessage(err) })
+      setBulkStatus(null)
+    },
+  })
 
-  const checkedCount = checkedIds.size
+  const exportMutation = useMutation({
+    mutationFn: () => detectionsApi.export(filterParams),
+    onSuccess: (blob) => {
+      downloadBlob(blob, `detections_${new Date().toISOString().slice(0, 10)}.csv`)
+    },
+    onError: (err: unknown) => {
+      addNotification({ type: 'error', title: 'Export failed', message: apiErrorMessage(err) })
+    },
+  })
 
-  function SortHeader({ col, label }: { col: SortKey; label: string }) {
-    const active = sortKey === col
-    return (
-      <button
-        onClick={() => toggleSort(col)}
-        className={`text-[10px] font-medium uppercase text-left flex items-center gap-1 ${
-          active ? 'text-primary' : 'text-muted-foreground hover:text-foreground/80'
-        }`}
-      >
-        {label}
-        {active && <span className="text-[9px]">{sortOrder === 'desc' ? '↓' : '↑'}</span>}
-      </button>
-    )
-  }
+  const activeFilters = countActiveFilters(filters)
 
   return (
-    <>
-      <TopBar crumb="Detections" updatedAt="just now" />
-      <div className="pt-[46px] px-5 pb-6">
-
-        {/* Filter bar */}
-        <div className="flex items-center gap-2 py-3 flex-wrap">
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground mr-1">Severity:</span>
-            {SEVERITY_OPTIONS.map((s) => (
-              <FilterChip
-                key={s}
-                label={s.charAt(0).toUpperCase() + s.slice(1)}
-                active={severities.includes(s)}
-                onClick={() => toggleSeverity(s)}
-              />
-            ))}
-          </div>
-
-          <div className="w-px h-[20px] bg-border mx-1" />
-
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground mr-1">Status:</span>
-            {STATUS_OPTIONS.map((s) => (
-              <FilterChip
-                key={s}
-                label={s === 'false_positive' ? 'FP' : s.charAt(0).toUpperCase() + s.slice(1)}
-                active={status === s}
-                onClick={() => { setStatus(status === s ? undefined : s); setPage(1) }}
-              />
-            ))}
-          </div>
-
-          <div className="ml-auto">
-            <input
-              type="text"
-              placeholder="Search detections…"
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary w-[220px]"
-            />
-          </div>
-        </div>
-
-        {/* Summary row / Bulk toolbar */}
-        <div className="flex items-center gap-3 mb-2 min-h-[26px]">
-          {checkedCount > 0 ? (
-            <div className="flex items-center gap-2 flex-wrap w-full" data-testid="bulk-toolbar">
-              <span className="text-[11px] font-medium text-primary whitespace-nowrap" data-testid="checked-count">
-                {checkedCount} selected
-              </span>
-              <div className="w-px h-[16px] bg-border" />
-
-              <button
-                onClick={() => setConfirmState({ action: 'resolve' })}
-                className="h-[26px] px-3 text-[11px] font-medium border border-border rounded-md text-foreground/80 hover:bg-background hover:border-primary hover:text-primary"
-                data-testid="bulk-resolve"
-              >
-                Resolve Selected
-              </button>
-
-              <button
-                onClick={() => setConfirmState({ action: 'false_positive' })}
-                className="h-[26px] px-3 text-[11px] font-medium border border-border rounded-md text-foreground/80 hover:bg-background hover:border-primary hover:text-primary"
-                data-testid="bulk-fp"
-              >
-                Mark False Positive
-              </button>
-
-              <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  placeholder="Assign to…"
-                  value={assignInput}
-                  onChange={(e) => setAssignInput(e.target.value)}
-                  className="h-[26px] px-2 text-[11px] border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary w-[120px]"
-                  data-testid="assign-input"
-                />
-                <button
-                  onClick={() => {
-                    if (assignInput.trim()) {
-                      setConfirmState({ action: 'assign', assignee: assignInput.trim() })
-                    }
-                  }}
-                  disabled={!assignInput.trim()}
-                  className="h-[26px] px-2 text-[11px] font-medium border border-border rounded-md text-foreground/80 hover:bg-background hover:border-primary hover:text-primary disabled:opacity-40"
-                  data-testid="assign-apply"
-                >
-                  Assign
-                </button>
-              </div>
-
-              <button
-                onClick={() => setConfirmState({ action: 'create_incident' })}
-                className="h-[26px] px-3 text-[11px] font-medium border border-border rounded-md text-foreground/80 hover:bg-background hover:border-primary hover:text-primary"
-                data-testid="bulk-create-incident"
-              >
-                Create Incident
-              </button>
-
-              <button
-                onClick={() => { setCheckedIds(new Set()); setAssignInput('') }}
-                className="ml-auto text-[11px] text-muted-foreground hover:text-foreground/80"
-                data-testid="clear-selection"
-              >
-                Clear selection
-              </button>
-            </div>
-          ) : (
-            pagination && (
-              <span className="text-[11px] text-muted-foreground">
-                {pagination.total.toLocaleString()} detections
-                {severities.length > 0 && ` · ${severities.join(', ')}`}
-                {status && ` · ${status}`}
-              </span>
-            )
-          )}
-        </div>
-
-        {/* Table */}
-        <div className="bg-card rounded-md border shadow-sm overflow-hidden">
-          {/* Header */}
-          <div className={`grid ${GRID} gap-2 px-3 py-2 border-b border-border items-center`}>
-            <div className="flex items-center justify-center">
-              <input
-                type="checkbox"
-                data-testid="select-all-checkbox"
-                checked={allOnPageChecked}
-                ref={(el) => {
-                  if (el) el.indeterminate = someOnPageChecked && !allOnPageChecked
-                }}
-                onChange={toggleAllOnPage}
-                className="w-[13px] h-[13px] cursor-pointer"
-                aria-label="Select all on page"
-              />
-            </div>
-            <span className="text-[10px] font-medium text-muted-foreground uppercase">Score</span>
-            <span className="text-[10px] font-medium text-muted-foreground uppercase">Detection</span>
-            <span className="text-[10px] font-medium text-muted-foreground uppercase">Technique</span>
-            <SortHeader col="host"   label="Host" />
-            <SortHeader col="tactic" label="Tactic" />
-            <span className="text-[10px] font-medium text-muted-foreground uppercase">Status</span>
-            <SortHeader col="time"   label="Time" />
-          </div>
-
-          {isLoading && (
-            <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">Loading…</div>
-          )}
-          {isError && (
-            <div className="flex items-center justify-center h-40 text-crit-text text-sm">
-              Failed to load. Is the backend running?
-            </div>
-          )}
-
-          {!isLoading && !isError && detections.map((d) => {
-            const isSelected = selected?.id === d.id
-            const isChecked  = checkedIds.has(d.id)
-            return (
-              <div
-                key={d.id}
-                onClick={() => setSelected(isSelected ? null : d)}
-                className={`grid ${GRID} gap-2 px-3 py-[7px] border-b border-border items-center cursor-pointer transition-colors ${
-                  isSelected
-                    ? 'bg-primary/5 border-l-[3px] border-l-blue'
-                    : 'hover:bg-background'
-                }`}
-              >
-                <div className="flex items-center justify-center">
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => toggleCheck(d.id)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-[13px] h-[13px] cursor-pointer"
-                    aria-label={`Select ${d.name}`}
-                    data-testid={`row-checkbox-${d.id}`}
-                  />
-                </div>
-                <ScoreCircle score={d.score} severity={d.severity} />
-                <div className="min-w-0">
-                  <div className="text-[11px] text-foreground font-medium flex items-center gap-1.5 min-w-0">
-                    <span className="truncate">{d.name}</span>
-                    {newIds.has(d.id) && <LiveBadge />}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground truncate">{d.rule_name}</div>
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[11px] text-foreground truncate">{d.technique_id}</div>
-                  <div className="text-[10px] text-muted-foreground truncate">{d.technique_name}</div>
-                </div>
-                <span className="text-[11px] text-foreground truncate">{d.host}</span>
-                <span className="text-[10px] text-muted-foreground truncate">{d.tactic}</span>
-                <StatusPill status={d.status} />
-                <span className="text-[10px] text-muted-foreground">
-                  {new Date(d.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            )
-          })}
-
-          {!isLoading && !isError && detections.length === 0 && (
-            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-              No detections match the current filters.
-            </div>
-          )}
-        </div>
-
-        {/* Pagination */}
-        {pagination && pagination.total_pages > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-4">
-            <button
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-foreground/80 disabled:opacity-40 hover:bg-background"
-            >
-              ← Prev
-            </button>
-            <span className="text-[11px] text-muted-foreground">
-              Page {pagination.page} of {pagination.total_pages}
-            </span>
-            <button
-              disabled={page >= pagination.total_pages}
-              onClick={() => setPage((p) => p + 1)}
-              className="h-[28px] px-3 text-[11px] border border-border rounded-md text-foreground/80 disabled:opacity-40 hover:bg-background"
-            >
-              Next →
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Slide-out panel */}
-      <DetectionPanel detection={selected} onClose={() => setSelected(null)} />
-
-      {/* ── Confirmation Modal ─────────────────────────────────────────────── */}
-      {confirmState && (
+    <Page
+      title="Detections"
+      description="Alerts raised by detection rules, mapped to ATT&CK"
+      actions={
         <>
-          <div
-            className="fixed inset-0 z-40 bg-black/40"
-            onClick={() => setConfirmState(null)}
-            data-testid="modal-overlay"
-          />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div
-              className="bg-card rounded-lg shadow-xl border border-border w-full max-w-sm pointer-events-auto"
-              data-testid="confirm-modal"
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                <h3 className="text-[13px] font-semibold text-foreground">
-                  {confirmState.action === 'resolve'         && 'Resolve Detections'}
-                  {confirmState.action === 'false_positive'  && 'Mark as False Positive'}
-                  {confirmState.action === 'assign'          && 'Assign Detections'}
-                  {confirmState.action === 'create_incident' && 'Create Incident'}
-                </h3>
-                <button
-                  onClick={() => setConfirmState(null)}
-                  className="text-muted-foreground hover:text-foreground/80 text-[16px] leading-none"
-                  data-testid="modal-close"
-                >
-                  ×
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="px-4 py-4 space-y-3">
-                {confirmState.action === 'resolve' && (
-                  <p className="text-[12px] text-foreground/80">
-                    Resolve{' '}
-                    <span className="font-medium text-foreground">{checkedCount}</span>{' '}
-                    detection{checkedCount !== 1 ? 's' : ''}? This will set their status to{' '}
-                    <span className="font-medium">resolved</span>.
-                  </p>
-                )}
-                {confirmState.action === 'false_positive' && (
-                  <p className="text-[12px] text-foreground/80">
-                    Mark{' '}
-                    <span className="font-medium text-foreground">{checkedCount}</span>{' '}
-                    detection{checkedCount !== 1 ? 's' : ''} as{' '}
-                    <span className="font-medium">false positive</span>?
-                  </p>
-                )}
-                {confirmState.action === 'assign' && (
-                  <p className="text-[12px] text-foreground/80">
-                    Assign{' '}
-                    <span className="font-medium text-foreground">{checkedCount}</span>{' '}
-                    detection{checkedCount !== 1 ? 's' : ''} to{' '}
-                    <span className="font-medium text-foreground">{confirmState.assignee}</span>?
-                  </p>
-                )}
-                {confirmState.action === 'create_incident' && (
-                  <div className="space-y-3">
-                    <p className="text-[12px] text-foreground/80">
-                      Create an incident from{' '}
-                      <span className="font-medium text-foreground">{checkedCount}</span>{' '}
-                      detection{checkedCount !== 1 ? 's' : ''}.
-                    </p>
-                    <div>
-                      <label className="text-[11px] text-muted-foreground block mb-1">Incident Title</label>
-                      <input
-                        type="text"
-                        placeholder="Enter incident title…"
-                        value={incidentTitle}
-                        onChange={(e) => setIncidentTitle(e.target.value)}
-                        className="w-full h-[32px] px-3 text-[12px] border border-border rounded-md bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-                        data-testid="incident-title-input"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] text-muted-foreground block mb-1">Severity</label>
-                      <select
-                        value={incidentSeverity}
-                        onChange={(e) => setIncidentSeverity(e.target.value as SeverityLevel)}
-                        className="w-full h-[32px] px-3 text-[12px] border border-border rounded-md bg-card text-foreground focus:outline-none focus:border-primary"
-                        data-testid="incident-severity-select"
-                      >
-                        {SEVERITY_OPTIONS.map((s) => (
-                          <option key={s} value={s}>
-                            {s.charAt(0).toUpperCase() + s.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
-                <button
-                  onClick={() => setConfirmState(null)}
-                  className="h-[30px] px-4 text-[12px] font-medium border border-border rounded-md text-foreground/80 hover:bg-background"
-                  data-testid="modal-cancel"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={executeAction}
-                  disabled={
-                    isMutating ||
-                    (confirmState.action === 'create_incident' && !incidentTitle.trim())
-                  }
-                  className="h-[30px] px-4 text-[12px] font-medium bg-primary text-white rounded-md hover:opacity-90 disabled:opacity-40"
-                  data-testid="confirm-button"
-                >
-                  {isMutating ? 'Working…' : 'Confirm'}
-                </button>
-              </div>
-            </div>
-          </div>
+          <Button
+            variant="outline"
+            onClick={() => exportMutation.mutate()}
+            disabled={exportMutation.isPending}
+            title="Export the filtered detections as CSV (up to 10,000 rows)"
+            className="gap-1.5"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {exportMutation.isPending ? 'Exporting…' : 'Export CSV'}
+          </Button>
+          <Button variant="outline" size="icon" title="Refresh" onClick={refresh} disabled={isFetching}>
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+          </Button>
         </>
+      }
+    >
+      <DetectionFilters filters={filters} onChange={changeFilters} onReset={resetFilters} />
+
+      {pendingLive > 0 && (
+        <div
+          role="status"
+          className="status-green flex items-center justify-between gap-2 rounded-lg border px-4 py-2 text-[12px]"
+        >
+          <span className="flex items-center gap-2">
+            <Radio className="h-3.5 w-3.5" />
+            {plural(pendingLive, 'new live alert')} since the list was loaded
+          </span>
+          <Button variant="outline" size="sm" onClick={refresh}>
+            Show
+          </Button>
+        </div>
       )}
-    </>
+
+      {writable && checkedCount > 0 && (
+        <Card>
+          <CardContent role="toolbar" aria-label="Bulk actions" className="flex flex-wrap items-center gap-2 p-4 py-2">
+            <span className="text-[12px] font-semibold">{checkedCount.toLocaleString('en-US')} selected</span>
+            {BULK_ACTIONS.map((action) => (
+              <Button
+                key={action.status}
+                variant="outline"
+                size="sm"
+                disabled={overLimit}
+                onClick={() => setBulkStatus(action.status)}
+              >
+                {action.label}
+              </Button>
+            ))}
+            <Button size="sm" disabled={overLimit} onClick={() => setIncidentOpen(true)}>
+              Create incident
+            </Button>
+            {overLimit && (
+              <span className="text-[11px] text-destructive">
+                Select at most {MAX_BULK_IDS} detections for one action.
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setChecked(new Map())}
+              className="ml-auto text-muted-foreground"
+            >
+              Clear selection
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {isError ? (
+        <ErrorCard
+          title="Could not load detections"
+          message={apiErrorMessage(error)}
+          onRetry={() => void refetch()}
+        />
+      ) : (
+        <Card className="overflow-hidden">
+          {isLoading ? (
+            <div className="space-y-2 p-4" aria-label="Loading detections">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <Skeleton key={index} className="h-8 w-full" />
+              ))}
+            </div>
+          ) : detections.length === 0 ? (
+            <EmptyState
+              icon={ShieldAlert}
+              title={activeFilters > 0 ? 'No detections match the filters' : 'No detections yet'}
+              description={
+                activeFilters > 0
+                  ? 'Change or clear the filters to see more.'
+                  : 'Detections appear here when a rule matches an ingested event.'
+              }
+              action={
+                activeFilters > 0 ? (
+                  <Button variant="outline" onClick={resetFilters}>
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <DetectionsTable
+              detections={detections}
+              sort={sort}
+              order={order}
+              onSort={changeSort}
+              activeId={selected?.id ?? null}
+              onOpen={setSelected}
+              selectable={writable}
+              checkedIds={checkedIds}
+              onToggle={toggleOne}
+              onToggleAll={toggleAllOnPage}
+              liveIds={liveIds}
+            />
+          )}
+        </Card>
+      )}
+
+      {pagination && !isError && pagination.total > 0 && (
+        <Pager pagination={pagination} onPageChange={setPage}>
+          <OptionSelect
+            label="Rows per page"
+            value={pageSize}
+            options={PAGE_SIZE_OPTIONS}
+            onChange={(size) => {
+              setPageSize(size)
+              setPage(1)
+            }}
+          />
+        </Pager>
+      )}
+
+      <DetectionPanel detection={selected} onClose={() => setSelected(null)} onUpdated={setSelected} />
+
+      <BulkStatusDialog
+        status={bulkStatus}
+        count={checkedCount}
+        pending={bulkMutation.isPending}
+        onConfirm={() => {
+          if (bulkStatus) bulkMutation.mutate({ ids: [...checked.keys()], status: bulkStatus })
+        }}
+        onClose={() => setBulkStatus(null)}
+      />
+
+      <CreateIncidentDialog
+        open={incidentOpen}
+        onClose={() => setIncidentOpen(false)}
+        detectionIds={[...checked.keys()]}
+        defaultSeverity={worstSeverity}
+        onCreated={() => setChecked(new Map())}
+      />
+    </Page>
   )
 }

@@ -9,6 +9,52 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Lean core
+
+The repository was reduced to a small detection core: ingestion from Wazuh, Zeek and Suricata, OCSF normalization, Sigma rule evaluation, detections, incidents, event search and ATT&CK coverage. Entries below this section describe earlier versions and mention features that no longer exist.
+
+#### Added
+
+- New web UI built on a design-token system: CSS variables in `src/index.css`, Tailwind color mapping, base components in `src/components/ui/`.
+- Light and dark themes. The first visit follows the operating system setting.
+- Rebuilt pages: Overview, Detections, Incidents, Hunt, ATT&CK Coverage, Sigma Rules, Sources, Settings, Login.
+- Favicon and page title for the frontend.
+- `README.md` with a quick start, and a documentation set under `docs/`: architecture, API reference, Sigma engine, ATT&CK coverage, integration guide, UI, security, deployment, development.
+- `.gitattributes` that keeps shell scripts in LF line endings.
+- `MXTAC_HOST` variable for `app/setup.sh`.
+
+#### Changed
+
+- `app/docker-compose.yml` applies database migrations before the backend starts.
+- Backend container health checks use Python instead of `curl`, which is not in the backend image.
+- `app/setup.sh` no longer contains a fixed IP address, and restarts the backend after the migrations.
+- The backend image now includes the migration files (`alembic/versions/` was excluded by `.dockerignore`).
+- `app/deploy/systemd/mxtac.env.example` gives `CORS_ORIGINS` as a JSON array.
+- `CONTRIBUTING.md` replaces the governance and contributing guides. The numbered design documents at the repository root were replaced by the files under `docs/`.
+- `INSTALL.md`, `ENV-REFERENCE.md`, `SECURITY.md` and `app/README.md` describe the current code.
+- CI no longer installs `libxmlsec1`.
+
+#### Removed
+
+- SSO (OIDC and SAML).
+- Threat intelligence and IOC management, including the OpenCTI connector.
+- Compliance views, reports and scheduled reports.
+- Asset inventory.
+- Notification channels and alert outputs (email, syslog, webhook, file).
+- NDR views and the endpoint and network agents API.
+- The Rust agents `mxguard` and `mxwatch` (`agents/`).
+- Admin console, permission sets and API keys.
+- Prowler and Velociraptor connectors.
+- Hunt suggestions, suppression rules and alert auto-close.
+- DuckDB event store.
+- The `matrix` UI theme.
+- The unused `VITE_API_BASE_URL` build variable and `app/frontend/.env.example`. The frontend calls the API with relative URLs.
+- Planning documents, task summaries, UI mock-ups and third-party dashboard examples from the repository root.
+
+#### Known limitations
+
+See "Current limitations" in `README.md`.
+
 ---
 
 ## [2.0.0-alpha] — 2026-02-23

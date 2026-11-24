@@ -61,7 +61,7 @@ describe('useKeyboardShortcuts', () => {
   // ── Chord navigation ─────────────────────────────────────────────────────────
 
   describe('chord navigation (g → …)', () => {
-    it('g then d navigates to Dashboard (/)', () => {
+    it('g then d navigates to Overview (/)', () => {
       renderHook(() => useKeyboardShortcuts(), { wrapper })
       fireKey('g')
       fireKey('d')
@@ -82,11 +82,11 @@ describe('useKeyboardShortcuts', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/rules')
     })
 
-    it('g then c navigates to Connectors (/integrations)', () => {
+    it('g then c navigates to ATT&CK coverage (/coverage)', () => {
       renderHook(() => useKeyboardShortcuts(), { wrapper })
       fireKey('g')
       fireKey('c')
-      expect(mockNavigate).toHaveBeenCalledWith('/integrations')
+      expect(mockNavigate).toHaveBeenCalledWith('/coverage')
     })
 
     it('g then i navigates to Incidents (/incidents)', () => {

@@ -4,7 +4,7 @@
 # Usage: sudo bash enable-https.sh <your-domain.com>
 #
 # Prerequisites:
-#   - Domain must point to 115.90.24.199
+#   - The domain must resolve to this server
 #   - Port 80 must be open (used for ACME challenge)
 # =============================================================================
 set -euo pipefail

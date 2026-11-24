@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import QRCode from 'qrcode'
+import { CircleAlert, CircleCheck } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { authApi } from '../../../lib/api'
 
 interface Props {
@@ -65,7 +69,7 @@ export function MfaSetupModal({ onClose }: Props) {
     if (!setupData?.qr_code_uri) return
     QRCode.toDataURL(setupData.qr_code_uri, { width: 200, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
       .then(setQrDataUrl)
-      .catch(console.error)
+      .catch(() => setQrDataUrl(''))
   }, [setupData?.qr_code_uri])
 
   // Initiate MFA setup (generates secret + QR)
@@ -122,19 +126,16 @@ export function MfaSetupModal({ onClose }: Props) {
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       onClick={handleOverlayClick}
     >
-      <div className="bg-card rounded-lg shadow-xl w-[440px] max-h-[90vh] overflow-y-auto">
+      <div className="max-h-[90vh] w-[440px] max-w-[92vw] overflow-y-auto rounded-lg border border-border bg-card shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div>
             <h2 className="text-[13px] font-semibold text-foreground">Security Settings</h2>
             <p className="text-[11px] text-muted-foreground mt-0.5">Multi-Factor Authentication</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-muted-foreground hover:text-foreground text-lg leading-none"
-          >
+          <Button variant="ghost" size="icon" title="Close" onClick={onClose} className="text-lg leading-none text-muted-foreground">
             ×
-          </button>
+          </Button>
         </div>
 
         {/* Body */}
@@ -149,8 +150,8 @@ export function MfaSetupModal({ onClose }: Props) {
                 </div>
               ) : me?.mfa_enabled ? (
                 <div className="space-y-4">
-                  <div className="flex items-center gap-3 p-3 bg-status-ok/10 rounded-md border border-status-ok/30">
-                    <span className="text-status-ok text-lg">✓</span>
+                  <div className="flex items-center gap-3 rounded-md border status-green p-3">
+                    <CircleCheck className="h-4 w-4 shrink-0" />
                     <div>
                       <div className="text-[12px] font-medium text-foreground">MFA is active</div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">
@@ -162,18 +163,13 @@ export function MfaSetupModal({ onClose }: Props) {
                     To disable MFA, contact an administrator.
                   </p>
                   <div className="flex justify-end">
-                    <button
-                      onClick={onClose}
-                      className="h-[30px] px-4 text-[12px] bg-card border border-border rounded-md text-foreground/80 hover:bg-background"
-                    >
-                      Close
-                    </button>
+                    <Button variant="outline" onClick={onClose}>Close</Button>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="flex items-center gap-3 p-3 bg-warn-bg rounded-md border border-warn-text/20">
-                    <span className="text-warn-text text-lg">⚠</span>
+                  <div className="flex items-center gap-3 rounded-md border sev-medium p-3">
+                    <CircleAlert className="h-4 w-4 shrink-0" />
                     <div>
                       <div className="text-[12px] font-medium text-foreground">MFA not configured</div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">
@@ -189,26 +185,17 @@ export function MfaSetupModal({ onClose }: Props) {
                   </p>
 
                   {setupMutation.isError && (
-                    <div className="text-xs text-crit-text bg-crit-bg rounded-md px-3 py-2">
+                    <div className="rounded-md border sev-critical px-3 py-2 text-[11px]">
                       {(setupMutation.error as { response?: { data?: { detail?: string } } })
                         ?.response?.data?.detail ?? 'Setup failed'}
                     </div>
                   )}
 
                   <div className="flex justify-end gap-2">
-                    <button
-                      onClick={onClose}
-                      className="h-[30px] px-4 text-[12px] bg-card border border-border rounded-md text-foreground/80 hover:bg-background"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => setupMutation.mutate()}
-                      disabled={setupMutation.isPending}
-                      className="h-[30px] px-4 text-[12px] bg-primary text-white rounded-md hover:opacity-90 disabled:opacity-50"
-                    >
+                    <Button variant="outline" onClick={onClose}>Cancel</Button>
+                    <Button onClick={() => setupMutation.mutate()} disabled={setupMutation.isPending}>
                       {setupMutation.isPending ? 'Generating…' : 'Enable MFA'}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -241,29 +228,22 @@ export function MfaSetupModal({ onClose }: Props) {
 
               {/* Manual entry secret */}
               <div>
-                <label className="block text-[10px] font-medium text-muted-foreground uppercase mb-1">
-                  Manual entry key
-                </label>
+                <Label className="mb-1 block text-[12px] font-medium">Manual entry key</Label>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-[11px] font-mono bg-background border border-border rounded px-2 py-1.5 text-foreground tracking-widest select-all">
                     {setupData.secret}
                   </code>
-                  <button
-                    type="button"
-                    onClick={handleCopySecret}
-                    className="h-[28px] px-2 text-[10px] bg-card border border-border rounded hover:bg-background text-foreground/80 whitespace-nowrap"
-                  >
+                  <Button type="button" variant="outline" onClick={handleCopySecret}>
                     {copied ? 'Copied!' : 'Copy'}
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {/* Verification code input */}
               <div>
-                <label className="block text-[10px] font-medium text-muted-foreground uppercase mb-1">
-                  Verification code
-                </label>
-                <input
+                <Label htmlFor="mfa-verify-code" className="mb-1 block text-[12px] font-medium">Verification code</Label>
+                <Input
+                  id="mfa-verify-code"
                   type="text"
                   inputMode="numeric"
                   autoComplete="one-time-code"
@@ -275,28 +255,24 @@ export function MfaSetupModal({ onClose }: Props) {
                     setVerifyCode(e.target.value.replace(/\D/g, ''))
                     setVerifyError('')
                   }}
-                  className="w-full border border-border rounded-md px-3 py-2 text-sm text-center tracking-widest font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary bg-background text-foreground placeholder:text-muted-foreground"
+                  className="h-9 text-center font-mono text-sm tracking-widest"
                 />
                 {verifyError && (
-                  <p className="text-[11px] text-crit-text mt-1">{verifyError}</p>
+                  <p className="mt-1 text-[11px] text-destructive">{verifyError}</p>
                 )}
               </div>
 
               <div className="flex justify-end gap-2">
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={() => { setStep('status'); setSetupData(null); setQrDataUrl(''); setVerifyCode('') }}
-                  className="h-[30px] px-4 text-[12px] bg-card border border-border rounded-md text-foreground/80 hover:bg-background"
                 >
                   Back
-                </button>
-                <button
-                  type="submit"
-                  disabled={verifyCode.length < 6 || verifyMutation.isPending}
-                  className="h-[30px] px-4 text-[12px] bg-primary text-white rounded-md hover:opacity-90 disabled:opacity-50"
-                >
+                </Button>
+                <Button type="submit" disabled={verifyCode.length < 6 || verifyMutation.isPending}>
                   {verifyMutation.isPending ? 'Verifying…' : 'Verify & Enable'}
-                </button>
+                </Button>
               </div>
             </form>
           )}
@@ -304,8 +280,8 @@ export function MfaSetupModal({ onClose }: Props) {
           {/* ── Backup codes step ───────────────────────────────── */}
           {step === 'backup-codes' && setupData && (
             <div className="space-y-4">
-              <div className="flex items-center gap-2 p-3 bg-status-ok/10 rounded-md border border-status-ok/30">
-                <span className="text-status-ok">✓</span>
+              <div className="flex items-center gap-2 rounded-md border status-green p-3">
+                <CircleCheck className="h-4 w-4 shrink-0" />
                 <span className="text-[12px] font-medium text-foreground">MFA enabled successfully</span>
               </div>
 
@@ -325,28 +301,17 @@ export function MfaSetupModal({ onClose }: Props) {
                 </div>
 
                 <div className="flex gap-2">
-                  <button
-                    onClick={handleCopyBackupCodes}
-                    className="flex-1 h-[30px] text-[11px] bg-card border border-border rounded-md text-foreground/80 hover:bg-background"
-                  >
+                  <Button variant="outline" className="flex-1" onClick={handleCopyBackupCodes}>
                     {copied ? 'Copied!' : 'Copy all'}
-                  </button>
-                  <button
-                    onClick={() => downloadBackupCodes(setupData.backup_codes)}
-                    className="flex-1 h-[30px] text-[11px] bg-card border border-border rounded-md text-foreground/80 hover:bg-background"
-                  >
+                  </Button>
+                  <Button variant="outline" className="flex-1" onClick={() => downloadBackupCodes(setupData.backup_codes)}>
                     Download .txt
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               <div className="flex justify-end">
-                <button
-                  onClick={onClose}
-                  className="h-[30px] px-5 text-[12px] bg-primary text-white rounded-md hover:opacity-90"
-                >
-                  Done
-                </button>
+                <Button onClick={onClose}>Done</Button>
               </div>
             </div>
           )}

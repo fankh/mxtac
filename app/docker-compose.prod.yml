@@ -19,7 +19,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ready', timeout=4)"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -38,8 +38,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
-      args:
-        - VITE_API_BASE_URL=https://${DOMAIN}
     restart: unless-stopped
     deploy:
       resources:

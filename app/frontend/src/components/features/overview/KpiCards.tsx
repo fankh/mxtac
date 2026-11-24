@@ -1,102 +1,97 @@
+import type { ReactNode } from 'react'
+import { ArrowDownRight, ArrowUpRight } from 'lucide-react'
 import type { KpiMetrics } from '../../../types/api'
-import { chartColors } from '../../../lib/themeVars'
-import { useUIStore } from '../../../stores/uiStore'
+import { Card, CardContent } from '@/components/ui/card'
+import { cn, fmtNum } from '@/lib/utils'
 
-function Card({ label, children }: { label: string; children: React.ReactNode }) {
+function Stat({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
   return (
-    <div className="bg-card rounded-md border shadow-sm p-4 flex flex-col gap-1">
-      <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
-      {children}
-    </div>
+    <Card>
+      <CardContent className="flex h-full flex-col gap-1 p-4">
+        <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+        {children}
+        {hint && <span className="mt-auto text-[11px] text-muted-foreground">{hint}</span>}
+      </CardContent>
+    </Card>
   )
 }
 
-interface Props { data: KpiMetrics }
+/** Minutes as "42 min" or "3.5 h"; a dash when there is no data yet. */
+export function formatDuration(minutes: number | null | undefined): string {
+  if (minutes === null || minutes === undefined) return '–'
+  if (minutes < 90) return `${Math.round(minutes)} min`
+  return `${(minutes / 60).toFixed(1)} h`
+}
 
-export function KpiCards({ data }: Props) {
-  const theme = useUIStore((s) => s.theme)
-  const c = chartColors()
+function Delta({ pct }: { pct: number }) {
+  if (pct === 0) return <>No change vs previous period</>
+  const up = pct > 0
+  const Icon = up ? ArrowUpRight : ArrowDownRight
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      <Icon className={cn('h-3 w-3', up ? 'text-crit-text' : 'text-status-ok-text')} />
+      {Math.abs(pct)}% vs previous period
+    </span>
+  )
+}
 
-  const covPct = (data.attack_covered / data.attack_total) * 100
-  const intPct = (data.integrations_active / data.integrations_total) * 100
+function CoverageRing({ pct }: { pct: number }) {
+  const r = 20
+  const c = 2 * Math.PI * r
+  return (
+    <svg width="48" height="48" viewBox="0 0 48 48" className="shrink-0" role="img" aria-label={`${Math.round(pct)}% covered`}>
+      <circle cx="24" cy="24" r={r} fill="none" strokeWidth="5" className="stroke-muted" />
+      <circle
+        cx="24" cy="24" r={r} fill="none" strokeWidth="5" strokeLinecap="round"
+        className="stroke-primary"
+        strokeDasharray={`${(Math.min(pct, 100) / 100) * c} ${c}`}
+        transform="rotate(-90 24 24)"
+      />
+    </svg>
+  )
+}
+
+export function KpiCards({ data }: { data: KpiMetrics }) {
+  const coverage = data.attack_total > 0 ? (data.attack_covered / data.attack_total) * 100 : 0
 
   return (
-    <div className="grid grid-cols-6 gap-3 px-5 pt-3">
-      {/* Total Detections */}
-      <Card label="Total Detections">
-        <span className="text-[32px] font-bold text-foreground leading-none">
-          {data.total_detections.toLocaleString()}
-        </span>
-        <span className="text-[11px] text-muted-foreground">
-          {'\u2191'} {data.total_detections_delta_pct}% vs prev week
-        </span>
-      </Card>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+      <Stat label="Detections" hint={<Delta pct={data.total_detections_delta_pct} />}>
+        <span className="text-lg font-bold tabular-nums">{fmtNum(data.total_detections)}</span>
+      </Stat>
 
-      {/* Critical Alerts */}
-      <Card label="Critical Alerts">
-        <span className="text-[32px] font-bold text-crit-text leading-none">
-          {data.critical_alerts}
+      <Stat label="Critical alerts" hint={`${fmtNum(data.critical_alerts_new_today)} new today`}>
+        <span className={cn('text-lg font-bold tabular-nums', data.critical_alerts > 0 && 'text-crit-text')}>
+          {fmtNum(data.critical_alerts)}
         </span>
-        <span className="text-[11px] text-muted-foreground">{data.critical_alerts_new_today} new today</span>
-      </Card>
+      </Stat>
 
-      {/* ATT&CK Coverage */}
-      <Card label="ATT&CK Coverage">
+      <Stat label="Open incidents" hint={`Mean time to resolve: ${formatDuration(data.mttr_minutes)}`}>
+        <span className="text-lg font-bold tabular-nums">{fmtNum(data.open_incidents_count)}</span>
+      </Stat>
+
+      <Stat label="ATT&CK coverage">
         <div className="flex items-center gap-3">
-          {/* Ring gauge */}
-          <svg width="52" height="52" viewBox="0 0 52 52" className="shrink-0">
-            <circle cx="26" cy="26" r="21" fill="none" stroke={c.border} strokeWidth="5" />
-            <circle
-              cx="26" cy="26" r="21" fill="none"
-              stroke={c.primary} strokeWidth="5" strokeLinecap="round"
-              strokeDasharray={`${(covPct / 100) * 132} 132`}
-              strokeDashoffset="33"
-              transform="rotate(-90 26 26)"
-            />
-            <text x="26" y="30" textAnchor="middle" fontSize="12" fontWeight="700" fill={c.textPrimary}>
-              {Math.round(covPct)}%
-            </text>
-          </svg>
+          <CoverageRing pct={coverage} />
           <div>
-            <div className="text-[11px] text-muted-foreground">{data.attack_covered} / {data.attack_total} techniques</div>
-            <div className="text-[10px] text-muted-foreground">+{data.attack_coverage_delta} this week</div>
+            <div className="text-lg font-bold tabular-nums">{Math.round(coverage)}%</div>
+            <div className="text-[11px] text-muted-foreground">
+              {fmtNum(data.attack_covered)} of {fmtNum(data.attack_total)} techniques
+            </div>
           </div>
         </div>
-      </Card>
+      </Stat>
 
-      {/* MTTD */}
-      <Card label="Mean Time to Detect">
-        <div className="flex items-baseline gap-1">
-          <span className="text-[32px] font-bold text-foreground leading-none">{data.mttd_minutes}</span>
-          <span className="text-[14px] text-muted-foreground">min</span>
-        </div>
-        <span className="text-[11px] text-muted-foreground">
-          {'\u2193'} {Math.abs(data.mttd_delta_minutes)}m improved
-        </span>
-      </Card>
+      <Stat label="Mean time to detect" hint={data.mttd_minutes === null ? 'No incident data yet' : undefined}>
+        <span className="text-lg font-bold tabular-nums">{formatDuration(data.mttd_minutes)}</span>
+      </Stat>
 
-      {/* Integrations */}
-      <Card label="Integrations">
-        <div className="flex items-baseline gap-1">
-          <span className="text-[32px] font-bold text-foreground leading-none">{data.integrations_active}</span>
-          <span className="text-[14px] text-muted-foreground">/ {data.integrations_total}</span>
-        </div>
-        <div className="h-[5px] rounded bg-border mt-1">
-          <div className="h-full rounded bg-primary" style={{ width: `${intPct}%` }} />
-        </div>
-        <span className="text-[10px] text-muted-foreground">Splunk: auth error</span>
-      </Card>
-
-      {/* Sigma Rules */}
-      <Card label="Sigma Rules Active">
-        <span className="text-[32px] font-bold text-foreground leading-none">
-          {data.sigma_rules_active.toLocaleString()}
-        </span>
-        <span className="text-[11px] text-muted-foreground">
-          {data.sigma_rules_critical} critical · {data.sigma_rules_high} high
-        </span>
-        <span className="text-[10px] text-muted-foreground">+{data.sigma_rules_deployed_this_week} deployed this week</span>
-      </Card>
+      <Stat
+        label="Active Sigma rules"
+        hint={`${fmtNum(data.sigma_rules_critical)} critical · ${fmtNum(data.sigma_rules_high)} high`}
+      >
+        <span className="text-lg font-bold tabular-nums">{fmtNum(data.sigma_rules_active)}</span>
+      </Stat>
     </div>
   )
 }
