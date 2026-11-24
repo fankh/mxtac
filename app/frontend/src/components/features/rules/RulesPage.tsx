@@ -21,6 +21,7 @@ import type { Rule } from '@/types/api'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { RoleNotice } from '@/components/shared/RoleNotice'
 import { canReadRules } from '@/lib/roles'
+import { useTechniqueNames } from '@/hooks/useTechniqueNames'
 import { RuleEditorDialog } from './RuleEditorDialog'
 import { RuleImportDialog } from './RuleImportDialog'
 import { RuleTestDialog } from './RuleTestDialog'
@@ -130,6 +131,7 @@ function RulesWorkspace() {
     onError: fail('Reload failed', 'Could not reload the detection engine'),
   })
 
+  const techniqueName = useTechniqueNames()
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     return rules.filter((r) => {
@@ -139,9 +141,9 @@ function RulesWorkspace() {
       if (!q) return true
       return r.title.toLowerCase().includes(q)
         || r.id.toLowerCase().includes(q)
-        || r.technique_ids.some((t) => t.toLowerCase().includes(q))
+        || r.technique_ids.some((t) => t.toLowerCase().includes(q) || (techniqueName(t) ?? '').toLowerCase().includes(q))
     })
-  }, [rules, search, level, state])
+  }, [rules, search, level, state, techniqueName])
 
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
   useEffect(() => { setPage(1) }, [search, level, state])
@@ -308,10 +310,13 @@ function RulesWorkspace() {
                     <TableCell className="text-[12px]">
                       <div className="flex flex-wrap gap-1">
                         {rule.technique_ids.slice(0, 2).map((t) => (
-                          <span key={t} className="rounded border border-border bg-muted px-1.5 font-mono text-[10px] text-foreground">{t}</span>
+                          <span key={t} title={techniqueName(t)} className="rounded border border-border bg-muted px-1.5 font-mono text-[10px] text-foreground">{t}</span>
                         ))}
                         {rule.technique_ids.length > 2 && (
-                          <span className="text-[11px] text-muted-foreground" title={rule.technique_ids.slice(2).join(', ')}>
+                          <span
+                            className="text-[11px] text-muted-foreground"
+                            title={rule.technique_ids.slice(2).map((t) => [t, techniqueName(t)].filter(Boolean).join(' ')).join(', ')}
+                          >
                             +{rule.technique_ids.length - 2}
                           </span>
                         )}

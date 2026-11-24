@@ -13,6 +13,7 @@ from ....repositories.detection_repo import TACTIC_LABELS, DetectionRepo
 from ....repositories.incident_repo import IncidentRepo
 from ....repositories.rule_repo import RuleRepo
 from ....schemas.detection import Detection
+from ....services.attack_techniques import resolve_technique_name, technique_name
 from ....schemas.overview import KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus
 
 router = APIRouter(prefix="/overview", tags=["overview"])
@@ -168,7 +169,7 @@ async def get_heatmap(
     The grid is always complete; cells have ``covered == 0`` when no detections exist.
     """
     rows = await DetectionRepo.get_heatmap(db)
-    return [HeatRow(**r) for r in rows]
+    return [HeatRow(**r, technique_name=technique_name(r["technique_id"])) for r in rows]
 
 
 @router.get("/coverage/tactic-labels", response_model=list[str])
@@ -242,7 +243,7 @@ async def get_recent_detections(
             "score": d.score,
             "severity": d.severity,
             "technique_id": d.technique_id,
-            "technique_name": d.technique_name,
+            "technique_name": resolve_technique_name(d.technique_id, d.technique_name),
             "name": d.name,
             "host": d.host,
             "tactic": tactic_name(d.tactic),

@@ -7,8 +7,9 @@ export function isUuid(value: string | null | undefined): boolean {
 }
 
 /**
- * Technique name worth showing next to the technique ID. The pipeline has no ATT&CK name
- * table and stores the rule title there, which only repeats the detection name.
+ * Technique name worth showing next to the technique ID. The backend answers with the ATT&CK
+ * name from its bundled table. For a technique the table does not know, it answers with the
+ * stored value (the rule title in older rows) or the ID, which would only repeat what is shown.
  */
 export function techniqueLabel(d: Pick<Detection, 'name' | 'technique_id' | 'technique_name'>): string {
   const name = d.technique_name?.trim() ?? ''

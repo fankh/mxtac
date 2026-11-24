@@ -359,6 +359,7 @@ class TestSigmaAlertStructure:
         expected = {
             "id", "rule_id", "rule_title", "level", "severity_id",
             "technique_ids", "tactic_ids", "host", "time", "event_snapshot",
+            "event_id",
         }
         actual = {f.name for f in fields(SigmaAlert)}
         assert actual == expected

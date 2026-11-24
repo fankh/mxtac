@@ -36,12 +36,12 @@ def deps(dependant, acc):
         deps(d, acc)
 
 SPECIAL = {
- "/api/v1/auth/login": "Public. Email and password in the body. Answers with a session (`access_token`, `refresh_token`, `email`, `role`), or with `mfa_required` and an MFA token, or with `password_change_required` and a password-change token",
+ "/api/v1/auth/login": "Public. Email and password in the body. Answers with a session (`access_token`, `email`, `role`, and the refresh token as an HttpOnly cookie), or with `mfa_required` and an MFA token, or with `password_change_required` and a password-change token",
  "/api/v1/auth/mfa/verify": "MFA token from the login response",
- "/api/v1/auth/refresh": "Refresh token in the body",
+ "/api/v1/auth/refresh": "The refresh cookie `mxtac_refresh`. No body, no access token",
  "/api/v1/auth/logout": "Bearer access token",
  "/api/v1/auth/change-password": "Password-change token from the login response",
- "/api/v1/auth/password": "Any signed-in user. Current and new password in the body",
+ "/api/v1/auth/password": "Any signed-in user. Current and new password in the body. Answers with a new session; every other session of the account ends",
  "/api/v1/ingest": "`X-MxTac-Source` and `X-MxTac-Token` headers of a `generic` connector",
  "/api/v1/ingest/test": "`X-MxTac-Source` and `X-MxTac-Token` headers of a `generic` connector",
  "/health": "Public", "/ready": "Public", "/metrics": "Public",
@@ -51,6 +51,7 @@ GROUPS = [
  ("Authentication", lambda p: p.startswith("/api/v1/auth")),
  ("Overview", lambda p: p.startswith("/api/v1/overview")),
  ("Coverage", lambda p: p.startswith("/api/v1/coverage")),
+ ("ATT&CK reference data", lambda p: p.startswith("/api/v1/attack")),
  ("Detections", lambda p: p.startswith("/api/v1/detections")),
  ("Incidents", lambda p: p.startswith("/api/v1/incidents")),
  ("Sigma rules", lambda p: p.startswith("/api/v1/rules")),
@@ -92,6 +93,8 @@ w("## Conventions")
 w()
 w("- All REST routes except the operations routes are under `/api/v1`.")
 w("- Send the access token as `Authorization: Bearer <token>`. `POST /api/v1/auth/login` returns it, together with the `email` and `role` of the account. When the account must set a new password first, or has MFA, the login answer carries a one-time token for `POST /api/v1/auth/change-password` or `POST /api/v1/auth/mfa/verify` instead.")
+w("- The access token is valid for `ACCESS_TOKEN_EXPIRE_MINUTES` (default 60). The login answer also sets the refresh token as the cookie `mxtac_refresh` (HttpOnly, Secure, SameSite=Strict, path `/api/v1/auth/refresh`). It is never part of a response body. `POST /api/v1/auth/refresh` exchanges the cookie for a new access token and a new cookie. A refresh token works once; using it again ends the session. A client that is not a browser keeps the cookie in its cookie jar.")
+w("- `POST /api/v1/auth/logout` ends the session of the presented access token, including its refresh token. A password change ends every session of the account.")
 w("- The role and the active flag of the account are read from the database on every request. A role change or a deactivation applies to the next request, also for tokens that were issued earlier.")
 w("- The **Auth** column shows the permission a route requires. The permission table below maps permissions to roles.")
 w("- A request without a valid token gets `401`. A role without the permission gets `403`.")

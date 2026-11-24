@@ -19,11 +19,13 @@ import { OptionSelect } from '@/components/shared/OptionSelect'
 import { SEVERITY_LABELS, SEVERITY_OPTIONS } from '@/lib/severity'
 import { canWrite } from '@/lib/roles'
 import { tacticName } from '@/lib/attack'
+import { useTechniqueNames } from '@/hooks/useTechniqueNames'
 import { cn } from '@/lib/utils'
 import { formatDateTime, isValidEmail } from '@/lib/format'
 import { IncidentStatusPill } from './IncidentStatusPill'
 import { IncidentTimeline } from './IncidentTimeline'
 import { INCIDENT_STATUS_LABELS, formatDuration, reachableStatuses } from './incidentUtils'
+import { techniqueLabel } from '../detections/utils'
 
 interface IncidentPanelProps {
   /** Incident to show; the panel is closed while this is null. */
@@ -39,6 +41,22 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
       <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
       <dd className="break-words text-[12px] text-foreground">{children}</dd>
     </div>
+  )
+}
+
+/** Technique IDs with their ATT&CK names. */
+function TechniqueChips({ ids }: { ids: string[] }) {
+  const techniqueName = useTechniqueNames()
+  if (ids.length === 0) return <span className="text-muted-foreground">—</span>
+  return (
+    <span className="flex flex-wrap gap-1">
+      {ids.map((id) => (
+        <span key={id} className="rounded border border-border bg-muted px-1.5 py-0.5 text-[11px]">
+          <span className="font-mono">{id}</span>
+          {techniqueName(id) && <span className="ml-1.5 text-muted-foreground">{techniqueName(id)}</span>}
+        </span>
+      ))}
+    </span>
   )
 }
 
@@ -78,7 +96,8 @@ function LinkedDetections({ detections, missing }: { detections: Detection[]; mi
             <div className="min-w-0 flex-1">
               <p className="truncate text-[12px] font-medium text-foreground">{d.name}</p>
               <p className="truncate text-[11px] text-muted-foreground">
-                <span className="font-mono">{d.technique_id}</span> · {d.host} · {formatDateTime(d.time)}
+                <span className="font-mono">{d.technique_id}</span>
+                {techniqueLabel(d) && <> {techniqueLabel(d)}</>} · {d.host} · {formatDateTime(d.time)}
               </p>
             </div>
             <StatusPill status={d.status} />
@@ -264,7 +283,7 @@ function PanelBody({ incident }: { incident: Incident }) {
               </Row>
               <Row label="Priority">P{current.priority}</Row>
               <Row label="Hosts"><Chips values={current.hosts} /></Row>
-              <Row label="Techniques"><Chips values={current.technique_ids} /></Row>
+              <Row label="Techniques"><TechniqueChips ids={current.technique_ids} /></Row>
               <Row label="Tactics"><Chips values={current.tactic_ids} label={tacticName} /></Row>
               <Row label="Open for">{detail ? formatDuration(detail.duration_seconds) : '—'}</Row>
               <Row label="Time to detect">{formatDuration(current.ttd_seconds)}</Row>

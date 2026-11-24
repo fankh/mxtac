@@ -35,6 +35,7 @@ from app.api.v1.endpoints.auth import _encrypt_secret, _hash_backup_code
 from app.core.config import settings
 from app.core.security import create_mfa_token
 from app.models.user import User
+from tests.auth_cookies import refresh_token_of
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -170,7 +171,7 @@ async def test_login_mfa_user_does_not_return_access_token(client: AsyncClient) 
             resp = await client.post(LOGIN_URL, json={"email": _TEST_EMAIL, "password": "pw"})
     data = resp.json()
     assert "access_token" not in data
-    assert "refresh_token" not in data
+    assert refresh_token_of(resp) is None
 
 
 @pytest.mark.asyncio
@@ -183,7 +184,7 @@ async def test_login_non_mfa_user_returns_tokens_normally(client: AsyncClient) -
     data = resp.json()
     assert resp.status_code == 200
     assert "access_token" in data
-    assert "refresh_token" in data
+    assert refresh_token_of(resp)
     assert "mfa_required" not in data
 
 
@@ -238,9 +239,7 @@ async def test_mfa_verify_returns_refresh_token(client: AsyncClient) -> None:
                 MFA_VERIFY_URL, json={"mfa_token": mfa_token, "code": valid_code}
             )
     data = resp.json()
-    assert "refresh_token" in data
-    assert isinstance(data["refresh_token"], str)
-    assert data["refresh_token"]
+    assert refresh_token_of(resp)
 
 
 @pytest.mark.asyncio
@@ -287,7 +286,7 @@ async def test_mfa_verify_response_schema(client: AsyncClient) -> None:
             resp = await client.post(
                 MFA_VERIFY_URL, json={"mfa_token": mfa_token, "code": valid_code}
             )
-    assert {"access_token", "refresh_token", "token_type", "expires_in"} <= set(resp.json())
+    assert {"access_token", "token_type", "expires_in"} <= set(resp.json())
 
 
 # ---------------------------------------------------------------------------

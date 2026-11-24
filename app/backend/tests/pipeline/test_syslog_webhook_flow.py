@@ -29,8 +29,10 @@ from app.models.event import Event
 from app.pipeline.queue import InMemoryQueue, Topic, get_queue
 from app.repositories.connector_repo import ConnectorRepo
 from app.services.alert_manager import AlertManager
+from app.services.attack_techniques import technique_name
 from app.services.bundled_rules import import_bundled_rules
 from app.services.event_persister import event_persister
+from app.services.normalizers.ocsf import EVENT_ID_KEY
 from app.services.normalizers.pipeline import NormalizerPipeline
 from app.services.sigma_consumer import sigma_consumer
 from app.services.ws_broadcaster import websocket_broadcaster
@@ -291,3 +293,57 @@ async def test_pipeline_detection_is_broadcast_to_websocket_clients(pipeline) ->
     assert message["data"]["technique_ids"] == ["T1059.004"]
     assert message["data"]["tactic_ids"] == ["TA0002"]
     assert message["data"]["score"] > 0
+
+
+# ── Link from a detection to its event, and the ATT&CK technique name ────────
+
+
+async def test_detection_names_the_stored_event_that_caused_it(pipeline) -> None:
+    queue, session_factory = pipeline
+
+    receiver = SyslogReceiver(queue, host="127.0.0.1", port=0)
+    await receiver._handle_message(SYSLOG_LINE, ("10.0.0.7", 51400))
+    await queue.drain(timeout=10)
+
+    (event,) = await _rows(session_factory, Event)
+    (detection,) = await _rows(session_factory, Detection)
+    assert detection.event_id == event.id
+    # The ID travels next to the event on the queue, not inside the stored payload
+    assert EVENT_ID_KEY not in event.raw
+
+
+async def test_each_detection_links_to_its_own_event(pipeline) -> None:
+    queue, session_factory = pipeline
+    await _publish_webhook_events(queue, _REVERSE_SHELL, _SHADOW_READ)
+
+    events = {e.hostname: e.id for e in await _rows(session_factory, Event)}
+    detections = await _rows(session_factory, Detection)
+    assert len(events) == 2 and len(detections) >= 2
+    assert {d.event_id for d in detections} == set(events.values())
+    for detection in detections:
+        assert detection.event_id == events[detection.host]
+
+
+async def test_event_of_a_detection_can_be_opened_through_the_api(api, hunter_headers) -> None:
+    queue, client = api
+    await _publish_webhook_events(queue, _REVERSE_SHELL)
+
+    detection = (await client.get("/api/v1/detections")).json()["items"][0]
+    assert detection["event_id"]
+
+    resp = await client.get(f"/api/v1/events/{detection['event_id']}", headers=hunter_headers)
+    assert resp.status_code == 200
+    event = resp.json()
+    assert event["id"] == detection["event_id"]
+    assert event["hostname"] == "app02"
+
+
+async def test_pipeline_detection_stores_the_attack_technique_name(pipeline) -> None:
+    queue, session_factory = pipeline
+    await _publish_webhook_events(queue, _REVERSE_SHELL)
+
+    (detection,) = await _rows(session_factory, Detection)
+    assert detection.technique_id == "T1059.004"
+    assert detection.technique_name == technique_name("T1059.004")
+    assert detection.technique_name == "Command and Scripting Interpreter: Unix Shell"
+    assert detection.technique_name != detection.name   # not the rule title

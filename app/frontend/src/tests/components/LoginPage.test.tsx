@@ -16,6 +16,7 @@ import { LoginPage } from '../../components/features/auth/LoginPage'
 import { useAuthStore } from '../../stores/authStore'
 import { useNavigate } from 'react-router-dom'
 import { KYRA_MDR_URL, MXTAC_REPO_URL } from '../../lib/links'
+import { RETURN_TO_KEY, SESSION_ENDED_KEY } from '../../lib/api'
 
 const mockUseAuthStore = useAuthStore as unknown as ReturnType<typeof vi.fn>
 const mockUseNavigate = useNavigate as unknown as ReturnType<typeof vi.fn>
@@ -65,6 +66,58 @@ describe('LoginPage after sign-in', () => {
     renderLoginPage({ isAuthenticated: true }, { pathname: '/login' })
     expect(navigate).toHaveBeenCalledWith('/', { replace: true })
   })
+})
+
+describe('LoginPage after the session ended', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    mockUseNavigate.mockReturnValue(vi.fn())
+  })
+
+  it('shows the notice once and removes the stored flag', () => {
+    sessionStorage.setItem(SESSION_ENDED_KEY, '1')
+    renderLoginPage()
+
+    expect(screen.getByRole('status')).toHaveTextContent('Your session has ended. Sign in again.')
+    expect(sessionStorage.getItem(SESSION_ENDED_KEY)).toBeNull()
+  })
+
+  it('shows no notice after a normal sign-out or a first visit', () => {
+    renderLoginPage()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByText(/session has ended/i)).not.toBeInTheDocument()
+  })
+
+  it('returns to the page that was open, query string included', () => {
+    const navigate = vi.fn()
+    mockUseNavigate.mockReturnValue(navigate)
+    sessionStorage.setItem(RETURN_TO_KEY, '/hunt?event=3f6c1a52-7a0e-4c53-9d8b-0c1d2e3f4a5b')
+    renderLoginPage({ isAuthenticated: true })
+
+    expect(navigate).toHaveBeenCalledWith('/hunt?event=3f6c1a52-7a0e-4c53-9d8b-0c1d2e3f4a5b', { replace: true })
+    expect(sessionStorage.getItem(RETURN_TO_KEY)).toBeNull()
+  })
+
+  it('prefers the page passed by the router over the stored one', () => {
+    const navigate = vi.fn()
+    mockUseNavigate.mockReturnValue(navigate)
+    sessionStorage.setItem(RETURN_TO_KEY, '/hunt')
+    renderLoginPage({ isAuthenticated: true }, { pathname: '/rules', search: '' })
+
+    expect(navigate).toHaveBeenCalledWith('/rules', { replace: true })
+  })
+
+  it.each(['//evil.example/path', 'https://evil.example', '/login', 'javascript:alert(1)', ''])(
+    'ignores the stored return path %j',
+    (stored) => {
+      const navigate = vi.fn()
+      mockUseNavigate.mockReturnValue(navigate)
+      sessionStorage.setItem(RETURN_TO_KEY, stored)
+      renderLoginPage({ isAuthenticated: true })
+
+      expect(navigate).toHaveBeenCalledWith('/', { replace: true })
+    },
+  )
 })
 
 describe('LoginPage', () => {

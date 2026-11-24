@@ -32,8 +32,9 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { HuntPage } from '../../components/features/hunt/HuntPage'
-import { buildSearchRequest, newFilterRow, toFilterRows } from '../../components/features/hunt/huntUtils'
+import { buildSearchRequest, eventLink, newFilterRow, toFilterRows } from '../../components/features/hunt/huntUtils'
 import type * as ApiModule from '../../lib/api'
 import { eventsApi, savedQueriesApi } from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
@@ -109,14 +110,23 @@ const ENTITY: EntityTimeline = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function renderPage() {
+/** Shows the address the router is at, so tests can read the query string. */
+function Address() {
+  const { pathname, search } = useLocation()
+  return <output data-testid="address">{pathname}{search}</output>
+}
+
+function renderPage(address = '/hunt') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
-    <QueryClientProvider client={queryClient}>
-      <HuntPage />
-    </QueryClientProvider>,
+    <MemoryRouter initialEntries={[address]}>
+      <QueryClientProvider client={queryClient}>
+        <HuntPage />
+        <Address />
+      </QueryClientProvider>
+    </MemoryRouter>,
   )
 }
 
@@ -310,6 +320,94 @@ describe('HuntPage', () => {
 
       await user.click(within(dialog).getByRole('button', { name: 'Back to event' }))
       expect(within(dialog).getByText('Raw event')).toBeInTheDocument()
+    })
+  })
+
+  describe('link to one event (/hunt?event=<id>)', () => {
+    // An event that is not part of the search results, as when a detection links to it.
+    const LINKED: EventItem = {
+      id: '3f6c1a52-7a0e-4c53-9d8b-0c1d2e3f4a5b',
+      time: '2026-01-05T03:12:00+00:00',
+      class_name: 'Authentication',
+      hostname: 'web01',
+      source: 'syslog',
+      summary: 'Failed password for root from 203.0.113.5',
+    }
+
+    it('builds the address of an event', () => {
+      expect(eventLink(LINKED.id)).toBe(`/hunt?event=${LINKED.id}`)
+      expect(eventLink('a b&c')).toBe('/hunt?event=a%20b%26c')
+    })
+
+    it('opens the detail of the linked event, also when the search does not list it', async () => {
+      mockEvents.get.mockResolvedValue(LINKED)
+      renderPage(eventLink(LINKED.id))
+
+      const dialog = await screen.findByRole('dialog')
+      expect(mockEvents.get).toHaveBeenCalledWith(LINKED.id)
+      expect(within(dialog).getByText('Authentication')).toBeInTheDocument()
+      expect(within(dialog).getByText(LINKED.id)).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('removes the event from the address when the detail is closed', async () => {
+      mockEvents.get.mockResolvedValue(LINKED)
+      const user = userEvent.setup()
+      renderPage(eventLink(LINKED.id))
+      await screen.findByRole('dialog')
+
+      await user.keyboard('{Escape}')
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(screen.getByTestId('address')).toHaveTextContent(/^\/hunt$/)
+    })
+
+    it('puts the event of a clicked row into the address, so the page can be shared', async () => {
+      const user = await renderLoaded()
+      expect(screen.getByTestId('address')).toHaveTextContent(/^\/hunt$/)
+
+      await user.click(screen.getByText('powershell.exe spawned by winword.exe'))
+
+      await screen.findByRole('dialog')
+      expect(screen.getByTestId('address')).toHaveTextContent(`/hunt?event=${EVENT_A.id}`)
+    })
+
+    it('keeps other query parameters of the address', async () => {
+      mockEvents.get.mockResolvedValue(LINKED)
+      const user = userEvent.setup()
+      renderPage(`/hunt?from=detection&event=${LINKED.id}`)
+      await screen.findByRole('dialog')
+
+      await user.keyboard('{Escape}')
+
+      await waitFor(() => expect(screen.getByTestId('address')).toHaveTextContent(/^\/hunt\?from=detection$/))
+    })
+
+    it('says so when the linked event cannot be loaded, and can be dismissed', async () => {
+      mockEvents.get.mockRejectedValue({ response: { status: 404, data: { detail: 'Event not found' } } })
+      const user = userEvent.setup()
+      renderPage(eventLink(LINKED.id))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(`Could not open event ${LINKED.id}: Event not found`)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      // The search itself still works
+      expect(await screen.findByText('powershell.exe spawned by winword.exe')).toBeInTheDocument()
+
+      await user.click(within(alert).getByTitle('Dismiss'))
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.getByTestId('address')).toHaveTextContent(/^\/hunt$/)
+    })
+
+    it('closes the detail and the address when a value is added as a filter', async () => {
+      const user = await renderLoaded()
+      await user.click(screen.getByText('powershell.exe spawned by winword.exe'))
+      const dialog = await screen.findByRole('dialog')
+
+      await user.click(within(dialog).getAllByTitle(/^Filter by/)[0])
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(screen.getByTestId('address')).toHaveTextContent(/^\/hunt$/)
     })
   })
 

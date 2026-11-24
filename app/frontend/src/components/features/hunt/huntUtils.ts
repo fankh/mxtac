@@ -152,3 +152,11 @@ export function eventEntities(event: EventItem): EventEntity[] {
   if (event.process_hash) out.push({ type: 'hash', value: event.process_hash, label: 'Process hash', field: 'process_hash' })
   return out
 }
+
+/** Query parameter of /hunt that names the event whose detail is open. */
+export const EVENT_PARAM = 'event'
+
+/** Address of Hunt with the detail of one event open. */
+export function eventLink(eventId: string): string {
+  return `/hunt?${EVENT_PARAM}=${encodeURIComponent(eventId)}`
+}

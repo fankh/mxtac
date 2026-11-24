@@ -7,12 +7,25 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { KYRA_MDR_URL, MXTAC_REPO_URL } from '@/lib/links'
 import { PASSWORD_POLICY_HINT, passwordProblem } from '@/lib/passwordPolicy'
+import { RETURN_TO_KEY, SESSION_ENDED_KEY } from '@/lib/api'
+
+/** A stored return path is only used when it is a path of this application. */
+function safeReturnPath(path: string | null): string | null {
+  if (!path || !path.startsWith('/') || path.startsWith('//') || path.startsWith('/login')) return null
+  return path
+}
 
 export function LoginPage() {
   const navigate = useNavigate()
   // ProtectedRoute passes the page that was asked for while signed out.
   const from = (useLocation().state as { from?: { pathname?: string; search?: string } } | null)?.from
-  const target = from?.pathname && !from.pathname.startsWith('/login') ? `${from.pathname}${from.search ?? ''}` : '/'
+  // Left behind by the API client when the server ended the session (lib/api.ts, endSession):
+  // the notice to show and the page that was open, query string included.
+  const [sessionEnded] = useState(() => sessionStorage.getItem(SESSION_ENDED_KEY) === '1')
+  const [returnTo] = useState(() => safeReturnPath(sessionStorage.getItem(RETURN_TO_KEY)))
+  const target = from?.pathname && !from.pathname.startsWith('/login')
+    ? `${from.pathname}${from.search ?? ''}`
+    : returnTo ?? '/'
   const {
     login, submitMfa, cancelMfa, submitNewPassword, cancelPasswordChange,
     isLoading, error, isAuthenticated, mfaPending, passwordChangePending,
@@ -31,6 +44,12 @@ export function LoginPage() {
   useEffect(() => {
     if (isAuthenticated) navigate(target, { replace: true })
   }, [isAuthenticated, navigate, target])
+
+  // Both values are held in state above; the stored copies are single use.
+  useEffect(() => {
+    sessionStorage.removeItem(SESSION_ENDED_KEY)
+    sessionStorage.removeItem(RETURN_TO_KEY)
+  }, [])
 
   async function handlePasswordSubmit(e: FormEvent) {
     e.preventDefault()
@@ -197,6 +216,12 @@ export function LoginPage() {
           <>
             <h1 className="mb-1 text-xl font-semibold">Sign in</h1>
             <p className="mb-6 text-sm text-muted-foreground">Open-source ATT&amp;CK detection platform</p>
+
+            {sessionEnded && (
+              <p role="status" className="sev-medium mb-4 rounded-md border px-3 py-2 text-[12px]">
+                Your session has ended. Sign in again.
+              </p>
+            )}
 
             <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">

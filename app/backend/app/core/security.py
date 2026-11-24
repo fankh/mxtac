@@ -14,6 +14,16 @@ from .valkey import is_token_blacklisted
 
 ALGORITHM = "HS256"
 
+# The refresh token travels only in this cookie, which browsers send to the
+# refresh route and nowhere else.
+REFRESH_COOKIE_NAME = "mxtac_refresh"
+REFRESH_COOKIE_PATH = f"{settings.api_prefix}/auth/refresh"
+
+
+def session_revocation_id(sid: str) -> str:
+    """Revocation-list entry that ends the session *sid* (see POST /auth/logout)."""
+    return f"sid:{sid}"
+
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
@@ -99,6 +109,17 @@ def decode_token(token: str) -> dict:
     return payload
 
 
+SESSION_ENDED_DETAIL = "Session has ended. Sign in again."
+
+
+def token_version_matches(payload: dict, token_version: int | None) -> bool:
+    """True when the token was issued under the account's current token version.
+
+    Tokens issued before the claim existed count as version 0.
+    """
+    return payload.get("tv", 0) == (token_version or 0)
+
+
 def _unauthorized(detail: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
 
@@ -108,15 +129,20 @@ async def current_role(db: AsyncSession, payload: dict) -> str:
 
     The role and active flag are read from the database on every request, not
     from the token, so deactivating a user or changing a role takes effect
-    immediately instead of at token expiry.
+    immediately instead of at token expiry.  The same row carries the token
+    version: a token issued before the last password change is refused.
     """
     row = (
         await db.execute(
-            select(User.role, User.is_active).where(User.email == payload["sub"])
+            select(User.role, User.is_active, User.token_version).where(
+                User.email == payload["sub"]
+            )
         )
     ).first()
     if row is None or not row.is_active:
         raise _unauthorized("Account is disabled or no longer exists")
+    if not token_version_matches(payload, row.token_version):
+        raise _unauthorized(SESSION_ENDED_DETAIL)
     return row.role
 
 

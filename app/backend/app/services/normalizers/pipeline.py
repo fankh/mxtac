@@ -8,8 +8,10 @@ from typing import Any
 from pydantic import ValidationError
 
 from ...core.logging import get_logger
+from ...models.base import new_uuid
 from ...pipeline.queue import MessageQueue, Topic
 from .field_mapping import FieldMappingConfig
+from .ocsf import EVENT_ID_KEY, OCSFEvent
 from .wazuh import WazuhNormalizer
 from .zeek import ZeekNormalizer
 from .suricata import SuricataNormalizer
@@ -80,13 +82,24 @@ class NormalizerPipeline:
             exc,
         )
 
+    async def _publish_normalized(self, event: OCSFEvent) -> None:
+        """Publish *event* on ``mxtac.normalized`` together with a new event ID.
+
+        The ID is assigned here, before the event is stored, so that the
+        persister and the Sigma consumer (which read the same message
+        independently) agree on it and a detection can name its event.
+        """
+        message = event.model_dump(mode="json")
+        message[EVENT_ID_KEY] = new_uuid()
+        await self._queue.publish(Topic.NORMALIZED, message)
+
     async def _handle_wazuh(self, raw: dict[str, Any]) -> None:
         # Feature 7.15: strip internal field mapping key before passing to normaliser
         clean_raw, field_mapping = _extract_field_mapping(raw)
         try:
             event = self._wazuh.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
-            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+            await self._publish_normalized(event)
         except ValidationError as exc:
             logger.warning("Wazuh schema validation error: %s", exc)
             await self._send_to_dlq("wazuh", clean_raw, exc, "schema_validation")
@@ -100,7 +113,7 @@ class NormalizerPipeline:
         try:
             event = self._zeek.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
-            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+            await self._publish_normalized(event)
         except ValidationError as exc:
             logger.warning("Zeek schema validation error: %s", exc)
             await self._send_to_dlq("zeek", clean_raw, exc, "schema_validation")
@@ -114,7 +127,7 @@ class NormalizerPipeline:
         try:
             event = self._suricata.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
-            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+            await self._publish_normalized(event)
         except ValidationError as exc:
             logger.warning("Suricata schema validation error: %s", exc)
             await self._send_to_dlq("suricata", clean_raw, exc, "schema_validation")
@@ -128,7 +141,7 @@ class NormalizerPipeline:
         try:
             event = self._syslog.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
-            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+            await self._publish_normalized(event)
         except ValidationError as exc:
             logger.warning("Syslog schema validation error: %s", exc)
             await self._send_to_dlq("syslog", clean_raw, exc, "schema_validation")
@@ -142,7 +155,7 @@ class NormalizerPipeline:
         try:
             event = self._webhook.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
-            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+            await self._publish_normalized(event)
         except ValidationError as exc:
             logger.warning("Webhook schema validation error: %s", exc)
             await self._send_to_dlq("webhook", clean_raw, exc, "schema_validation")

@@ -35,8 +35,10 @@ describe('authApi sign-in steps', () => {
 })
 
 describe('authApi.changePassword', () => {
-  it('resolves with nothing on 204', async () => {
+  it('resolves with nothing and keeps the new access token', async () => {
     await expect(authApi.changePassword('Analyst-Passw0rd', 'Brand-New-Passw0rd')).resolves.toBeUndefined()
+    expect(localStorage.getItem('access_token')).toBe('mock-token-after-password-change')
+    localStorage.removeItem('access_token')
   })
 
   it('rejects with the server message for a wrong current password', async () => {

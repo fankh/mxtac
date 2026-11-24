@@ -927,6 +927,7 @@ async def test_process_published_payload_has_expected_fields():
         "host",
         "time",
         "event_snapshot",
+        "event_id",
         "recurrence_count",
         "geo_ip",
         "score",

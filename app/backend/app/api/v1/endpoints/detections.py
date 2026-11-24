@@ -14,6 +14,7 @@ from ....engine.sigma_engine import tactic_name
 from ....schemas.detection import Detection, DetectionUpdate, SeverityLevel, DetectionStatus, BulkStatusUpdate, BulkUpdateResult
 from ....schemas.common import PaginatedResponse, Pagination
 from ....repositories.detection_repo import DetectionRepo
+from ....services.attack_techniques import resolve_technique_name
 
 router = APIRouter(prefix="/detections", tags=["detections"])
 
@@ -27,7 +28,7 @@ def _detection_to_schema(d) -> dict:
         "score": d.score,
         "severity": d.severity,
         "technique_id": d.technique_id,
-        "technique_name": d.technique_name,
+        "technique_name": resolve_technique_name(d.technique_id, d.technique_name),
         "name": d.name,
         "host": d.host,
         "tactic": tactic_name(d.tactic),

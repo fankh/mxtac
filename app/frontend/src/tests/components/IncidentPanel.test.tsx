@@ -132,6 +132,15 @@ describe('IncidentPanel', () => {
       expect(getMock).not.toHaveBeenCalled()
     })
 
+    it('names the techniques of the incident next to their IDs', async () => {
+      await renderLoaded()
+      const dialog = screen.getByRole('dialog')
+      // From GET /attack/techniques (MSW handler in tests/mocks/handlers.ts)
+      expect(await within(dialog).findByText('OS Credential Dumping: LSASS Memory')).toBeInTheDocument()
+      expect(within(dialog).getByText('Remote Services: SMB/Windows Admin Shares')).toBeInTheDocument()
+      expect(within(dialog).getByText('T1021.002')).toBeInTheDocument()
+    })
+
     it('shows the incident as a labelled side panel and loads its detail', async () => {
       await renderLoaded()
       const dialog = screen.getByRole('dialog', { name: 'Credential theft on the domain controller' })

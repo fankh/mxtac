@@ -23,6 +23,7 @@ from jose import jwt
 
 from app.core.config import settings
 from app.models.user import User
+from tests.auth_cookies import refresh_token_of
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -95,7 +96,7 @@ async def test_login_fresh_password_returns_tokens(client: AsyncClient) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert "access_token" in data
-    assert "refresh_token" in data
+    assert refresh_token_of(resp)
 
 
 @pytest.mark.asyncio
@@ -311,4 +312,4 @@ async def test_change_password_returns_tokens_after_update(client: AsyncClient) 
     assert resp.status_code == 200
     data = resp.json()
     assert "access_token" in data
-    assert "refresh_token" in data
+    assert refresh_token_of(resp)

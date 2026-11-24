@@ -21,12 +21,13 @@ Treat the startup log of the first start as a secret until the first sign-in is 
 
 | Item | Behaviour | Code |
 |------|-----------|------|
-| Login | `POST /api/v1/auth/login` with email and password returns an access token and a refresh token, together with the `email` and `role` of the account. An account that must change its password, or has MFA, gets a one-time token for that step instead | `api/v1/endpoints/auth.py` |
+| Login | `POST /api/v1/auth/login` with email and password returns an access token in the body, together with the `email` and `role` of the account, and sets the refresh token as a cookie (see [Sessions](#sessions)). An account that must change its password, or has MFA, gets a one-time token for that step instead | `api/v1/endpoints/auth.py` |
 | Token format | JWT signed with HS256 and `SECRET_KEY` | `core/security.py` |
 | Access token lifetime | `ACCESS_TOKEN_EXPIRE_MINUTES`, default 60 | `core/config.py` |
 | Refresh token lifetime | `REFRESH_TOKEN_EXPIRE_DAYS`, default 7 | `core/config.py` |
 | Role and active flag | Read from the database on every request, not from the token. A role change or a deactivation applies to the next request. Refresh tokens, MFA tokens and password-change tokens are not accepted as access tokens | `core/security.py` |
-| Logout | The token ID is stored in Valkey until the token expires, and the token is rejected from then on | `core/valkey.py` |
+| Logout | `POST /api/v1/auth/logout` ends the session of the presented access token: the ID of the access token and the ID of the session are stored in Valkey until the tokens would have expired. The access token and every refresh token of that session are rejected from then on, and the refresh cookie is deleted | `api/v1/endpoints/auth.py`, `core/valkey.py` |
+| Password change | Ends every session of the account, see [Sessions](#sessions) | `api/v1/endpoints/auth.py`, `core/security.py` |
 | Invalidate all tokens | Increase `JWT_KEY_VERSION` and restart. Tokens carry the version they were issued with | `core/security.py` |
 | Password hashing | bcrypt, cost factor 10 | `core/security.py` |
 | Account lockout | 5 failed logins for one email lock that email for 30 minutes. Wrong current passwords in the password-change form count as well | `core/valkey.py` |
@@ -34,9 +35,60 @@ Treat the startup log of the first start as a secret until the first sign-in is 
 | Startup check | The backend refuses to start when `DEBUG=false` and `SECRET_KEY` is the development default | `core/config.py` |
 | Alert WebSocket | `/api/v1/ws/alerts?token=<access token>` is checked like an HTTP request and needs the `detections:read` permission. Otherwise the server refuses the connection with close code 1008 before accepting it | `api/v1/endpoints/websocket.py` |
 
-Lockout, token revocation and the MFA attempt counter depend on Valkey. When Valkey is not reachable these checks are skipped and the request is allowed.
+Lockout, token revocation (logout, single use of refresh tokens) and the MFA attempt counter depend on Valkey. When Valkey is not reachable these checks are skipped and the request is allowed. The end of all sessions after a password change does not depend on Valkey: it is checked in the database.
 
-The frontend stores the access token in the browser's `localStorage`. It sends the token to the WebSocket in the URL, because browsers cannot set a header there. The Nginx configurations in this repository do not log that request.
+## Sessions
+
+A sign-in starts a session with two tokens.
+
+| Token | Lifetime | Where it lives | Sent to |
+|-------|----------|----------------|---------|
+| Access token | `ACCESS_TOKEN_EXPIRE_MINUTES`, default 60 | Response body. The web UI keeps it in the browser's `localStorage` | Every API request as `Authorization: Bearer`, and the alert WebSocket in the URL (browsers cannot set a header there; the Nginx configurations in this repository do not log that request) |
+| Refresh token | `REFRESH_TOKEN_EXPIRE_DAYS`, default 7 | Cookie `mxtac_refresh` with `HttpOnly`, `Secure`, `SameSite=Strict` and `Path=/api/v1/auth/refresh`. It is never part of a response body | Only `POST /api/v1/auth/refresh`, by the browser itself |
+
+### Where the refresh token is stored, and why
+
+The refresh token is the long-lived credential of a session, so it is kept out of JavaScript altogether.
+
+| Property of the cookie | Effect |
+|------------------------|--------|
+| `HttpOnly` | No script can read the token. A cross-site scripting flaw in the UI, or a compromised dependency, can use the session while the page is open, but cannot copy the refresh token and keep the session for days from another machine. The access token in `localStorage` can be copied this way; it is valid for at most 60 minutes and cannot be renewed without the cookie |
+| `Path=/api/v1/auth/refresh` | The browser attaches the cookie to the refresh request only. It is not sent with ordinary API requests, the WebSocket handshake, or to anything else served from the same host, and so does not appear in their logs |
+| `SameSite=Strict` | The browser does not send the cookie with a request that another site started. The refresh route is therefore not exposed to cross-site request forgery, and it changes nothing but the session it renews; its answer is not readable across origins |
+| `Secure` | The cookie is only sent over HTTPS. Browsers treat `http://localhost` as secure, so the development stack works unchanged. Only a deployment over plain HTTP on another host name needs `REFRESH_COOKIE_SECURE=false`; use HTTPS instead where you can |
+
+The alternatives were rejected for these reasons: `localStorage` is readable by any script on the page and survives the browser; `sessionStorage` and memory are still readable by scripts, and are lost with the tab. The backend needed only a small change to issue the cookie, so the token never has to reach a script.
+
+The UI is served from the same origin as the API (the Vite dev server and the Nginx configurations proxy `/api`), which the `SameSite=Strict` cookie requires. A client that is not a browser signs in the same way and keeps the cookie in its cookie jar.
+
+### Silent refresh
+
+When a request is answered with `401`, the UI calls `POST /api/v1/auth/refresh` once, stores the new access token and repeats the request (`src/lib/api.ts`). Requests that fail at the same time share that one refresh. Browser tabs take turns through a Web Lock, and a tab that waited uses the token the other tab just obtained. The alert WebSocket reconnects with the new token. The user is signed out, with the notice "Your session has ended. Sign in again.", only when the refresh itself is refused. A refresh that fails for another reason (network, `5xx`) leaves the session alone and is tried again with the next request.
+
+### Rotation and reuse detection
+
+| Rule | Behaviour | Code |
+|------|-----------|------|
+| Rotation | Every refresh returns a new access token and sets a new refresh cookie. The refresh token that was presented is put on the revocation list in the same step (one atomic `SET NX` in Valkey, kept until the token would have expired) | `api/v1/endpoints/auth.py`, `core/valkey.py` |
+| Reuse | A refresh token that is presented a second time is refused, and the session it belongs to is ended: the refresh token that replaced it stops working as well. A copied token is thus useless as soon as either party uses it twice. Other sessions of the account are not affected | `api/v1/endpoints/auth.py` |
+| Session ID | Access and refresh tokens carry the ID of their session (`sid`). A refresh keeps it; a sign-in starts a new one | `api/v1/endpoints/auth.py` |
+| Refusal | Every refused refresh deletes the cookie | `api/v1/endpoints/auth.py` |
+
+### Ending sessions
+
+| Event | What ends | How |
+|-------|-----------|-----|
+| Sign-out | The session that signed out: its access token and all its refresh tokens | Revocation list in Valkey (token ID and session ID) |
+| Reuse of a refresh token | The refresh tokens of that session | Revocation list in Valkey (session ID) |
+| Password change (`POST /api/v1/auth/password`, `POST /api/v1/auth/change-password`) | Every session of the account, on every device. The request that changed the password is answered with a new session, so that browser stays signed in | `users.token_version` is increased. Every token carries the version it was issued under (`tv`), and the lookup of the user that happens on every request anyway refuses a token with an older version. No Valkey involved |
+| Deactivation of the account | Every session of the account | Active flag, read on every request |
+| `JWT_KEY_VERSION` increased | Every session of every account | Version claim in every token |
+
+Limits to know:
+
+- Without Valkey, rotation and sign-out are not enforced (the checks fail open, like the lockout). A rotated or signed-out refresh token then stays usable until it expires. Password changes and deactivations still end sessions.
+- When reuse is detected, access tokens that were already issued for that session stay valid until they expire (at most `ACCESS_TOKEN_EXPIRE_MINUTES`). They cannot be renewed.
+- A refresh whose answer is lost on the way (the server rotated, the browser never got the new cookie) ends that session at the next attempt. The user signs in again.
 
 ## Passwords
 
@@ -58,7 +110,9 @@ Applied when a user is created and when a password is changed (`core/validators.
 |------|-------|-------|
 | An administrator creates a user | `POST /api/v1/users` | The administrator sets a temporary password. The account always starts with a forced password change, so the temporary password only works to obtain a password-change token |
 | Forced change at sign-in (new account, first account, expired password) | `POST /api/v1/auth/change-password` | Needs the password-change token from the login response. Returns a session, or an MFA token when the account has MFA |
-| A signed-in user changes the own password | `POST /api/v1/auth/password` | Needs the current password. In the UI under **Settings**, **Profile and security** |
+| A signed-in user changes the own password | `POST /api/v1/auth/password` | Needs the current password. In the UI under **Settings**, **Profile and security**. Returns a new session for the caller |
+
+Every password change ends all sessions of the account, see [Sessions](#sessions).
 
 There is no route that sets a new password for another existing user, and no "forgot password" function.
 
@@ -137,11 +191,11 @@ Each item was checked against the code.
 |------------|------------|
 | A lost first password cannot be reset. The generated one is shown once in the startup log | Read it right after the first start, or set `INITIAL_ADMIN_PASSWORD`. Before the first sign-in, start again with an empty database |
 | No password reset for existing users. An administrator cannot set a new password for another account, and a deactivated account keeps its email address | Create a new account under another email address, and deactivate the old one |
-| Changing a password does not end other sessions. Access and refresh tokens issued before the change stay valid until they expire | Sign out on the other devices. To end every session of every user, increase `JWT_KEY_VERSION` and restart |
-| A refresh token cannot be revoked on its own. Logout revokes the access token that is presented | Keep `REFRESH_TOKEN_EXPIRE_DAYS` short where this matters. Deactivating the account blocks its refresh tokens at once |
-| The access token is kept in `localStorage` and passed to the WebSocket in the URL | Serve the UI over HTTPS only, and keep WebSocket URLs out of proxy logs |
+| There is no list of the sessions of an account, and no way to end one session from another device | Change the password: that ends every session of the account. To end every session of every user, increase `JWT_KEY_VERSION` and restart |
+| The access token is kept in `localStorage` and passed to the WebSocket in the URL. A script that runs in the page can read it; it is valid for at most `ACCESS_TOKEN_EXPIRE_MINUTES` and cannot be renewed without the refresh cookie, which scripts cannot read | Serve the UI over HTTPS only, and keep WebSocket URLs out of proxy logs. Lower `ACCESS_TOKEN_EXPIRE_MINUTES` where this matters; the UI renews the token silently |
+| The refresh cookie has the `Secure` attribute, so a browser does not store it when the UI is served over plain HTTP on a host other than `localhost`. Sessions then end when the access token expires | Serve the UI over HTTPS. `REFRESH_COOKIE_SECURE=false` removes the attribute for a plain-HTTP evaluation setup |
 | `/metrics`, `/docs`, `/redoc` and `/openapi.json` need no login | Do not publish the backend port. The Nginx configurations in this repository do not proxy these paths, except the Swarm configuration, which proxies `/docs` and `/openapi.json` |
-| Lockout, token revocation and MFA attempt limits are skipped while Valkey is not reachable | Monitor `/ready`, which reports Valkey |
+| Lockout, token revocation (sign-out, single use of refresh tokens) and MFA attempt limits are skipped while Valkey is not reachable. A password change still ends all sessions | Monitor `/ready`, which reports Valkey |
 | The development Compose file uses a fixed `SECRET_KEY`, a fixed database password, and OpenSearch without authentication | Use it for local evaluation only |
 | The Compose files and `app/setup.sh` run OpenSearch with the security plugin disabled. The production Compose file does not publish its port, `app/setup.sh` binds it to `127.0.0.1`, and the development file publishes it | Keep the OpenSearch port unreachable from other hosts, or connect a secured cluster with `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD` and `OPENSEARCH_USE_SSL` |
 | TLS certificates of OpenSearch are not verified | Keep the connection on a trusted network |

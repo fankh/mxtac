@@ -12,8 +12,9 @@
  *  - Cleanup on unmount (no spurious reconnect)
  *  - Feature 28.29: auto-reconnect after drop — multiple cycles, token refresh,
  *    alert delivery after reconnect, state machine across two drop-reconnect cycles
- *  - Refused token: close code 1008, or a refused handshake confirmed by a 401
- *    from GET /auth/me, stops the reconnect loop
+ *  - Refused token: after close code 1008 or a refused handshake the hook asks
+ *    GET /auth/me (which silently refreshes an expired session); a new access
+ *    token reconnects at once, a 401 stops the reconnect loop
  */
 
 import { renderHook, act } from '@testing-library/react'
@@ -600,40 +601,115 @@ describe('useAlertStream', () => {
     /** Let the pending GET /auth/me promise settle. */
     const settle = () => act(async () => { await Promise.resolve() })
 
-    it('becomes "disconnected" when the server closes with 1008', () => {
+    /** GET /auth/me that behaves like the API client after a silent refresh: a new token is stored. */
+    const refreshOnSessionCheck = (newToken: string) =>
+      meMock.mockImplementation(async () => {
+        localStorage.setItem('access_token', newToken)
+        return ME
+      })
+
+    it('becomes "disconnected" when the server closes with 1008 and the token is still the same', async () => {
       const { result } = renderHook(() => useAlertStream())
       act(() => latestWs().simulateOpen())
       act(() => latestWs().simulateClose(1008))
+      expect(result.current).toBe('reconnecting')   // while the session is being checked
+      await settle()
 
       expect(result.current).toBe('disconnected')
+      expect(meMock).toHaveBeenCalledTimes(1)
     })
 
-    it('does not reconnect after a 1008 close', () => {
+    it('becomes "disconnected" when the server closes with 1008 and the session cannot be refreshed', async () => {
+      meMock.mockRejectedValue({ response: { status: 401 } })
+      const { result } = renderHook(() => useAlertStream())
+      act(() => latestWs().simulateOpen())
+      act(() => latestWs().simulateClose(1008))
+      await settle()
+      act(() => vi.advanceTimersByTime(60_000))
+
+      expect(result.current).toBe('disconnected')
+      expect(MockWebSocket.instances).toHaveLength(1)
+    })
+
+    it('reconnects at once with the new token when the session was refreshed after a 1008 close', async () => {
+      refreshOnSessionCheck('refreshed-token')
+      const { result } = renderHook(() => useAlertStream())
+      act(() => latestWs().simulateOpen())
+      act(() => latestWs().simulateClose(1008))
+      await settle()
+
+      expect(MockWebSocket.instances).toHaveLength(2)   // no 5-second wait
+      expect(latestWs().url).toContain('token=refreshed-token')
+      act(() => latestWs().simulateOpen())
+      expect(result.current).toBe('connected')
+    })
+
+    it('reconnects at once with the new token when a refused handshake led to a refresh', async () => {
+      refreshOnSessionCheck('refreshed-token')
+      const { result } = renderHook(() => useAlertStream())
+      act(() => latestWs().simulateClose())            // expired token: refused before opening
+      await settle()
+
+      expect(MockWebSocket.instances).toHaveLength(2)
+      expect(latestWs().url).toContain('token=refreshed-token')
+      act(() => latestWs().simulateOpen())
+      expect(result.current).toBe('connected')
+
+      // The delayed reconnect that was pending is gone: no third socket.
+      act(() => vi.advanceTimersByTime(60_000))
+      expect(MockWebSocket.instances).toHaveLength(2)
+    })
+
+    it('retries after the delay when the session check fails for another reason after a 1008 close', async () => {
+      meMock.mockRejectedValue(new Error('Network Error'))
+      const { result } = renderHook(() => useAlertStream())
+      act(() => latestWs().simulateOpen())
+      act(() => latestWs().simulateClose(1008))
+      await settle()
+      expect(result.current).toBe('reconnecting')
+
+      act(() => vi.advanceTimersByTime(5_000))
+      expect(MockWebSocket.instances).toHaveLength(2)
+    })
+
+    it('ignores the session check of a socket that was unmounted meanwhile', async () => {
+      refreshOnSessionCheck('refreshed-token')
+      const { unmount } = renderHook(() => useAlertStream())
+      act(() => latestWs().simulateClose())
+      unmount()
+      await settle()
+
+      expect(MockWebSocket.instances).toHaveLength(1)
+    })
+
+    it('does not reconnect after a 1008 close', async () => {
       renderHook(() => useAlertStream())
       act(() => latestWs().simulateOpen())
       act(() => latestWs().simulateClose(1008))
+      await settle()
 
       act(() => vi.advanceTimersByTime(60_000))
 
       expect(MockWebSocket.instances).toHaveLength(1)
     })
 
-    it('stops on a 1008 close that arrives before the socket opened', () => {
+    it('stops on a 1008 close that arrives before the socket opened', async () => {
       const { result } = renderHook(() => useAlertStream())
       act(() => latestWs().simulateClose(1008))
+      await settle()
       act(() => vi.advanceTimersByTime(60_000))
 
       expect(result.current).toBe('disconnected')
       expect(MockWebSocket.instances).toHaveLength(1)
-      expect(meMock).not.toHaveBeenCalled()
     })
 
-    it('cancels a reconnect that was already pending when 1008 arrives', () => {
+    it('cancels a reconnect that was already pending when 1008 arrives', async () => {
       renderHook(() => useAlertStream())
       act(() => latestWs().simulateOpen())
       act(() => latestWs().simulateClose())          // network drop, timer pending
       act(() => vi.advanceTimersByTime(5_000))       // second socket
       act(() => latestWs().simulateClose(1008))      // token refused
+      await settle()
 
       act(() => vi.advanceTimersByTime(60_000))
 

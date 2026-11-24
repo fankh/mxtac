@@ -36,7 +36,7 @@ function ChangePasswordCard() {
       setNext('')
       setConfirm('')
       setError('')
-      addNotification({ type: 'success', title: 'Password changed', message: 'Use the new password the next time you sign in.' })
+      addNotification({ type: 'success', title: 'Password changed', message: 'You stay signed in here. All other sessions of this account were signed out.' })
     },
     onError: (err: unknown) => {
       const message = passwordErrorMessage(err, 'Could not change the password')

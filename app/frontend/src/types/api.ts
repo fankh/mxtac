@@ -60,8 +60,18 @@ export interface HeatCell {
 
 export interface HeatRow {
   technique_id: string
+  /** ATT&CK name of the technique family; null when the backend's table has no entry. */
+  technique_name?: string | null
   row: number
   cells: HeatCell[]
+}
+
+/** GET /attack/techniques: the ATT&CK technique names bundled with the backend. */
+export interface AttackTechniques {
+  attack_version: string
+  retrieved: string
+  /** Technique ID to name; a sub-technique carries its parent ("Parent: Sub"). */
+  techniques: Record<string, string>
 }
 
 export interface IntegrationStatus {

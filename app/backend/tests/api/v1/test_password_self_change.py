@@ -1,7 +1,7 @@
 """Tests for POST /api/v1/auth/password — a signed-in user changes their own password.
 
 Coverage:
-  - success: 204, empty body, new password works, old one does not
+  - success: 200 with a new session, new password works, old one does not
   - success: history rotated, password_changed_at set, must_change_password cleared
   - wrong current password: 400, password unchanged, lockout counter incremented
   - locked account: 429 before the password is even checked
@@ -27,6 +27,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User
+from tests.auth_cookies import refresh_token_of
 
 URL = "/api/v1/auth/password"
 LOGIN_URL = "/api/v1/auth/login"
@@ -84,11 +85,14 @@ def _body(current: str = CURRENT_PASSWORD, new: str = NEW_PASSWORD) -> dict[str,
 
 
 class TestSuccess:
-    async def test_returns_204_with_empty_body(self, client: AsyncClient, user: User, lockout) -> None:
+    async def test_returns_200_with_a_new_session(self, client: AsyncClient, user: User, lockout) -> None:
+        """The change ends every session of the account; the caller gets a new one."""
         resp = await client.post(URL, json=_body(), headers=_headers())
 
-        assert resp.status_code == 204
-        assert resp.content == b""
+        assert resp.status_code == 200
+        assert set(resp.json()) == {"access_token", "token_type", "expires_in", "email", "role"}
+        assert resp.json()["email"] == EMAIL
+        assert refresh_token_of(resp)
 
     async def test_password_is_replaced(self, client: AsyncClient, user: User, lockout) -> None:
         await client.post(URL, json=_body(), headers=_headers())
@@ -112,7 +116,7 @@ class TestSuccess:
 
         resp = await client.post(URL, json=_body(), headers=_headers())
 
-        assert resp.status_code == 204
+        assert resp.status_code == 200
         assert user.password_history == [old_hash]
         assert user.password_changed_at is not None
         assert user.must_change_password is False
@@ -123,11 +127,12 @@ class TestSuccess:
         lockout["clear"].assert_awaited_once_with(EMAIL)
         lockout["increment"].assert_not_awaited()
 
-    async def test_no_tokens_or_password_in_response(self, client: AsyncClient, user: User, lockout) -> None:
+    async def test_no_password_or_refresh_token_in_response(self, client: AsyncClient, user: User, lockout) -> None:
         resp = await client.post(URL, json=_body(), headers=_headers())
 
         assert NEW_PASSWORD not in resp.text
-        assert "access_token" not in resp.text
+        assert "refresh_token" not in resp.text
+        assert "hashed_password" not in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -233,13 +238,16 @@ class TestHistory:
         self, client: AsyncClient, user: User, lockout
     ) -> None:
         first = await client.post(URL, json=_body(), headers=_headers())
-        # PREVIOUS_PASSWORD has now scrolled out of the 2-password window.
+        # PREVIOUS_PASSWORD has now scrolled out of the 2-password window.  The
+        # first change ended the old session, so the second uses the new one.
         second = await client.post(
-            URL, json=_body(current=NEW_PASSWORD, new=PREVIOUS_PASSWORD), headers=_headers()
+            URL,
+            json=_body(current=NEW_PASSWORD, new=PREVIOUS_PASSWORD),
+            headers={"Authorization": f"Bearer {first.json()['access_token']}"},
         )
 
-        assert first.status_code == 204
-        assert second.status_code == 204
+        assert first.status_code == 200
+        assert second.status_code == 200
 
     async def test_token_flow_shares_the_history_rule(self, client: AsyncClient, user: User, lockout) -> None:
         """POST /auth/change-password rejects a password set through POST /auth/password."""
@@ -316,6 +324,6 @@ class TestAuthentication:
             headers=_headers(),
         )
 
-        assert resp.status_code == 204
+        assert resp.status_code == 200
         assert other.hashed_password == other_hash
         assert verify_password(NEW_PASSWORD, user.hashed_password)

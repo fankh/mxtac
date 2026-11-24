@@ -32,6 +32,8 @@ import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { http, HttpResponse } from 'msw'
+import { server } from '../mocks/server'
 import { CoveragePage } from '../../components/features/coverage/CoveragePage'
 import {
   attackUrl, formatPct, groupTechniques, heatOpacity,
@@ -290,34 +292,70 @@ describe('CoveragePage', () => {
   })
 
   describe('techniques', () => {
+    // Technique names come from GET /attack/techniques (MSW handler in tests/mocks/handlers.ts).
+    const POWERSHELL = 'T1059.001 Command and Scripting Interpreter: PowerShell: 2 enabled rules'
+    const LSASS = 'T1003.001 OS Credential Dumping: LSASS Memory: 4 enabled rules'
+
     it('groups covered techniques under their parent with the rule count', async () => {
       await renderLoaded()
       const list = screen.getByTestId('covered-techniques')
       expect(within(list).getByText('T1059')).toBeInTheDocument()
       expect(within(list).getByText('T1003')).toBeInTheDocument()
-      const chip = within(list).getByTitle('T1059.001: 2 enabled rules')
+      const chip = await within(list).findByTitle(POWERSHELL)
       expect(chip).toHaveAttribute('href', 'https://attack.mitre.org/techniques/T1059/001/')
+      // T1059.003 is not in the test table: the ID stands alone
       expect(within(list).getByTitle('T1059.003: 1 enabled rule')).toBeInTheDocument()
       expect(screen.getByRole('tab', { name: 'Covered (3)' })).toBeInTheDocument()
     })
 
+    it('names the technique families and their sub-techniques', async () => {
+      await renderLoaded()
+      const list = screen.getByTestId('covered-techniques')
+      expect(await within(list).findByText('Command and Scripting Interpreter')).toBeInTheDocument()
+      expect(within(list).getByText('OS Credential Dumping')).toBeInTheDocument()
+      // Under the family heading a sub-technique shows only its own part of the name
+      expect(within(await within(list).findByTitle(POWERSHELL)).getByText('PowerShell')).toBeInTheDocument()
+      expect(within(within(list).getByTitle(LSASS)).getByText('LSASS Memory')).toBeInTheDocument()
+    })
+
+    it('shows the IDs alone when the technique table cannot be loaded', async () => {
+      server.use(http.get('/api/v1/attack/techniques', () => HttpResponse.json({ detail: 'down' }, { status: 503 })))
+      await renderLoaded()
+      const list = screen.getByTestId('covered-techniques')
+      expect(within(list).getByTitle('T1059.001: 2 enabled rules')).toBeInTheDocument()
+      expect(within(list).queryByText('Command and Scripting Interpreter')).not.toBeInTheDocument()
+    })
+
     it('filters covered techniques by ID and clears the search with Escape', async () => {
       const user = await renderLoaded()
-      const input = screen.getByLabelText('Find a technique ID')
+      await screen.findByTitle(POWERSHELL)
+      const input = screen.getByLabelText('Find a technique ID or name')
       await user.type(input, 't1003')
-      expect(screen.queryByTitle('T1059.001: 2 enabled rules')).not.toBeInTheDocument()
-      expect(screen.getByTitle('T1003.001: 4 enabled rules')).toBeInTheDocument()
+      expect(screen.queryByTitle(POWERSHELL)).not.toBeInTheDocument()
+      expect(screen.getByTitle(LSASS)).toBeInTheDocument()
 
       await user.keyboard('{Escape}')
       expect(input).toHaveValue('')
-      expect(screen.getByTitle('T1059.001: 2 enabled rules')).toBeInTheDocument()
+      expect(screen.getByTitle(POWERSHELL)).toBeInTheDocument()
+    })
+
+    it('filters covered techniques by name', async () => {
+      const user = await renderLoaded()
+      await screen.findByTitle(POWERSHELL)
+      await user.type(screen.getByLabelText('Find a technique ID or name'), 'lsass')
+      expect(screen.queryByTitle(POWERSHELL)).not.toBeInTheDocument()
+      expect(screen.getByTitle(LSASS)).toBeInTheDocument()
     })
 
     it('shows the techniques that only disabled rules cover on the Gaps tab', async () => {
       const user = await renderLoaded()
       await user.click(screen.getByRole('tab', { name: 'Gaps (2)' }))
       const list = screen.getByTestId('gap-techniques')
-      expect(within(list).getAllByRole('link').map((a) => a.textContent)).toEqual(['T1021.002', 'T1566.001'])
+      await within(list).findByText('Remote Services: SMB/Windows Admin Shares')
+      expect(within(list).getAllByRole('link').map((a) => a.textContent)).toEqual([
+        'T1021.002Remote Services: SMB/Windows Admin Shares',
+        'T1566.001',   // not in the test table
+      ])
       expect(screen.getByText(/63 of 105 in-scope techniques have no enabled rule/)).toBeInTheDocument()
       expect(screen.getByRole('link', { name: 'Open rules' })).toHaveAttribute('href', '/rules')
     })

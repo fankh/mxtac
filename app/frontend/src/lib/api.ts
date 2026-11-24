@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
 import type {
   KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus,
   Detection, PaginatedResponse, DetectionUpdate, BulkDetectionRequest, BulkDetectionResult,
@@ -6,7 +6,7 @@ import type {
   SearchRequest, SearchResponse, AggregationRequest, AggregationResponse, EntityTimeline,
   SavedQuery, SavedQueryCreate, SavedQueryUpdate,
   Incident, IncidentDetail, IncidentCreate, IncidentUpdate, IncidentNote, IncidentMetrics,
-  CoverageTrend, EventItem,
+  CoverageTrend, EventItem, AttackTechniques,
   CoverageSummary, CoverageGaps, CoverageByDataSource, CoverageTarget, CoverageTargetUpdate,
   NavigatorLayer,
   Rule, RuleDetail, RuleCreate, RuleUpdate, RuleListParams, RuleTestResult, RuleStatsSummary,
@@ -37,26 +37,135 @@ const http = axios.create({
   },
 })
 
+// ── Session: access token, silent refresh, sign-out ───────────────────────────
+//
+// The access token lives in localStorage and is sent as a Bearer header. The refresh token is an
+// HttpOnly cookie that the browser sends only to POST /auth/refresh, so no script here can read it.
+// When a request is answered with 401, the session is refreshed once and the request is repeated.
+// Only when the refresh itself is refused does the user get signed out.
+
+const ACCESS_TOKEN_KEY = 'access_token'
+/** sessionStorage flag: the login page shows "Your session has ended" once. */
+export const SESSION_ENDED_KEY = 'mxtac-session-ended'
+/** sessionStorage: the page that was open when the session ended, reopened after sign-in. */
+export const RETURN_TO_KEY = 'mxtac-return-to'
+/** Name of the cross-tab lock that lets one tab at a time use the single-use refresh token. */
+const REFRESH_LOCK = 'mxtac-auth-refresh'
+/** Sign-in steps and the refresh itself: a 401 there is the answer, not an expired session. */
+const NO_REFRESH_URLS = new Set(['/auth/login', '/auth/mfa/verify', '/auth/change-password', '/auth/refresh'])
+/** A request is repeated at most this often: once with a refreshed token, once more if that token came from another tab. */
+const MAX_AUTH_RETRIES = 2
+
+interface RetriableConfig extends InternalAxiosRequestConfig {
+  _authRetries?: number
+}
+
+/** Full page load. An object so that tests can replace it: jsdom does not navigate. */
+export const pageNavigation = {
+  replace: (path: string): void => window.location.replace(path),
+}
+
+export function getAccessToken(): string | null {
+  return localStorage.getItem(ACCESS_TOKEN_KEY)
+}
+
+export function setAccessToken(token: string): void {
+  localStorage.setItem(ACCESS_TOKEN_KEY, token)
+}
+
+/** Forget the local session without a notice (used by sign-out). */
+export function clearSession(): void {
+  localStorage.removeItem(ACCESS_TOKEN_KEY)
+  localStorage.removeItem('mxtac-auth')
+  sessionStorage.clear()
+}
+
+/**
+ * The server no longer accepts the session: forget it and show the login page with a notice.
+ * The open page is remembered so that the next sign-in returns to it.
+ */
+export function endSession(): void {
+  clearSession()
+  if (typeof window === 'undefined' || window.location.pathname === '/login') return
+  sessionStorage.setItem(SESSION_ENDED_KEY, '1')
+  sessionStorage.setItem(RETURN_TO_KEY, `${window.location.pathname}${window.location.search}`)
+  pageNavigation.replace('/login')
+}
+
+function isUnauthorized(error: unknown): boolean {
+  return (error as { response?: { status?: number } } | null)?.response?.status === 401
+}
+
+/** Run `task` while holding the cross-tab refresh lock (directly where the Web Locks API is missing). */
+async function withRefreshLock(task: () => Promise<string>): Promise<string> {
+  const locks = typeof navigator === 'undefined' ? undefined : (navigator.locks as LockManager | undefined)
+  return locks ? await locks.request(REFRESH_LOCK, task) : task()
+}
+
+let refreshInFlight: Promise<string> | null = null
+
+/**
+ * Exchange the refresh cookie for a new access token and return it.
+ *
+ * Single-flight: calls made while a refresh is running share its result, so a burst of 401s costs
+ * one POST /auth/refresh. The refresh token is single use, so tabs take turns through a lock; a tab
+ * that waited finds the token another tab just stored and uses that one instead of refreshing again.
+ * `staleToken` is the token the failed request was sent with.
+ */
+export function refreshAccessToken(staleToken: string | null = null): Promise<string> {
+  if (!refreshInFlight) {
+    refreshInFlight = withRefreshLock(async () => {
+      const current = getAccessToken()
+      if (current && staleToken && current !== staleToken) return current
+      // Plain axios: this call must not pass through the interceptors below.
+      const { data } = await axios.post<AuthStepResponse>('/api/v1/auth/refresh', null, { withCredentials: true })
+      if (!data.access_token) throw new Error('The server did not return a session')
+      setAccessToken(data.access_token)
+      return data.access_token
+    }).finally(() => {
+      refreshInFlight = null
+    })
+  }
+  return refreshInFlight
+}
+
+function bearerToken(config: InternalAxiosRequestConfig): string | null {
+  const header = config.headers.Authorization
+  return typeof header === 'string' && header.startsWith('Bearer ') ? header.slice('Bearer '.length) : null
+}
+
 // Attach token if present
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token')
+  const token = getAccessToken()
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
-// Redirect to login on 401 (expired/missing token)
+// 401 (expired or revoked access token): refresh once, then repeat the request.
 http.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/')) {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('mxtac-auth')
-      sessionStorage.clear()
-      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-        window.location.replace('/login')
-      }
+  async (error) => {
+    const config = error.config as RetriableConfig | undefined
+    if (!isUnauthorized(error) || !config || NO_REFRESH_URLS.has(config.url ?? '')) {
+      return Promise.reject(error)
     }
-    return Promise.reject(error)
+    const retries = config._authRetries ?? 0
+    if (retries >= MAX_AUTH_RETRIES) {
+      endSession()
+      return Promise.reject(error)
+    }
+    let token: string
+    try {
+      token = await refreshAccessToken(bearerToken(config))
+    } catch (refreshError: unknown) {
+      // Only a refusal ends the session. A network failure or a 5xx leaves it alone: the next
+      // request tries again.
+      if (isUnauthorized(refreshError)) endSession()
+      return Promise.reject(error)
+    }
+    config._authRetries = retries + 1
+    config.headers.Authorization = `Bearer ${token}`
+    return http.request(config)
   }
 )
 
@@ -65,13 +174,13 @@ http.interceptors.response.use(
 /**
  * Answer of every sign-in step (POST /auth/login, /auth/change-password, /auth/mfa/verify).
  * Exactly one of three shapes comes back:
- *  - session:         access_token, refresh_token, token_type, expires_in, email, role
+ *  - session:         access_token, token_type, expires_in, email, role
+ *                     (the refresh token arrives as an HttpOnly cookie, not in the body)
  *  - MFA needed:      mfa_required: true, mfa_token
  *  - password change: password_change_required: true, password_change_token
  */
 export interface AuthStepResponse {
   access_token?: string
-  refresh_token?: string
   token_type?: string
   expires_in?: number
   email?: string
@@ -91,9 +200,14 @@ export const authApi = {
   changePasswordWithToken: (password_change_token: string, new_password: string): Promise<AuthStepResponse> =>
     http.post('/auth/change-password', { password_change_token, new_password, confirm_password: new_password })
       .then(r => r.data),
-  /** A signed-in user changes their own password. Answers 204 with no body. */
+  /**
+   * A signed-in user changes their own password. The change ends every session of the account;
+   * the answer is a new session for this browser, whose access token is stored here.
+   */
   changePassword: (current_password: string, new_password: string): Promise<void> =>
-    http.post('/auth/password', { current_password, new_password }).then(() => undefined),
+    http.post<AuthStepResponse>('/auth/password', { current_password, new_password }).then((r) => {
+      if (r.data.access_token) setAccessToken(r.data.access_token)
+    }),
   logout: () => http.post('/auth/logout'),
   me: (): Promise<{ email: string; role: string; full_name: string | null; mfa_enabled: boolean }> =>
     http.get('/auth/me').then(r => r.data),
@@ -258,6 +372,14 @@ export const coverageApi = {
 
   updateTarget: (body: CoverageTargetUpdate): Promise<CoverageTarget> =>
     http.put('/coverage/target', body).then(r => r.data),
+}
+
+// ── ATT&CK reference data ─────────────────────────────────────────────────────
+
+export const attackApi = {
+  /** Names of the ATT&CK Enterprise techniques and sub-techniques, by ID. */
+  techniques: (): Promise<AttackTechniques> =>
+    http.get('/attack/techniques').then(r => r.data),
 }
 
 // ── Sigma rules ───────────────────────────────────────────────────────────────

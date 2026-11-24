@@ -151,6 +151,15 @@ describe('RulesPage', () => {
       expect(within(row).getByText('42')).toBeInTheDocument()
     })
 
+    it('names the techniques in the tooltips of the technique tags', async () => {
+      await renderLoaded()
+      const row = screen.getByText('Encoded PowerShell command').closest('tr') as HTMLElement
+      // From GET /attack/techniques (MSW handler); T1027 is not in the test table
+      await waitFor(() =>
+        expect(within(row).getByText('T1059.001')).toHaveAttribute('title', 'Command and Scripting Interpreter: PowerShell'))
+      expect(within(row).getByText('T1027')).not.toHaveAttribute('title')
+    })
+
     it('shows two techniques and a count for the rest', async () => {
       await renderLoaded()
       const row = screen.getByText('Encoded PowerShell command').closest('tr') as HTMLElement

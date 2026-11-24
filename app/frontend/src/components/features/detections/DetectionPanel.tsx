@@ -1,5 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { Search } from 'lucide-react'
 import type { Detection, DetectionStatus, DetectionUpdate } from '@/types/api'
 import { apiErrorMessage, detectionsApi } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
@@ -12,6 +14,8 @@ import { ScoreCircle, SeverityPill } from '@/components/shared/SeverityBadge'
 import { StatusPill } from '@/components/shared/StatusPill'
 import { DETECTION_STATUS_LABELS, isUuid, techniqueLabel } from './utils'
 import { canWrite } from '@/lib/roles'
+import { useTechniqueNames } from '@/hooks/useTechniqueNames'
+import { HUNT_ROLES, eventLink } from '../hunt/huntUtils'
 import { formatDateTime } from '@/lib/format'
 
 interface DetectionPanelProps {
@@ -55,7 +59,14 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 function PanelBody({ detection, onUpdated }: { detection: Detection; onUpdated?: (d: Detection) => void }) {
   const queryClient = useQueryClient()
   const addNotification = useUIStore((s) => s.addNotification)
-  const writable = canWrite(useAuthStore((s) => s.user?.role))
+  const role = useAuthStore((s) => s.user?.role)
+  const writable = canWrite(role)
+  // The pipeline stores the ID of the event that matched the rule. Older rows and demo data
+  // hold other values there (or nothing), which cannot be opened.
+  const eventId = isUuid(detection.event_id) ? detection.event_id : null
+  // Hunt and GET /events/{id} need the events:search permission.
+  const canOpenEvent = role !== undefined && HUNT_ROLES.includes(role)
+  const techniqueName = useTechniqueNames()
   const [assignee, setAssignee] = useState(detection.assigned_to ?? '')
 
   const mutation = useMutation({
@@ -137,6 +148,14 @@ function PanelBody({ detection, onUpdated }: { detection: Detection; onUpdated?:
           {detection.event_id && (
             <Row label="Event ID">
               <span className="font-mono">{detection.event_id}</span>
+              {eventId && canOpenEvent && (
+                <Button asChild variant="outline" size="sm" className="mt-1.5 flex h-7 w-fit text-[12px]">
+                  <Link to={eventLink(eventId)} title="Open the event that caused this detection in Hunt">
+                    <Search className="mr-1 h-3.5 w-3.5" />
+                    Open event in Hunt
+                  </Link>
+                </Button>
+              )}
             </Row>
           )}
           {detection.rule_name && (
@@ -164,6 +183,7 @@ function PanelBody({ detection, onUpdated }: { detection: Detection; onUpdated?:
               {related.map((technique) => (
                 <span
                   key={technique}
+                  title={techniqueName(technique)}
                   className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground"
                 >
                   {technique}

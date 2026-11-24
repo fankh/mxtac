@@ -9,7 +9,8 @@
  * Features:
  *  - Reads the current access token from localStorage on every connect attempt
  *  - Auto-reconnect after 5 seconds on close / error
- *  - Stops reconnecting when the server refuses the token (see below)
+ *  - Reconnects at once with the new token after a silent session refresh
+ *  - Stops reconnecting when the session is over (see below)
  *  - Exposes connection state: "connected" | "reconnecting" | "disconnected"
  *  - Cleans up on unmount
  *
@@ -17,13 +18,17 @@
  * token is missing, invalid, expired or belongs to a deactivated account.  A
  * browser only sees that code when the close happens after the handshake.  The
  * server refuses before accepting, which a browser reports as an abnormal
- * close (1006), the same as a network failure.  So when a socket closes without
- * ever having opened, the hook also asks `GET /auth/me` whether the session is
- * still valid and stops when the answer is 401.
+ * close (1006), the same as a network failure.  So when a socket is refused, or
+ * closes without ever having opened, the hook asks `GET /auth/me`.  That call
+ * goes through the API client, which exchanges an expired access token for a
+ * new one (silent refresh):
+ *  - the access token changed: reconnect immediately with the new one
+ *  - 401: the session could not be refreshed and is over; stop
+ *  - same token and close code 1008: the account may not read the stream; stop
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { authApi } from '../lib/api'
+import { authApi, getAccessToken } from '../lib/api'
 import { useDetectionStore } from '../stores/detectionStore'
 import type { Detection } from '../types/api'
 
@@ -41,7 +46,7 @@ export function useAlertStream(): ConnectionState {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const unmounted = useRef(false)
-  /** True once the server has refused the token; no further attempts are made. */
+  /** True once the session is over or the account is refused; no further attempts are made. */
   const refused = useRef(false)
 
   const addLiveAlert = useDetectionStore((s) => s.addLiveAlert)
@@ -60,7 +65,7 @@ export function useAlertStream(): ConnectionState {
     if (unmounted.current || refused.current) return
 
     // Read the token on every attempt so a new sign-in is picked up
-    const token = localStorage.getItem('access_token')
+    const token = getAccessToken()
     if (!token) {
       setState('disconnected')
       return
@@ -95,22 +100,25 @@ export function useAlertStream(): ConnectionState {
     ws.onclose = (event: CloseEvent) => {
       if (unmounted.current) return
 
-      if (event.code === WS_POLICY_VIOLATION) {
-        // The server refused the token. Retrying with it cannot succeed.
-        stopAfterRefusal()
-        return
-      }
-
+      const policyViolation = event.code === WS_POLICY_VIOLATION
       setState('reconnecting')
-      scheduleReconnect()
+      // After a policy violation, retrying with the same token cannot succeed.
+      if (!policyViolation) scheduleReconnect()
+      if (opened && !policyViolation) return
 
-      if (!opened) {
-        // Refused handshake or network failure: the close code does not say
-        // which. A 401 from the API means the token is no longer accepted.
-        authApi.me().catch((error: unknown) => {
+      // Refused token, refused handshake or network failure: the close code
+      // does not always say which. GET /auth/me refreshes an expired session.
+      authApi.me().then(
+        () => {
+          if (unmounted.current || refused.current || wsRef.current !== ws) return
+          if (getAccessToken() !== token) reconnectNow()
+          else if (policyViolation) stopAfterRefusal()
+        },
+        (error: unknown) => {
           if (isUnauthorized(error)) stopAfterRefusal()
-        })
-      }
+          else if (policyViolation) scheduleReconnect()
+        },
+      )
     }
 
     ws.onerror = () => {
@@ -126,6 +134,15 @@ export function useAlertStream(): ConnectionState {
     reconnectTimer.current = setTimeout(() => {
       connect()
     }, RECONNECT_DELAY_MS)
+  }, [connect])
+
+  /** Connect without waiting for the reconnect delay (a new access token is available). */
+  const reconnectNow = useCallback(() => {
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current)
+      reconnectTimer.current = null
+    }
+    connect()
   }, [connect])
 
   useEffect(() => {

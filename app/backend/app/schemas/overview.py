@@ -55,6 +55,8 @@ class HeatCell(BaseModel):
 
 class HeatRow(BaseModel):
     technique_id: str
+    # ATT&CK name of the technique family (None when the bundled table has no entry)
+    technique_name: str | None = None
     row: int
     cells: list[HeatCell]
 

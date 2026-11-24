@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
-import { BookmarkPlus, Download, Lock } from 'lucide-react'
+import { BookmarkPlus, Download, Lock, X } from 'lucide-react'
 import { Page } from '@/components/layout/Page'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -14,7 +15,7 @@ import { HuntCharts } from './HuntCharts'
 import { HuntResults } from './HuntResults'
 import { HuntSearchForm } from './HuntSearchForm'
 import { SaveQueryDialog, SavedQueriesPanel } from './SavedQueries'
-import { HUNT_ROLES, PAGE_SIZE, buildSearchRequest, newFilterRow, toFilterRows, type FilterRow } from './huntUtils'
+import { EVENT_PARAM, HUNT_ROLES, PAGE_SIZE, buildSearchRequest, newFilterRow, toFilterRows, type FilterRow } from './huntUtils'
 import { downloadBlob } from '@/lib/download'
 
 const TITLE = 'Hunt'
@@ -31,7 +32,13 @@ function HuntWorkspace() {
   const [submitted, setSubmitted] = useState<SearchRequest>(() => buildSearchRequest('', [], DEFAULT_TIME_FROM))
   const [page, setPage] = useState(0)
 
+  // The open event is named in the URL (/hunt?event=<id>), so the address can be shared and a
+  // detection can link to its event. `selected` only keeps the row that was clicked, to show it
+  // without asking the backend again.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const eventId = searchParams.get(EVENT_PARAM)
   const [selected, setSelected] = useState<EventItem | null>(null)
+  const clicked = selected && selected.id === eventId ? selected : null
   const [saveOpen, setSaveOpen] = useState(false)
   const [activeSavedId, setActiveSavedId] = useState<string | null>(null)
 
@@ -40,6 +47,24 @@ function HuntWorkspace() {
     queryFn: () => eventsApi.search({ ...submitted, size: PAGE_SIZE, from_: page * PAGE_SIZE }),
     placeholderData: keepPreviousData,
   })
+
+  const linked = useQuery({
+    queryKey: ['hunt', 'event', eventId],
+    queryFn: () => eventsApi.get(eventId as string),
+    enabled: eventId !== null && clicked === null,
+    retry: false,
+  })
+  const openEvent = eventId === null ? null : clicked ?? linked.data ?? null
+
+  function showEvent(event: EventItem | null) {
+    setSelected(event)
+    setSearchParams((params) => {
+      const next = new URLSearchParams(params)
+      if (event) next.set(EVENT_PARAM, event.id)
+      else next.delete(EVENT_PARAM)
+      return next
+    }, { replace: true })
+  }
 
   const dsl = useQuery({
     queryKey: ['hunt', 'dsl', submitted],
@@ -78,7 +103,7 @@ function HuntWorkspace() {
   function addFilterAndRun(field: string, value: string) {
     const next = [...filters, newFilterRow({ field, operator: 'eq', value })]
     setFilters(next)
-    setSelected(null)
+    showEvent(null)
     setActiveSavedId(null)
     run(query, next, timeFrom)
   }
@@ -117,6 +142,18 @@ function HuntWorkspace() {
         </>
       }
     >
+      {eventId !== null && linked.isError && (
+        <div role="alert" className="sev-high flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[12px]">
+          <span>
+            Could not open event <span className="font-mono">{eventId}</span>:{' '}
+            {apiErrorMessage(linked.error, 'the request failed')}. It may be older than the retention period.
+          </span>
+          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" title="Dismiss" onClick={() => showEvent(null)}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
       <HuntSearchForm
         query={query}
         onQueryChange={setQuery}
@@ -146,14 +183,14 @@ function HuntWorkspace() {
         onRetry={() => search.refetch()}
         page={page}
         onPageChange={setPage}
-        onSelect={setSelected}
+        onSelect={showEvent}
         lucene={dsl.data?.lucene}
       />
 
       <EventDetailSheet
-        event={selected}
+        event={openEvent}
         timeFrom={ranTimeFrom}
-        onClose={() => setSelected(null)}
+        onClose={() => showEvent(null)}
         onAddFilter={addFilterAndRun}
       />
 

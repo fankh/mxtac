@@ -1,7 +1,8 @@
 """Event persister — write normalized events to PostgreSQL and OpenSearch.
 
 Subscribes to ``mxtac.normalized`` and for each OCSF event:
-  1. Extracts flat fields and persists a row to PostgreSQL (via EventRepo).
+  1. Extracts flat fields and persists a row to PostgreSQL (via EventRepo),
+     under the event ID the normalizer pipeline assigned (``EVENT_ID_KEY``).
   2. Indexes the event document of that row (``event_document.event_to_dict``:
      the flat fields plus the full OCSF dict) to OpenSearch, if a client is
      available, using the PostgreSQL UUID as the document ID.
@@ -28,6 +29,7 @@ from ..models.event import Event
 from ..pipeline.queue import MessageQueue, Topic
 from ..repositories.event_repo import EventRepo
 from ..services.event_document import event_to_dict
+from ..services.normalizers.ocsf import EVENT_ID_KEY
 from ..services.opensearch_client import ILM_RETENTION_DAYS, OpenSearchService
 
 logger = get_logger(__name__)
@@ -74,7 +76,8 @@ def _extract_event_fields(event_dict: dict[str, Any]) -> dict[str, Any]:
         "process_hash": proc.get("hash_sha256"),
         "source":       event_dict.get("metadata_product"),
         "summary":      summary,
-        "raw":          event_dict,
+        # The pipeline's event ID travels next to the payload, not inside it.
+        "raw":          {k: v for k, v in event_dict.items() if k != EVENT_ID_KEY},
     }
 
 
@@ -89,12 +92,14 @@ async def event_persister(queue: MessageQueue, os_client: OpenSearchService) -> 
     async def _handle(event_dict: dict[str, Any]) -> None:
         fields: dict[str, Any] | None = None
         doc: dict[str, Any] | None = None
+        # The ID the normalizer pipeline assigned; detections refer to it.
+        event_id = event_dict.get(EVENT_ID_KEY) or new_uuid()
 
         # 1. Persist to PostgreSQL (authoritative store)
         try:
             fields = _extract_event_fields(event_dict)
             async with AsyncSessionLocal() as session:
-                evt = await EventRepo.create(session, **fields)
+                evt = await EventRepo.create(session, id=event_id, **fields)
                 await session.commit()
                 doc = event_to_dict(evt)
             logger.debug("EventPersister persisted to PG id=%s", doc["id"])
@@ -106,8 +111,8 @@ async def event_persister(queue: MessageQueue, os_client: OpenSearchService) -> 
         try:
             if os_client.is_available:
                 if doc is None and fields is not None:
-                    # No row was written: index the document under a new ID
-                    doc = event_to_dict(Event(id=new_uuid(), **fields))
+                    # No row was written: index the document under the same ID
+                    doc = event_to_dict(Event(id=event_id, **fields))
                 if doc is not None:
                     await os_client.index_event(doc, doc_id=doc["id"])
                     logger.debug("EventPersister indexed to OpenSearch id=%s", doc["id"])

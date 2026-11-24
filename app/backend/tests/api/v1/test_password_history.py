@@ -18,6 +18,7 @@ from httpx import AsyncClient
 
 from app.core.security import create_password_change_token
 from app.models.user import User
+from tests.auth_cookies import refresh_token_of
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -196,7 +197,7 @@ async def test_fresh_password_accepted(client: AsyncClient) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert "access_token" in data
-    assert "refresh_token" in data
+    assert refresh_token_of(resp)
 
 
 @pytest.mark.asyncio

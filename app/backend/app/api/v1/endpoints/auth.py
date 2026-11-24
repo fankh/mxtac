@@ -4,15 +4,20 @@ import hmac
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import pyotp
 from cryptography.fernet import Fernet
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.config import settings
 from ....core.database import get_db
 from ....core.security import (
+    REFRESH_COOKIE_NAME,
+    REFRESH_COOKIE_PATH,
+    SESSION_ENDED_DETAIL,
     create_access_token,
     create_mfa_token,
     create_password_change_token,
@@ -20,14 +25,18 @@ from ....core.security import (
     decode_token,
     get_current_user,
     hash_password,
+    session_revocation_id,
+    token_version_matches,
     verify_password,
 )
 from ....core.valkey import (
     blacklist_token,
     clear_login_attempts,
+    consume_token,
     increment_login_attempts,
     increment_mfa_attempts,
     is_account_locked,
+    is_token_blacklisted,
 )
 from ....models.user import User
 from ....repositories.user_repo import UserRepo
@@ -44,7 +53,6 @@ from ....schemas.auth import (
     MfaVerifyRequest,
     MfaVerifyResponse,
     PasswordChangeRequiredResponse,
-    RefreshRequest,
     SelfPasswordChangeRequest,
     TokenResponse,
 )
@@ -81,19 +89,66 @@ def _hash_backup_code(code: str) -> str:
     return hmac.new(settings.secret_key.encode(), code.encode(), hashlib.sha256).hexdigest()
 
 
-def _issue_tokens(user: User) -> TokenResponse:
-    """Full session for *user*: access + refresh tokens and the account identity."""
+def _refresh_cookie_attributes() -> dict:
+    """Attributes of the refresh cookie.
+
+    Deleting a cookie only works with the same path, so both the set and the
+    delete use these.
+    """
+    return {
+        "key": REFRESH_COOKIE_NAME,
+        "path": REFRESH_COOKIE_PATH,
+        "httponly": True,
+        "secure": settings.refresh_cookie_secure,
+        "samesite": "strict",
+    }
+
+
+def _refresh_lifetime_seconds() -> int:
+    return settings.refresh_token_expire_days * 86400
+
+
+def _issue_tokens(response: Response, user: User, sid: str | None = None) -> TokenResponse:
+    """Full session for *user*: the access token and the account identity in
+    the body, the refresh token as an HttpOnly cookie on *response*.
+
+    *sid* identifies the session.  A sign-in starts a new one; a refresh keeps
+    the one of the token it replaces, so that logout and reuse detection can
+    end every token that descends from the same sign-in.
+    """
+    claims = {
+        "sub": user.email,
+        "sid": sid or str(uuid4()),
+        "tv": user.token_version or 0,
+    }
+    response.set_cookie(
+        value=create_refresh_token(claims),
+        max_age=_refresh_lifetime_seconds(),
+        **_refresh_cookie_attributes(),
+    )
     return TokenResponse(
-        access_token=create_access_token({"sub": user.email, "role": user.role}),
-        refresh_token=create_refresh_token({"sub": user.email}),
+        access_token=create_access_token({**claims, "role": user.role}),
         expires_in=settings.access_token_expire_minutes * 60,
         email=user.email,
         role=user.role,
     )
 
 
+def _refresh_refused(detail: str = "Invalid refresh token") -> JSONResponse:
+    """401 for POST /auth/refresh that also removes the cookie from the browser."""
+    refused = JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": detail})
+    refused.delete_cookie(**_refresh_cookie_attributes())
+    return refused
+
+
 @router.post("/login")
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(body: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
+    """Sign in with email and password.
+
+    Answers with a session (access token in the body, refresh token as an
+    HttpOnly cookie), or with the one-time token of the step the account has
+    to complete first: a password change or an MFA code.
+    """
     # 1. Check account lockout before doing any further work.
     if await is_account_locked(body.email):
         raise HTTPException(
@@ -163,11 +218,13 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     if user.mfa_enabled:
         mfa_token = create_mfa_token(str(user.id))
         return MfaLoginResponse(mfa_token=mfa_token)
-    return _issue_tokens(user)
+    return _issue_tokens(response, user)
 
 
 @router.post("/mfa/verify", response_model=TokenResponse)
-async def mfa_verify_login(body: MfaVerifyLoginRequest, db: AsyncSession = Depends(get_db)):
+async def mfa_verify_login(
+    body: MfaVerifyLoginRequest, response: Response, db: AsyncSession = Depends(get_db)
+):
     """Verify TOTP code (or backup code) after password authentication.
 
     Accepts the mfa_token issued by POST /auth/login when mfa_enabled=True.
@@ -215,25 +272,59 @@ async def mfa_verify_login(body: MfaVerifyLoginRequest, db: AsyncSession = Depen
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA code")
 
     # 5. Issue full access + refresh tokens
-    return _issue_tokens(user)
+    return _issue_tokens(response, user)
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
-    payload = decode_token(body.refresh_token)
-    if payload.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+async def refresh(
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
+):
+    """Exchange the refresh cookie for a new access token and a new refresh cookie.
+
+    The refresh token is single use: it is put on the revocation list as it is
+    exchanged.  Presenting it a second time means the token was copied, so the
+    whole session (every refresh token that descends from the same sign-in) is
+    ended.  Every refusal also deletes the cookie.
+    """
+    if not refresh_token:
+        return _refresh_refused("Refresh token required")
+    try:
+        payload = decode_token(refresh_token)
+    except HTTPException:
+        return _refresh_refused()
     email = payload.get("sub")
-    if not email:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    jti = payload.get("jti")
+    if payload.get("type") != "refresh" or not email or not jti:
+        return _refresh_refused()
+
+    sid = payload.get("sid")
+    if sid and await is_token_blacklisted(session_revocation_id(sid)):
+        return _refresh_refused(SESSION_ENDED_DETAIL)
+
+    remaining = payload.get("exp", 0) - int(datetime.now(timezone.utc).timestamp())
+    if not await consume_token(jti, remaining):
+        # Reuse of a rotated token: end the session it belongs to.
+        if sid:
+            await blacklist_token(session_revocation_id(sid), _refresh_lifetime_seconds())
+        return _refresh_refused(SESSION_ENDED_DETAIL)
+
     user = await UserRepo.get_by_email(db, email)
     if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
-    return _issue_tokens(user)
+        return _refresh_refused("User not found or inactive")
+    if not token_version_matches(payload, user.token_version):
+        return _refresh_refused(SESSION_ENDED_DETAIL)
+    return _issue_tokens(response, user, sid=sid)
 
 
 @router.post("/logout", response_model=LogoutResponse)
-async def logout(authorization: str = Header(None)):
+async def logout(response: Response, authorization: str = Header(None)):
+    """End the session of the presented access token.
+
+    Revokes the access token and the session it belongs to, so the refresh
+    token of that session stops working as well, and deletes the refresh cookie.
+    """
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -252,6 +343,11 @@ async def logout(authorization: str = Header(None)):
         now = int(datetime.now(timezone.utc).timestamp())
         ttl = exp - now
         await blacklist_token(jti, ttl)
+
+    sid = payload.get("sid")
+    if sid:
+        await blacklist_token(session_revocation_id(sid), _refresh_lifetime_seconds())
+    response.delete_cookie(**_refresh_cookie_attributes())
 
     return LogoutResponse(message="Logged out")
 
@@ -390,11 +486,16 @@ async def _set_new_password(db: AsyncSession, user: User, new_password: str) -> 
     user.hashed_password = hash_password(new_password)
     user.must_change_password = False
     user.password_changed_at = datetime.now(timezone.utc)
+    # End every session of the account: tokens carry the version they were
+    # issued under and are refused once it has moved on.
+    user.token_version = (user.token_version or 0) + 1
     await db.flush()
 
 
 @router.post("/change-password")
-async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depends(get_db)):
+async def change_password(
+    body: ChangePasswordRequest, response: Response, db: AsyncSession = Depends(get_db)
+):
     """Complete a forced first-login password change.
 
     Accepts the ``password_change_token`` issued by POST /auth/login when
@@ -428,7 +529,7 @@ async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depend
         mfa_token = create_mfa_token(str(user.id))
         return MfaLoginResponse(mfa_token=mfa_token)
 
-    return _issue_tokens(user)
+    return _issue_tokens(response, user)
 
 
 # ---------------------------------------------------------------------------
@@ -436,19 +537,25 @@ async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depend
 # ---------------------------------------------------------------------------
 
 
-@router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/password", response_model=TokenResponse)
 async def change_own_password(
     body: SelfPasswordChangeRequest,
+    response: Response,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> Response:
+) -> TokenResponse:
     """Change the password of the signed-in user.
 
     Requires the current password.  Wrong current passwords count towards the
     same lockout counter as failed logins (5 attempts, 30 minutes), so a
     stolen session cannot be used to guess the password without limit.  The
     new password is subject to the same policy and history rules as the
-    forced first-login change.  Returns 204 with no body.
+    forced first-login change.
+
+    The change ends every session of the account, including the one that made
+    the request.  The answer is a new session (access token in the body,
+    refresh cookie) so that the caller stays signed in; all other browsers and
+    API clients of the account have to sign in again.
     """
     email = current_user["email"]
     user = await UserRepo.get_by_email(db, email)
@@ -474,4 +581,4 @@ async def change_own_password(
 
     await clear_login_attempts(email)
     await _set_new_password(db, user, body.new_password)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return _issue_tokens(response, user)

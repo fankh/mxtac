@@ -48,7 +48,10 @@ export function AttackHeatmap({ rows, tacticLabels }: Props) {
             <div className="mt-1 flex flex-col gap-1">
               {rows.map((row) => (
                 <div key={row.technique_id} className="grid items-center gap-1" style={columns}>
-                  <span className="truncate pr-1 font-mono text-[10px] text-muted-foreground" title={row.technique_id}>
+                  <span
+                    className="truncate pr-1 font-mono text-[10px] text-muted-foreground"
+                    title={[row.technique_id, row.technique_name].filter(Boolean).join(' ')}
+                  >
                     {row.technique_id}
                   </span>
                   {row.cells.map((cell) => (
@@ -57,7 +60,7 @@ export function AttackHeatmap({ rows, tacticLabels }: Props) {
                       data-testid="heat-cell"
                       className="h-5 rounded-sm bg-muted"
                       style={cellStyle(cell.opacity, cell.covered)}
-                      title={`${row.technique_id} · ${cell.tactic}: ${cell.covered} of ${cell.total}`}
+                      title={`${[row.technique_id, row.technique_name].filter(Boolean).join(' ')} · ${cell.tactic}: ${cell.covered} of ${cell.total}`}
                     />
                   ))}
                 </div>

@@ -38,6 +38,7 @@ from jose import jwt
 
 from app.core.config import settings
 from app.models.user import User
+from tests.auth_cookies import refresh_cookie, refresh_token_of
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -136,9 +137,7 @@ async def test_login_returns_refresh_token(client: AsyncClient, mock_analyst) ->
     """Response contains a non-empty refresh_token string."""
     resp = await client.post(LOGIN_URL, json=VALID_CREDS)
     data = resp.json()
-    assert "refresh_token" in data
-    assert isinstance(data["refresh_token"], str)
-    assert data["refresh_token"]
+    assert refresh_token_of(resp)
 
 
 @pytest.mark.asyncio
@@ -159,7 +158,7 @@ async def test_login_expires_in(client: AsyncClient, mock_analyst) -> None:
 async def test_login_response_schema_keys(client: AsyncClient, mock_analyst) -> None:
     """Successful response includes exactly the four expected keys."""
     resp = await client.post(LOGIN_URL, json=VALID_CREDS)
-    assert {"access_token", "refresh_token", "token_type", "expires_in"} <= set(resp.json())
+    assert {"access_token", "token_type", "expires_in"} <= set(resp.json())
 
 
 @pytest.mark.asyncio
@@ -202,7 +201,7 @@ async def test_access_token_has_exp(client: AsyncClient, mock_analyst) -> None:
 async def test_refresh_token_sub_is_email(client: AsyncClient, mock_analyst) -> None:
     """refresh_token 'sub' claim matches the authenticated user's email."""
     resp = await client.post(LOGIN_URL, json=VALID_CREDS)
-    payload = _decode(resp.json()["refresh_token"])
+    payload = _decode(refresh_token_of(resp))
     assert payload["sub"] == VALID_CREDS["email"]
 
 
@@ -211,7 +210,7 @@ async def test_tokens_are_distinct(client: AsyncClient, mock_analyst) -> None:
     """access_token and refresh_token must be different strings."""
     resp = await client.post(LOGIN_URL, json=VALID_CREDS)
     data = resp.json()
-    assert data["access_token"] != data["refresh_token"]
+    assert data["access_token"] != refresh_token_of(resp)
 
 
 # ---------------------------------------------------------------------------
@@ -399,7 +398,7 @@ async def test_login_multiple_calls_all_succeed(client: AsyncClient, mock_analys
 async def test_refresh_token_has_type_claim(client: AsyncClient, mock_analyst) -> None:
     """refresh_token carries type='refresh' to distinguish it from access tokens."""
     resp = await client.post(LOGIN_URL, json=VALID_CREDS)
-    payload = _decode(resp.json()["refresh_token"])
+    payload = _decode(refresh_token_of(resp))
     assert payload.get("type") == "refresh"
 
 
@@ -539,7 +538,7 @@ async def test_expired_token_is_rejected_regardless_of_role(client: AsyncClient)
 async def test_expired_refresh_token_on_refresh_endpoint_returns_401(client: AsyncClient) -> None:
     """POST /auth/refresh with an expired refresh token → 401."""
     expired_refresh = _make_expired_refresh_token()
-    resp = await client.post("/api/v1/auth/refresh", json={"refresh_token": expired_refresh})
+    resp = await client.post("/api/v1/auth/refresh", headers=refresh_cookie(expired_refresh))
     assert resp.status_code == 401
 
 
@@ -584,7 +583,7 @@ async def test_refresh_success_status(client: AsyncClient) -> None:
     """Valid refresh token → 200 OK."""
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
     assert resp.status_code == 200
 
 
@@ -593,7 +592,7 @@ async def test_refresh_returns_new_access_token(client: AsyncClient) -> None:
     """Successful refresh returns a non-empty access_token string."""
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
     data = resp.json()
     assert "access_token" in data
     assert isinstance(data["access_token"], str)
@@ -605,8 +604,8 @@ async def test_refresh_rotation_issues_new_token(client: AsyncClient) -> None:
     """Rotation: response refresh_token is a NEW token, different from the submitted one."""
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
-    assert resp.json()["refresh_token"] != token
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
+    assert refresh_token_of(resp) != token
 
 
 @pytest.mark.asyncio
@@ -614,7 +613,7 @@ async def test_refresh_token_type_is_bearer(client: AsyncClient) -> None:
     """token_type in refresh response is 'bearer'."""
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
     assert resp.json()["token_type"] == "bearer"
 
 
@@ -623,7 +622,7 @@ async def test_refresh_expires_in(client: AsyncClient) -> None:
     """expires_in in refresh response is 3600."""
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
     assert resp.json()["expires_in"] == 3600
 
 
@@ -632,8 +631,8 @@ async def test_refresh_response_schema_keys(client: AsyncClient) -> None:
     """Refresh response includes the four expected keys."""
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
-    assert {"access_token", "refresh_token", "token_type", "expires_in"} <= set(resp.json())
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
+    assert {"access_token", "token_type", "expires_in"} <= set(resp.json())
 
 
 @pytest.mark.asyncio
@@ -641,7 +640,7 @@ async def test_refresh_new_access_token_sub(client: AsyncClient) -> None:
     """New access_token sub claim matches the user's email."""
     token = _make_refresh_token(sub="analyst@mxtac.local")
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user(email="analyst@mxtac.local"))):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
     payload = _decode(resp.json()["access_token"])
     assert payload["sub"] == "analyst@mxtac.local"
 
@@ -651,7 +650,7 @@ async def test_refresh_new_access_token_role(client: AsyncClient) -> None:
     """New access_token role claim matches the user's role from the DB."""
     token = _make_refresh_token(sub="analyst@mxtac.local")
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user(role="analyst"))):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
     payload = _decode(resp.json()["access_token"])
     assert payload["role"] == "analyst"
 
@@ -661,7 +660,7 @@ async def test_refresh_new_access_token_has_no_type_claim(client: AsyncClient) -
     """New access_token must not carry a 'type' claim."""
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
     payload = _decode(resp.json()["access_token"])
     assert "type" not in payload
 
@@ -671,9 +670,9 @@ async def test_refresh_new_access_token_differs_from_refresh_token(client: Async
     """The new access_token must be different from the submitted refresh_token."""
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
     data = resp.json()
-    assert data["access_token"] != data["refresh_token"]
+    assert data["access_token"] != refresh_token_of(resp)
 
 
 @pytest.mark.asyncio
@@ -682,7 +681,7 @@ async def test_refresh_new_access_token_exp_in_future(client: AsyncClient) -> No
     import time
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
     payload = _decode(resp.json()["access_token"])
     assert payload["exp"] > time.time()
 
@@ -694,7 +693,7 @@ async def test_refresh_new_access_token_exp_in_future(client: AsyncClient) -> No
 async def test_refresh_with_access_token_rejected(client: AsyncClient) -> None:
     """An access token (no type='refresh') submitted to /refresh → 401."""
     access_token = _make_access_token_only()
-    resp = await client.post(REFRESH_URL, json={"refresh_token": access_token})
+    resp = await client.post(REFRESH_URL, headers=refresh_cookie(access_token))
     assert resp.status_code == 401
 
 
@@ -702,14 +701,14 @@ async def test_refresh_with_access_token_rejected(client: AsyncClient) -> None:
 async def test_refresh_with_access_token_detail(client: AsyncClient) -> None:
     """Access token used as refresh token returns 'Invalid refresh token' detail."""
     access_token = _make_access_token_only()
-    resp = await client.post(REFRESH_URL, json={"refresh_token": access_token})
+    resp = await client.post(REFRESH_URL, headers=refresh_cookie(access_token))
     assert resp.json()["detail"] == "Invalid refresh token"
 
 
 @pytest.mark.asyncio
 async def test_refresh_with_garbage_token_returns_401(client: AsyncClient) -> None:
     """Completely invalid JWT string → 401."""
-    resp = await client.post(REFRESH_URL, json={"refresh_token": "not.a.jwt"})
+    resp = await client.post(REFRESH_URL, headers=refresh_cookie("not.a.jwt"))
     assert resp.status_code == 401
 
 
@@ -718,7 +717,7 @@ async def test_refresh_inactive_user_returns_401(client: AsyncClient) -> None:
     """Valid refresh token but account is inactive → 401."""
     token = _make_refresh_token(sub="inactive@mxtac.local")
     with patch(MOCK_REPO, new=AsyncMock(return_value=_inactive_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
     assert resp.status_code == 401
 
 
@@ -727,22 +726,23 @@ async def test_refresh_unknown_user_returns_401(client: AsyncClient) -> None:
     """Valid refresh token for a user not in the DB → 401."""
     token = _make_refresh_token(sub="ghost@mxtac.local")
     with patch(MOCK_REPO, new=AsyncMock(return_value=None)):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
     assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_refresh_missing_field_returns_422(client: AsyncClient) -> None:
-    """Request with no refresh_token field → 422 Unprocessable Entity."""
-    resp = await client.post(REFRESH_URL, json={})
-    assert resp.status_code == 422
+async def test_refresh_without_cookie_returns_401(client: AsyncClient) -> None:
+    """Request without the refresh cookie → 401."""
+    resp = await client.post(REFRESH_URL)
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Refresh token required"
 
 
 @pytest.mark.asyncio
-async def test_refresh_null_token_returns_422(client: AsyncClient) -> None:
-    """Null refresh_token → 422 Unprocessable Entity."""
-    resp = await client.post(REFRESH_URL, json={"refresh_token": None})
-    assert resp.status_code == 422
+async def test_refresh_token_in_body_is_ignored(client: AsyncClient) -> None:
+    """The refresh token is only read from the cookie, never from the body."""
+    resp = await client.post(REFRESH_URL, json={"refresh_token": _make_refresh_token()})
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -762,8 +762,8 @@ async def test_rotation_new_refresh_token_has_type_claim(client: AsyncClient) ->
     """Rotated refresh_token carries type='refresh' claim."""
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
-    new_token = resp.json()["refresh_token"]
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
+    new_token = refresh_token_of(resp)
     payload = _decode(new_token)
     assert payload.get("type") == "refresh"
 
@@ -773,8 +773,8 @@ async def test_rotation_new_refresh_token_sub(client: AsyncClient) -> None:
     """Rotated refresh_token sub claim matches the authenticated user's email."""
     token = _make_refresh_token(sub="analyst@mxtac.local")
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user(email="analyst@mxtac.local"))):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
-    payload = _decode(resp.json()["refresh_token"])
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
+    payload = _decode(refresh_token_of(resp))
     assert payload["sub"] == "analyst@mxtac.local"
 
 
@@ -784,8 +784,8 @@ async def test_rotation_new_refresh_token_exp_in_future(client: AsyncClient) -> 
     import time
     token = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": token})
-    payload = _decode(resp.json()["refresh_token"])
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(token))
+    payload = _decode(refresh_token_of(resp))
     assert payload["exp"] > time.time()
 
 
@@ -794,14 +794,14 @@ async def test_rotation_chained_refresh_each_token_differs(client: AsyncClient) 
     """Two successive refreshes each produce a distinct refresh token (no re-use)."""
     token1 = _make_refresh_token()
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp1 = await client.post(REFRESH_URL, json={"refresh_token": token1})
-    token2 = resp1.json()["refresh_token"]
+        resp1 = await client.post(REFRESH_URL, headers=refresh_cookie(token1))
+    token2 = refresh_token_of(resp1)
 
     assert token2 != token1
 
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp2 = await client.post(REFRESH_URL, json={"refresh_token": token2})
-    token3 = resp2.json()["refresh_token"]
+        resp2 = await client.post(REFRESH_URL, headers=refresh_cookie(token2))
+    token3 = refresh_token_of(resp2)
 
     assert token3 != token2
     assert token3 != token1
@@ -1253,7 +1253,7 @@ async def test_must_change_password_login_no_access_token(client: AsyncClient) -
                     resp = await client.post(LOGIN_URL, json=VALID_CREDS)
     data = resp.json()
     assert "access_token" not in data
-    assert "refresh_token" not in data
+    assert refresh_token_of(resp) is None
 
 
 @pytest.mark.asyncio
@@ -1339,7 +1339,7 @@ async def test_change_password_returns_access_token(client: AsyncClient) -> None
                 )
     data = resp.json()
     assert "access_token" in data
-    assert "refresh_token" in data
+    assert refresh_token_of(resp)
 
 
 @pytest.mark.asyncio
@@ -1604,7 +1604,7 @@ async def test_expired_password_no_access_token(client: AsyncClient) -> None:
                     resp = await client.post(LOGIN_URL, json=VALID_CREDS)
     data = resp.json()
     assert "access_token" not in data
-    assert "refresh_token" not in data
+    assert refresh_token_of(resp) is None
 
 
 @pytest.mark.asyncio
@@ -1714,7 +1714,7 @@ async def test_change_password_for_expired_returns_access_token(client: AsyncCli
                 )
     data = resp.json()
     assert "access_token" in data
-    assert "refresh_token" in data
+    assert refresh_token_of(resp)
 
 
 # ---------------------------------------------------------------------------

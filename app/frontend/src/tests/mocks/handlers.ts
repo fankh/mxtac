@@ -57,10 +57,12 @@ const MOCK_INCIDENT = {
   updated_at: '2026-02-19T09:00:00Z',
 }
 
-/** Session answer of POST /auth/login, /auth/change-password and /auth/mfa/verify. */
+/**
+ * Session answer of POST /auth/login, /auth/change-password, /auth/mfa/verify and /auth/password.
+ * The refresh token is not part of it: the backend sets it as an HttpOnly cookie.
+ */
 const MOCK_SESSION = {
   access_token: 'mock-token-abc123',
-  refresh_token: 'mock-refresh-token-abc123',
   token_type: 'bearer',
   expires_in: 3600,
   email: 'analyst@mxtac.local',
@@ -95,8 +97,12 @@ export const handlers = [
     if (body.current_password !== 'Analyst-Passw0rd') {
       return HttpResponse.json({ detail: 'Current password is incorrect' }, { status: 400 })
     }
-    return new HttpResponse(null, { status: 204 })
+    // The change ends every session of the account; the answer is a new one for the caller.
+    return HttpResponse.json({ ...MOCK_SESSION, access_token: 'mock-token-after-password-change' })
   }),
+  // No refresh cookie in the test browser: the backend answers 401 and the session ends.
+  http.post(`${BASE}/auth/refresh`, () =>
+    HttpResponse.json({ detail: 'Refresh token required' }, { status: 401 })),
 
   // Overview KPIs
   http.get(`${BASE}/overview/kpis`, () =>
@@ -417,6 +423,27 @@ export const handlers = [
       connector_id: params.id,
       reachable: true,
       message: 'Wazuh API reachable and credentials valid',
+    }),
+  ),
+
+  // ATT&CK technique names (a few entries of the table the backend bundles)
+  http.get(`${BASE}/attack/techniques`, () =>
+    HttpResponse.json({
+      attack_version: '20.1',
+      retrieved: '2026-11-25',
+      techniques: {
+        T1003: 'OS Credential Dumping',
+        'T1003.001': 'OS Credential Dumping: LSASS Memory',
+        'T1003.006': 'OS Credential Dumping: DCSync',
+        T1021: 'Remote Services',
+        'T1021.002': 'Remote Services: SMB/Windows Admin Shares',
+        T1059: 'Command and Scripting Interpreter',
+        'T1059.001': 'Command and Scripting Interpreter: PowerShell',
+        'T1059.004': 'Command and Scripting Interpreter: Unix Shell',
+        T1078: 'Valid Accounts',
+        T1110: 'Brute Force',
+        'T1110.001': 'Brute Force: Password Guessing',
+      },
     }),
   ),
 

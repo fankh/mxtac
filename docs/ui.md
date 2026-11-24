@@ -18,7 +18,13 @@ The UI shows data from the API only. On a new installation every page shows zero
 | Sources | `/sources` | Connector list, connector form, detail sheet, and a card for sending a webhook test event |
 | Settings | `/settings` | Tabs: Profile and security, Users (admin only), Appearance |
 
-Unknown paths redirect to `/`. All pages except Login require a signed-in user and redirect to `/login` otherwise. After the sign-in the page that was asked for opens.
+Unknown paths redirect to `/`. All pages except Login require a signed-in user and redirect to `/login` otherwise. After the sign-in the page that was asked for opens, with its query string, so a shared link such as `/hunt?event=<id>` survives the sign-in.
+
+### Session
+
+The access token is valid for 60 minutes by default. When the server answers a request with `401`, the UI obtains a new access token with `POST /api/v1/auth/refresh` and repeats the request, without anything visible to the user (`src/lib/api.ts`). Requests that fail at the same moment share one refresh. The refresh token is an HttpOnly cookie that scripts cannot read; see [security.md](security.md#sessions).
+
+The UI signs the user out only when the refresh is refused: the session expired (7 days by default without a refresh), the user signed out in another tab, the password was changed, or the account was deactivated. The login page then shows "Your session has ended. Sign in again." and returns to the page that was open after the sign-in. Changing the own password signs out every other browser of the account; the browser that made the change stays signed in.
 
 Dates are shown in the browser locale with the year, to the minute; event times on the Hunt page to the second. Durations are written as `45 s`, `5 min`, `2.0 h` or `1.5 d`.
 
@@ -58,7 +64,7 @@ A time range (24 hours, 7, 30 or 90 days; default 7 days) applies to the page. T
 | Export CSV | Up to 10,000 rows with the current filters and sort order |
 | Live banner | Counts detections that arrived over the WebSocket since the list was loaded, with a "Show" button |
 | Bulk actions | Select up to 500 rows: investigate, resolve, mark as false positive, reopen, or create an incident from the selection |
-| Side panel | All fields of one detection, including the user, process and log source of the matched event and the ID of the rule, an "Assign to" form and status buttons |
+| Side panel | All fields of one detection, including the ATT&CK technique name, the user, process and log source of the matched event and the ID of the rule, an "Assign to" form and status buttons. "Open event in Hunt" opens the event that caused the detection (`/hunt?event=<id>`); it is shown to the hunter, engineer and admin roles, for detections that the pipeline created with this version or later |
 
 Empty states: "No detections yet" on a new installation, "No detections match the filters" with filters set. The viewer role sees no checkboxes, bulk actions, assign form or status buttons.
 
@@ -84,7 +90,7 @@ Hunt is open to the hunter, engineer and admin roles. Other roles see a notice i
 | Event volume | Chart of events over time |
 | Top values | Most frequent values of a selectable field. Clicking a value adds a filter |
 | Results | Table with 50 rows per page, below the charts at full width. Shows the query and a copy button. A failed search shows the reason from the server |
-| Event detail sheet | The full event, copy buttons, and for each entity (host, user, IP, hash) a filter action and a timeline of that entity's events |
+| Event detail sheet | The full event, copy buttons, and for each entity (host, user, IP, hash) a filter action and a timeline of that entity's events. The open event is part of the address (`/hunt?event=<id>`), so the address can be shared and a detection can link to its event. An event that cannot be loaded, for example one older than the retention period, is reported above the search form |
 | Saved queries | Save the current search, run, edit and delete saved ones |
 | Export CSV | Up to 10,000 rows |
 
@@ -97,9 +103,11 @@ Empty states: "No events match this search", "No events in this time range", "No
 | Stat cards | Technique coverage with the target marker, target status with "Edit target", techniques without a rule, techniques covered only by disabled rules |
 | Coverage trend | 7, 30 or 90 days, with the target line. Empty state: "No snapshots yet" |
 | Coverage by data source | Covered techniques and rule counts per source type |
-| Tactic and technique matrix | Coverage per tactic |
-| Techniques | Tabs "Covered" and "Gaps", with a search for a technique ID |
+| Tactic and technique matrix | Coverage per tactic, with the name of each technique family |
+| Techniques | Tabs "Covered" and "Gaps", with the technique names and a search for a technique ID or name |
 | Download Navigator layer | An ATT&CK Navigator layer as a JSON file |
+
+Technique names come from the MITRE ATT&CK table bundled with the backend (`GET /api/v1/attack/techniques`, see [attack-coverage.md](attack-coverage.md#technique-names)). They are shown wherever the UI shows a technique ID: in detections, incidents, the coverage lists and matrix, and as tooltips on the technique tags of the Sigma Rules page and the Overview heatmap. A sub-technique is written with its parent, for example "OS Credential Dumping: LSASS Memory". An ID the table does not contain is shown alone.
 
 The viewer role does not see "Edit target". With the 20 bundled rules enabled, a new installation already shows coverage. The numbers are explained in [attack-coverage.md](attack-coverage.md).
 
@@ -108,7 +116,7 @@ The viewer role does not see "Edit target". With the 20 bundled rules enabled, a
 | Element | Content |
 |---------|---------|
 | Stat cards | Rules, enabled, critical, high |
-| Filters | Search by title, ID or technique; level; enabled or disabled. 50 rows per page |
+| Filters | Search by title, ID or technique (ID or name); level; enabled or disabled. 50 rows per page |
 | Table | Title and ID, level, techniques, log source, status, hits, false positives, an enable switch and actions |
 | Rule editor | Monaco YAML editor with a syntax marker and a "Format" button. Checks for `title`, `detection` and `condition` before sending |
 | Import | Sigma YAML with one or more documents, up to 10 MB. Invalid documents are skipped. When any was skipped the dialog stays open and lists the reason for each, also when other documents were imported |
@@ -160,10 +168,10 @@ New detections arrive over a WebSocket (`/api/v1/ws/alerts`) and are shown witho
 | Indicator | Meaning |
 |-----------|---------|
 | Live | Connected |
-| Reconnecting | The connection dropped. The UI tries again every 5 seconds, each time with the current access token |
-| Offline | Not connected and not retrying: there is no access token, or the server refused the token. Sign in again |
+| Reconnecting | The connection dropped. The UI tries again every 5 seconds, each time with the current access token, and at once after a silent refresh of the session |
+| Offline | Not connected and not retrying: there is no access token, the session is over, or the account may not read the stream. Sign in again |
 
-The hook is `src/hooks/useAlertStream.ts`. It stops retrying when the server closes the connection with code 1008. The server refuses a bad token before it accepts the connection, which a browser reports like a network failure. For a connection that closes without having opened, the hook therefore also asks `GET /api/v1/auth/me` and stops when the answer is `401`. Opening another page starts a new attempt.
+The hook is `src/hooks/useAlertStream.ts`. The server refuses a missing, invalid or expired token before it accepts the connection, which a browser reports like a network failure. For a connection that closes without having opened, or with code 1008, the hook therefore asks `GET /api/v1/auth/me`. That request goes through the API client, which renews an expired access token. When a new access token came back, the hook reconnects immediately with it and the indicator returns to Live. It stops when the answer is `401` (the session could not be renewed), or when the token is unchanged and the server still answers 1008. Opening another page starts a new attempt.
 
 ## Keyboard shortcuts
 

@@ -36,6 +36,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.models.user import User
+from tests.auth_cookies import refresh_token_of
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -498,22 +499,25 @@ async def test_success_body_has_tokens_failure_has_detail(client: AsyncClient) -
     """Success body contains token fields; failure body contains only 'detail'."""
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
         with patch(MOCK_VERIFY, return_value=True):
-            success_body = (
-                await client.post(LOGIN_URL, json={"email": KNOWN_EMAIL, "password": KNOWN_PASSWORD})
-            ).json()
+            success = await client.post(
+                LOGIN_URL, json={"email": KNOWN_EMAIL, "password": KNOWN_PASSWORD}
+            )
+    success_body = success.json()
 
     with patch(MOCK_REPO, new=AsyncMock(return_value=None)):
-        failure_body = (
-            await client.post(LOGIN_URL, json={"email": "ghost@example.com", "password": KNOWN_PASSWORD})
-        ).json()
+        failure = await client.post(
+            LOGIN_URL, json={"email": "ghost@example.com", "password": KNOWN_PASSWORD}
+        )
+    failure_body = failure.json()
 
-    # Success has tokens
+    # Success has the access token in the body and the refresh token as a cookie
     assert "access_token" in success_body
-    assert "refresh_token" in success_body
+    assert "refresh_token" not in success_body
+    assert refresh_token_of(success)
     # Failure has only 'detail'
     assert "detail" in failure_body
     assert "access_token" not in failure_body
-    assert "refresh_token" not in failure_body
+    assert refresh_token_of(failure) is None
 
 
 # ---------------------------------------------------------------------------

@@ -29,7 +29,8 @@ Unknown settings are handled differently depending on where they come from:
 | `SECRET_KEY` | `dev-secret-change-in-production` | Signs JWTs and derives the key that encrypts MFA secrets. Generate with `openssl rand -hex 32`. Required when `DEBUG=false` |
 | `JWT_KEY_VERSION` | `1` | Increase to invalidate every issued token |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access token lifetime |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime. A session that is not used for this long ends |
+| `REFRESH_COOKIE_SECURE` | `true` | The refresh token cookie carries the `Secure` attribute. Set `false` only when the UI is served over plain HTTP on a host other than `localhost`; see [security.md](security.md#sessions) |
 | `ACCOUNT_INACTIVITY_DAYS` | `90` | Deactivate an account at login when its last login is older than this. `0` disables the check |
 | `PASSWORD_EXPIRY_DAYS` | `90` | Require a new password at login when the password is older than this. `0` disables expiry |
 

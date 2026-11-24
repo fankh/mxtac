@@ -14,6 +14,7 @@ import pytest
 from app.models.event import Event
 from app.services.event_document import event_to_dict
 from app.services.event_persister import _extract_event_fields
+from app.services.normalizers.ocsf import EVENT_ID_KEY
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +139,14 @@ def test_extract_time_already_datetime() -> None:
 
 def test_extract_raw_set_to_full_dict() -> None:
     fields = _extract_event_fields(_SAMPLE_OCSF)
-    assert fields["raw"] is _SAMPLE_OCSF
+    assert fields["raw"] == _SAMPLE_OCSF
+
+
+def test_extract_raw_leaves_out_the_pipeline_event_id() -> None:
+    """The event ID is the row's primary key; it is not repeated inside the payload."""
+    fields = _extract_event_fields({**_SAMPLE_OCSF, EVENT_ID_KEY: "3f6c1a52-7a0e-4c53-9d8b-0c1d2e3f4a5b"})
+    assert fields["raw"] == _SAMPLE_OCSF
+    assert "id" not in fields
 
 
 def test_extract_time_fallback_to_utcnow_when_missing() -> None:

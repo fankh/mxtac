@@ -30,6 +30,7 @@ from ..core.logging import get_logger
 from ..core.metrics import alerts_deduplicated, alerts_processed, pipeline_latency
 from ..engine.sigma_engine import SigmaAlert, LEVEL_SEVERITY, tactic_name
 from ..pipeline.queue import MessageQueue, Topic
+from .attack_techniques import resolve_technique_name
 
 logger = get_logger(__name__)
 
@@ -83,6 +84,7 @@ class AlertManager:
                     alert_dict.get("time", datetime.now(timezone.utc).isoformat())
                 ),
                 event_snapshot=alert_dict.get("event_snapshot", {}),
+                event_id=alert_dict.get("event_id"),
             )
 
             severity_label = alert.level or "medium"
@@ -151,6 +153,7 @@ class AlertManager:
             "host":          alert.host,
             "time":          alert.time.isoformat(),
             "event_snapshot": alert.event_snapshot,
+            "event_id":      alert.event_id,
             # Enrichment
             "recurrence_count":   await self._get_recurrence_count(alert),
             "geo_ip":             await self._lookup_geoip(alert),
@@ -402,6 +405,7 @@ class AlertManager:
             from ..repositories.detection_repo import DetectionRepo
             technique_ids = scored.get("technique_ids") or []
             tactic_ids    = scored.get("tactic_ids") or []
+            technique_id  = (technique_ids[0] if technique_ids else "unknown")[:20]
             alert_time    = datetime.fromisoformat(scored["time"])
             async with AsyncSessionLocal() as session:
                 await DetectionRepo.create(
@@ -409,14 +413,17 @@ class AlertManager:
                     id            = scored["id"],
                     score         = scored["score"],
                     severity      = self._detection_severity(scored["level"]),
-                    technique_id  = (technique_ids[0] if technique_ids else "unknown")[:20],
-                    technique_name= scored["rule_title"][:255],
+                    technique_id  = technique_id,
+                    # ATT&CK name from the bundled table; the ID itself when
+                    # the table does not know it (never the rule title).
+                    technique_name= resolve_technique_name(technique_id, None)[:255],
                     tactic        = (tactic_name(tactic_ids[0]) if tactic_ids else "unknown")[:100],
                     tactic_id     = tactic_ids[0] if tactic_ids else None,
                     name          = scored["rule_title"][:500],
                     host          = scored["host"],
                     time          = alert_time,
                     rule_name     = (scored["rule_id"] or "")[:500] or None,
+                    event_id      = scored.get("event_id"),
                     **self._event_context(scored.get("event_snapshot") or {}),
                 )
                 await self._correlate_incident(session, scored)

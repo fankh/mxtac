@@ -584,6 +584,8 @@ class TestUserOrmModel:
             "password_changed_at",
             # Password history added in migration 0018 (feature 2.4)
             "password_history",
+            # Session invalidation counter added in migration 0028
+            "token_version",
         }
         actual = {c.name for c in table.columns}
         assert expected == actual

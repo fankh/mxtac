@@ -102,6 +102,9 @@ class SigmaAlert:
     host: str = ""
     time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     event_snapshot: dict[str, Any] = field(default_factory=dict)
+    # ID of the stored event that matched (assigned by the normalizer pipeline;
+    # filled in by the Sigma consumer, None for an event without one).
+    event_id: str | None = None
 
 
 # ── ATT&CK tags ──────────────────────────────────────────────────────────────

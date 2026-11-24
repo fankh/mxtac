@@ -1,0 +1,53 @@
+MxTac
+Copyright (C) 2024-2026 MxTac Contributors
+
+MxTac is licensed under the GNU Affero General Public License v3.0; see the
+LICENSE file. This NOTICE lists third-party material that is distributed with
+MxTac under its own terms.
+
+--------------------------------------------------------------------------------
+MITRE ATT&CK(R)
+--------------------------------------------------------------------------------
+
+File:    app/backend/app/data/attack_techniques.json
+Content: the IDs and names of the MITRE ATT&CK Enterprise techniques and
+         sub-techniques (revoked and deprecated entries left out)
+Source:  MITRE ATT&CK Enterprise, version 20.1, STIX data from
+         https://github.com/mitre/cti (enterprise-attack/enterprise-attack.json,
+         tag "ATT&CK-v20.1"), retrieved on 2026-11-25
+Changes: reduced to technique ID and name by scripts/gen_attack_techniques.py;
+         the names themselves are unchanged. In the product a sub-technique is
+         shown as "<technique name>: <sub-technique name>".
+
+(c) 2026 The MITRE Corporation.
+This work is reproduced and distributed with the permission of The MITRE Corporation.
+
+ATT&CK license (https://attack.mitre.org/resources/legal-and-branding/terms-of-use/):
+
+  The MITRE Corporation (MITRE) hereby grants you a non-exclusive, royalty-free
+  license to use ATT&CK(R) for research, development, and commercial purposes.
+  Any copy you make for such purposes is authorized provided that you reproduce
+  MITRE's copyright designation and this license in any such copy.
+
+  "(c) 2026 The MITRE Corporation. This work is reproduced and distributed
+  with the permission of The MITRE Corporation."
+
+Disclaimers:
+
+  MITRE does not claim ATT&CK enumerates all possibilities for the types of
+  actions and behaviors documented as part of its adversary model and framework
+  of techniques. Using the information contained within ATT&CK to address or
+  cover full categories of techniques will not guarantee full defensive coverage
+  as there may be undisclosed techniques or variations on existing techniques
+  not documented by ATT&CK.
+
+  ALL DOCUMENTS AND THE INFORMATION CONTAINED THEREIN ARE PROVIDED ON AN "AS IS"
+  BASIS AND THE CONTRIBUTOR, THE ORGANIZATION HE/SHE REPRESENTS OR IS SPONSORED
+  BY (IF ANY), THE MITRE CORPORATION, ITS BOARD OF TRUSTEES, OFFICERS, AGENTS,
+  AND EMPLOYEES, DISCLAIM ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+  LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION THEREIN WILL NOT
+  INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF MERCHANTABILITY OR FITNESS
+  FOR A PARTICULAR PURPOSE.
+
+MITRE ATT&CK and ATT&CK are registered trademarks of The MITRE Corporation.
+MxTac is not affiliated with, sponsored by or endorsed by The MITRE Corporation.

@@ -17,6 +17,7 @@ from ....repositories.detection_repo import DetectionRepo
 from ....repositories.incident_repo import IncidentRepo, SortField, time_to_detect_seconds
 from ....schemas.common import Pagination, PaginatedResponse
 from ....schemas.incident import Incident, IncidentCreate, IncidentDetail, IncidentMetrics, IncidentNote, IncidentUpdate, NoteCreate
+from ....services.attack_techniques import resolve_technique_name
 from ....services.audit import get_audit_logger
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
@@ -55,7 +56,7 @@ def _detection_to_schema(det) -> dict:
         "score": det.score,
         "severity": det.severity,
         "technique_id": det.technique_id,
-        "technique_name": det.technique_name,
+        "technique_name": resolve_technique_name(det.technique_id, det.technique_name),
         "name": det.name,
         "host": det.host,
         "tactic": tactic_name(det.tactic),

@@ -62,6 +62,24 @@ async def blacklist_token(jti: str, ttl_seconds: int) -> None:
         )
 
 
+async def consume_token(jti: str, ttl_seconds: int) -> bool:
+    """Mark a single-use token as used; return False when it was used before.
+
+    One atomic ``SET NX`` puts the JTI on the revocation list, so of two
+    requests presenting the same token only one gets True.  Fails open
+    (returns True) when Valkey is unreachable, like the other checks here.
+    """
+    try:
+        client = await get_valkey_client()
+        stored = await client.set(f"blacklist:{jti}", "1", nx=True, ex=max(ttl_seconds, 1))
+        return bool(stored)
+    except Exception:
+        logger.warning(
+            "Valkey unavailable — single use of token jti=%s could not be enforced", jti
+        )
+        return True
+
+
 # ── MFA attempt rate limiting ─────────────────────────────────────────────────
 
 

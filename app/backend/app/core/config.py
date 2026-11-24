@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     jwt_key_version: int = 1
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
+    # The refresh token is only ever sent as an HttpOnly, SameSite=Strict
+    # cookie.  It also carries the Secure attribute unless this is set to
+    # False, which is only meant for a deployment served over plain HTTP on a
+    # host other than localhost (browsers accept Secure cookies on localhost).
+    refresh_cookie_secure: bool = True
 
     # Database — excluded from repr to prevent password leakage in logs
     database_url: str = Field(

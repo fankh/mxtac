@@ -84,3 +84,24 @@ The heatmap reads the `tactic` column of a detection as a tactic name, for examp
 A cell with at least one detected technique is tinted with at least 30 % of the accent color, so that it stands out in both themes.
 
 Limitation of the heatmap: it only has the four technique families and nine tactics listed above. A detection of another technique family, or under a tactic outside the nine (Lateral Movement, Collection, Command and Control, Exfiltration, Impact), is not shown in it. The "Top ATT&CK tactics" list on the Overview page counts every detection.
+
+## Technique names
+
+The backend bundles a table of the MITRE ATT&CK Enterprise techniques and sub-techniques (`app/backend/app/data/attack_techniques.json`, ID to name). Its header states the ATT&CK version and the date the data was downloaded. Revoked and deprecated techniques are not part of it.
+
+| Use | Behaviour |
+|-----|-----------|
+| New detections | The pipeline stores the ATT&CK name of the first technique of the rule in `technique_name`. For a technique the table does not know, it stores the ID |
+| Existing detections | Rows written by earlier versions hold the rule title in `technique_name`. The API answers with the name from the table instead; the rows are not rewritten. For an unknown ID the stored value is returned |
+| Heatmap | Each row of `GET /api/v1/overview/coverage/heatmap` carries the `technique_name` of its family |
+| Everything else | `GET /api/v1/attack/techniques` returns the whole table (`attack_version`, `retrieved`, `techniques`). The UI loads it once and uses it for rule tags, incident techniques and the coverage lists |
+
+A sub-technique is named with its parent, as on attack.mitre.org: `T1003.001` is "OS Credential Dumping: LSASS Memory".
+
+To update the table to a newer ATT&CK release, run the generator with the release number and commit the result together with the version in `NOTICE`:
+
+```bash
+python scripts/gen_attack_techniques.py 20.1
+```
+
+It downloads the STIX bundle of that release tag from <https://github.com/mitre/cti>. The names are (c) The MITRE Corporation and are reproduced under the ATT&CK terms of use; the `NOTICE` file at the repository root carries the required notice.

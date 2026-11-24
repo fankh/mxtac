@@ -22,18 +22,15 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
+    # The refresh token is not part of the body: it is set as an HttpOnly
+    # cookie scoped to POST /auth/refresh, out of reach of page scripts.
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
     expires_in: int
     # Identity of the signed-in account, so clients can apply role-based UI
     # without decoding the JWT.
     email: str
     role: str
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
 
 
 class LogoutResponse(BaseModel):

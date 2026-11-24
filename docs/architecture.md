@@ -50,7 +50,7 @@ All five source types feed the same pipeline.
 Steps:
 
 1. **Collect.** A connector reads events from its source and publishes each raw event to its topic. Connectors are rows in the `connectors` table and start with the backend. They can be started and stopped at runtime through the API. The syslog receiver and the webhook endpoint publish in the same way.
-2. **Normalize.** `NormalizerPipeline` converts the raw event to an `OCSFEvent` and publishes it to `mxtac.normalized`. Events that fail are sent to `mxtac.dlq`.
+2. **Normalize.** `NormalizerPipeline` converts the raw event to an `OCSFEvent`, assigns the event its ID (a UUID that travels next to the event as `mxtac_event_id`) and publishes it to `mxtac.normalized`. The event persister stores the event under that ID, and a detection raised from the event records it as `event_id`, which is how the UI links a detection to its event. Events that fail are sent to `mxtac.dlq`.
 
    | Source | OCSF classes produced |
    |--------|-----------------------|

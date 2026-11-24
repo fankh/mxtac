@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { apiErrorMessage, authApi, type AuthStepResponse } from '../lib/api'
+import { apiErrorMessage, authApi, clearSession, setAccessToken, type AuthStepResponse } from '../lib/api'
 import { passwordErrorMessage } from '../lib/passwordPolicy'
 
 interface AuthUser {
@@ -61,7 +61,7 @@ export const useAuthStore = create<AuthState>()(
           return
         }
         if (!data.access_token) throw new Error('The server did not return a session')
-        localStorage.setItem('access_token', data.access_token)
+        setAccessToken(data.access_token)
         set({
           ...NO_PENDING_STEP,
           token: data.access_token,
@@ -124,9 +124,7 @@ export const useAuthStore = create<AuthState>()(
           try {
             await authApi.logout()
           } finally {
-            localStorage.removeItem('access_token')
-            localStorage.removeItem('mxtac-auth')
-            sessionStorage.clear()
+            clearSession()
             set({ user: null, token: null, isAuthenticated: false, ...NO_PENDING_STEP, pendingEmail: null })
           }
         },
@@ -137,7 +135,8 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'mxtac-auth',
       // Only persist identity — never persist full token in localStorage via zustand
-      // (token is already in localStorage via direct set above for axios interceptor).
+      // (the access token is already in localStorage via setAccessToken for the axios interceptor;
+      // the refresh token is an HttpOnly cookie that no script can read).
       // The MFA and password-change tokens are deliberately left out: memory only.
       partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
     },
