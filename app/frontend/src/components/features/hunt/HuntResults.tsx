@@ -13,6 +13,8 @@ interface Props {
   data: SearchResponse | undefined
   loading: boolean
   error: boolean
+  /** Reason the search failed, when the server gave one (for example the rate limit). */
+  errorMessage?: string
   onRetry: () => void
   page: number
   onPageChange: (page: number) => void
@@ -47,7 +49,7 @@ function LuceneBar({ lucene }: { lucene: string }) {
   )
 }
 
-export function HuntResults({ data, loading, error, onRetry, page, onPageChange, onSelect, lucene }: Props) {
+export function HuntResults({ data, loading, error, errorMessage, onRetry, page, onPageChange, onSelect, lucene }: Props) {
   const total = data?.total ?? 0
   const items = data?.items ?? []
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -70,7 +72,9 @@ export function HuntResults({ data, loading, error, onRetry, page, onPageChange,
         <CardContent className="p-4"><TableSkeleton rows={6} cols={6} /></CardContent>
       ) : error ? (
         <CardContent className="flex flex-col items-center gap-2 p-8 text-center">
-          <p className="text-[12px] text-destructive">The search failed. Check the query syntax and try again.</p>
+          <p className="text-[12px] text-destructive">
+            {errorMessage ? `The search failed: ${errorMessage}` : 'The search failed. Check the query syntax and try again.'}
+          </p>
           <Button variant="outline" size="sm" onClick={onRetry}>
             <RefreshCw className="mr-1 h-3 w-3" />
             Retry
@@ -119,7 +123,7 @@ export function HuntResults({ data, loading, error, onRetry, page, onPageChange,
                     <TableCell className="py-2 font-mono text-[12px]">{e.src_ip ?? '-'}</TableCell>
                     <TableCell className="py-2 font-mono text-[12px]">{e.dst_ip ?? '-'}</TableCell>
                     <TableCell className="py-2 text-[12px]">{e.source ?? '-'}</TableCell>
-                    <TableCell className="max-w-[320px] truncate py-2 text-[12px] text-muted-foreground" title={e.summary ?? undefined}>
+                    <TableCell className="max-w-[380px] truncate py-2 text-[12px] text-muted-foreground" title={e.summary ?? undefined}>
                       {e.summary ?? '-'}
                     </TableCell>
                   </TableRow>

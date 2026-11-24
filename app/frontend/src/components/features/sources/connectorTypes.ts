@@ -1,5 +1,6 @@
 import { Network, Radio, ScrollText, ShieldCheck, Webhook, type LucideIcon } from 'lucide-react'
 import type { ConnectorConfig, ConnectorType } from '@/types/api'
+import { formatDateTime } from '@/lib/format'
 
 export interface ConfigField {
   key: string
@@ -191,6 +192,5 @@ export function connectorStatus(status: string): { cls: string; label: string } 
 
 export function formatLastSeen(value: string | null): string {
   if (!value) return 'Never'
-  const d = new Date(value)
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString()
+  return Number.isNaN(new Date(value).getTime()) ? value : formatDateTime(value)
 }

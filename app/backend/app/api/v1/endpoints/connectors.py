@@ -74,6 +74,15 @@ class ConnectorHealthResponse(BaseModel):
     error_message: str | None
 
 
+def _idle_status(connector_type: str, enabled: bool) -> str:
+    """Status of a connector that has no running task.
+
+    A generic webhook source has nothing to start: it receives events as soon
+    as it is enabled, so it is ``active`` while enabled.
+    """
+    return "active" if connector_type == "generic" and enabled else "inactive"
+
+
 def _conn_to_response(c) -> dict:
     return {
         "id": c.id,
@@ -116,12 +125,18 @@ async def create_connector(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("connectors:write")),
 ):
+    if await ConnectorRepo.get_by_name(db, body.name) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A source named {body.name!r} already exists. Choose another name.",
+        )
     conn = await ConnectorRepo.create(
         db,
         name=body.name,
         connector_type=body.connector_type,
         config_json=json.dumps(body.config),
         enabled=body.enabled,
+        status=_idle_status(body.connector_type, body.enabled),
     )
 
     # Auto-start connector if enabled and runtime queue is available
@@ -131,9 +146,13 @@ async def create_connector(
         if queue is not None and conn.id not in running:
             connector = build_connector(conn, queue)
             if connector is not None:
+                # Commit first: the connector reports "active" or "error" through
+                # its own session, which must find the row and must not be
+                # overwritten by this request's later commit.
+                await ConnectorRepo.update_status(db, conn.id, "connecting")
+                await db.commit()
                 asyncio.create_task(connector.start(), name=f"connector-start-{conn.name}")
                 running[conn.id] = connector
-                await ConnectorRepo.update_status(db, conn.id, "connecting")
                 conn = await ConnectorRepo.get_by_id(db, conn.id)
 
     return _conn_to_response(conn)
@@ -147,10 +166,12 @@ async def update_connector(
     _: dict = Depends(require_permission("connectors:write")),
 ):
     updates = {}
+    conn = await ConnectorRepo.get_by_id(db, connector_id)
     if body.enabled is not None:
         updates["enabled"] = body.enabled
+        if conn and conn.connector_type == "generic":
+            updates["status"] = _idle_status("generic", body.enabled)
     if body.config is not None:
-        conn = await ConnectorRepo.get_by_id(db, connector_id)
         if conn:
             existing = json.loads(conn.config_json) if conn.config_json else {}
             existing.update(body.config)

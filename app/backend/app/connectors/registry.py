@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core import database
 from ..core.logging import get_logger
 from ..models.connector import Connector
 from ..pipeline.queue import MessageQueue
@@ -95,7 +96,26 @@ def _save_suricata_position(state_file: Path, position: int) -> None:
 
 
 def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | None:
-    """Create a connector instance from a DB connector row."""
+    """Create a connector instance from a DB connector row.
+
+    The instance persists its event and error totals through
+    ``counters_callback`` (see ``BaseConnector._flush_counters``).
+    """
+    connector = _build_connector(db_conn, queue)
+    if connector is not None:
+        connector_id = db_conn.id
+
+        async def _counters_cb(events: int, errors: int, _id: str = connector_id) -> None:
+            async with database.AsyncSessionLocal() as session:
+                await ConnectorRepo.add_counters(session, _id, events=events, errors=errors)
+                await session.commit()
+
+        connector.counters_callback = _counters_cb
+    return connector
+
+
+def _build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | None:
+    """Create the connector instance for *db_conn* with its status and checkpoint callbacks."""
     cls = CONNECTOR_TYPES.get(db_conn.connector_type)
     if not cls:
         logger.warning("Unknown connector type=%s name=%s", db_conn.connector_type, db_conn.name)
@@ -208,6 +228,9 @@ async def start_connectors_from_db(
     connectors: dict[str, BaseConnector] = {}
     skipped = 0
     for db_conn in db_connectors:
+        if db_conn.connector_type == "generic":
+            # A webhook source has nothing to run: POST /ingest serves it.
+            continue
         try:
             conn = build_connector(db_conn, queue)
             if conn:

@@ -7,7 +7,9 @@ Endpoint groups and their per-minute limits:
   auth   — 10/min  (login + MFA; brute-force mitigation)
   export — 5/min   (data export endpoints)
   write  — 60/min  (POST / PATCH / PUT / DELETE)
-  read   — settings.rate_limit_per_minute, default 300/min (GET / HEAD)
+  read   — settings.rate_limit_per_minute, default 300/min (GET / HEAD, and
+           the POST routes that only query events: /events/search,
+           /events/aggregate and /events/query-dsl)
 
 Responses for rate-limited requests:
   429 Too Many Requests
@@ -83,15 +85,22 @@ _LIMITS: dict[str, int] = {
 }
 
 
+# POST routes that only read.  The Hunt page sends three of them for every
+# search, so the write limit would stop an analyst after 20 searches a minute.
+_READ_ONLY_POST_SUFFIXES = ("/events/search", "/events/aggregate", "/events/query-dsl")
+
+
 def _classify(method: str, path: str) -> tuple[str, int]:
     """Map (method, path) to (group_name, limit).
 
-    Precedence: auth > export > write > read.
+    Precedence: auth > export > read-only POST > write > read.
     """
     if "/auth/login" in path or "/auth/mfa" in path:
         return "auth", _LIMITS["auth"]
     if "/export" in path:
         return "export", _LIMITS["export"]
+    if path.rstrip("/").endswith(_READ_ONLY_POST_SUFFIXES):
+        return "read", _LIMITS["read"]
     if method.upper() in {"POST", "PATCH", "PUT", "DELETE"}:
         return "write", _LIMITS["write"]
     return "read", _LIMITS["read"]

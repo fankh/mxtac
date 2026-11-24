@@ -5,7 +5,7 @@ const MAP: Record<DetectionStatus, { cls: string; label: string }> = {
   active: { cls: 'sev-critical', label: 'Active' },
   investigating: { cls: 'sev-high', label: 'Investigating' },
   resolved: { cls: 'status-green', label: 'Resolved' },
-  false_positive: { cls: 'sev-info', label: 'False Positive' },
+  false_positive: { cls: 'sev-info', label: 'False positive' },
 }
 
 export function StatusPill({ status, className }: { status: DetectionStatus; className?: string }) {

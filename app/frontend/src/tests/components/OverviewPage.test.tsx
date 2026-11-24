@@ -20,13 +20,14 @@ vi.mock('recharts', async (importOriginal) => ({
   ResponsiveContainer: () => <div data-testid="chart" />,
 }))
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { OverviewPage } from '../../components/features/overview/OverviewPage'
 import { overviewApi } from '../../lib/api'
+import { useDetectionStore } from '../../stores/detectionStore'
 import type { Detection, HeatRow, IntegrationStatus, KpiMetrics, TacticBar, TimelinePoint } from '../../types/api'
 
 const api = vi.mocked(overviewApi)
@@ -102,6 +103,23 @@ describe('OverviewPage', () => {
     api.tacticLabels.mockResolvedValue(['Exec'])
     api.integrations.mockResolvedValue(sources)
     api.recentDetections.mockResolvedValue(recent)
+  })
+
+  it('reloads its data when a detection arrives over the alert stream', async () => {
+    useDetectionStore.setState({ liveAlerts: [] })
+    renderPage()
+    expect(await screen.findByText('Suspicious LSASS Memory Access')).toBeInTheDocument()
+    expect(api.kpis).toHaveBeenCalledTimes(1)
+
+    const arrived: Detection = { ...recent[0], id: 'det-live', name: 'Reverse Shell Command Line' }
+    api.kpis.mockResolvedValue({ ...kpi, total_detections: 4822 })
+    api.recentDetections.mockResolvedValue([arrived, ...recent])
+    act(() => useDetectionStore.getState().addLiveAlert(arrived))
+
+    expect(await screen.findByText('Reverse Shell Command Line', undefined, { timeout: 4000 })).toBeInTheDocument()
+    expect(screen.getByText('4,822')).toBeInTheDocument()
+    expect(api.kpis).toHaveBeenCalledTimes(2)
+    useDetectionStore.setState({ liveAlerts: [] })
   })
 
   it('shows the page header with the time range set to the last 7 days', async () => {

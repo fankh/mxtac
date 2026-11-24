@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle } from 'lucide-react'
 import { overviewApi } from '../../../lib/api'
 import { Page } from '@/components/layout/Page'
@@ -13,6 +13,11 @@ import { TacticsTable } from './TacticsTable'
 import { AttackHeatmap } from './AttackHeatmap'
 import { SourceStatusCard } from './SourceStatusCard'
 import { RecentDetectionsTable } from './RecentDetectionsTable'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useDetectionStore } from '@/stores/detectionStore'
+
+/** Quiet time after the last live alert before the page reloads its data. */
+const LIVE_REFRESH_DELAY_MS = 1000
 
 const RANGES = [
   { value: '24h', label: 'Last 24 hours', phrase: 'last 24 hours' },
@@ -24,6 +29,17 @@ const RANGES = [
 export function OverviewPage() {
   const [range, setRange] = useState('7d')
   const rangeLabel = RANGES.find((r) => r.value === range)?.phrase ?? ''
+
+  // A detection that arrives over the WebSocket reloads the page data, so the numbers and
+  // the recent list follow without waiting for the next 60-second refresh.
+  const queryClient = useQueryClient()
+  const newestLiveId = useDebouncedValue(useDetectionStore((s) => s.liveAlerts[0]?.id), LIVE_REFRESH_DELAY_MS)
+  const shownLiveId = useRef(newestLiveId)
+  useEffect(() => {
+    if (newestLiveId === shownLiveId.current) return
+    shownLiveId.current = newestLiveId
+    void queryClient.invalidateQueries({ queryKey: ['overview'] })
+  }, [newestLiveId, queryClient])
   const opts = { staleTime: 30_000, refetchInterval: 60_000 }
 
   const kpis = useQuery({ queryKey: ['overview', 'kpis', range], queryFn: () => overviewApi.kpis(range), ...opts })

@@ -65,7 +65,7 @@ describe('AttackHeatmap', () => {
     expect(screen.getByTitle('T1059 · Recon: 0 of 9').style.backgroundColor).toBe('')
     expect(screen.getByTitle('T1059 · Exec: 7 of 14').style.backgroundColor).toContain('0.5')
     // A faint value is raised to a visible minimum
-    expect(screen.getByTitle('T1059 · Persist: 1 of 20').style.backgroundColor).toContain('0.15')
+    expect(screen.getByTitle('T1059 · Persist: 1 of 20').style.backgroundColor).toContain('0.3')
   })
 
   it('shows the legend', () => {

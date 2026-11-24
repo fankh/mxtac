@@ -15,6 +15,7 @@ import { ErrorCard, FilterChip, FilterGroup, Pager, SearchInput } from '@/compon
 import { OptionSelect } from '@/components/shared/OptionSelect'
 import { SEVERITY_LABELS, SEVERITY_OPTIONS } from '@/lib/severity'
 import { canWrite } from '@/lib/roles'
+import { tacticName } from '@/lib/attack'
 import { formatDateTime } from '@/lib/format'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { CreateIncidentDialog } from '@/components/shared/CreateIncidentDialog'
@@ -224,11 +225,11 @@ export function IncidentsPage() {
                     className="cursor-pointer text-[12px] focus-visible:bg-muted/50 focus-visible:outline-none"
                   >
                     <TableCell className="font-mono text-muted-foreground">INC-{incident.id}</TableCell>
-                    <TableCell className="max-w-[320px]">
-                      <div className="truncate font-medium text-foreground">{incident.title}</div>
+                    <TableCell className="max-w-[440px]">
+                      <div className="truncate font-medium text-foreground" title={incident.title}>{incident.title}</div>
                       {incident.tactic_ids.length > 0 && (
                         <div className="truncate text-[11px] text-muted-foreground">
-                          {incident.tactic_ids.join(', ')}
+                          {incident.tactic_ids.map(tacticName).join(', ')}
                         </div>
                       )}
                     </TableCell>

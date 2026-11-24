@@ -372,6 +372,29 @@ class AlertManager:
 
     # -- Persistence -------------------------------------------------------
 
+    @staticmethod
+    def _event_context(snapshot: dict[str, Any]) -> dict[str, str | None]:
+        """User, process and log source of the matched event, for the detection row.
+
+        *snapshot* is the flattened event of the alert (``ocsf_to_sigma_flat``).
+        A value that is missing or not a scalar is stored as ``None``.
+        """
+        def text(limit: int, *keys: str) -> str | None:
+            for key in keys:
+                value = snapshot.get(key)
+                if value is None or isinstance(value, (dict, list)):
+                    continue
+                value = str(value).strip()
+                if value:
+                    return value[:limit]
+            return None
+
+        return {
+            "user":       text(255, "actor_user.name"),
+            "process":    text(500, "process.cmd_line", "process.path", "process.name"),
+            "log_source": text(100, "unmapped.source", "_product"),
+        }
+
     async def _persist_to_db(self, scored: dict[str, Any]) -> None:
         """Persist enriched alert to PostgreSQL. Non-fatal — pipeline continues on error."""
         try:
@@ -394,6 +417,7 @@ class AlertManager:
                     host          = scored["host"],
                     time          = alert_time,
                     rule_name     = (scored["rule_id"] or "")[:500] or None,
+                    **self._event_context(scored.get("event_snapshot") or {}),
                 )
                 await self._correlate_incident(session, scored)
                 await session.commit()
@@ -467,16 +491,20 @@ class AlertManager:
         if alert_rank < min_rank:
             return
 
-        from ..repositories.incident_repo import IncidentRepo
+        from ..repositories.incident_repo import IncidentRepo, time_to_detect_seconds
         technique_ids = scored.get("technique_ids") or []
+        try:
+            event_time = datetime.fromisoformat(scored["time"])
+        except (KeyError, TypeError, ValueError):
+            event_time = None
         await IncidentRepo.create(
             session,
             title        = f"Auto: {scored.get('rule_title', 'Unknown')} on {host}",
             description  = (
                 f"Auto-created by alert-to-incident correlation.\n"
-                f"Rule: {scored.get('rule_id', '')}\n"
+                f"Rule: {scored.get('rule_title', 'Unknown')} ({scored.get('rule_id', '')})\n"
                 f"Host: {host}\n"
-                f"Tactic: {tactic}"
+                f"Tactic: {tactic_name(tactic)} ({tactic})"
             ),
             severity     = severity,
             status       = "new",
@@ -486,6 +514,7 @@ class AlertManager:
             technique_ids= technique_ids,
             tactic_ids   = tactic_ids,
             hosts        = [host],
+            ttd_seconds  = time_to_detect_seconds(event_time),
         )
         logger.info(
             "AlertManager created new incident for detection=%s (host=%s tactic=%s severity=%s)",

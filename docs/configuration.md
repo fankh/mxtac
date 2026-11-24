@@ -20,7 +20,7 @@ Unknown settings are handled differently depending on where they come from:
 | `VERSION` | `2.0.0` | Version reported by `/health` |
 | `API_PREFIX` | `/api/v1` | Path prefix of the REST API. The frontend expects the default |
 | `CORS_ORIGINS` | `["http://localhost:5173","http://localhost:3000"]` | JSON array of origins that may call the API from a browser. Must be valid JSON; a comma-separated list is rejected |
-| `RATE_LIMIT_PER_MINUTE` | `300` | Read requests (`GET`, `HEAD`) allowed per client IP and minute. Login and MFA routes (10), export routes (5) and other write requests (60) have fixed limits in `app/core/rate_limit.py` |
+| `RATE_LIMIT_PER_MINUTE` | `300` | Read requests (`GET`, `HEAD`, and the event queries of the Hunt page) allowed per client IP and minute. Login and MFA routes (10), export routes (5) and other write requests (60) have fixed limits in `app/core/rate_limit.py` |
 
 ## Authentication
 

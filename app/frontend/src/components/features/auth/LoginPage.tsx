@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ExternalLink } from 'lucide-react'
 import { useAuthStore } from '../../../stores/authStore'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,9 @@ import { PASSWORD_POLICY_HINT, passwordProblem } from '@/lib/passwordPolicy'
 
 export function LoginPage() {
   const navigate = useNavigate()
+  // ProtectedRoute passes the page that was asked for while signed out.
+  const from = (useLocation().state as { from?: { pathname?: string; search?: string } } | null)?.from
+  const target = from?.pathname && !from.pathname.startsWith('/login') ? `${from.pathname}${from.search ?? ''}` : '/'
   const {
     login, submitMfa, cancelMfa, submitNewPassword, cancelPasswordChange,
     isLoading, error, isAuthenticated, mfaPending, passwordChangePending,
@@ -26,8 +29,8 @@ export function LoginPage() {
   const [localError, setLocalError] = useState('')
 
   useEffect(() => {
-    if (isAuthenticated) navigate('/', { replace: true })
-  }, [isAuthenticated, navigate])
+    if (isAuthenticated) navigate(target, { replace: true })
+  }, [isAuthenticated, navigate, target])
 
   async function handlePasswordSubmit(e: FormEvent) {
     e.preventDefault()

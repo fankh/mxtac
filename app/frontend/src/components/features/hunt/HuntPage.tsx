@@ -129,23 +129,26 @@ function HuntWorkspace() {
       />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0">
           <HuntCharts timeFrom={ranTimeFrom} onPickValue={addFilterAndRun} />
-          <HuntResults
-            data={search.data}
-            loading={search.isLoading}
-            error={search.isError}
-            onRetry={() => search.refetch()}
-            page={page}
-            onPageChange={setPage}
-            onSelect={setSelected}
-            lucene={dsl.data?.lucene}
-          />
         </div>
         <div>
           <SavedQueriesPanel search={formSearch} activeId={activeSavedId} onLoad={loadSavedQuery} />
         </div>
       </div>
+
+      {/* Below the charts and at full width: the summary column needs the room. */}
+      <HuntResults
+        data={search.data}
+        loading={search.isLoading}
+        error={search.isError}
+        errorMessage={search.isError ? apiErrorMessage(search.error, '') : undefined}
+        onRetry={() => search.refetch()}
+        page={page}
+        onPageChange={setPage}
+        onSelect={setSelected}
+        lucene={dsl.data?.lucene}
+      />
 
       <EventDetailSheet
         event={selected}

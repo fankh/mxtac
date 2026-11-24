@@ -61,6 +61,25 @@ Read the upgrade notes in `INSTALL.md` before you upgrade an existing installati
 
 #### Fixed
 
+Found by driving the web UI against a running stack:
+
+- A rule that was created, edited, disabled or deleted did not take effect in the running engine until the next reload. The reload signal was sent before the change was committed, so the engine reloaded the old state.
+- The event and error counts of a source were never stored: the Sources page showed 0 events for every source. A generic webhook source showed "Inactive" and "Never" after it had accepted events, and a disabled one still accepted events. It now refuses them with `403`.
+- A new connector could stay in the status "connecting".
+- `POST /api/v1/connectors` with a name that exists, and `POST /api/v1/rules` with an `id` that exists, answered `500`. They now answer `409` and `422` with a reason.
+- A deactivated user disappeared from the Users tab and could not be reactivated there.
+- Detections sorted by severity were ordered by the name of the level. Lists sorted by a column with equal values could repeat or skip rows between pages.
+- A detection carried no user, process or log source of the matched event, showed the rule title as technique name and the rule UUID under its name.
+- A webhook event had no field for the process path, so the bundled LSASS rule could not match one. `process_path`, `image` and `exe` are now mapped.
+- "Mean time to detect" was never filled in. It is now the time from the earliest linked event to the creation of the incident.
+- The Hunt page hit the write rate limit after about 20 searches a minute and then reported a syntax error. Its event queries now count as read requests, and a failed search shows the reason.
+- The Sigma Rules and Sources pages showed "Could not load" to roles without access. They now show a notice, like the Hunt page.
+- The import dialog closed without showing why a rule was skipped.
+- The Overview page did not show a new detection until its next 60-second refresh.
+- `POST /api/v1/auth/mfa/verify-setup` accepted a code only inside its own 30 seconds. It now has the same tolerance of one time step as the sign-in.
+- The `/` shortcut did nothing. Sign-in now returns to the page that was asked for.
+- Dates and durations were written in three different forms. Incidents showed tactic IDs instead of names. The `X-Frame-Options` meta tag, which browsers ignore and report as an error, was replaced by a response header in `app/frontend/nginx.conf`.
+
 - Migration `0008` failed on PostgreSQL. `alembic upgrade head` now works on an empty PostgreSQL database.
 - The Vite dev server forwards the alert WebSocket.
 - Hunt search with OpenSearch as the search backend. The event persister now indexes the same document the API returns (the flat fields `hostname`, `username`, `src_ip`, `dst_ip`, `source`, `summary` and so on, plus the nested event) into `mxtac-events-v2-*`, with an explicit mapping. Search, aggregation and CSV export return the same rows from OpenSearch and from the PostgreSQL fallback: free text is a case-insensitive substring of the summary, class, host, user, addresses or process command line, and every filter field and operator works on both. Before, free text only matched an exact class name, rows had no host, user, addresses, source or summary, and the host filter only looked at the source endpoint.

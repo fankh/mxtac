@@ -305,7 +305,9 @@ async def mfa_verify_setup(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MFA setup not initiated")
 
     secret = _decrypt_secret(user.mfa_secret)
-    if not pyotp.TOTP(secret).verify(body.code):
+    # Same tolerance as at sign-in: one time step in each direction.  Without
+    # it a code typed near the end of its 30 seconds is refused.
+    if not pyotp.TOTP(secret).verify(body.code, valid_window=1):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
 
     user.mfa_enabled = True

@@ -18,7 +18,9 @@ The UI shows data from the API only. On a new installation every page shows zero
 | Sources | `/sources` | Connector list, connector form, detail sheet, and a card for sending a webhook test event |
 | Settings | `/settings` | Tabs: Profile and security, Users (admin only), Appearance |
 
-Unknown paths redirect to `/`. All pages except Login require a signed-in user and redirect to `/login` otherwise.
+Unknown paths redirect to `/`. All pages except Login require a signed-in user and redirect to `/login` otherwise. After the sign-in the page that was asked for opens.
+
+Dates are shown in the browser locale with the year, to the minute; event times on the Hunt page to the second. Durations are written as `45 s`, `5 min`, `2.0 h` or `1.5 d`.
 
 The sidebar links to every page in three groups: Monitor, Investigate and Configure. Its footer shows the account, opens the MFA dialog, switches the theme, opens the shortcut list, signs out and collapses the sidebar.
 
@@ -36,15 +38,15 @@ The steps follow each other: after a forced password change, an account with MFA
 
 ### Overview
 
-A time range (24 hours, 7, 30 or 90 days; default 7 days) applies to the page. The data refreshes every 60 seconds.
+A time range (24 hours, 7, 30 or 90 days; default 7 days) applies to the page. The data refreshes every 60 seconds, and one second after a detection arrives over the WebSocket.
 
 | Element | Content | Empty state |
 |---------|---------|-------------|
 | KPI cards | Detections with the change against the previous period, critical alerts, open incidents, ATT&CK coverage, mean time to detect, active Sigma rules | Zeros |
 | Detections over time | Stacked bars by severity | "No detections in this period" |
-| Top ATT&CK tactics | Detections by tactic | "No tactics observed yet" |
+| Top ATT&CK tactics | Detections by tactic. The change against the previous period is shown when that period had detections of the tactic | "No tactics observed yet" |
 | Recent critical and high detections | Table with a link to Detections | "No critical or high detections" |
-| Data sources | Status of each connector, with a link to Sources | "No data sources connected" and an "Add a source" button |
+| Data sources | Status and event total of each connector. The engineer and admin roles also get a link to Sources | "No data sources connected", with an "Add a source" button for the engineer and admin roles |
 | ATT&CK coverage heatmap | Technique families by tactic, see [attack-coverage.md](attack-coverage.md#overview-page) | A grid of zeros |
 
 ### Detections
@@ -52,11 +54,11 @@ A time range (24 hours, 7, 30 or 90 days; default 7 days) applies to the page. T
 | Element | Content |
 |---------|---------|
 | Filters | Search text, tactic, host, severity chips, status chips, "Clear filters" |
-| Table | Sortable by score, severity, tactic, host and time. 25, 50 or 100 rows per page |
+| Table | Sortable by score, severity, tactic, host and time. 25, 50 or 100 rows per page. Under the name, a row shows the process or command line of the matched event |
 | Export CSV | Up to 10,000 rows with the current filters and sort order |
 | Live banner | Counts detections that arrived over the WebSocket since the list was loaded, with a "Show" button |
 | Bulk actions | Select up to 500 rows: investigate, resolve, mark as false positive, reopen, or create an incident from the selection |
-| Side panel | All fields of one detection, an "Assign to" form and status buttons |
+| Side panel | All fields of one detection, including the user, process and log source of the matched event and the ID of the rule, an "Assign to" form and status buttons |
 
 Empty states: "No detections yet" on a new installation, "No detections match the filters" with filters set. The viewer role sees no checkboxes, bulk actions, assign form or status buttons.
 
@@ -64,7 +66,7 @@ Empty states: "No detections yet" on a new installation, "No detections match th
 
 | Element | Content |
 |---------|---------|
-| Metric cards | Open incidents, new this week, mean time to resolve, mean time to detect |
+| Metric cards | Open incidents with the severity breakdown, new this week, mean time to resolve, mean time to detect. Time to detect is the time from the earliest linked event to the creation of the incident; an incident without linked detections has none |
 | Filters | Search text, assignee, "Assigned to me", sort order, severity and status chips |
 | Table | 20 rows per page |
 | New incident | Title, severity, description, assignee, and detection IDs when it is not opened from a selection on the Detections page |
@@ -81,7 +83,7 @@ Hunt is open to the hunter, engineer and admin roles. Other roles see a notice i
 | Search form | Query text, time range (1 hour to 30 days; default 24 hours), and up to 50 filters on host, user, source IP, destination IP, source, event class, class UID, severity ID and process hash |
 | Event volume | Chart of events over time |
 | Top values | Most frequent values of a selectable field. Clicking a value adds a filter |
-| Results | Table with 50 rows per page. Shows the query and a copy button |
+| Results | Table with 50 rows per page, below the charts at full width. Shows the query and a copy button. A failed search shows the reason from the server |
 | Event detail sheet | The full event, copy buttons, and for each entity (host, user, IP, hash) a filter action and a timeline of that entity's events |
 | Saved queries | Save the current search, run, edit and delete saved ones |
 | Export CSV | Up to 10,000 rows |
@@ -109,13 +111,13 @@ The viewer role does not see "Edit target". With the 20 bundled rules enabled, a
 | Filters | Search by title, ID or technique; level; enabled or disabled. 50 rows per page |
 | Table | Title and ID, level, techniques, log source, status, hits, false positives, an enable switch and actions |
 | Rule editor | Monaco YAML editor with a syntax marker and a "Format" button. Checks for `title`, `detection` and `condition` before sending |
-| Import | Sigma YAML with one or more documents, up to 10 MB. Invalid documents are skipped and reported |
+| Import | Sigma YAML with one or more documents, up to 10 MB. Invalid documents are skipped. When any was skipped the dialog stays open and lists the reason for each, also when other documents were imported |
 | Test | Evaluate a rule against a sample event. The result is "Matched", "No match" or "Rule error" with the messages |
 | Reload engine | Loads all rules from the database into the engine again |
 
 A new installation lists the 20 bundled rules. The page does not show whether a rule is bundled or custom. Errors from the backend, including the message for unsupported Sigma syntax, are shown under the editor, in the import dialog and in the test panel.
 
-Only the engineer and admin roles see "New rule", "Import", "Reload engine" and "Delete", and can use the enable switch. The hunter role can open a rule read-only, test it and mark a false positive.
+Only the engineer and admin roles see "New rule", "Import", "Reload engine" and "Delete", and can use the enable switch. The hunter role can open a rule read-only, test it and mark a false positive. The viewer and analyst roles see a notice instead of the page.
 
 ### Sources
 
@@ -135,14 +137,16 @@ Only the engineer and admin roles see "New rule", "Import", "Reload engine" and 
 | Syslog | Bind address, UDP port, maximum message size | Yes | No |
 | Generic webhook | Webhook token, with a "Generate" button. The token cannot be shown again after saving | No | No |
 
-Stored settings are not shown when a source is edited; only the fields that are filled in are changed. The empty state reads "No data sources yet". The page shows its controls to every role; the backend only accepts them from the engineer and admin roles.
+Stored settings are not shown when a source is edited; only the fields that are filled in are changed. The empty state reads "No data sources yet". Sources is open to the engineer and admin roles. Other roles see a notice instead of the page.
+
+A generic webhook source has nothing to start: it is "Active" while it is enabled, and a disabled one refuses events. Event and error counts are stored in the database: a webhook source counts with every accepted request, a polling source after every poll, and a syslog source every 5 seconds. A source name can be used once.
 
 ### Settings
 
 | Tab | Content |
 |-----|---------|
 | Profile and security | Email, name and role (read-only). MFA status with "Set up MFA". A form to change the password: current password, new password and confirmation. The new password cannot be one of the last two |
-| Users (admin only) | User table with role, status, a "Password pending" mark for accounts that still have to change their password, and MFA state. Add user, edit name and role, deactivate, reactivate, reset MFA |
+| Users (admin only) | User table with role, status, a "Password pending" mark for accounts that still have to change their password, and MFA state. Add user, edit name and role, deactivate, reactivate, reset MFA. A deactivated account stays in the table as "Inactive" |
 | Appearance | Light or dark theme, saved in the browser |
 
 Add user asks for email, full name, role and a temporary password. The user must change the temporary password at the first sign-in. An administrator cannot change the own role or deactivate the own account.
@@ -172,10 +176,11 @@ The hook is `src/hooks/useAlertStream.ts`. It stops retrying when the server clo
 | `g` then `c` | ATT&CK Coverage |
 | `g` then `r` | Sigma Rules |
 | `g` then `s` | Sources |
+| `/` | Focus the search field of the page (Detections, Incidents, Hunt, Sigma Rules, Sources) |
 | `?` | Show the shortcut list |
 | `Esc` | Close the shortcut list or the open panel |
 
-The second key of a `g` shortcut must follow within 1.5 seconds. Shortcuts are ignored while typing in a field and while Ctrl, Alt or the Meta key is held. The shortcut list also names `/` for focusing a search field; no page reacts to it yet.
+The second key of a `g` shortcut must follow within 1.5 seconds. Shortcuts are ignored while typing in a field and while Ctrl, Alt or the Meta key is held.
 
 ## Design tokens
 

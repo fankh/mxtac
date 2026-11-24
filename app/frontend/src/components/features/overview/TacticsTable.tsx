@@ -24,9 +24,14 @@ export function TacticsTable({ data, rangeLabel }: { data: TacticBar[]; rangeLab
                   <span className="truncate">{row.tactic}</span>
                   <span className="shrink-0 tabular-nums">
                     <span className="font-medium">{fmtNum(row.count)}</span>
-                    <span className={cn('ml-2 text-[11px]', row.trend_pct > 5 ? 'text-crit-text' : 'text-muted-foreground')}>
-                      {row.trend_pct > 0 ? '+' : ''}{row.trend_pct}%
-                    </span>
+                    {row.trend_pct !== 0 && (
+                      <span
+                        title="Change against the previous period"
+                        className={cn('ml-2 text-[11px]', row.trend_pct > 5 ? 'text-crit-text' : 'text-muted-foreground')}
+                      >
+                        {row.trend_pct > 0 ? '+' : ''}{row.trend_pct}%
+                      </span>
+                    )}
                   </span>
                 </div>
                 <div className="mt-1 h-1.5 rounded-full bg-muted">

@@ -95,7 +95,7 @@ w("- Send the access token as `Authorization: Bearer <token>`. `POST /api/v1/aut
 w("- The role and the active flag of the account are read from the database on every request. A role change or a deactivation applies to the next request, also for tokens that were issued earlier.")
 w("- The **Auth** column shows the permission a route requires. The permission table below maps permissions to roles.")
 w("- A request without a valid token gets `401`. A role without the permission gets `403`.")
-w("- Rate limits apply per client IP and minute: 10 requests for login and MFA routes, 5 for export routes, 60 for other `POST`, `PUT`, `PATCH` and `DELETE` requests, and `RATE_LIMIT_PER_MINUTE` (default 300) for `GET` and `HEAD` requests. A limited request gets `429` with a `Retry-After` header. `/health`, `/ready` and `/metrics` are not limited.")
+w("- Rate limits apply per client IP and minute: 10 requests for login and MFA routes, 5 for export routes, 60 for other `POST`, `PUT`, `PATCH` and `DELETE` requests, and `RATE_LIMIT_PER_MINUTE` (default 300) for `GET` and `HEAD` requests. A limited request gets `429` with a `Retry-After` header. `/health`, `/ready` and `/metrics` are not limited. The `POST` routes that only query events (`/events/search`, `/events/aggregate`, `/events/query-dsl`) count as `GET` requests.")
 w()
 w("## Permissions")
 w()

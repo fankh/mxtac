@@ -27,7 +27,7 @@ function isTyping(): boolean {
  *   g i → Incidents (/incidents)
  *
  * Single-key shortcuts:
- *   /   → Focus search bar (dispatches mxtac:focus-search)
+ *   /   → Focus the search field of the page (input[data-shortcut-search]); also dispatches mxtac:focus-search
  *   ?   → Open keyboard shortcuts modal
  *   Esc → Close shortcuts modal + dispatch mxtac:close-panel
  *
@@ -85,6 +85,8 @@ export function useKeyboardShortcuts(): void {
         case '/':
           e.preventDefault()
           document.dispatchEvent(new CustomEvent('mxtac:focus-search'))
+          // The main search field of a page is marked with data-shortcut-search.
+          document.querySelector<HTMLInputElement>('main input[data-shortcut-search]')?.focus()
           break
 
         case '?':

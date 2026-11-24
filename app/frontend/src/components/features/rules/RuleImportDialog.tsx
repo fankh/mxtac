@@ -23,21 +23,28 @@ export function RuleImportDialog({ onClose }: RuleImportDialogProps) {
   const addNotification = useUIStore((s) => s.addNotification)
   const [yaml, setYaml] = useState('')
   const [error, setError] = useState('')
+  /** Outcome of an import that skipped documents: the dialog stays open to show why. */
+  const [partial, setPartial] = useState<{ imported: number; skipped: string[] } | null>(null)
 
   const importMutation = useMutation({
     mutationFn: () => rulesApi.import(yaml),
     onSuccess: (result) => {
+      const skipped = result.errors ?? []
       if (result.imported === 0) {
-        setError('No valid Sigma rules were found in this YAML.')
+        setPartial(skipped.length > 0 ? { imported: 0, skipped } : null)
+        setError(skipped.length > 0 ? '' : 'No valid Sigma rules were found in this YAML.')
         return
       }
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       queryClient.invalidateQueries({ queryKey: ['rules-stats'] })
-      addNotification({
-        type: 'success',
-        title: `Imported ${result.imported} ${result.imported === 1 ? 'rule' : 'rules'}`,
-        message: `${result.total_rules} rules in total`,
-      })
+      const imported = `Imported ${result.imported} ${result.imported === 1 ? 'rule' : 'rules'}`
+      if (skipped.length > 0) {
+        // Some documents were refused: keep the dialog open so the reasons can be read.
+        addNotification({ type: 'warning', title: imported, message: `${skipped.length} skipped. See the import dialog.` })
+        setPartial({ imported: result.imported, skipped })
+        return
+      }
+      addNotification({ type: 'success', title: imported, message: `${result.total_rules} rules in total` })
       onClose()
     },
     onError: (err: unknown) => {
@@ -70,6 +77,7 @@ export function RuleImportDialog({ onClose }: RuleImportDialogProps) {
       return
     }
     setError('')
+    setPartial(null)
     importMutation.mutate()
   }
 
@@ -98,14 +106,28 @@ export function RuleImportDialog({ onClose }: RuleImportDialogProps) {
               className="font-mono text-[11px]"
               placeholder={'title: My rule\nlogsource:\n  product: windows\ndetection:\n  selection:\n    EventID: 4625\n  condition: selection\nlevel: medium'}
               value={yaml}
-              onChange={(e) => { setYaml(e.target.value); setError('') }}
+              onChange={(e) => { setYaml(e.target.value); setError(''); setPartial(null) }}
             />
           </div>
           {error && <p role="alert" className="rounded-md border sev-critical px-3 py-2 text-[11px]">{error}</p>}
+          {partial && (
+            <div role="alert" className={`rounded-md border px-3 py-2 text-[11px] ${partial.imported > 0 ? 'sev-medium' : 'sev-critical'}`}>
+              <p className="font-medium">
+                {partial.imported > 0
+                  ? `Imported ${partial.imported} ${partial.imported === 1 ? 'rule' : 'rules'}. Skipped ${partial.skipped.length}:`
+                  : `Nothing was imported. Skipped ${partial.skipped.length}:`}
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {partial.skipped.map((message, index) => <li key={`${index}-${message}`} className="break-words">{message}</li>)}
+              </ul>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={importMutation.isPending}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={importMutation.isPending}>
+            {partial && partial.imported > 0 ? 'Done' : 'Cancel'}
+          </Button>
           <Button onClick={handleImport} disabled={importMutation.isPending}>
             {importMutation.isPending ? 'Importing…' : 'Import'}
           </Button>

@@ -369,7 +369,14 @@ export const ingestApi = {
  * Otherwise the given fallback; without a fallback, the error's own message or a generic line.
  */
 export function apiErrorMessage(err: unknown, fallback?: string): string {
-  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  const response = (err as { response?: { status?: number; data?: { detail?: unknown; retry_after?: unknown } } })?.response
+  const detail = response?.data?.detail
+  const retryAfter = response?.data?.retry_after
+  if (response?.status === 429 && typeof retryAfter === 'number') {
+    // The per-client rate limit of the API (core/rate_limit.py); its detail is only "Too Many Requests".
+    const seconds = Math.max(1, Math.ceil(retryAfter))
+    return `Too many requests. Try again in ${seconds} second${seconds === 1 ? '' : 's'}.`
+  }
   if (typeof detail === 'string' && detail) return detail
   if (Array.isArray(detail)) {
     const parts = detail

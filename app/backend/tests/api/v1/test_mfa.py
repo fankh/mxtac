@@ -8,12 +8,14 @@ All tests mock UserRepo and pyotp so the suite runs without a live database.
 
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pyotp
 import pytest
 from httpx import AsyncClient
 
+from app.api.v1.endpoints.auth import _encrypt_secret
 from app.core.security import create_access_token
 from app.models.user import User
 
@@ -275,6 +277,37 @@ async def test_mfa_verify_setup_returns_message(client: AsyncClient) -> None:
             MFA_VERIFY_URL, json={"code": valid_code}, headers=_auth_headers()
         )
     assert resp.json()["message"] == "MFA enabled"
+
+
+@pytest.mark.asyncio
+async def test_mfa_verify_setup_accepts_the_code_of_the_previous_time_step(client: AsyncClient) -> None:
+    """A code that was read just before its 30 seconds ended is still accepted.
+
+    Without this tolerance the three tests above failed whenever the time step
+    changed between computing the code and the request (they were flaky).
+    """
+    user = _make_user(mfa_secret=_encrypt_secret(_TEST_SECRET))
+    previous_code = pyotp.TOTP(_TEST_SECRET).at(time.time() - 30)
+
+    with patch(MOCK_REPO_BY_EMAIL, new=AsyncMock(return_value=user)):
+        resp = await client.post(
+            MFA_VERIFY_URL, json={"code": previous_code}, headers=_auth_headers()
+        )
+    assert resp.status_code == 200
+    assert user.mfa_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_mfa_verify_setup_rejects_an_older_code(client: AsyncClient) -> None:
+    """A code from three time steps ago is outside the tolerance."""
+    user = _make_user(mfa_secret=_encrypt_secret(_TEST_SECRET))
+    old_code = pyotp.TOTP(_TEST_SECRET).at(time.time() - 90)
+
+    with patch(MOCK_REPO_BY_EMAIL, new=AsyncMock(return_value=user)):
+        resp = await client.post(
+            MFA_VERIFY_URL, json={"code": old_code}, headers=_auth_headers()
+        )
+    assert resp.status_code == 400
 
 
 # ---------------------------------------------------------------------------

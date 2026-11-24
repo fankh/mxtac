@@ -117,7 +117,7 @@ Deleting a user through the API deactivates the account. The row is kept, and th
 | Control | Behaviour | Code |
 |---------|-----------|------|
 | Security headers | Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 0`, `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()` and `Cache-Control: no-store`. `Strict-Transport-Security` is added when `DEBUG=false` | `core/security_headers.py` |
-| Rate limiting | Per client IP and minute: 10 for login and MFA routes, 5 for export routes, 60 for other write requests, and `RATE_LIMIT_PER_MINUTE` (default 300) for read requests. Counters are kept in Valkey, or in process memory when Valkey is not reachable | `core/rate_limit.py` |
+| Rate limiting | Per client IP and minute: 10 for login and MFA routes, 5 for export routes, 60 for other write requests, and `RATE_LIMIT_PER_MINUTE` (default 300) for read requests. The `POST` routes that only query events (`/events/search`, `/events/aggregate`, `/events/query-dsl`) count as read requests. Counters are kept in Valkey, or in process memory when Valkey is not reachable | `core/rate_limit.py` |
 | Request size | Bodies over 10 MB are rejected. The webhook endpoint accepts at most 5 MB | `main.py`, `api/v1/endpoints/webhook_ingest.py` |
 | CORS | Only origins in `CORS_ORIGINS` are allowed | `main.py` |
 | SQL | All queries use SQLAlchemy with bound parameters. User input in `LIKE` filters is escaped with `escape_like()` | `core/validators.py` |

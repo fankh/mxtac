@@ -124,6 +124,19 @@ def _invalid_rule_detail(errors: list[str]) -> str:
     return f"Invalid Sigma YAML: {errors[0]}" if errors else "Invalid Sigma YAML"
 
 
+async def _announce_rule_change(db: AsyncSession) -> None:
+    """Commit the rule change, then tell every replica to reload its engine.
+
+    The order matters.  The reload signal also reaches this replica, which then
+    loads the engine from the database in another session.  Sent before the
+    commit, that reload would not see the change and would undo the update the
+    request has just made to the engine: a new rule would not detect, and a
+    disabled or deleted rule would keep detecting, until the next reload.
+    """
+    await db.commit()
+    await publish_rule_reload()
+
+
 async def _parse_and_persist(
     yaml_text: str,
     db: AsyncSession,
@@ -150,11 +163,18 @@ async def _parse_and_persist(
     for doc in docs:
         if not isinstance(doc, dict):
             continue
-        rule_yaml = yaml.dump(doc)
+        # Keep the key order of the author; the editor shows this text again.
+        rule_yaml = yaml.dump(doc, sort_keys=False, allow_unicode=True)
         try:
             sigma_rule = _engine.parse_rule_yaml(rule_yaml)
         except SigmaRuleError as exc:
             errors.append(f"{doc.get('title', 'Untitled')}: {exc}")
+            continue
+        if await RuleRepo.get_by_id(db, sigma_rule.id) is not None:
+            errors.append(
+                f"{sigma_rule.title}: a rule with the ID {sigma_rule.id} already exists. "
+                "Edit that rule, or change the id of this one."
+            )
             continue
         logsource = sigma_rule.logsource or {}
         db_rule = await RuleRepo.create(
@@ -278,7 +298,7 @@ async def import_rules(
         created = await _parse_and_persist(body.yaml_content, db, engine=engine, errors=errors)
         total = await RuleRepo.count(db)
         if created:
-            await publish_rule_reload()
+            await _announce_rule_change(db)
         return {"imported": len(created), "total_rules": total, "errors": errors}
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Import failed: {exc}")
@@ -334,8 +354,9 @@ async def create_rule(
     )
     if not created:
         raise HTTPException(status_code=422, detail=_invalid_rule_detail(errors))
-    await publish_rule_reload()
-    return _rule_to_response(created[0])
+    response = _rule_to_response(created[0])
+    await _announce_rule_change(db)
+    return response
 
 
 @router.patch("/{rule_id}", response_model=RuleResponse)
@@ -393,8 +414,9 @@ async def update_rule(
             if existing is not None:
                 existing.enabled = body.enabled
 
-    await publish_rule_reload()
-    return _rule_to_response(updated)
+    response = _rule_to_response(updated)
+    await _announce_rule_change(db)
+    return response
 
 
 @router.delete("/{rule_id}", status_code=204)
@@ -410,7 +432,7 @@ async def delete_rule(
     engine = getattr(request.app.state, "sigma_engine", None)
     if engine is not None:
         engine.remove_rule(rule_id)
-    await publish_rule_reload()
+    await _announce_rule_change(db)
 
 
 @router.post("/{rule_id}/mark_fp", response_model=dict, status_code=200)

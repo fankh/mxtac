@@ -37,7 +37,7 @@ Create request:
 }
 ```
 
-`config` holds the settings from the sections below. Enabled connectors start with the backend. Connector settings are stored in the database without encryption.
+`config` holds the settings from the sections below. Enabled connectors start with the backend. Connector settings are stored in the database without encryption. A name can be used once; a second connector with the same name is refused with `409`.
 
 A new installation has no connectors. The Sources page and the source status card on the Overview page stay empty until you add one.
 
@@ -194,6 +194,7 @@ The normalizer looks for common field names. The first name of a row that is pre
 | `src_port`, `source_port` | `src_endpoint.port` |
 | `dst_port`, `dest_port`, `destination_port` | `dst_endpoint.port` |
 | `process`, `process_name` | `process.name` |
+| `process_path`, `image`, `exe` | `process.path`, the full path of the program. Sigma conditions on `Image` or `path` use it |
 | `command_line`, `cmd_line`, `commandline`, `command` | `process.cmd_line` |
 | `pid`, `process_id` | `process.pid` |
 | `message`, `msg` | Field `message`, also used as the event summary |
@@ -206,15 +207,17 @@ Every other top-level field is kept under its own name, and Sigma rules can refe
 
 | Event content | Event class |
 |---------------|-------------|
-| A process name or a command line | Process Activity |
+| A process name, a process path or a command line | Process Activity |
 | A source and a destination address | Network Activity |
 | Anything else | Base Event |
 
-The name of the connector is stored in the field `source` of the event.
+The name of the connector is kept in the raw event as `unmapped.source`, and Sigma rules can reference it as `source`. The flat field `source` that the Hunt page shows and filters on is the source type (`Webhook`, `Syslog`, `Wazuh`, `Zeek`, `Suricata`), not the connector name.
+
+A source that is disabled refuses events and the test request with `403`. Each accepted request adds its number of events to the event count of the source and sets "last seen".
 
 ## Checking that events arrive
 
-1. Open the **Sources** page. A running connector shows its status, event count and the time of the last event.
+1. Open the **Sources** page. A running connector shows its status, event count and when it was last seen. The counts of a polling connector are written after each poll, those of a syslog connector every 5 seconds, and those of a webhook source with each request.
 2. Open **Hunt** and run a search, for example for a word of the message, the host or the user, or with a filter on the source.
 3. Open **Detections**. An event that matches an enabled rule creates a detection. The same rule on the same host creates at most one detection in 5 minutes.
 4. Check the backend log: `docker compose logs -f backend`.

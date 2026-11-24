@@ -43,6 +43,7 @@ export function HuntSearchForm({
               onKeyDown={(e) => { if (e.key === 'Escape') onQueryChange('') }}
               placeholder="Search events, for example powershell or 10.0.0.5"
               aria-label="Search query"
+              data-shortcut-search=""
               maxLength={2048}
               className="h-8 px-8 text-[12px]"
             />

@@ -1,7 +1,8 @@
 import { render, screen, within } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { SourceStatusCard } from '../../components/features/overview/SourceStatusCard'
+import { useAuthStore } from '../../stores/authStore'
 import type { IntegrationStatus } from '../../types/api'
 
 const sources: IntegrationStatus[] = [
@@ -19,6 +20,14 @@ function renderCard(data: IntegrationStatus[] = sources) {
 }
 
 describe('SourceStatusCard', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ user: { email: 'engineer@mxtac.local', role: 'engineer' } })
+  })
+
+  afterEach(() => {
+    useAuthStore.setState({ user: null })
+  })
+
   it('shows the heading and a link to manage sources', () => {
     renderCard()
     expect(screen.getByRole('heading', { name: 'Data sources' })).toBeInTheDocument()
@@ -52,8 +61,20 @@ describe('SourceStatusCard', () => {
   it('shows an empty state with a link to add a source when nothing is connected', () => {
     renderCard([])
     expect(screen.getByText('No data sources connected')).toBeInTheDocument()
-    expect(screen.getByText(/Connect Wazuh, Zeek, Suricata or a syslog feed/)).toBeInTheDocument()
+    expect(screen.getByText(/Connect Wazuh, Zeek, Suricata, a syslog feed or a webhook/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Add a source' })).toHaveAttribute('href', '/sources')
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
+  })
+
+  it.each(['viewer', 'analyst', 'hunter'])('offers no link to the Sources page to the %s role', (role) => {
+    useAuthStore.setState({ user: { email: `${role}@mxtac.local`, role } })
+    const { unmount } = renderCard()
+    expect(screen.getByText('Wazuh')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Manage' })).not.toBeInTheDocument()
+    unmount()
+
+    renderCard([])
+    expect(screen.getByText('An engineer or admin account can connect a source.')).toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 })

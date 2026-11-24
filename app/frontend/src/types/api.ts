@@ -441,6 +441,8 @@ export interface RuleStatsSummary {
 export interface RuleImportResult {
   imported: number
   total_rules: number
+  /** One message per document that was skipped, each starting with the rule title. */
+  errors?: string[]
 }
 
 export interface RuleReloadResult {

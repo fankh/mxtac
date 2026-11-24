@@ -148,9 +148,11 @@ describe('IncidentPanel', () => {
       expect(panel).toHaveTextContent('P2')
       expect(within(panel).getByText('WIN-DC01')).toBeInTheDocument()
       expect(within(panel).getByText('T1021.002')).toBeInTheDocument()
-      expect(within(panel).getByText('TA0006')).toBeInTheDocument()
-      expect(within(panel).getByText('Open for').nextElementSibling).toHaveTextContent('1.5h')
-      expect(within(panel).getByText('Time to detect').nextElementSibling).toHaveTextContent('2m')
+      // The tactic is shown by name; the ID stays available as a tooltip.
+      expect(within(panel).getByText('Credential Access')).toHaveAttribute('title', 'TA0006')
+      expect(within(panel).queryByText('TA0006')).not.toBeInTheDocument()
+      expect(within(panel).getByText('Open for').nextElementSibling).toHaveTextContent('1.5 h')
+      expect(within(panel).getByText('Time to detect').nextElementSibling).toHaveTextContent('2 min')
       expect(within(panel).getByText('Time to resolve').nextElementSibling).toHaveTextContent('—')
     })
 

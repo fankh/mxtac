@@ -186,14 +186,14 @@ def _connector_to_integration_status(conn: Connector) -> IntegrationStatus:
             id=conn.id,
             name=conn.name,
             status="disabled",
-            metric="Not configured",
+            metric="Disabled",
         )
     if conn.status in ("active", "connected"):
         return IntegrationStatus(
             id=conn.id,
             name=conn.name,
             status="connected",
-            metric=f"{conn.events_total:,} events total",
+            metric=f"{conn.events_total:,} event{'' if conn.events_total == 1 else 's'} total",
         )
     if conn.status in ("error", "warning"):
         return IntegrationStatus(

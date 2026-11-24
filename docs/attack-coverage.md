@@ -81,4 +81,6 @@ Which events a rule is actually evaluated against is described in [sigma-engine.
 
 The heatmap reads the `tactic` column of a detection as a tactic name, for example `Credential Access`. The pipeline stores that name; a row of an earlier version that holds the tactic ID, for example `TA0006`, is counted under the tactic it names.
 
+A cell with at least one detected technique is tinted with at least 30 % of the accent color, so that it stands out in both themes.
+
 Limitation of the heatmap: it only has the four technique families and nine tactics listed above. A detection of another technique family, or under a tactic outside the nine (Lateral Movement, Collection, Command and Control, Exfiltration, Impact), is not shown in it. The "Top ATT&CK tactics" list on the Overview page counts every detection.

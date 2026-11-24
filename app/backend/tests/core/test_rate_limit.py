@@ -356,3 +356,18 @@ class TestRateLimitMiddleware:
         assert len(calls) == 1
         _, limit = calls[0]
         assert limit == 60
+
+
+class TestClassifyReadOnlyPost:
+    """POST routes that only query events share the read limit (the Hunt page sends three per search)."""
+
+    def test_event_queries_count_as_read(self) -> None:
+        for path in ("/api/v1/events/search", "/api/v1/events/aggregate", "/api/v1/events/query-dsl"):
+            assert _classify("POST", path) == _classify("GET", "/api/v1/detections")
+            assert _classify("POST", path)[0] == "read"
+
+    def test_other_event_and_write_routes_keep_their_group(self) -> None:
+        assert _classify("POST", "/api/v1/events/export")[0] == "export"
+        assert _classify("POST", "/api/v1/hunt/queries")[0] == "write"
+        assert _classify("POST", "/api/v1/ingest")[0] == "write"
+        assert _classify("POST", "/api/v1/rules/test")[0] == "write"

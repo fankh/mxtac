@@ -22,7 +22,9 @@ Import of the bundled rules:
 
 Changes:
 
-- Creating, editing, enabling, disabling and deleting a rule updates the engine at once.
+- Creating, editing, enabling, disabling and deleting a rule updates the engine at once. The change is committed before the other replicas are told to reload.
+- A rule whose `id` already exists is not stored a second time. `POST /api/v1/rules` answers `422` with the reason, and an import lists it in `errors`.
+- The YAML of a new rule is stored with its keys in the order they were written. Comments are not kept.
 - `POST /api/v1/rules/reload` clears the engine and loads all rules from the table again.
 - With several backend replicas, a rule change is announced over Valkey so that every replica reloads.
 

@@ -12,6 +12,13 @@ from ..core.validators import escape_like
 from ..engine.sigma_engine import TACTIC_ID_TO_NAME, tactic_name
 from ..models.detection import Detection
 
+# Severity rank for sorting: descending puts the most severe first.
+_SEVERITY_RANK = case(
+    {"critical": 4, "high": 3, "medium": 2, "low": 1},
+    value=Detection.severity,
+    else_=0,
+)
+
 # ---------------------------------------------------------------------------
 # Heatmap constants
 # ---------------------------------------------------------------------------
@@ -103,8 +110,14 @@ class DetectionRepo:
         total = await session.scalar(count_q) or 0
 
         # Sort
-        sort_col = getattr(Detection, sort, Detection.time)
-        q = q.order_by(sort_col.desc() if order == "desc" else sort_col.asc())
+        # Severity is sorted by rank, not by its name ("high" < "low" < "medium").
+        # Time and ID break ties, so rows keep one order across pages.
+        sort_col = _SEVERITY_RANK if sort == "severity" else getattr(Detection, sort, Detection.time)
+        q = q.order_by(
+            sort_col.desc() if order == "desc" else sort_col.asc(),
+            Detection.time.desc(),
+            Detection.id,
+        )
 
         # Paginate
         offset = (page - 1) * page_size

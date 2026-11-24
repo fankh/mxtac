@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { cn } from '@/lib/utils'
+import { canManageSources } from '@/lib/roles'
+import { useAuthStore } from '@/stores/authStore'
 
 const DOT: Record<IntegrationStatus['status'], string> = {
   connected: 'bg-status-ok',
@@ -19,6 +21,7 @@ const STATUS_LABEL: Record<IntegrationStatus['status'], string> = {
 }
 
 export function SourceStatusCard({ data }: { data: IntegrationStatus[] }) {
+  const manageable = canManageSources(useAuthStore((s) => s.user?.role))
   return (
     <Card>
       <CardContent className="p-4">
@@ -27,16 +30,20 @@ export function SourceStatusCard({ data }: { data: IntegrationStatus[] }) {
             <h3 className="text-[12px] font-semibold">Data sources</h3>
             <p className="text-[11px] text-muted-foreground">Connector health</p>
           </div>
-          <Link to="/sources" className="shrink-0 text-[11px] text-primary transition-colors hover:underline">
-            Manage
-          </Link>
+          {manageable && (
+            <Link to="/sources" className="shrink-0 text-[11px] text-primary transition-colors hover:underline">
+              Manage
+            </Link>
+          )}
         </div>
         {data.length === 0 ? (
           <EmptyState
             icon={Plug}
             title="No data sources connected"
-            description="Connect Wazuh, Zeek, Suricata or a syslog feed to start detecting."
-            action={<Button asChild size="sm"><Link to="/sources">Add a source</Link></Button>}
+            description={manageable
+              ? 'Connect Wazuh, Zeek, Suricata, a syslog feed or a webhook to start detecting.'
+              : 'An engineer or admin account can connect a source.'}
+            action={manageable ? <Button asChild size="sm"><Link to="/sources">Add a source</Link></Button> : undefined}
           />
         ) : (
           <ul className="divide-y divide-border">

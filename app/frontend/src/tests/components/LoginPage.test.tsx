@@ -37,11 +37,11 @@ function makeStore(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function renderLoginPage(overrides: Record<string, unknown> = {}) {
+function renderLoginPage(overrides: Record<string, unknown> = {}, from?: { pathname: string; search?: string }) {
   const store = makeStore(overrides)
   mockUseAuthStore.mockReturnValue(store)
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[{ pathname: '/login', state: from ? { from } : undefined }]}>
       <LoginPage />
     </MemoryRouter>,
   )
@@ -50,6 +50,22 @@ function renderLoginPage(overrides: Record<string, unknown> = {}) {
 
 const type = (label: string, value: string) =>
   fireEvent.change(screen.getByLabelText(label), { target: { value } })
+
+describe('LoginPage after sign-in', () => {
+  it('returns to the page that was asked for while signed out', () => {
+    const navigate = vi.fn()
+    mockUseNavigate.mockReturnValue(navigate)
+    renderLoginPage({ isAuthenticated: true }, { pathname: '/rules', search: '?level=high' })
+    expect(navigate).toHaveBeenCalledWith('/rules?level=high', { replace: true })
+  })
+
+  it('opens Overview when no page was asked for, or the page was the login page', () => {
+    const navigate = vi.fn()
+    mockUseNavigate.mockReturnValue(navigate)
+    renderLoginPage({ isAuthenticated: true }, { pathname: '/login' })
+    expect(navigate).toHaveBeenCalledWith('/', { replace: true })
+  })
+})
 
 describe('LoginPage', () => {
   let navigate: ReturnType<typeof vi.fn>

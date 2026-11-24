@@ -54,16 +54,18 @@ export function IncidentMetricsCards() {
   }
 
   const total = Object.values(data.total_incidents).reduce((sum, count) => sum + count, 0)
-  const bySeverity = SEVERITY_OPTIONS.map(
-    (level) => `${data.incidents_by_severity[level] ?? 0} ${SEVERITY_LABELS[level].toLowerCase()}`,
-  ).join(' · ')
+  // Severity breakdown of the incidents in range, without the levels that have none.
+  const bySeverity = SEVERITY_OPTIONS
+    .filter((level) => (data.incidents_by_severity[level] ?? 0) > 0)
+    .map((level) => `${data.incidents_by_severity[level]} ${SEVERITY_LABELS[level].toLowerCase()}`)
+    .join(' · ')
 
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <StatCard
         label="Open incidents"
         value={data.open_incidents_count.toLocaleString('en-US')}
-        hint={`${total.toLocaleString('en-US')} in the last 30 days`}
+        hint={`${total.toLocaleString('en-US')} in the last 30 days${bySeverity ? `: ${bySeverity}` : ''}`}
       />
       <StatCard
         label="New this week"
@@ -78,7 +80,7 @@ export function IncidentMetricsCards() {
       <StatCard
         label="Mean time to detect"
         value={formatDuration(data.mttd_seconds)}
-        hint={bySeverity}
+        hint={data.mttd_seconds == null ? 'No incidents with linked detections in range' : 'First event to incident, last 30 days'}
       />
     </div>
   )

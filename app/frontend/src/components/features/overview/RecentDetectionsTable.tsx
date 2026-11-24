@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ScoreCircle } from '../../shared/SeverityBadge'
 import { StatusPill } from '../../shared/StatusPill'
+import { techniqueLabel } from '../detections/utils'
 
 function timeAgo(iso: string): string {
   const d = new Date(iso)
@@ -48,7 +49,9 @@ export function RecentDetectionsTable({ data }: { data: Detection[] }) {
                   </TableCell>
                   <TableCell className="max-w-[200px] py-2 text-[12px]">
                     <div className="font-mono text-[11px]">{row.technique_id}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">{row.technique_name}</div>
+                    {techniqueLabel(row) && (
+                      <div className="truncate text-[11px] text-muted-foreground">{techniqueLabel(row)}</div>
+                    )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap py-2 text-[12px]">{row.host}</TableCell>
                   <TableCell className="py-2"><StatusPill status={row.status} /></TableCell>

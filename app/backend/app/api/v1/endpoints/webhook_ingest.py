@@ -43,7 +43,8 @@ async def _resolve_connector(source_name: str, token: str, db: AsyncSession):
     """Look up a generic connector by name and validate its webhook token.
 
     Raises ``401 Unauthorized`` when the source is unknown, not a generic
-    connector, or the token does not match.
+    connector, or the token does not match, and ``403 Forbidden`` when the
+    source is disabled.
     """
     connector = await ConnectorRepo.get_by_name(db, source_name)
     if connector is None or connector.connector_type != "generic":
@@ -57,6 +58,11 @@ async def _resolve_connector(source_name: str, token: str, db: AsyncSession):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid webhook token",
+        )
+    if not connector.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This source is disabled. Enable it on the Sources page to send events.",
         )
     return connector
 
@@ -98,6 +104,7 @@ async def webhook_ingest(
     Errors:
       - ``400`` — body is not valid JSON, or not an object / array of objects.
       - ``401`` — unknown source, not a generic connector, or token mismatch.
+      - ``403`` — the source is disabled.
       - ``413`` — body exceeds the 5 MB limit.
       - ``429`` — rate limit exceeded (100 req/min per source).
     """
@@ -111,7 +118,7 @@ async def webhook_ingest(
         )
 
     # 2. Validate connector + token
-    await _resolve_connector(x_mxtac_source, x_mxtac_token, db)
+    connector = await _resolve_connector(x_mxtac_source, x_mxtac_token, db)
 
     # 3. Enforce 5 MB body limit — check Content-Length first for early rejection
     content_length = request.headers.get("Content-Length")
@@ -163,5 +170,9 @@ async def webhook_ingest(
             **event,
         })
         accepted += 1
+
+    # 7. Count the events on the source, so the Sources page shows them
+    if accepted:
+        await ConnectorRepo.add_counters(db, connector.id, events=accepted, mark_active=True)
 
     return {"accepted": accepted, "rejected": rejected}

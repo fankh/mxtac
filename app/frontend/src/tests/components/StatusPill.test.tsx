@@ -7,7 +7,7 @@ const STATUSES: [DetectionStatus, string, string][] = [
   ['active', 'Active', 'sev-critical'],
   ['investigating', 'Investigating', 'sev-high'],
   ['resolved', 'Resolved', 'status-green'],
-  ['false_positive', 'False Positive', 'sev-info'],
+  ['false_positive', 'False positive', 'sev-info'],
 ]
 
 describe('StatusPill', () => {

@@ -1,3 +1,4 @@
+import { formatDateTimeSeconds } from '@/lib/format'
 import type {
   AggregationInterval, EventFilter, EventItem, SavedQueryFilter, SearchRequest,
 } from '@/types/api'
@@ -100,13 +101,9 @@ export function timeRangeLabel(timeFrom: string): string {
   return TIME_RANGES.find((t) => t.value === timeFrom)?.label ?? timeFrom
 }
 
+/** Event time to the second, in the same form as every other page. */
 export function formatDateTime(iso: string | undefined): string {
-  if (!iso) return '-'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString(undefined, {
-    month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-  })
+  return formatDateTimeSeconds(iso)
 }
 
 export function formatBucketTime(iso: string, interval: AggregationInterval): string {

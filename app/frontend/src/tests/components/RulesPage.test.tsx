@@ -324,6 +324,42 @@ describe('RulesPage', () => {
       fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }))
       expect(await within(dialog).findByText('No valid Sigma rules were found in this YAML.')).toBeInTheDocument()
     })
+
+    it('shows why each skipped rule was refused and keeps the dialog open', async () => {
+      api.import.mockResolvedValue({
+        imported: 1,
+        total_rules: 3,
+        errors: ["Too Many Logins: aggregation expressions ('| count() ...', '| near ...') are not supported"],
+      })
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('YAML'), { target: { value: `${STORED_YAML}---
+${STORED_YAML}` } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }))
+
+      const alert = await within(dialog).findByRole('alert')
+      expect(alert).toHaveTextContent('Imported 1 rule. Skipped 1:')
+      expect(alert).toHaveTextContent('Too Many Logins: aggregation expressions')
+      expect(notifications()[0]).toMatchObject({ type: 'warning', title: 'Imported 1 rule' })
+      // The imported rule shows in the list behind the dialog; the dialog is left with Done.
+      expect(within(dialog).getByRole('button', { name: 'Done' })).toBeInTheDocument()
+      expect(within(dialog).queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
+    })
+
+    it('shows the reasons when every rule was refused', async () => {
+      api.import.mockResolvedValue({ imported: 0, total_rules: 2, errors: ["Only Title: rule has no 'detection' section"] })
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('YAML'), { target: { value: 'title: Only Title' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }))
+
+      const alert = await within(dialog).findByRole('alert')
+      expect(alert).toHaveTextContent('Nothing was imported. Skipped 1:')
+      expect(alert).toHaveTextContent("Only Title: rule has no 'detection' section")
+      expect(within(dialog).queryByText('No valid Sigma rules were found in this YAML.')).not.toBeInTheDocument()
+    })
   })
 
   describe('editor', () => {

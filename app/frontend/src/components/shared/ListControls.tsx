@@ -28,6 +28,7 @@ export function SearchInput({ value, onChange, placeholder, label, icon = true, 
       <Input
         type="text"
         aria-label={name}
+        data-shortcut-search={icon ? '' : undefined}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}

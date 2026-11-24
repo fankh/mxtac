@@ -18,6 +18,8 @@ import { ErrorCard } from '@/components/shared/ListControls'
 import { OptionSelect } from '@/components/shared/OptionSelect'
 import { SEVERITY_LABELS, SEVERITY_OPTIONS } from '@/lib/severity'
 import { canWrite } from '@/lib/roles'
+import { tacticName } from '@/lib/attack'
+import { cn } from '@/lib/utils'
 import { formatDateTime, isValidEmail } from '@/lib/format'
 import { IncidentStatusPill } from './IncidentStatusPill'
 import { IncidentTimeline } from './IncidentTimeline'
@@ -40,13 +42,17 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function Chips({ values }: { values: string[] }) {
+function Chips({ values, label }: { values: string[]; label?: (value: string) => string }) {
   if (values.length === 0) return <span className="text-muted-foreground">—</span>
   return (
     <span className="flex flex-wrap gap-1">
       {values.map((value) => (
-        <span key={value} className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px]">
-          {value}
+        <span
+          key={value}
+          title={label ? value : undefined}
+          className={cn('rounded border border-border bg-muted px-1.5 py-0.5 text-[11px]', !label && 'font-mono')}
+        >
+          {label ? label(value) : value}
         </span>
       ))}
     </span>
@@ -259,7 +265,7 @@ function PanelBody({ incident }: { incident: Incident }) {
               <Row label="Priority">P{current.priority}</Row>
               <Row label="Hosts"><Chips values={current.hosts} /></Row>
               <Row label="Techniques"><Chips values={current.technique_ids} /></Row>
-              <Row label="Tactics"><Chips values={current.tactic_ids} /></Row>
+              <Row label="Tactics"><Chips values={current.tactic_ids} label={tacticName} /></Row>
               <Row label="Open for">{detail ? formatDuration(detail.duration_seconds) : '—'}</Row>
               <Row label="Time to detect">{formatDuration(current.ttd_seconds)}</Row>
               <Row label="Time to resolve">{formatDuration(current.ttr_seconds)}</Row>

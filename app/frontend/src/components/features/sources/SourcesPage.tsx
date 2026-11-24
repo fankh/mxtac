@@ -14,6 +14,9 @@ import { cn, fmtNum } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
 import type { Connector } from '@/types/api'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { RoleNotice } from '@/components/shared/RoleNotice'
+import { canManageSources } from '@/lib/roles'
+import { useAuthStore } from '@/stores/authStore'
 import { ConnectorDetailSheet } from './ConnectorDetailSheet'
 import { ConnectorFormDialog } from './ConnectorFormDialog'
 import { IngestHelpCard } from './IngestHelpCard'
@@ -23,7 +26,27 @@ const RUNNING = new Set(['active', 'connecting'])
 
 type FormState = { mode: 'add' } | { mode: 'edit'; connector: Connector } | null
 
+const TITLE = 'Data sources'
+const DESCRIPTION = 'Connectors that bring events into MxTac'
+
+/** Source management. The backend limits connectors to engineer and admin. */
 export function SourcesPage() {
+  const role = useAuthStore((s) => s.user?.role)
+
+  if (role && !canManageSources(role)) {
+    return (
+      <Page title={TITLE} description={DESCRIPTION}>
+        <RoleNotice
+          title="Data sources need the engineer role"
+          description="Engineer and admin accounts can add, change and start sources. The Overview page shows their status to everyone."
+        />
+      </Page>
+    )
+  }
+  return <SourcesWorkspace />
+}
+
+function SourcesWorkspace() {
   const queryClient = useQueryClient()
   const addNotification = useUIStore((s) => s.addNotification)
 
@@ -120,8 +143,8 @@ export function SourcesPage() {
 
   return (
     <Page
-      title="Data sources"
-      description="Connectors that bring events into MxTac"
+      title={TITLE}
+      description={DESCRIPTION}
       actions={
         <Button className="gap-1.5" onClick={() => setForm({ mode: 'add' })}>
           <Plus className="h-3.5 w-3.5" />
@@ -154,6 +177,7 @@ export function SourcesPage() {
             className="h-8 pl-8 pr-8"
             placeholder="Search sources"
             aria-label="Search sources"
+            data-shortcut-search=""
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') setSearch('') }}

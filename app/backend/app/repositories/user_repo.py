@@ -11,10 +11,12 @@ from ..models.user import User
 class UserRepo:
 
     @staticmethod
-    async def list(session: AsyncSession) -> list[User]:
-        result = await session.execute(
-            select(User).where(User.is_active.is_(True)).order_by(User.email)
-        )
+    async def list(session: AsyncSession, *, include_inactive: bool = False) -> list[User]:
+        """Users ordered by email.  Deactivated accounts only with *include_inactive*."""
+        query = select(User).order_by(User.email)
+        if not include_inactive:
+            query = query.where(User.is_active.is_(True))
+        result = await session.execute(query)
         return list(result.scalars().all())
 
     @staticmethod

@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ScoreCircle, SeverityPill } from '@/components/shared/SeverityBadge'
 import { StatusPill } from '@/components/shared/StatusPill'
-import { DETECTION_STATUS_LABELS } from './utils'
+import { DETECTION_STATUS_LABELS, isUuid, techniqueLabel } from './utils'
 import { canWrite } from '@/lib/roles'
 import { formatDateTime } from '@/lib/format'
 
@@ -120,7 +120,7 @@ function PanelBody({ detection, onUpdated }: { detection: Detection; onUpdated?:
 
         <dl>
           <Row label="Technique">
-            <span className="font-mono">{detection.technique_id}</span> {detection.technique_name}
+            <span className="font-mono">{detection.technique_id}</span> {techniqueLabel(detection)}
           </Row>
           <Row label="Tactic">
             {detection.tactic}
@@ -139,7 +139,11 @@ function PanelBody({ detection, onUpdated }: { detection: Detection; onUpdated?:
               <span className="font-mono">{detection.event_id}</span>
             </Row>
           )}
-          {detection.rule_name && <Row label="Rule">{detection.rule_name}</Row>}
+          {detection.rule_name && (
+            isUuid(detection.rule_name)
+              ? <Row label="Rule ID"><span className="font-mono">{detection.rule_name}</span></Row>
+              : <Row label="Rule">{detection.rule_name}</Row>
+          )}
           {detection.occurrence_count != null && (
             <Row label="Occurrences">{detection.occurrence_count.toLocaleString('en-US')}</Row>
           )}

@@ -27,6 +27,7 @@ Common field names are mapped (the first name that is present wins):
   src_port, source_port                        → src_endpoint.port
   dst_port, dest_port, destination_port        → dst_endpoint.port
   process, process_name                        → process.name
+  process_path, image, exe                     → process.path
   command_line, cmd_line, commandline, command → process.cmd_line
   pid, process_id                              → process.pid
   message, msg                                 → unmapped.message
@@ -38,7 +39,7 @@ Common field names are mapped (the first name that is present wins):
 Every other top-level field is kept in ``unmapped`` under its own name so that
 Sigma rules can reference it.  The full original object is kept in ``raw``.
 
-OCSF class: Process Activity when a process or command line is present,
+OCSF class: Process Activity when a process, process path or command line is present,
 Network Activity when both a source and a destination address are present,
 otherwise Base Event (class_uid 0).
 """
@@ -60,6 +61,7 @@ _DST_IP_KEYS    = ("dst_ip", "dest_ip", "destination_ip")
 _SRC_PORT_KEYS  = ("src_port", "source_port")
 _DST_PORT_KEYS  = ("dst_port", "dest_port", "destination_port")
 _PROCESS_KEYS   = ("process", "process_name")
+_PROCESS_PATH_KEYS = ("process_path", "image", "exe")
 _CMD_LINE_KEYS  = ("command_line", "cmd_line", "commandline", "command")
 _PID_KEYS       = ("pid", "process_id")
 _MESSAGE_KEYS   = ("message", "msg")
@@ -70,7 +72,7 @@ _SERVICE_KEYS   = ("service",)
 
 _MAPPED_KEYS = frozenset(
     _TIME_KEYS + _HOST_KEYS + _USER_KEYS + _SRC_IP_KEYS + _DST_IP_KEYS
-    + _SRC_PORT_KEYS + _DST_PORT_KEYS + _PROCESS_KEYS + _CMD_LINE_KEYS + _PID_KEYS
+    + _SRC_PORT_KEYS + _DST_PORT_KEYS + _PROCESS_KEYS + _PROCESS_PATH_KEYS + _CMD_LINE_KEYS + _PID_KEYS
     + _MESSAGE_KEYS + _SEVERITY_KEYS + _EVENT_ID_KEYS + _OS_KEYS + _SERVICE_KEYS
 )
 
@@ -99,13 +101,14 @@ class WebhookNormalizer:
     def normalize(self, raw: dict[str, Any]) -> OCSFEvent:
         cmd_line = self._first_str(raw, _CMD_LINE_KEYS)
         process_name = self._first_str(raw, _PROCESS_KEYS)
+        process_path = self._first_str(raw, _PROCESS_PATH_KEYS)
         src_ip = self._first_str(raw, _SRC_IP_KEYS)
         dst_ip = self._first_str(raw, _DST_IP_KEYS)
         message = self._first_str(raw, _MESSAGE_KEYS)
         event_id = self._first(raw, _EVENT_ID_KEYS)
         service = self._first(raw, _SERVICE_KEYS)
 
-        if cmd_line or process_name:
+        if cmd_line or process_name or process_path:
             class_uid, class_name, category_uid = (
                 OCSFClass.PROCESS_ACTIVITY, "Process Activity", OCSFCategory.SYSTEM_ACTIVITY,
             )
@@ -149,6 +152,7 @@ class WebhookNormalizer:
             actor_user=UserInfo(name=self._first_str(raw, _USER_KEYS)),
             process=ProcessInfo(
                 name=process_name,
+                path=process_path,
                 cmd_line=cmd_line,
                 pid=self._safe_int(self._first(raw, _PID_KEYS)),
             ),

@@ -14,6 +14,20 @@ from ..core.validators import escape_like
 from ..models.incident import Incident
 
 
+def time_to_detect_seconds(first_event_time: datetime | None, now: datetime | None = None) -> int | None:
+    """Seconds from the earliest linked event to the creation of the incident.
+
+    ``None`` without an event time.  A naive datetime is read as UTC, and an
+    event time in the future counts as 0.
+    """
+    if first_event_time is None:
+        return None
+    if first_event_time.tzinfo is None:
+        first_event_time = first_event_time.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    return max(0, int((now - first_event_time).total_seconds()))
+
+
 def _json_array_contains(column: InstrumentedAttribute, value: str) -> ColumnElement[bool]:
     """Filter: the JSON array stored in *column* contains the string *value*.
 
@@ -89,7 +103,8 @@ class IncidentRepo:
             order_clause = _STATUS_ORDER.asc()
         else:
             order_clause = Incident.created_at.desc()
-        q = q.order_by(order_clause).offset(skip).limit(limit)
+        # Newest first within one severity or status, and a fixed order across pages.
+        q = q.order_by(order_clause, Incident.created_at.desc(), Incident.id.desc()).offset(skip).limit(limit)
 
         result = await session.execute(q)
         return list(result.scalars().all()), total

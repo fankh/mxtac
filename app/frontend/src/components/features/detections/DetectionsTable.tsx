@@ -6,6 +6,7 @@ import { LiveBadge } from '@/components/shared/LiveBadge'
 import { ScoreCircle, SeverityPill } from '@/components/shared/SeverityBadge'
 import { StatusPill } from '@/components/shared/StatusPill'
 import { formatDateTime } from '@/lib/format'
+import { ruleLabel, techniqueLabel } from './utils'
 
 export type SortOrder = 'asc' | 'desc'
 
@@ -132,8 +133,8 @@ export function DetectionsTable({
                 <span className="truncate font-medium text-foreground">{d.name}</span>
                 {liveIds.has(d.id) && <LiveBadge />}
               </div>
-              {d.rule_name && (
-                <div className="truncate text-[11px] text-muted-foreground">{d.rule_name}</div>
+              {(ruleLabel(d) || d.process) && (
+                <div className="truncate text-[11px] text-muted-foreground">{ruleLabel(d) || d.process}</div>
               )}
             </TableCell>
             <TableCell>
@@ -141,7 +142,9 @@ export function DetectionsTable({
             </TableCell>
             <TableCell className="max-w-[200px]">
               <div className="font-mono text-foreground">{d.technique_id}</div>
-              <div className="truncate text-[11px] text-muted-foreground">{d.technique_name}</div>
+              {techniqueLabel(d) && (
+                <div className="truncate text-[11px] text-muted-foreground">{techniqueLabel(d)}</div>
+              )}
             </TableCell>
             <TableCell className="text-muted-foreground">{d.tactic}</TableCell>
             <TableCell className="max-w-[160px] truncate">{d.host}</TableCell>

@@ -147,6 +147,21 @@ describe('useKeyboardShortcuts', () => {
       document.removeEventListener('mxtac:focus-search', handler)
       expect(handler).toHaveBeenCalledOnce()
     })
+
+    it('focuses the search field of the page without typing the slash into it', () => {
+      renderHook(() => useKeyboardShortcuts(), { wrapper })
+      const main = document.createElement('main')
+      main.innerHTML = '<input aria-label="Tactic filter" /><input aria-label="Search detections" data-shortcut-search="" />'
+      document.body.appendChild(main)
+      const search = main.querySelector<HTMLInputElement>('input[data-shortcut-search]')
+
+      const event = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })
+      act(() => { document.dispatchEvent(event) })
+
+      expect(document.activeElement).toBe(search)
+      expect(event.defaultPrevented).toBe(true)
+      main.remove()
+    })
   })
 
   // ── ? shortcut ───────────────────────────────────────────────────────────────

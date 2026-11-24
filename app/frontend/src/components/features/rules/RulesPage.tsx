@@ -19,6 +19,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { useUIStore } from '@/stores/uiStore'
 import type { Rule } from '@/types/api'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { RoleNotice } from '@/components/shared/RoleNotice'
+import { canReadRules } from '@/lib/roles'
 import { RuleEditorDialog } from './RuleEditorDialog'
 import { RuleImportDialog } from './RuleImportDialog'
 import { RuleTestDialog } from './RuleTestDialog'
@@ -42,7 +44,27 @@ function logsourceText(rule: Rule): string {
   return [product, category, service].filter(Boolean).join(' / ') || '–'
 }
 
+const TITLE = 'Sigma rules'
+const DESCRIPTION = 'Detection rules evaluated against incoming events'
+
+/** Rule management. The backend limits reading rules to hunter, engineer and admin. */
 export function RulesPage() {
+  const role = useAuthStore((s) => s.user?.role)
+
+  if (role && !canReadRules(role)) {
+    return (
+      <Page title={TITLE} description={DESCRIPTION}>
+        <RoleNotice
+          title="Sigma rules need the hunter role"
+          description="Hunter accounts can view and test rules. Engineer and admin accounts can also change them."
+        />
+      </Page>
+    )
+  }
+  return <RulesWorkspace />
+}
+
+function RulesWorkspace() {
   const queryClient = useQueryClient()
   const addNotification = useUIStore((s) => s.addNotification)
   const role = useAuthStore((s) => s.user?.role)
@@ -137,8 +159,8 @@ export function RulesPage() {
 
   return (
     <Page
-      title="Sigma rules"
-      description="Detection rules evaluated against incoming events"
+      title={TITLE}
+      description={DESCRIPTION}
       actions={canWrite && (
         <>
           <Button
@@ -181,6 +203,7 @@ export function RulesPage() {
             className="h-8 pl-8 pr-8"
             placeholder="Search by title, ID or technique"
             aria-label="Search rules"
+            data-shortcut-search=""
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') setSearch('') }}

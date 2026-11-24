@@ -9,9 +9,12 @@ interface Props {
 
 const LEGEND = [0, 0.2, 0.4, 0.65, 0.9]
 
+/** Lowest tint of a cell with a detection: below this it cannot be told from an empty cell in the dark theme. */
+const MIN_TINT = 0.3
+
 /** Background tint for a cell; none when nothing is covered (the API's opacity has a 0.1 floor). */
 function cellStyle(opacity: number, covered = 1) {
-  return covered === 0 || opacity === 0 ? undefined : { backgroundColor: `hsl(var(--primary) / ${Math.max(0.15, opacity)})` }
+  return covered === 0 || opacity === 0 ? undefined : { backgroundColor: `hsl(var(--primary) / ${Math.max(MIN_TINT, opacity)})` }
 }
 
 export function AttackHeatmap({ rows, tacticLabels }: Props) {

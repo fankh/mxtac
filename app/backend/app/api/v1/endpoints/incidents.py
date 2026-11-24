@@ -14,7 +14,7 @@ from ....core.database import get_db
 from ....core.rbac import require_permission
 from ....engine.sigma_engine import tactic_name
 from ....repositories.detection_repo import DetectionRepo
-from ....repositories.incident_repo import IncidentRepo, SortField
+from ....repositories.incident_repo import IncidentRepo, SortField, time_to_detect_seconds
 from ....schemas.common import Pagination, PaginatedResponse
 from ....schemas.incident import Incident, IncidentCreate, IncidentDetail, IncidentMetrics, IncidentNote, IncidentUpdate, NoteCreate
 from ....services.audit import get_audit_logger
@@ -137,6 +137,7 @@ async def create_incident(
     technique_ids: list[str] = []
     tactic_ids: list[str] = []
     hosts: list[str] = []
+    event_times: list[datetime] = []
 
     for det_id in body.detection_ids:
         det = await DetectionRepo.get(db, det_id)
@@ -151,6 +152,8 @@ async def create_incident(
             tactic_ids.append(det.tactic_id)
         if det.host and det.host not in hosts:
             hosts.append(det.host)
+        if det.time is not None:
+            event_times.append(det.time if det.time.tzinfo else det.time.replace(tzinfo=timezone.utc))
 
     incident = await IncidentRepo.create(
         db,
@@ -163,6 +166,8 @@ async def create_incident(
         technique_ids=technique_ids,
         tactic_ids=tactic_ids,
         hosts=hosts,
+        # Time to detect: from the earliest linked event to this incident.
+        ttd_seconds=time_to_detect_seconds(min(event_times) if event_times else None),
     )
 
     await get_audit_logger().log(

@@ -140,16 +140,36 @@ describe('IncidentsPage', () => {
       renderPage()
       const open = (await screen.findByText('Open incidents')).parentElement as HTMLElement
       expect(open).toHaveTextContent('6')
-      expect(open).toHaveTextContent('15 in the last 30 days')
+      expect(open).toHaveTextContent('15 in the last 30 days: 2 critical · 5 high · 6 medium · 2 low')
 
       const week = screen.getByText('New this week').parentElement as HTMLElement
       expect(week).toHaveTextContent('4')
       expect(week).toHaveTextContent('11 this month')
 
-      expect(screen.getByText('Mean time to resolve').parentElement).toHaveTextContent('2.0h')
+      expect(screen.getByText('Mean time to resolve').parentElement).toHaveTextContent('2.0 h')
       const mttd = screen.getByText('Mean time to detect').parentElement as HTMLElement
-      expect(mttd).toHaveTextContent('5m')
-      expect(mttd).toHaveTextContent('2 critical · 5 high · 6 medium · 2 low')
+      expect(mttd).toHaveTextContent('5 min')
+      expect(mttd).toHaveTextContent('First event to incident, last 30 days')
+    })
+
+    it('explains a missing time to detect and leaves out severities without incidents', async () => {
+      metricsMock.mockResolvedValue({
+        ...METRICS, mttd_seconds: null, incidents_by_severity: { critical: 0, high: 13, medium: 0, low: 0 },
+      })
+      renderPage()
+      const mttd = (await screen.findByText('Mean time to detect')).parentElement as HTMLElement
+      expect(mttd).toHaveTextContent('—')
+      expect(mttd).toHaveTextContent('No incidents with linked detections in range')
+      const open = screen.getByText('Open incidents').parentElement as HTMLElement
+      expect(open).toHaveTextContent('15 in the last 30 days: 13 high')
+      expect(open).not.toHaveTextContent('0 critical')
+    })
+
+    it('shows the tactic of an incident by name', async () => {
+      renderPage()
+      const first = (await screen.findAllByRole('row'))[1]
+      expect(first).toHaveTextContent('Credential Access')
+      expect(first).not.toHaveTextContent('TA0006')
     })
 
     it('shows a dash when there is no resolve time yet', async () => {

@@ -32,8 +32,15 @@ describe('TacticsTable', () => {
     expect(execution).toHaveTextContent('+18%')
     expect(persistence).toHaveTextContent('600')
     expect(persistence).toHaveTextContent('-4%')
-    expect(discovery).toHaveTextContent('0%')
-    expect(discovery).not.toHaveTextContent('+0%')
+    expect(discovery).toHaveTextContent('Discovery0')
+  })
+
+  it('shows no trend when there is nothing to compare with', () => {
+    // The API sends 0 when the previous period had no detections of the tactic.
+    render(<TacticsTable data={[{ tactic: 'Execution', count: 5, trend_pct: 0 }]} rangeLabel="last 7 days" />)
+    const row = screen.getByRole('listitem')
+    expect(row).toHaveTextContent('Execution5')
+    expect(row).not.toHaveTextContent('%')
   })
 
   it('shows an empty state when there are no tactics', () => {

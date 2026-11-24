@@ -81,7 +81,8 @@ async def list_users(
     _: dict = Depends(require_permission("users:read")),
 ):
     from ....repositories.user_repo import UserRepo
-    users = await UserRepo.list(db)
+    # Deactivated accounts are listed too: the Users tab reactivates them from this list.
+    users = await UserRepo.list(db, include_inactive=True)
     return [_user_to_response(u) for u in users]
 
 
