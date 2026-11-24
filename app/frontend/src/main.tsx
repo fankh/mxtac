@@ -11,8 +11,10 @@ try {
   const savedTheme = stored?.state?.theme
   const theme = savedTheme || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
   document.documentElement.setAttribute('data-theme', theme)
+  document.documentElement.classList.toggle('dark', theme !== 'light')
 } catch {
   document.documentElement.setAttribute('data-theme', 'dark')
+  document.documentElement.classList.add('dark')
 }
 
 const queryClient = new QueryClient({

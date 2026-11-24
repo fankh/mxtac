@@ -31,6 +31,7 @@ let _notifId = 0
 
 function applyTheme(theme: Theme) {
   document.documentElement.setAttribute('data-theme', theme)
+  document.documentElement.classList.toggle('dark', theme !== 'light')
 }
 
 function getSystemTheme(): 'light' | 'dark' {

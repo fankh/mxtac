@@ -1,9 +1,31 @@
 /** @type {import('tailwindcss').Config} */
+import animate from 'tailwindcss-animate'
+
 export default {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
+      },
       colors: {
+        // Design tokens (same system as the KYRA MDR console)
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
+        popover: { DEFAULT: 'hsl(var(--popover))', foreground: 'hsl(var(--popover-foreground))' },
+        primary: { DEFAULT: 'hsl(var(--primary))', foreground: 'hsl(var(--primary-foreground))' },
+        secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },
+        muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
+        accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
+        destructive: { DEFAULT: 'hsl(var(--destructive))', foreground: 'hsl(var(--destructive-foreground))' },
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        // Legacy names: removed once every page uses the tokens above
         // Primary
         blue: {
           DEFAULT: 'var(--color-primary)',
@@ -25,7 +47,6 @@ export default {
         surface: 'var(--color-surface)',
         page: 'var(--color-page)',
         section: 'var(--color-section)',
-        border: 'var(--color-border)',
         'border-strong': 'var(--color-border-strong)',
         'text-primary': 'var(--color-text-primary)',
         'text-secondary': 'var(--color-text-secondary)',
@@ -35,7 +56,7 @@ export default {
         overlay: 'var(--color-overlay)',
       },
       fontFamily: {
-        sans: ['"Segoe UI"', 'Inter', '-apple-system', 'sans-serif'],
+        sans: ['Inter', 'system-ui', '"Segoe UI"', 'sans-serif'],
         mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
       },
       boxShadow: {
@@ -44,5 +65,5 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [animate],
 }
