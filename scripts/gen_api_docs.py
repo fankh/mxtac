@@ -36,11 +36,12 @@ def deps(dependant, acc):
         deps(d, acc)
 
 SPECIAL = {
- "/api/v1/auth/login": "Public. Email and password in the body",
+ "/api/v1/auth/login": "Public. Email and password in the body. Answers with a session (`access_token`, `refresh_token`, `email`, `role`), or with `mfa_required` and an MFA token, or with `password_change_required` and a password-change token",
  "/api/v1/auth/mfa/verify": "MFA token from the login response",
  "/api/v1/auth/refresh": "Refresh token in the body",
  "/api/v1/auth/logout": "Bearer access token",
  "/api/v1/auth/change-password": "Password-change token from the login response",
+ "/api/v1/auth/password": "Any signed-in user. Current and new password in the body",
  "/api/v1/ingest": "`X-MxTac-Source` and `X-MxTac-Token` headers of a `generic` connector",
  "/api/v1/ingest/test": "`X-MxTac-Source` and `X-MxTac-Token` headers of a `generic` connector",
  "/health": "Public", "/ready": "Public", "/metrics": "Public",
@@ -90,10 +91,11 @@ w()
 w("## Conventions")
 w()
 w("- All REST routes except the operations routes are under `/api/v1`.")
-w("- Send the access token as `Authorization: Bearer <token>`. `POST /api/v1/auth/login` returns it.")
+w("- Send the access token as `Authorization: Bearer <token>`. `POST /api/v1/auth/login` returns it, together with the `email` and `role` of the account. When the account must set a new password first, or has MFA, the login answer carries a one-time token for `POST /api/v1/auth/change-password` or `POST /api/v1/auth/mfa/verify` instead.")
+w("- The role and the active flag of the account are read from the database on every request. A role change or a deactivation applies to the next request, also for tokens that were issued earlier.")
 w("- The **Auth** column shows the permission a route requires. The permission table below maps permissions to roles.")
 w("- A request without a valid token gets `401`. A role without the permission gets `403`.")
-w("- Rate limits apply per client IP and minute: 10 requests for login and MFA routes, 5 for export routes, 60 for other `POST`, `PUT`, `PATCH` and `DELETE` requests, and 300 for `GET` requests. A limited request gets `429` with a `Retry-After` header. `/health`, `/ready` and `/metrics` are not limited.")
+w("- Rate limits apply per client IP and minute: 10 requests for login and MFA routes, 5 for export routes, 60 for other `POST`, `PUT`, `PATCH` and `DELETE` requests, and `RATE_LIMIT_PER_MINUTE` (default 300) for `GET` and `HEAD` requests. A limited request gets `429` with a `Retry-After` header. `/health`, `/ready` and `/metrics` are not limited.")
 w()
 w("## Permissions")
 w()
@@ -118,7 +120,7 @@ w()
 w("| Path | Auth | Description |")
 w("|---|---|---|")
 for p in ws:
-    w("| `%s` | None. The server does not validate the `token` query parameter the UI sends | Pushes each new detection as `{\"type\": \"alert\", \"data\": {...}}` and a `ping` message every 30 seconds |" % p)
+    w("| `%s?token=<access token>` | A valid access token of an account with `detections:read`. Otherwise the server refuses the handshake with close code 1008 and never accepts the connection; a browser sees a failed connection (HTTP 403) | Sends `{\"type\": \"connected\"}` first, then each new detection as `{\"type\": \"alert\", \"data\": {...}}`, and a `ping` message every 30 seconds |" % p)
 w()
 w("### Interactive documentation")
 w()
@@ -127,7 +129,7 @@ w("|---|---|")
 w("| `/docs` | Swagger UI |")
 w("| `/redoc` | ReDoc |")
 w("| `/openapi.json` | OpenAPI schema |")
-open(r"C:\repos\mxtac\docs\api.md", "w", encoding="utf-8", newline="\n").write(out.getvalue())
+(REPO_ROOT / "docs" / "api.md").write_text(out.getvalue(), encoding="utf-8", newline="\n")
 n = sum(len(v) for v in rows.values())
 unk = [r for v in rows.values() for r in v if r[2] == "UNKNOWN"]
 print("routes", n, "ws", ws, "unknown", unk)

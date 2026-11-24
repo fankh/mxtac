@@ -11,45 +11,80 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Lean core
 
-The repository was reduced to a small detection core: ingestion from Wazuh, Zeek and Suricata, OCSF normalization, Sigma rule evaluation, detections, incidents, event search and ATT&CK coverage. Entries below this section describe earlier versions and mention features that no longer exist.
+The repository was reduced to a small detection core: ingestion from Wazuh, Zeek, Suricata, syslog and a JSON webhook, OCSF normalization, Sigma rule evaluation, detections, incidents, event search and ATT&CK coverage. Entries below this section describe earlier versions and mention features that no longer exist.
+
+Read the upgrade notes in `INSTALL.md` before you upgrade an existing installation.
 
 #### Added
 
+- First login without a built-in password. On an empty database the backend creates one account, `admin@mxtac.local`. Its password is `INITIAL_ADMIN_PASSWORD` when set, otherwise a random one that is written once to the startup log. The account must set a new password at the first sign-in, and the login page has a step for it.
+- `SEED_DEMO_DATA` setting. `true` also creates demo accounts for the analyst, hunter and engineer roles and invented sample data. The default is `false`.
+- `POST /api/v1/auth/password`: a signed-in user changes the own password. The UI has a form under **Settings**, **Profile and security**.
+- Login and refresh responses contain the `email` and `role` of the account.
+- Normalizers for syslog and for generic webhook events. Events from all five source types are stored, searchable and evaluated by Sigma rules.
+- 20 bundled Sigma rules in `app/backend/sigma_rules/`, most of them for Linux syslog events. They are imported into the `rules` table at startup with the source `bundled`, are listed on the Sigma Rules page and count towards coverage.
+- Sigma engine: nested parentheses, `1 of`, `all of` and `<n> of` with `them` or a name pattern, wildcards `*` and `?`, list-of-maps selections, tactic tags by name (`attack.credential-access`), and rule selection by `product`, `category` and `service`.
 - New web UI built on a design-token system: CSS variables in `src/index.css`, Tailwind color mapping, base components in `src/components/ui/`.
 - Light and dark themes. The first visit follows the operating system setting.
 - Rebuilt pages: Overview, Detections, Incidents, Hunt, ATT&CK Coverage, Sigma Rules, Sources, Settings, Login.
 - Favicon and page title for the frontend.
 - `README.md` with a quick start, and a documentation set under `docs/`: architecture, API reference, Sigma engine, ATT&CK coverage, integration guide, UI, security, deployment, development.
+- `scripts/gen_rule_table.py`, which generates the table of bundled rules in `docs/sigma-engine.md`.
 - `.gitattributes` that keeps shell scripts in LF line endings.
 - `MXTAC_HOST` variable for `app/setup.sh`.
+- `app/frontend/nginx.conf` for the production frontend image: fallback to `index.html` for client-side routes, and a proxy for `/api` including the WebSocket upgrade.
+- `VITE_PROXY_TARGET` for the Vite dev server (default `http://localhost:15000`), so that the frontend can run on the host.
+- `HTTP_PORT` and `HTTPS_PORT` for `app/docker-compose.prod.yml`.
 
 #### Changed
 
+- The role and the active flag of an account are read from the database on every request. A role change or a deactivation takes effect at once, also for tokens that were issued earlier.
+- The alert WebSocket `/api/v1/ws/alerts` requires a valid access token in the `token` query parameter. Other connections are refused.
+- The web UI stops reconnecting the alert stream when the server refuses the token, and shows the stream as offline.
+- `POST /api/v1/users` always creates the account with a forced password change at the first sign-in.
+- The Sigma engine loads rules from the `rules` table only. Unsupported syntax (aggregations, `timeframe`, correlation rules, unknown modifiers) is rejected with an error when a rule is created, imported or tested, instead of being stored and never matching.
+- API responses contain real data only. A new installation shows zeros and empty states. The coverage trend no longer contains generated history.
+- `RATE_LIMIT_PER_MINUTE` sets the limit for read requests.
+- `OPENSEARCH_USERNAME` and `OPENSEARCH_PASSWORD` are used for the OpenSearch connection.
+- `QUEUE_BACKEND` accepts `memory` and `redis`.
 - `app/docker-compose.yml` applies database migrations before the backend starts.
+- `app/docker-compose.prod.yml` and `app/nginx/nginx.conf` now form a working stack: OpenSearch service, migrations at backend start, the frontend served from its own container, a WebSocket location, and the certificate file names `server.crt` and `server.key`.
+- `app/setup.sh` runs the migrations when the backend starts, prints how to sign in for the first time, and no longer contains a fixed IP address. Its Nginx configuration sets the client address for the backend rate limits.
+- `app/update.sh` no longer overwrites the generated Compose file and Nginx configuration, and runs the migrations before it starts the new backend.
+- The Nginx configurations do not write the alert WebSocket request, which carries the access token, to the access log.
 - Backend container health checks use Python instead of `curl`, which is not in the backend image.
-- `app/setup.sh` no longer contains a fixed IP address, and restarts the backend after the migrations.
 - The backend image now includes the migration files (`alembic/versions/` was excluded by `.dockerignore`).
 - `app/deploy/systemd/mxtac.env.example` gives `CORS_ORIGINS` as a JSON array.
 - `CONTRIBUTING.md` replaces the governance and contributing guides. The numbered design documents at the repository root were replaced by the files under `docs/`.
 - `INSTALL.md`, `ENV-REFERENCE.md`, `SECURITY.md` and `app/README.md` describe the current code.
 - CI no longer installs `libxmlsec1`.
 
+#### Fixed
+
+- Migration `0008` failed on PostgreSQL. `alembic upgrade head` now works on an empty PostgreSQL database.
+- The Vite dev server forwards the alert WebSocket.
+
 #### Removed
 
+- The four default accounts with a shared, published password.
+- `POST /api/v1/users/invite`, the `SMTP_*` settings and the `aiosmtplib` dependency.
+- The Kafka queue backend, the `KAFKA_*` settings and the Redpanda container in the Compose files and `app/setup.sh`. A `.env` file that still contains `KAFKA_*` or `SMTP_*` settings stops the backend at startup.
+- The scheduled detection engine service. Detection happens in the streaming pipeline.
+- Placeholder data in API responses and the generated coverage history.
 - SSO (OIDC and SAML).
 - Threat intelligence and IOC management, including the OpenCTI connector.
 - Compliance views, reports and scheduled reports.
 - Asset inventory.
 - Notification channels and alert outputs (email, syslog, webhook, file).
 - NDR views and the endpoint and network agents API.
-- The Rust agents `mxguard` and `mxwatch` (`agents/`).
+- The Rust endpoint and network agents and their directory.
 - Admin console, permission sets and API keys.
 - Prowler and Velociraptor connectors.
 - Hunt suggestions, suppression rules and alert auto-close.
 - DuckDB event store.
 - The `matrix` UI theme.
 - The unused `VITE_API_BASE_URL` build variable and `app/frontend/.env.example`. The frontend calls the API with relative URLs.
-- Planning documents, task summaries, UI mock-ups and third-party dashboard examples from the repository root.
+- Planning documents, task summaries, UI design drafts and third-party dashboard examples from the repository root.
 
 #### Known limitations
 

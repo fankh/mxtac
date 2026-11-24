@@ -1,18 +1,26 @@
 # Environment variable reference
 
-The backend reads its settings from environment variables and from a `.env` file in the working directory (`app/backend/.env`). Variable names are not case-sensitive. The source of truth is `app/backend/app/core/config.py`.
+The backend reads its settings from environment variables and from a `.env` file in the working directory (`app/backend/.env`). Variable names are not case-sensitive. The source of truth is `app/backend/app/core/config.py`. This file lists every setting defined there.
 
-`app/backend/.env.example` is a template. The frontend has no environment variables.
+`app/backend/.env.example` is a template.
+
+Unknown settings are handled differently depending on where they come from:
+
+| Source | Unknown setting |
+|--------|-----------------|
+| `.env` file read by the backend | The backend does not start (`Extra inputs are not permitted`). This applies to settings that were removed, such as `KAFKA_BOOTSTRAP_SERVERS` and `SMTP_HOST` |
+| Environment variable | Ignored |
 
 ## Application
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DEBUG` | `true` | Development mode. Set to `false` for any shared deployment. With `false`, the backend adds the HSTS header and refuses to start with the default `SECRET_KEY` |
+| `DEBUG` | `true` | Development mode. Set to `false` for any shared deployment. With `false`, the backend adds the HSTS header, writes its log in a JSON-style line format and refuses to start with the default `SECRET_KEY` |
 | `APP_NAME` | `MxTac API` | Title shown in the API documentation |
 | `VERSION` | `2.0.0` | Version reported by `/health` |
 | `API_PREFIX` | `/api/v1` | Path prefix of the REST API. The frontend expects the default |
-| `CORS_ORIGINS` | `["http://localhost:5173","http://localhost:3000"]` | JSON array of origins that may call the API from a browser. Must be valid JSON; a comma-separated list is rejected. The first entry is also used as the base URL in invite emails |
+| `CORS_ORIGINS` | `["http://localhost:5173","http://localhost:3000"]` | JSON array of origins that may call the API from a browser. Must be valid JSON; a comma-separated list is rejected |
+| `RATE_LIMIT_PER_MINUTE` | `300` | Read requests (`GET`, `HEAD`) allowed per client IP and minute. Login and MFA routes (10), export routes (5) and other write requests (60) have fixed limits in `app/core/rate_limit.py` |
 
 ## Authentication
 
@@ -24,6 +32,15 @@ The backend reads its settings from environment variables and from a `.env` file
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime |
 | `ACCOUNT_INACTIVITY_DAYS` | `90` | Deactivate an account at login when its last login is older than this. `0` disables the check |
 | `PASSWORD_EXPIRY_DAYS` | `90` | Require a new password at login when the password is older than this. `0` disables expiry |
+
+## First start
+
+These two settings are only read while the `users` table is empty. See [First login](README.md#first-login).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INITIAL_ADMIN_PASSWORD` | not set | Password of the first account, `admin@mxtac.local`. Must meet the password policy (8 to 128 characters, three of: upper case, lower case, digit, symbol, no character more than three times in a row); a weaker value stops the startup. When it is not set or empty, a random password is generated and written once to the startup log in a `WARNING` line that starts with `INITIAL ADMIN PASSWORD (generated, shown only once)`. A value set here is never logged. Either way the account must set a new password at the first sign-in |
+| `SEED_DEMO_DATA` | `false` | `true` also creates the accounts `analyst@mxtac.local`, `hunter@mxtac.local` and `engineer@mxtac.local` (same first password, also changed at first sign-in) and invented sample detections, incidents, connectors and rules. For demonstrations only. Must be `true` or `false`; an empty value stops the startup |
 
 ## Database
 
@@ -37,11 +54,8 @@ The backend reads its settings from environment variables and from a `.env` file
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VALKEY_URL` | `redis://localhost:6379/0` | Valkey (or Redis) URL. Used for rate limits, login lockout, token revocation, alert deduplication, the GeoIP cache and WebSocket fan-out |
-| `QUEUE_BACKEND` | `memory` | Pipeline queue: `memory`, `redis` (Valkey Streams) or `kafka` |
-| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka brokers, used when `QUEUE_BACKEND=kafka` |
-
-`QUEUE_BACKEND=kafka` needs the `aiokafka` Python package, which is not in `requirements.txt` and not in the Docker image. Install it yourself (`pip install aiokafka==0.12.0`).
+| `VALKEY_URL` | `redis://localhost:6379/0` | Valkey (or Redis) URL. Used for rate limits, login lockout, token revocation, alert deduplication, the GeoIP cache, WebSocket fan-out and rule-reload notifications |
+| `QUEUE_BACKEND` | `memory` | Pipeline queue: `memory` (inside the backend process) or `redis` (Valkey Streams). Any other value stops the startup |
 
 ## OpenSearch
 
@@ -49,6 +63,8 @@ The backend reads its settings from environment variables and from a `.env` file
 |----------|---------|-------------|
 | `OPENSEARCH_HOST` | `localhost` | Host name |
 | `OPENSEARCH_PORT` | `9200` | Port |
+| `OPENSEARCH_USERNAME` | empty | User name for HTTP basic authentication. When empty, the backend connects without credentials |
+| `OPENSEARCH_PASSWORD` | empty | Password for `OPENSEARCH_USERNAME`. An empty password with a host other than `localhost` or `127.0.0.1` causes a startup warning |
 | `OPENSEARCH_USE_SSL` | `false` | Connect with HTTPS. Certificates are not verified |
 | `OPENSEARCH_EVENTS_RETENTION_DAYS` | `90` | Delete event indices after this many days |
 | `OPENSEARCH_ALERTS_RETENTION_DAYS` | `365` | Delete alert indices after this many days |
@@ -66,7 +82,7 @@ The backend reads its settings from environment variables and from a `.env` file
 | `SYSLOG_PROTOCOL` | `udp` | `udp`, `tcp` or `both` |
 | `SYSLOG_MAX_MESSAGE_SIZE` | `65535` | Maximum message size in bytes |
 
-Received messages are not processed further yet. See [docs/integration-guide.md](docs/integration-guide.md).
+Received messages are normalized, stored and evaluated by Sigma rules. See [docs/integration-guide.md](docs/integration-guide.md#syslog).
 
 ## Detection pipeline
 
@@ -78,18 +94,6 @@ Received messages are not processed further yet. See [docs/integration-guide.md]
 | `GEOIP_DB_PATH` | not set | Path to a MaxMind GeoLite2-City or GeoIP2-City `.mmdb` file. Without it, GeoIP enrichment is off |
 | `GEOIP_CACHE_TTL` | `86400` | Seconds a GeoIP result is cached in Valkey |
 
-## Email
-
-Used only by `POST /api/v1/users/invite`.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SMTP_HOST` | `localhost` | SMTP server |
-| `SMTP_PORT` | `587` | Port. `465` uses implicit TLS, other ports use STARTTLS |
-| `SMTP_USERNAME` | empty | Login, optional |
-| `SMTP_PASSWORD` | empty | Password, optional |
-| `SMTP_FROM_ADDRESS` | `mxtac-alerts@localhost` | Sender address |
-
 ## Backup check
 
 | Variable | Default | Description |
@@ -97,21 +101,21 @@ Used only by `POST /api/v1/users/invite`.
 | `BACKUP_DIR` | `./backups` | Directory in which `/ready` looks for `mxtac_backup_*.sql.gz` files |
 | `BACKUP_STALE_HOURS` | `48` | `/ready` reports a warning when the newest backup is older than this. The warning does not change the ready status |
 
-## Other
+## Read directly from the environment
+
+This variable is not a setting in `config.py` and cannot be set in `.env`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MXTAC_STATE_DIR` | `/var/lib/mxtac` | Directory for the read positions of Zeek and Suricata connectors. Read directly from the environment, not from `.env` |
+| `MXTAC_STATE_DIR` | `/var/lib/mxtac` | Directory for the read positions of Zeek and Suricata connectors |
 
-## Settings without effect
+## Frontend
 
-These settings exist in `config.py` but the code does not use them.
+The built frontend has no environment variables. It calls the API with relative URLs on its own origin.
 
-| Variable | Note |
-|----------|------|
-| `RATE_LIMIT_PER_MINUTE` | The rate limits are fixed in `app/core/rate_limit.py` |
-| `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD` | The OpenSearch client connects without credentials. An empty password only triggers a startup warning when the host is not local |
-| `KAFKA_CONSUMER_GROUP` | Not read by the Kafka queue |
+| Variable | Used by | Default | Description |
+|----------|---------|---------|-------------|
+| `VITE_PROXY_TARGET` | `app/frontend/vite.config.ts` (dev server only) | `http://localhost:15000` | Backend address the Vite dev server forwards `/api` to, including the alert WebSocket. `app/docker-compose.yml` sets it to `http://backend:8080` |
 
 ## Variables used by deployment files
 
@@ -119,8 +123,11 @@ These are not backend settings. They are read by Compose files, scripts or the c
 
 | Variable | Used by | Description |
 |----------|---------|-------------|
-| `POSTGRES_PASSWORD` | `app/docker-compose.prod.yml`, `app/setup.sh` | Database password |
+| `INITIAL_ADMIN_PASSWORD`, `SEED_DEMO_DATA` | `app/docker-compose.yml`, `app/docker-compose.prod.yml`, both stack files, `app/setup.sh` | Passed from the host environment (or the `.env` file next to the Compose file) to the backend. Optional |
+| `SECRET_KEY` | `app/docker-compose.prod.yml` | Required. Passed to the backend |
+| `POSTGRES_PASSWORD` | `app/docker-compose.prod.yml`, `app/setup.sh` | Database password. It is placed in `DATABASE_URL`, so use letters and digits |
 | `DOMAIN` | `app/docker-compose.prod.yml`, `app/docker-stack.yml` | Public host name, used for `CORS_ORIGINS` |
+| `HTTP_PORT`, `HTTPS_PORT` | `app/docker-compose.prod.yml` | Host ports of Nginx. Default `80` and `443` |
 | `BACKEND_IMAGE`, `FRONTEND_IMAGE` | `app/docker-compose.prod.yml` | Image names, default `mxtac-backend:latest` and `mxtac-frontend:latest` |
 | `IMAGE_PREFIX`, `VERSION` | `app/docker-stack.yml` | Image prefix and tag |
 | `SECRET_KEY_FILE` | `app/backend/docker-entrypoint.sh` | File that contains the secret key. Default `/run/secrets/mxtac_secret_key` |

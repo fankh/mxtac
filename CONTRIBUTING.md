@@ -4,15 +4,16 @@ This file describes how the project is organised and what a change needs before 
 
 ## Scope of the project
 
-MxTac is kept small on purpose. The core covers event ingestion from Wazuh, Zeek and Suricata, OCSF normalization, Sigma rule evaluation, detections, incidents, event search and ATT&CK coverage.
+MxTac is kept small on purpose. The core covers event ingestion from Wazuh, Zeek, Suricata, syslog and a JSON webhook, OCSF normalization, Sigma rule evaluation, detections, incidents, event search and ATT&CK coverage.
 
 Before you start a large feature, open an issue and describe it. Features outside the core (for example SSO, threat intelligence, compliance reporting, response automation) were removed from this repository deliberately and are unlikely to be merged back.
 
 Good first contributions:
 
-- A normalizer for syslog or generic webhook events (see "Current limitations" in [README.md](README.md)).
+- Fixes for the items under "Current limitations" in [README.md](README.md), for example the OpenSearch path of the event search.
+- More message families in the syslog normalizer (`app/backend/app/services/normalizers/syslog.py`).
 - Sigma engine improvements, with tests.
-- Additional Sigma rules in `app/backend/sigma_rules/`.
+- Additional Sigma rules in `app/backend/sigma_rules/`. A bundled rule needs an `id` and must load in the engine; a file without an `id` or with unsupported syntax is skipped at startup with a warning. Regenerate the rule table with `python scripts/gen_rule_table.py --write`.
 - Documentation fixes. Every statement in the docs must match the code.
 
 ## Repository layout
@@ -27,12 +28,12 @@ Good first contributions:
 | `app/backend/app/engine/` | Sigma engine and field mapper |
 | `app/backend/app/connectors/` | Source connectors |
 | `app/backend/alembic/` | Database migrations |
-| `app/backend/sigma_rules/` | Rules loaded at startup |
+| `app/backend/sigma_rules/` | Bundled Sigma rules, imported into the database at startup |
 | `app/backend/tests/` | Backend tests (pytest) |
 | `app/frontend/` | React frontend (TypeScript, Vite, Tailwind) |
 | `app/deploy/`, `app/nginx/` | Deployment files |
 | `docs/` | Documentation |
-| `scripts/` | Backup, restore, deploy and audit scripts |
+| `scripts/` | Backup, restore, deploy and audit scripts, and the generators for `docs/api.md` and the rule table |
 | `brand/` | Logo and favicon files |
 
 ## Workflow
@@ -48,7 +49,7 @@ Good first contributions:
 
 2. Make one focused change per pull request. Do not mix unrelated refactoring with feature work.
 3. Run the checks listed under [Checks](#checks).
-4. Update the documentation when behaviour, API routes or settings change. `docs/api.md` must match the routes the backend registers (regenerate it with `python scripts/gen_api_docs.py`), and `ENV-REFERENCE.md` must match `app/backend/app/core/config.py`.
+4. Update the documentation when behaviour, API routes or settings change. `docs/api.md` must match the routes the backend registers (regenerate it with `python scripts/gen_api_docs.py`), `ENV-REFERENCE.md` must match `app/backend/app/core/config.py`, and the rule table in `docs/sigma-engine.md` must match `app/backend/sigma_rules/` (`python scripts/gen_rule_table.py --write`).
 5. Add an entry to `CHANGELOG.md` under `[Unreleased]`.
 6. Open a pull request. Describe what changed, why, and how you tested it. Link the related issue.
 
@@ -94,6 +95,8 @@ npm run test:coverage
 npm run build
 ```
 
+After a change to a Compose file, run `docker compose -f <file> config -q`.
+
 ## Code standards
 
 ### Backend
@@ -104,7 +107,9 @@ npm run build
 - `ruff` enforces the rule sets `E`, `F`, `I`, `UP`, `B` and `SIM` with a line length of 100.
 - Protect every new endpoint with `require_permission(...)` from `app/core/rbac.py`, or document why it is public.
 - Validate external input with Pydantic schemas. Escape user input in `LIKE` filters with `escape_like()` from `app/core/validators.py`.
-- Never put secrets, tokens or passwords in code, tests or logs. Read them from settings.
+- Never put secrets, tokens or passwords in code, tests or logs. Read them from settings. The one exception is the generated first password, which the seeder writes to the log once.
+- Do not return invented data from an endpoint. When there is nothing to show, return zeros or an empty list, and let the UI show an empty state.
+- A setting that is removed from `Settings` must also be removed from `app/backend/.env.example` and from the deployment files, because a `.env` file with an unknown setting stops the backend.
 
 ### Frontend
 

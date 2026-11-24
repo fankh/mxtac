@@ -8,7 +8,9 @@ A technique is covered when at least one **enabled** rule in the `rules` table h
 
 Coverage is a statement about rules, not about data. It does not check that a source delivers the events a rule needs, and it does not check that the rule matches real attacks.
 
-Rules loaded from files in `app/backend/sigma_rules/` are not in the `rules` table and are not counted. See [sigma-engine.md](sigma-engine.md).
+The bundled rules from `app/backend/sigma_rules/` are imported into the `rules` table at startup and count like any other rule. A new installation with the 20 bundled rules enabled reports 21 covered technique IDs, which is 20.0 %. Disabling or deleting rules lowers the number. See [sigma-engine.md](sigma-engine.md).
+
+All numbers come from the `rules` and `detections` tables. Nothing is estimated or filled in.
 
 ## Coverage percentage
 
@@ -48,7 +50,7 @@ All routes require the `detections:read` permission, except setting the target, 
 | `GET /api/v1/coverage` | `coverage_pct`, `covered_count`, `total_count` |
 | `GET /api/v1/coverage/gaps` | `gap_count` (105 minus `covered_count`) and `uncovered_techniques`: technique IDs that appear on some rule but on no enabled rule. These are techniques you could cover by enabling a rule you already have |
 | `GET /api/v1/coverage/by-datasource` | Covered techniques and rule counts per source type, derived from each rule's `logsource` (table below) |
-| `GET /api/v1/coverage/trend?days=30` | One point per day. The route stores today's value each time it is called, so days on which nobody opened the page have no point. Nothing is stored while coverage is zero |
+| `GET /api/v1/coverage/trend?days=30` | One point per day. The route stores today's value each time it is called, so days on which nobody opened the page have no point. Nothing is stored while coverage is zero. There is no history from before the first call |
 | `GET /api/v1/coverage/navigator` | An ATT&CK Navigator layer. The score of a technique is the number of enabled rules tagged with it |
 | `GET /api/v1/coverage/target` | The configured target and whether current coverage is below it. Defaults to 80 %, disabled |
 | `PUT /api/v1/coverage/target` | Set the target percentage, label and whether it is enabled |
@@ -63,7 +65,12 @@ All routes require the `detections:read` permission, except setting the target, 
 
 Rules that match none of these are not assigned to a source.
 
-This classification is used for the coverage breakdown only. Which events a rule is actually evaluated against is described in [sigma-engine.md](sigma-engine.md).
+This classification is used for the coverage breakdown only, and it is coarser than the engine:
+
+- There is no entry for syslog or webhook sources. Rules with the product `linux` or `windows` are listed under Wazuh, although the engine also evaluates them for syslog and webhook events.
+- A rule with only `category: dns_query`, like the two bundled DNS rules, is not assigned to a source. The Zeek list contains `dns`, not `dns_query`.
+
+Which events a rule is actually evaluated against is described in [sigma-engine.md](sigma-engine.md).
 
 ## Overview page
 
@@ -71,3 +78,5 @@ This classification is used for the coverage breakdown only. Which events a rule
 |---------|--------|
 | Coverage KPI card | Same calculation as `GET /api/v1/coverage`. The change value compares with a stored trend snapshot |
 | Heatmap (`GET /api/v1/overview/coverage/heatmap`) | Built from detections, not rules. A grid of four technique families (`T1059`, `T1003`, `T1021`, `T1078`) by the nine tactics. A cell counts the distinct technique IDs of that family that were detected under that tactic |
+
+Limitation of the heatmap: it reads the `tactic` column of a detection as a tactic name, for example `Credential Access`. Detections created by the pipeline store the tactic ID, for example `TA0006`, and are skipped. With pipeline detections only, every cell stays at zero.

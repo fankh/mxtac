@@ -18,16 +18,23 @@ docker compose up -d --build
 | Service | Host port | Notes |
 |---------|-----------|-------|
 | backend | 15000 | Source is mounted from `app/backend`. Uvicorn runs with `--reload` |
-| frontend | 15001 | Source is mounted from `app/frontend`. Vite dev server with hot reload |
+| frontend | 15001 | Source is mounted from `app/frontend`. Vite dev server with hot reload. Forwards `/api` to `http://backend:8080` (`VITE_PROXY_TARGET`) |
 | postgres | 15002 | User `mxtac`, password `mxtac`, database `mxtac` |
 | redis (Valkey) | 15003 | |
 | opensearch | 15004, 15005 | Security plugin disabled |
 | opensearch-dashboards | 15006 | Profile `dashboards` |
-| redpanda | 15007, 15008 | Profile `kafka` |
 | prometheus | 15009 | Profile `monitoring` |
 | grafana | 15010 | Profile `monitoring` |
 
-The backend container runs `alembic upgrade head` before it starts. To run a migration command by hand:
+The backend container runs `alembic upgrade head` before it starts. On an empty database it then creates the account `admin@mxtac.local` and imports the bundled Sigma rules. Read the generated password with:
+
+```bash
+docker compose logs backend | grep "INITIAL ADMIN PASSWORD"
+```
+
+For a fixed password in development, start the stack with `INITIAL_ADMIN_PASSWORD='<password>' docker compose up -d`. For sample content, add `SEED_DEMO_DATA=true`. Both only apply while the `users` table is empty; `docker compose down -v` gives you an empty database again. See [First login](../README.md#first-login).
+
+To run a migration command by hand:
 
 ```bash
 docker compose exec backend alembic current
@@ -59,7 +66,7 @@ The backend needs a database. Two ways:
 
 | Way | Command | Notes |
 |-----|---------|-------|
-| SQLite | `SQLITE_MODE=true uvicorn app.main:app --reload --port 8080` | Creates `./mxtac.db` and applies migrations at startup. Valkey and OpenSearch are optional in this mode; without them, lockout, token revocation and OpenSearch-backed search are not active |
+| SQLite | `SQLITE_MODE=true uvicorn app.main:app --reload --port 8080` | Creates `./mxtac.db` and applies migrations at startup. Valkey and OpenSearch are optional in this mode; without them, lockout and token revocation are not active and event search uses the database |
 | PostgreSQL from Compose | `docker compose -f ../docker-compose.yml up -d postgres redis opensearch`, then set `DATABASE_URL`, `VALKEY_URL`, `OPENSEARCH_PORT` to the published ports and run `alembic upgrade head` and `uvicorn app.main:app --reload --port 8080` | See the example below |
 
 Example `.env` in `app/backend/` for the Compose services:
@@ -71,7 +78,9 @@ OPENSEARCH_HOST=localhost
 OPENSEARCH_PORT=15004
 ```
 
-Settings are documented in [ENV-REFERENCE.md](../ENV-REFERENCE.md).
+Settings are documented in [ENV-REFERENCE.md](../ENV-REFERENCE.md). The backend does not start when `.env` contains a setting that does not exist in `app/core/config.py`.
+
+The generated password of `admin@mxtac.local` is written to the output of `uvicorn` at the first start.
 
 ## Option 3: frontend on the host
 
@@ -81,12 +90,19 @@ npm ci
 npm run dev
 ```
 
-The frontend calls the API with relative URLs (`/api/v1/...`). In development, the Vite server proxies `/api` to `http://backend:8080` (`vite.config.ts`). That host name resolves inside the Compose network only. To run Vite on the host against a backend on the host:
+The frontend calls the API with relative URLs (`/api/v1/...`). In development, the Vite server forwards `/api` to a backend, including the alert WebSocket at `/api/v1/ws/alerts` (`vite.config.ts`). The target is the environment variable `VITE_PROXY_TARGET`.
 
-1. Run the backend on port 8080.
-2. Make the name `backend` resolve to your machine, for example with the line `127.0.0.1 backend` in the hosts file.
+| Backend | `VITE_PROXY_TARGET` |
+|---------|---------------------|
+| Compose backend, published on port 15000 | Not needed. The default is `http://localhost:15000` |
+| Backend on the host on port 8080 (Option 2) | `http://localhost:8080` |
+| Inside the Compose network | `http://backend:8080`. `app/docker-compose.yml` sets this for the frontend service |
 
-There are no frontend environment variables.
+```bash
+VITE_PROXY_TARGET=http://localhost:8080 npm run dev
+```
+
+Open <http://localhost:5173>. The built frontend has no environment variables.
 
 ## Tests and checks
 
@@ -110,6 +126,8 @@ Frontend, from `app/frontend`:
 | `npx tsc --noEmit` | Type check |
 | `npm run build` | Type check and production build into `dist/` |
 
+The frontend build (`npm run build`) type-checks with `tsc -b`.
+
 CI runs the same commands (`.github/workflows/backend-ci.yml`, `frontend-ci.yml`). After both succeed on `main`, `docker-build.yml` builds and pushes the images to GitHub Container Registry and scans them with Trivy.
 
 ## Database migrations
@@ -125,15 +143,18 @@ alembic downgrade -1
 
 CI checks that there is one migration head, that upgrade, downgrade and upgrade again succeed on PostgreSQL 16, and that `alembic check` finds no difference between models and migrations.
 
+`alembic upgrade head` works on an empty PostgreSQL database. In SQLite mode the backend applies the migrations itself at startup.
+
 ## Adding things
 
 | Task | Where |
 |------|-------|
 | New API route | Add a module in `app/api/v1/endpoints/`, register it in `app/api/v1/router.py`, protect it with `require_permission`, then run `python scripts/gen_api_docs.py` |
 | New permission | `PERMISSIONS` in `app/core/rbac.py`, then `docs/security.md` |
-| New setting | `Settings` in `app/core/config.py`, then `ENV-REFERENCE.md` and `app/backend/.env.example` |
-| New connector | Subclass `BaseConnector` in `app/connectors/`, add it to `CONNECTOR_TYPES` in `app/connectors/registry.py` and in `app/api/v1/endpoints/connectors.py`, add a normalizer in `app/services/normalizers/` and subscribe it in `NormalizerPipeline` |
-| New Sigma rule shipped with the code | A YAML file in `app/backend/sigma_rules/` |
+| New setting | `Settings` in `app/core/config.py`, then `ENV-REFERENCE.md` and `app/backend/.env.example`. When you remove a setting, remove it from every `.env` example and deployment file as well |
+| New connector | Subclass `BaseConnector` in `app/connectors/`, add it to `CONNECTOR_TYPES` in `app/connectors/registry.py` and in `app/api/v1/endpoints/connectors.py`, add a topic in `app/pipeline/queue.py`, add a normalizer in `app/services/normalizers/` and subscribe it in `NormalizerPipeline`. The normalizer must set `metadata_product`, which Sigma rules match as `logsource.product` |
+| New Sigma rule shipped with the code | A YAML file with an `id` in `app/backend/sigma_rules/`, then `python scripts/gen_rule_table.py --write`. It is imported into the database at the next backend start. Use only the syntax listed in [sigma-engine.md](sigma-engine.md) |
+| New field for Sigma rules | `app/engine/field_mapper.py`, then [sigma-engine.md](sigma-engine.md) |
 | New page | A component under `src/components/features/`, a route in `src/App.tsx`, a link in `src/components/layout/Sidebar.tsx` |
 
 ## Scripts
@@ -141,6 +162,7 @@ CI checks that there is one migration head, that upgrade, downgrade and upgrade 
 | Script | Purpose |
 |--------|---------|
 | `scripts/gen_api_docs.py` | Regenerate `docs/api.md` from the routes the backend registers. Run it after adding or changing a route |
+| `scripts/gen_rule_table.py` | Print the table of bundled Sigma rules, or with `--write` replace it in `docs/sigma-engine.md` |
 | `scripts/audit-deps.sh` | `pip-audit` and `npm audit`. `--ci` exits non-zero on findings |
 | `scripts/scan-images.sh` | Scan the backend and frontend images with Grype or Trivy. `--build` builds them first |
 | `scripts/backup-db.sh` | PostgreSQL dump with retention |

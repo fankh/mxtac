@@ -49,6 +49,12 @@ services:
       - OPENSEARCH_PORT=9200
       - QUEUE_BACKEND=redis
       - CORS_ORIGINS=["https://mxtac.local"]
+      # First start only (empty users table): password of admin@mxtac.local.
+      # Empty = a random one is generated and written once to the log of the
+      # replica that created the account (docker service logs mxtac_backend).
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+      # true also creates demo accounts and invented sample data.
+      - SEED_DEMO_DATA=${SEED_DEMO_DATA:-false}
     secrets:
       - mxtac_secret_key
       - mxtac_pg_password
