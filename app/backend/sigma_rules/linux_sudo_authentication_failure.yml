@@ -1,0 +1,26 @@
+title: Sudo Authentication Failure or Denied Command
+id: aa3d911d-c44d-402f-ba5b-8693345b972a
+status: test
+description: Detects a failed sudo password prompt, a user that is not in the sudoers file, or a command that sudo refused to run.
+author: MxTac
+date: 2026-11-24
+references:
+  - https://attack.mitre.org/techniques/T1548/003/
+tags:
+  - attack.privilege-escalation
+  - attack.t1548.003
+logsource:
+  product: linux
+  service: sudo
+detection:
+  selection:
+    message|contains:
+      - 'incorrect password attempt'
+      - 'user NOT in sudoers'
+      - 'command not allowed'
+      - 'pam_unix(sudo:auth): authentication failure'
+  condition: selection
+falsepositives:
+  - A user mistyping the sudo password
+  - A new employee whose sudo rights have not been granted yet
+level: medium

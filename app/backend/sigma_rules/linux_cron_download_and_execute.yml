@@ -1,0 +1,36 @@
+title: Cron Job Downloads and Executes Remote Content
+id: fc819b1c-1d32-4cbc-a5f5-4a8f62e1d7b2
+status: test
+description: Detects a cron job whose command fetches content with curl or wget and passes it to a shell. This is a common way to keep a miner or a backdoor installed.
+author: MxTac
+date: 2026-11-24
+references:
+  - https://attack.mitre.org/techniques/T1053/003/
+  - https://attack.mitre.org/techniques/T1105/
+tags:
+  - attack.execution
+  - attack.persistence
+  - attack.t1053.003
+  - attack.t1105
+logsource:
+  product: linux
+  service: cron
+detection:
+  selection_cron:
+    message|contains: 'CMD ('
+  selection_download:
+    message|contains:
+      - 'curl '
+      - 'wget '
+  selection_shell:
+    message|contains:
+      - '| sh'
+      - '|sh'
+      - '| bash'
+      - '|bash'
+      - 'sh -c'
+  condition: all of selection_*
+falsepositives:
+  - Self-updating agents installed with a download-and-run cron entry
+  - Health checks that pipe curl output to a shell script
+level: high

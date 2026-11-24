@@ -26,6 +26,10 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    # Identity of the signed-in account, so clients can apply role-based UI
+    # without decoding the JWT.
+    email: str
+    role: str
 
 
 class RefreshRequest(BaseModel):
@@ -93,10 +97,10 @@ class PasswordChangeRequiredResponse(BaseModel):
     password_change_token: str
 
 
-class ChangePasswordRequest(BaseModel):
-    password_change_token: str = Field(..., max_length=512)
+class _NewPasswordBody(BaseModel):
+    """Shared ``new_password`` field: length bounds plus the password policy."""
+
     new_password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
-    confirm_password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
 
     @field_validator("new_password")
     @classmethod
@@ -104,8 +108,18 @@ class ChangePasswordRequest(BaseModel):
         validate_password_complexity(v)
         return validate_password_no_consecutive(v)
 
+
+class ChangePasswordRequest(_NewPasswordBody):
+    password_change_token: str = Field(..., max_length=512)
+    confirm_password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
+
     @model_validator(mode="after")
     def passwords_match(self) -> "ChangePasswordRequest":
         if self.new_password != self.confirm_password:
             raise ValueError("passwords do not match")
         return self
+
+
+# Signed-in user changing their own password (POST /auth/password)
+class SelfPasswordChangeRequest(_NewPasswordBody):
+    current_password: str = Field(..., min_length=1, max_length=PASSWORD_MAX_LENGTH)

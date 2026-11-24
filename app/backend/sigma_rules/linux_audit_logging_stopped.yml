@@ -1,0 +1,30 @@
+title: Linux Audit Logging Stopped or Rules Deleted
+id: c749fb8b-cc77-4da4-bcca-6c2ed8e32f6d
+status: test
+description: Detects commands that stop the auditd service, disable auditing or delete all audit rules.
+author: MxTac
+date: 2026-11-24
+references:
+  - https://attack.mitre.org/techniques/T1562/012/
+tags:
+  - attack.defense-evasion
+  - attack.t1562.012
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection_service:
+    CommandLine|contains:
+      - 'systemctl stop auditd'
+      - 'systemctl disable auditd'
+      - 'systemctl kill auditd'
+      - 'service auditd stop'
+  selection_auditctl:
+    CommandLine|contains:
+      - 'auditctl -e 0'
+      - 'auditctl -D'
+  condition: 1 of them
+falsepositives:
+  - Maintenance that restarts auditd after a rule change
+  - Decommissioning of a host
+level: high

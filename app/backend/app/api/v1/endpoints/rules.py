@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ....core.database import get_db
 from ....core.rbac import require_permission
 from ....core.valkey import publish_rule_reload
-from ....engine.sigma_engine import SigmaEngine, _Condition
+from ....engine.sigma_engine import SigmaEngine, SigmaRuleError
 from ....repositories.rule_repo import RuleRepo
 
 router = APIRouter(prefix="/rules", tags=["rules"])
@@ -119,29 +119,42 @@ def _rule_to_detail_response(rule: Any) -> dict:
     return base
 
 
+def _invalid_rule_detail(errors: list[str]) -> str:
+    """422 detail for a rejected rule, naming the reason when one is known."""
+    return f"Invalid Sigma YAML: {errors[0]}" if errors else "Invalid Sigma YAML"
+
+
 async def _parse_and_persist(
     yaml_text: str,
     db: AsyncSession,
     *,
     enabled: bool = True,
     engine: Any = None,
+    errors: list[str] | None = None,
 ) -> list:
     """Parse Sigma YAML (single or multi-doc), validate, and persist each to DB.
 
     Syncs each persisted rule into `engine` (app.state.sigma_engine) when provided.
-    Returns the list of created ORM Rule objects.
+    Returns the list of created ORM Rule objects.  A document that is not valid
+    Sigma or uses syntax the engine does not support is skipped; the reason is
+    appended to `errors` when a list is passed.
     """
     created = []
+    if errors is None:
+        errors = []
     try:
         docs = list(yaml.safe_load_all(yaml_text))
-    except yaml.YAMLError:
+    except yaml.YAMLError as exc:
+        errors.append(f"YAML parse error: {exc}")
         return []
     for doc in docs:
         if not isinstance(doc, dict):
             continue
         rule_yaml = yaml.dump(doc)
-        sigma_rule = _engine.load_rule_yaml(rule_yaml)
-        if not sigma_rule:
+        try:
+            sigma_rule = _engine.parse_rule_yaml(rule_yaml)
+        except SigmaRuleError as exc:
+            errors.append(f"{doc.get('title', 'Untitled')}: {exc}")
             continue
         logsource = sigma_rule.logsource or {}
         db_rule = await RuleRepo.create(
@@ -238,11 +251,11 @@ async def test_rule_yaml(
 
     # Phase 4 + 5: Compile via engine and evaluate
     try:
-        sigma_rule = _engine.load_rule_yaml(body.content)
-        if sigma_rule is None:
-            return {"matched": False, "errors": ["Failed to compile Sigma rule — check rule structure"]}
+        sigma_rule = _engine.parse_rule_yaml(body.content)
         matched = sigma_rule._matcher.matches(body.sample_event)
         return {"matched": matched, "errors": []}
+    except SigmaRuleError as exc:
+        return {"matched": False, "errors": [f"Invalid or unsupported Sigma rule: {exc}"]}
     except Exception as exc:
         return {"matched": False, "errors": [f"Evaluation error: {exc}"]}
 
@@ -254,14 +267,19 @@ async def import_rules(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("rules:write")),
 ):
-    """Bulk import Sigma rules from YAML (single or multi-document)."""
+    """Bulk import Sigma rules from YAML (single or multi-document).
+
+    Rules that are invalid or use unsupported Sigma syntax are not imported;
+    the reason for each is returned in ``errors``.
+    """
     try:
         engine = getattr(request.app.state, "sigma_engine", None)
-        created = await _parse_and_persist(body.yaml_content, db, engine=engine)
+        errors: list[str] = []
+        created = await _parse_and_persist(body.yaml_content, db, engine=engine, errors=errors)
         total = await RuleRepo.count(db)
         if created:
             await publish_rule_reload()
-        return {"imported": len(created), "total_rules": total}
+        return {"imported": len(created), "total_rules": total, "errors": errors}
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Import failed: {exc}")
 
@@ -282,7 +300,6 @@ async def reload_rules(
     """
     engine = getattr(request.app.state, "sigma_engine", None)
     if engine is None:
-        from fastapi import HTTPException
         raise HTTPException(status_code=503, detail="Sigma engine not initialized")
     reloaded = await engine.reload_from_db(db)
     total = await RuleRepo.count(db)
@@ -311,9 +328,12 @@ async def create_rule(
 ):
     """Create a custom Sigma rule from raw YAML."""
     engine = getattr(request.app.state, "sigma_engine", None)
-    created = await _parse_and_persist(body.content, db, enabled=body.enabled, engine=engine)
+    errors: list[str] = []
+    created = await _parse_and_persist(
+        body.content, db, enabled=body.enabled, engine=engine, errors=errors
+    )
     if not created:
-        raise HTTPException(status_code=422, detail="Invalid Sigma YAML")
+        raise HTTPException(status_code=422, detail=_invalid_rule_detail(errors))
     await publish_rule_reload()
     return _rule_to_response(created[0])
 
@@ -335,9 +355,12 @@ async def update_rule(
     if body.enabled is not None:
         update_kwargs["enabled"] = body.enabled
     if body.content is not None:
-        sigma_rule = _engine.load_rule_yaml(body.content)
-        if not sigma_rule:
-            raise HTTPException(status_code=422, detail="Invalid Sigma YAML")
+        try:
+            sigma_rule = _engine.parse_rule_yaml(body.content)
+        except SigmaRuleError as exc:
+            raise HTTPException(status_code=422, detail=_invalid_rule_detail([str(exc)]))
+        # The stored row keeps its id even when the edited YAML names another.
+        sigma_rule.id = rule_id
         logsource = sigma_rule.logsource or {}
         update_kwargs.update({
             "content": body.content,
@@ -424,10 +447,10 @@ async def test_rule(
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
     try:
-        sigma_rule = _engine.load_rule_yaml(rule.content)
-        if sigma_rule is None:
-            return {"matched": False, "errors": ["Stored rule failed to compile"]}
+        sigma_rule = _engine.parse_rule_yaml(rule.content)
         matched = sigma_rule._matcher.matches(body.sample_event)
         return {"matched": matched, "errors": []}
+    except SigmaRuleError as exc:
+        return {"matched": False, "errors": [f"Stored rule failed to compile: {exc}"]}
     except Exception as exc:
         return {"matched": False, "errors": [f"Evaluation error: {exc}"]}

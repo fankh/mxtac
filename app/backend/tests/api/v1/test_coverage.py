@@ -10,19 +10,11 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_coverage_empty_db_returns_mock(client: AsyncClient, auth_headers: dict) -> None:
-    """Empty DB (no rules) falls back to mock data with valid shape."""
+async def test_coverage_empty_db_returns_zero(client: AsyncClient, auth_headers: dict) -> None:
+    """Empty DB (no rules) returns a real zero summary over the real scope."""
     resp = await client.get("/api/v1/coverage", headers=auth_headers)
     assert resp.status_code == 200
-    data = resp.json()
-    assert "coverage_pct" in data
-    assert "covered_count" in data
-    assert "total_count" in data
-    assert isinstance(data["coverage_pct"], float)
-    assert isinstance(data["covered_count"], int)
-    assert isinstance(data["total_count"], int)
-    assert data["total_count"] > 0
-    assert 0.0 <= data["coverage_pct"] <= 100.0
+    assert resp.json() == {"coverage_pct": 0.0, "covered_count": 0, "total_count": 105}
 
 
 @pytest.mark.asyncio

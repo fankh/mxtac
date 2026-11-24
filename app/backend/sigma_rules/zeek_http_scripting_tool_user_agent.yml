@@ -1,0 +1,28 @@
+title: HTTP Request from a Scripting Tool User Agent
+id: 206f00c8-14e1-4030-b154-e472d10c0467
+status: test
+description: Detects HTTP requests in Zeek http.log whose user agent belongs to a command-line or scripting client instead of a browser. Useful as a hunting lead for tool downloads and simple C2.
+author: MxTac
+date: 2026-11-24
+references:
+  - https://attack.mitre.org/techniques/T1071/001/
+tags:
+  - attack.command-and-control
+  - attack.t1071.001
+logsource:
+  product: zeek
+detection:
+  selection_client:
+    network_traffic.user_agent|startswith:
+      - 'curl/'
+      - 'Wget/'
+      - 'python-requests/'
+      - 'Python-urllib/'
+      - 'Go-http-client/'
+  selection_powershell:
+    network_traffic.user_agent|contains: 'WindowsPowerShell/'
+  condition: 1 of selection_*
+falsepositives:
+  - Package managers, health checks and API clients
+  - Software update jobs
+level: low

@@ -1,0 +1,28 @@
+title: SSH Login as Root Accepted
+id: 5d884712-3f02-41f9-b808-2a41a68785af
+status: test
+description: Detects a successful interactive SSH login directly as root. Direct root logins bypass per-user accountability and are disabled on most hardened hosts.
+author: MxTac
+date: 2026-11-24
+references:
+  - https://attack.mitre.org/techniques/T1078/003/
+  - https://attack.mitre.org/techniques/T1021/004/
+tags:
+  - attack.initial-access
+  - attack.lateral-movement
+  - attack.t1078.003
+  - attack.t1021.004
+logsource:
+  product: linux
+  service: sshd
+detection:
+  selection:
+    message|startswith:
+      - 'Accepted password for root from '
+      - 'Accepted publickey for root from '
+      - 'Accepted keyboard-interactive/pam for root from '
+  condition: selection
+falsepositives:
+  - Hosts where direct root login is the documented administration method
+  - Backup or configuration-management jobs that connect as root with a key
+level: medium

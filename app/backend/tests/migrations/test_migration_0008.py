@@ -12,7 +12,7 @@ Coverage:
   - upgrade(): all 19 columns with correct types, nullability, defaults
   - upgrade(): UniqueConstraint on hostname
   - upgrade(): indexes — ix_assets_hostname (unique), ix_assets_asset_type
-  - upgrade(): GIN index executed for PostgreSQL dialect
+  - upgrade(): no GIN index statement on any dialect (json column, not jsonb)
   - downgrade(): drops indexes then table in correct order
   - downgrade(): GIN index dropped for PostgreSQL dialect
 """
@@ -393,12 +393,10 @@ class TestUpgradeIndexes:
         index_names = [c.args[0] for c in mock_op.create_index.call_args_list]
         assert "ix_assets_hostname" in index_names
 
-    def test_postgresql_gin_index_executed(self) -> None:
+    def test_postgresql_gin_index_not_created(self) -> None:
+        """ip_addresses is ``json``; a jsonb_path_ops GIN index fails on PostgreSQL."""
         mock_op = _run_upgrade(dialect="postgresql")
-        # op.execute should be called once for the GIN index
-        assert mock_op.execute.call_count == 1
-        sql_call = str(mock_op.execute.call_args_list[0].args[0])
-        assert "GIN" in sql_call or "gin" in sql_call.lower()
+        mock_op.execute.assert_not_called()
 
     def test_non_postgresql_gin_index_not_executed(self) -> None:
         mock_op = _run_upgrade(dialect="sqlite")

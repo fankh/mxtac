@@ -10,8 +10,9 @@ class KpiMetrics(BaseModel):
     attack_covered: int
     attack_total: int
     attack_coverage_delta: int
-    mttd_minutes: float
-    mttd_delta_minutes: float
+    # None when no incident time-to-detect data exists for the period(s)
+    mttd_minutes: float | None
+    mttd_delta_minutes: float | None
     integrations_active: int
     integrations_total: int
     sigma_rules_active: int

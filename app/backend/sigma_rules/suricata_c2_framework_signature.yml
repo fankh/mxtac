@@ -1,0 +1,30 @@
+title: Suricata Signature Names a C2 Framework
+id: 2554c059-fe27-4de2-afd7-f9a023b6422b
+status: test
+description: Detects a Suricata alert whose signature name refers to a known command-and-control framework.
+author: MxTac
+date: 2026-11-24
+references:
+  - https://attack.mitre.org/techniques/T1071/
+tags:
+  - attack.command-and-control
+  - attack.t1071
+logsource:
+  product: suricata
+detection:
+  selection:
+    finding_info.title|contains:
+      - 'CobaltStrike'
+      - 'Cobalt Strike'
+      - 'Meterpreter'
+      - 'Metasploit'
+      - 'Sliver'
+      - 'Brute Ratel'
+      - 'Havoc'
+      - 'Mythic'
+      - 'PoshC2'
+  condition: selection
+falsepositives:
+  - Red-team exercises
+  - Signatures that match vulnerability scanners using Metasploit modules
+level: high

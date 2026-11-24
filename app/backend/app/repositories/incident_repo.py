@@ -2,14 +2,28 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import ColumnElement, String, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from ..core.validators import escape_like
 from ..models.incident import Incident
+
+
+def _json_array_contains(column: InstrumentedAttribute, value: str) -> ColumnElement[bool]:
+    """Filter: the JSON array stored in *column* contains the string *value*.
+
+    The array is compared as text (``["web01", "db02"]`` contains ``"web01"``),
+    which works on PostgreSQL and SQLite alike.  ``column.contains([value])``
+    renders ``LIKE`` on the ``json`` column itself: PostgreSQL rejects that
+    and SQLite only matches one-element arrays.
+    """
+    needle = escape_like(json.dumps(value))
+    return cast(column, String).like(f"%{needle}%", escape="\\")
 
 # Severity order: critical first (1) → low last (4)
 _SEVERITY_ORDER = case(
@@ -135,8 +149,8 @@ class IncidentRepo:
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
         result = await session.execute(
             select(Incident)
-            .where(Incident.hosts.contains([host]))
-            .where(Incident.tactic_ids.contains([tactic]))
+            .where(_json_array_contains(Incident.hosts, host))
+            .where(_json_array_contains(Incident.tactic_ids, tactic))
             .where(Incident.status.not_in(["resolved", "closed"]))
             .where(Incident.created_at >= cutoff)
             .order_by(Incident.created_at.desc())
@@ -149,7 +163,7 @@ class IncidentRepo:
         """Return all incidents that reference the given detection_id in their detection_ids JSON array."""
         result = await session.execute(
             select(Incident)
-            .where(Incident.detection_ids.contains([detection_id]))
+            .where(_json_array_contains(Incident.detection_ids, detection_id))
             .order_by(Incident.created_at.desc())
         )
         return list(result.scalars().all())

@@ -30,7 +30,7 @@ from app.models.user import User
 
 LOGIN_URL = "/api/v1/auth/login"
 REFRESH_URL = "/api/v1/auth/refresh"
-VALID_CREDS = {"email": "analyst@mxtac.local", "password": "mxtac2026"}
+VALID_CREDS = {"email": "analyst@mxtac.local", "password": "TestPassw0rd9"}
 
 MOCK_REPO = "app.api.v1.endpoints.auth.UserRepo.get_by_email"
 MOCK_VERIFY = "app.api.v1.endpoints.auth.verify_password"

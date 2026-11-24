@@ -55,6 +55,7 @@ class AuditLogger:
             url = settings.opensearch_url
             self._client = AsyncOpenSearch(
                 hosts=[url],
+                http_auth=settings.opensearch_http_auth,
                 http_compress=True,
                 use_ssl=url.startswith("https"),
                 verify_certs=False,

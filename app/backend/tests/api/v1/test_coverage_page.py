@@ -9,7 +9,7 @@ Coverage page exposes three backend endpoints:
 This file tests:
   1. HeatCell.opacity Pydantic computed field (pure schema unit tests)
   2. /api/v1/overview/coverage/tactic-labels — auth, exact content, RBAC
-  3. /api/v1/overview/coverage/heatmap — structural invariants, mock fallback,
+  3. /api/v1/overview/coverage/heatmap — structural invariants, empty-DB zero grid,
      DB-driven edge cases, and gap-table compatibility
 """
 
@@ -189,7 +189,7 @@ async def test_heatmap_viewer_role_allowed(
 async def test_heatmap_empty_db_returns_four_rows(
     client: AsyncClient, auth_headers: dict
 ) -> None:
-    """Empty DB triggers mock fallback — response always has 4 technique-family rows."""
+    """Empty DB returns the zero grid — response always has 4 technique-family rows."""
     resp = await client.get("/api/v1/overview/coverage/heatmap", headers=auth_headers)
     assert resp.status_code == 200
     assert len(resp.json()) == 4

@@ -91,11 +91,7 @@ class TestViewerDashboardKpis:
     ) -> None:
         resp = await client.get("/api/v1/overview/tactics", headers=viewer_headers)
         assert resp.status_code == 200
-        items = resp.json()
-        assert isinstance(items, list)
-        assert len(items) > 0
-        assert "tactic" in items[0]
-        assert "count" in items[0]
+        assert resp.json() == []  # empty DB: no detections, no mock data
 
     @pytest.mark.asyncio
     async def test_viewer_heatmap_response_shape(
@@ -114,10 +110,7 @@ class TestViewerDashboardKpis:
     ) -> None:
         resp = await client.get("/api/v1/overview/integrations", headers=viewer_headers)
         assert resp.status_code == 200
-        items = resp.json()
-        assert isinstance(items, list)
-        assert "name" in items[0]
-        assert "status" in items[0]
+        assert resp.json() == []  # empty DB: no connectors, no mock data
 
     @pytest.mark.asyncio
     async def test_viewer_recent_detections_response_shape(

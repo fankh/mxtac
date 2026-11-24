@@ -34,7 +34,8 @@ _TACTIC_TOTALS: dict[str, int] = {
     "PERS": 12, "PRIV": 11, "DEF-E": 17, "CRED": 14, "DISC": 13,
 }
 
-_HEATMAP_ORDERED_LABELS = ["RECON", "RES", "INIT", "EXEC", "PERS", "PRIV", "DEF-E", "CRED", "DISC"]
+# Ordered heatmap column labels (also served by GET /overview/coverage/tactic-labels)
+TACTIC_LABELS = ["RECON", "RES", "INIT", "EXEC", "PERS", "PRIV", "DEF-E", "CRED", "DISC"]
 _HEATMAP_TECHNIQUE_FAMILIES = ["T1059", "T1003", "T1021", "T1078"]
 
 
@@ -265,7 +266,7 @@ class DetectionRepo:
         """Return overall ATT&CK coverage: distinct technique_ids detected vs. total in scope.
 
         total_count is the sum of all sub-technique slots tracked across the 9 heatmap tactics
-        (ATT&CK v14 scope = 105). Returns None when no detections exist (caller falls back to mock).
+        (ATT&CK v14 scope = 105). Returns None when no detections exist.
         """
         total_count = sum(_TACTIC_TOTALS.values())  # 105
 
@@ -288,14 +289,15 @@ class DetectionRepo:
         }
 
     @staticmethod
-    async def get_heatmap(session: AsyncSession) -> list[dict] | None:
+    async def get_heatmap(session: AsyncSession) -> list[dict]:
         """Build heatmap coverage from distinct (technique_id, tactic) detection pairs.
 
         For each of the 4 top technique families × 9 tactic columns:
           covered = # distinct sub-technique IDs detected for that family+tactic
           total   = fixed ATT&CK v14 sub-technique count for that tactic column
 
-        Returns None when no detections exist (caller should fall back to mock).
+        Always returns the full 4 × 9 grid; every cell has ``covered == 0`` when
+        no detections exist.
         """
         q = (
             select(Detection.technique_id, Detection.tactic)
@@ -306,12 +308,9 @@ class DetectionRepo:
         result = await session.execute(q)
         rows = result.all()
 
-        if not rows:
-            return None
-
         # Build coverage sets: {family: {label: set_of_covered_technique_ids}}
         coverage: dict[str, dict[str, set]] = {
-            family: {label: set() for label in _HEATMAP_ORDERED_LABELS}
+            family: {label: set() for label in TACTIC_LABELS}
             for family in _HEATMAP_TECHNIQUE_FAMILIES
         }
 
@@ -331,7 +330,7 @@ class DetectionRepo:
                     "covered": min(len(coverage[family][label]), _TACTIC_TOTALS.get(label, 10)),
                     "total": _TACTIC_TOTALS.get(label, 10),
                 }
-                for label in _HEATMAP_ORDERED_LABELS
+                for label in TACTIC_LABELS
             ]
             heatmap.append({"technique_id": family, "row": row_idx, "cells": cells})
 

@@ -149,13 +149,20 @@ class TestNormalizerPipelineStart:
         topics_subscribed = [call.args[0] for call in q.subscribe.call_args_list]
         assert Topic.RAW_SURICATA in topics_subscribed
 
-    async def test_start_makes_three_subscriptions(self) -> None:
+    async def test_start_subscribes_to_every_raw_topic(self) -> None:
         q = MagicMock()
         q.subscribe = AsyncMock()
         pipeline = NormalizerPipeline(q)
         await pipeline.start()
 
-        assert q.subscribe.call_count == 3
+        topics_subscribed = {call.args[0] for call in q.subscribe.call_args_list}
+        assert topics_subscribed == {
+            Topic.RAW_WAZUH,
+            Topic.RAW_ZEEK,
+            Topic.RAW_SURICATA,
+            Topic.RAW_SYSLOG,
+            Topic.RAW_WEBHOOK,
+        }
 
     async def test_start_uses_normalizer_consumer_group(self) -> None:
         q = MagicMock()

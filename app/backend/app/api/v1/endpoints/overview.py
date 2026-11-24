@@ -7,13 +7,12 @@ from ....core.database import get_db
 from ....core.rbac import require_permission
 from ....models.connector import Connector
 from ....repositories.connector_repo import ConnectorRepo
-from ....repositories.detection_repo import DetectionRepo
+from ....repositories.coverage_snapshot_repo import CoverageSnapshotRepo
+from ....repositories.detection_repo import TACTIC_LABELS, DetectionRepo
 from ....repositories.incident_repo import IncidentRepo
 from ....repositories.rule_repo import RuleRepo
-from ....schemas.overview import KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus
-from ....services.mock_data import KPI, TACTICS, HEATMAP, INTEGRATIONS, TACTIC_LABELS
 from ....schemas.detection import Detection
-from ....services.mock_data import DETECTIONS
+from ....schemas.overview import KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus
 
 router = APIRouter(prefix="/overview", tags=["overview"])
 
@@ -40,7 +39,6 @@ async def get_kpis(
         hour=0, minute=0, second=0, microsecond=0
     )
 
-    # Fetch all real DB data
     det_counts = await DetectionRepo.get_kpi_counts(
         db,
         from_date=from_date,
@@ -49,24 +47,17 @@ async def get_kpis(
         today_start=today_start,
     )
     inc_metrics = await IncidentRepo.get_metrics(db, from_date=from_date, to_date=now)
+    prev_inc_metrics = await IncidentRepo.get_metrics(
+        db, from_date=prev_from_date, to_date=from_date
+    )
     conn_counts = await ConnectorRepo.get_status_counts(db)
     rule_counts = await RuleRepo.get_kpi_counts(db, week_start=week_start)
 
-    # ATT&CK coverage: count distinct techniques from detections + rules
-    from sqlalchemy import func, distinct, select
-    from app.models.detection import Detection as DetectionModel
-    from app.models.rule import Rule as RuleModel
-    attack_q = await db.execute(
-        select(func.count(distinct(DetectionModel.technique_id)))
-        .where(DetectionModel.technique_id.is_not(None))
-    )
-    attack_from_detections = attack_q.scalar() or 0
-    rule_q = await db.execute(
-        select(func.count(distinct(RuleModel.id)))
-        .where(RuleModel.technique_ids.is_not(None), RuleModel.enabled.is_(True))
-    )
-    attack_from_rules = rule_q.scalar() or 0
-    attack_covered = max(attack_from_detections, attack_from_rules)
+    # ATT&CK coverage — same source and scope as GET /coverage (enabled rules).
+    coverage = await RuleRepo.get_coverage_summary(db)
+    # Delta = techniques gained/lost since the last snapshot before this period.
+    baseline = await CoverageSnapshotRepo.get_latest_on_or_before(db, from_date.date())
+    coverage_delta = coverage["covered_count"] - baseline.covered_count if baseline else 0
 
     # Detection delta %: compare current period vs previous period
     total_current = det_counts["total_current"]
@@ -78,36 +69,33 @@ async def get_kpis(
     else:
         delta_pct = 0.0
 
-    # Mock baseline for fields that require external ATT&CK metadata
-    kpi_mock = KPI.model_dump()
+    # MTTD — None when the period has no incident time-to-detect data
+    avg_ttd = inc_metrics["avg_ttd"]
+    prev_avg_ttd = prev_inc_metrics["avg_ttd"]
+    mttd_minutes = round(avg_ttd / 60, 2) if avg_ttd is not None else None
+    mttd_delta_minutes = (
+        round((avg_ttd - prev_avg_ttd) / 60, 2)
+        if avg_ttd is not None and prev_avg_ttd is not None
+        else None
+    )
 
     return KpiMetrics(
-        # Detection counts — real DB; fall back to mock when DB has no detections
-        total_detections=total_current if total_current > 0 else kpi_mock["total_detections"],
-        total_detections_delta_pct=delta_pct if total_current > 0 else kpi_mock["total_detections_delta_pct"],
-        critical_alerts=det_counts["critical"] if total_current > 0 else kpi_mock["critical_alerts"],
-        critical_alerts_new_today=det_counts["critical_today"] if total_current > 0 else kpi_mock["critical_alerts_new_today"],
-        # ATT&CK coverage — real DB: count distinct technique_ids from detections
-        attack_coverage_pct=round((attack_covered / 420) * 100, 1) if attack_covered > 0 else 0,
-        attack_covered=attack_covered,
-        attack_total=420,
-        attack_coverage_delta=0,
-        # MTTD — real DB; fall back to mock when no incident TTD data
-        mttd_minutes=(
-            round(inc_metrics["avg_ttd"] / 60, 2)
-            if inc_metrics["avg_ttd"] is not None
-            else kpi_mock["mttd_minutes"]
-        ),
-        mttd_delta_minutes=kpi_mock["mttd_delta_minutes"],  # needs two TTD periods
-        # Integrations — real DB; fall back to mock when no connectors configured
-        integrations_active=conn_counts["active"] if conn_counts["total"] > 0 else kpi_mock["integrations_active"],
-        integrations_total=conn_counts["total"] if conn_counts["total"] > 0 else kpi_mock["integrations_total"],
-        # Sigma rules — always real DB (0 is valid before rules are imported)
+        total_detections=total_current,
+        total_detections_delta_pct=delta_pct,
+        critical_alerts=det_counts["critical"],
+        critical_alerts_new_today=det_counts["critical_today"],
+        attack_coverage_pct=coverage["coverage_pct"],
+        attack_covered=coverage["covered_count"],
+        attack_total=coverage["total_count"],
+        attack_coverage_delta=coverage_delta,
+        mttd_minutes=mttd_minutes,
+        mttd_delta_minutes=mttd_delta_minutes,
+        integrations_active=conn_counts["active"],
+        integrations_total=conn_counts["total"],
         sigma_rules_active=rule_counts["active"],
         sigma_rules_critical=rule_counts["critical"],
         sigma_rules_high=rule_counts["high"],
         sigma_rules_deployed_this_week=rule_counts["deployed_this_week"],
-        # Incident SLA — always real DB
         open_incidents_count=inc_metrics["open_count"],
         mttr_minutes=(
             round(inc_metrics["avg_ttr"] / 60, 2)
@@ -157,7 +145,7 @@ async def get_tactics(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("detections:read")),
 ):
-    """Top ATT&CK tactic breakdown with counts and trend percentage."""
+    """Top ATT&CK tactic breakdown with counts and trend percentage (empty when no detections)."""
     days = _parse_range_days(range)
     now = datetime.now(timezone.utc)
     from_date = now - timedelta(days=days)
@@ -166,8 +154,6 @@ async def get_tactics(
     rows = await DetectionRepo.get_tactics(
         db, from_date=from_date, to_date=now, prev_from_date=prev_from_date
     )
-    if not rows:
-        return TACTICS  # fallback to mock data when DB has no detections
     return [TacticBar(**r) for r in rows]
 
 
@@ -176,10 +162,11 @@ async def get_heatmap(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("detections:read")),
 ):
-    """ATT&CK technique coverage heatmap — 4 rows × 9 tactic columns."""
+    """ATT&CK technique coverage heatmap — 4 rows × 9 tactic columns.
+
+    The grid is always complete; cells have ``covered == 0`` when no detections exist.
+    """
     rows = await DetectionRepo.get_heatmap(db)
-    if rows is None:
-        return HEATMAP  # fallback to mock when no detections in DB
     return [HeatRow(**r) for r in rows]
 
 
@@ -229,10 +216,8 @@ async def get_integrations(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("detections:read")),
 ):
-    """Integration status for all configured connectors."""
+    """Integration status for all configured connectors (empty when none are registered)."""
     connectors = await ConnectorRepo.list(db)
-    if not connectors:
-        return INTEGRATIONS  # fallback to mock data when no connectors are registered
     return [_connector_to_integration_status(c) for c in connectors]
 
 
@@ -242,18 +227,14 @@ async def get_recent_detections(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("detections:read")),
 ):
-    """Recent critical/high detections for the overview table."""
-    items, total = await DetectionRepo.list(
+    """Recent critical/high detections for the overview table (empty when none exist)."""
+    items, _total = await DetectionRepo.list(
         db,
         severity=["critical", "high"],
         sort="time",
         order="desc",
         page_size=limit,
     )
-    if total == 0:
-        # fallback to mock data when DB has no detections
-        critical_high = [d for d in DETECTIONS if d.severity in ("critical", "high")]
-        return sorted(critical_high, key=lambda d: d.time, reverse=True)[:limit]
     return [
         {
             "id": d.id,

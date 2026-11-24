@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.engine.sigma_engine import SigmaEngine, _Condition
+from app.engine.sigma_engine import SigmaEngine, SigmaRuleError, _Condition
 
 
 # ---------------------------------------------------------------------------
@@ -129,27 +129,27 @@ def test_pattern_case_insensitive_no_match() -> None:
 # ---------------------------------------------------------------------------
 
 def test_1_of_pattern_no_keys_match_pattern() -> None:
-    """`1 of nonexistent*` — no compiled key starts with 'nonexistent' → False."""
-    cond = _cond(
-        {
-            "selection_main": {"name": "powershell.exe"},
-            "filter": {"user": "svc"},
-        },
-        "1 of nonexistent*",
-    )
-    assert cond.matches({"name": "powershell.exe", "user": "admin"}) is False
+    """`1 of nonexistent*` — no selection matches the pattern → rejected at compile time."""
+    with pytest.raises(SigmaRuleError, match="does not match any selection"):
+        _cond(
+            {
+                "selection_main": {"name": "powershell.exe"},
+                "filter": {"user": "svc"},
+            },
+            "1 of nonexistent*",
+        )
 
 
 def test_all_of_pattern_no_keys_match_pattern() -> None:
-    """`all of nonexistent*` — no keys match → False (vacuously false)."""
-    cond = _cond(
-        {
-            "selection_main": {"name": "powershell.exe"},
-            "filter": {"user": "svc"},
-        },
-        "all of nonexistent*",
-    )
-    assert cond.matches({"name": "powershell.exe", "user": "svc"}) is False
+    """`all of nonexistent*` — no selection matches the pattern → rejected at compile time."""
+    with pytest.raises(SigmaRuleError, match="does not match any selection"):
+        _cond(
+            {
+                "selection_main": {"name": "powershell.exe"},
+                "filter": {"user": "svc"},
+            },
+            "all of nonexistent*",
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -1,15 +1,29 @@
-"""Idempotent database seeder — populates tables with demo data on first run."""
+"""Idempotent database seeder.
+
+On first run (no users) exactly one account is created: ``admin@mxtac.local``
+with a one-time bootstrap password that must be changed at first sign-in.
+The password is ``INITIAL_ADMIN_PASSWORD`` when set, otherwise a random one
+that is written once to the startup log.
+
+Demo accounts for the other roles and demo detections, connectors, rules and
+incidents are fabricated sample rows and are only written when explicitly
+requested (``SEED_DEMO_DATA=true``).
+"""
 
 from __future__ import annotations
 
 import json
+import secrets
+import string
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.config import settings
 from ..core.logging import get_logger
 from ..core.security import hash_password
+from ..core.validators import validate_password_policy
 from ..models.connector import Connector
 from ..models.detection import Detection
 from ..models.incident import Incident
@@ -18,9 +32,67 @@ from ..models.user import User
 
 logger = get_logger(__name__)
 
+ADMIN_EMAIL = "admin@mxtac.local"
 
-async def seed_database(session: AsyncSession) -> None:
-    """Idempotent seed — only runs if tables are empty."""
+# Demo-only accounts (SEED_DEMO_DATA=true): one per remaining role.
+_DEMO_ACCOUNTS = [
+    ("analyst@mxtac.local", "Default Analyst", "analyst"),
+    ("hunter@mxtac.local", "Threat Hunter", "hunter"),
+    ("engineer@mxtac.local", "Security Engineer", "engineer"),
+]
+
+_GENERATED_PASSWORD_LENGTH = 24
+_GENERATED_PASSWORD_ALPHABET = string.ascii_letters + string.digits
+
+
+def generate_initial_password() -> str:
+    """Return a random 24-character password that satisfies the password policy.
+
+    Letters and digits only (about 143 bits of entropy) so it survives log
+    formats and copy/paste unchanged.  Candidates that miss a character class
+    or contain a run of 4 identical characters are discarded and redrawn.
+    """
+    while True:
+        candidate = "".join(
+            secrets.choice(_GENERATED_PASSWORD_ALPHABET) for _ in range(_GENERATED_PASSWORD_LENGTH)
+        )
+        try:
+            return validate_password_policy(candidate)
+        except ValueError:
+            continue
+
+
+def _announce_initial_password(password: str, *, generated: bool) -> None:
+    """Tell the operator how to sign in for the first time.
+
+    A generated password is written to the log exactly once, at WARNING level.
+    This is the only place a password is ever logged: it is a one-time
+    bootstrap credential that the account is forced to replace at first
+    sign-in.  A password supplied through INITIAL_ADMIN_PASSWORD is never logged.
+    """
+    if generated:
+        logger.warning(
+            "INITIAL ADMIN PASSWORD (generated, shown only once): email=%s password=%s "
+            "- sign in and set a new password now; it cannot be used for anything else.",
+            ADMIN_EMAIL,
+            password,
+        )
+    else:
+        logger.info(
+            "Initial admin account %s uses the password from INITIAL_ADMIN_PASSWORD; "
+            "it must be changed at first sign-in.",
+            ADMIN_EMAIL,
+        )
+
+
+async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> None:
+    """Idempotent seed — only runs if the users table is empty.
+
+    Always creates the single bootstrap admin account.  With
+    ``demo_data=True`` it also inserts demo accounts for the other roles and
+    sample (invented) detections, connectors, rules and incidents.  Every
+    seeded account has ``must_change_password=True``.
+    """
 
     # Check if data exists
     user_count = await session.scalar(select(func.count()).select_from(User))
@@ -28,40 +100,42 @@ async def seed_database(session: AsyncSession) -> None:
         logger.info("Database already seeded (%d users), skipping", user_count)
         return
 
-    logger.info("Seeding database with demo data...")
+    logger.info("Seeding database (demo data: %s)...", "on" if demo_data else "off")
 
     # ── Users ────────────────────────────────────────────────────────────────
+    initial_password = settings.initial_admin_password
+    generated = not initial_password
+    if generated:
+        initial_password = generate_initial_password()
+    else:
+        # Settings already rejects a weak value at startup; checked again here
+        # so the seeder can never store a password that violates the policy.
+        validate_password_policy(initial_password)
+    hashed = hash_password(initial_password)
+
+    accounts = [(ADMIN_EMAIL, "Admin", "admin")]
+    if demo_data:
+        accounts += _DEMO_ACCOUNTS
     users = [
         User(
-            email="admin@mxtac.local",
-            hashed_password=hash_password("mxtac2026"),
-            full_name="Admin",
-            role="admin",
+            email=email,
+            hashed_password=hashed,
+            full_name=full_name,
+            role=role,
             is_active=True,
-        ),
-        User(
-            email="analyst@mxtac.local",
-            hashed_password=hash_password("mxtac2026"),
-            full_name="Default Analyst",
-            role="analyst",
-            is_active=True,
-        ),
-        User(
-            email="hunter@mxtac.local",
-            hashed_password=hash_password("mxtac2026"),
-            full_name="Threat Hunter",
-            role="hunter",
-            is_active=True,
-        ),
-        User(
-            email="engineer@mxtac.local",
-            hashed_password=hash_password("mxtac2026"),
-            full_name="Security Engineer",
-            role="engineer",
-            is_active=True,
-        ),
+            must_change_password=True,
+        )
+        for email, full_name, role in accounts
     ]
     session.add_all(users)
+
+    if not demo_data:
+        await session.commit()
+        logger.info("Database seeded: %d users (no demo data)", len(users))
+        _announce_initial_password(initial_password, generated=generated)
+        return
+
+    # ── Demo data (opt-in) — everything below is invented sample content ─────
 
     # ── Detections ───────────────────────────────────────────────────────────
     detections = [
@@ -422,6 +496,7 @@ async def seed_database(session: AsyncSession) -> None:
 
     await session.commit()
     logger.info(
-        "Database seeded: %d users, %d detections, %d connectors, %d rules, %d incidents",
+        "Database seeded with DEMO data: %d users, %d detections, %d connectors, %d rules, %d incidents",
         len(users), len(detections), len(connectors), len(rules), len(incidents),
     )
+    _announce_initial_password(initial_password, generated=generated)

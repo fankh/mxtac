@@ -4,6 +4,8 @@ import re
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
+from .validators import validate_password_policy
+
 logger = logging.getLogger(__name__)
 
 _DEV_SECRET = "dev-secret-change-in-production"
@@ -55,6 +57,22 @@ class Settings(BaseSettings):
     # DATABASE_URL has not been explicitly set to a sqlite:// URL).
     sqlite_path: str = "./mxtac.db"
 
+    # Opt-in demo content: when True, the first-run seeder also inserts sample
+    # (invented) detections, connectors, rules and incidents.  Never enable on
+    # a real deployment — the rows are indistinguishable from real findings.
+    seed_demo_data: bool = False
+
+    # Bootstrap password for the first account (admin@mxtac.local), used only
+    # when the users table is empty at startup.  Leave unset to have a random
+    # one generated and written once to the startup log.  Either way the
+    # account must change it at first sign-in.  Must satisfy the password
+    # policy; a weak value stops the application from starting.
+    initial_admin_password: str | None = Field(
+        default=None,
+        repr=False,
+        json_schema_extra={"x-sensitive": True, "format": "password"},
+    )
+
     # Valkey (Redis-compatible)
     valkey_url: str = Field(
         default="redis://localhost:6379/0",
@@ -63,9 +81,7 @@ class Settings(BaseSettings):
     )
 
     # Queue
-    queue_backend: str = "memory"  # "memory" | "redis" | "kafka"
-    kafka_bootstrap_servers: str = "localhost:9092"
-    kafka_consumer_group: str = "mxtac"
+    queue_backend: str = "memory"  # "memory" | "redis"
 
     # OpenSearch
     opensearch_host: str = "localhost"
@@ -85,17 +101,6 @@ class Settings(BaseSettings):
     syslog_port: int = 1514
     syslog_protocol: str = "udp"  # "udp" | "tcp" | "both"
     syslog_max_message_size: int = 65535
-
-    # SMTP — used to send user invite emails (POST /users/invite).
-    smtp_host: str = "localhost"
-    smtp_port: int = 587
-    smtp_username: str = ""
-    smtp_password: str = Field(
-        default="",
-        repr=False,
-        json_schema_extra={"x-sensitive": True, "format": "password"},
-    )
-    smtp_from_address: str = "mxtac-alerts@localhost"
 
     # Database backup status — feature 38.1
     # Directory where backup-db.sh writes .sql.gz files.  The /ready endpoint
@@ -145,7 +150,9 @@ class Settings(BaseSettings):
     auto_create_incident_min_severity: str = "high"  # "low" | "medium" | "high" | "critical"
     correlation_window_seconds: int = 3600  # 1-hour window
 
-    # Rate limiting
+    # Rate limiting — requests per minute per client IP for read (GET / HEAD)
+    # requests.  Login, export and write requests have fixed, lower limits
+    # (see core/rate_limit.py).
     rate_limit_per_minute: int = 300
 
     # CORS
@@ -177,6 +184,20 @@ class Settings(BaseSettings):
                     "Set a unique SECRET_KEY before deploying to production."
                 )
 
+        # A blank INITIAL_ADMIN_PASSWORD means "not set"; a weak one is fatal so
+        # that a guessable bootstrap password is never silently accepted.
+        if not self.initial_admin_password:
+            self.initial_admin_password = None
+        else:
+            try:
+                validate_password_policy(self.initial_admin_password)
+            except ValueError as exc:
+                raise ValueError(
+                    f"FATAL: INITIAL_ADMIN_PASSWORD does not meet the password policy: {exc}. "
+                    "Set a stronger value, or unset it to have a random password "
+                    "generated and written to the startup log."
+                ) from None
+
         # Auto-configure SQLite URL when sqlite_mode is enabled.
         if self.sqlite_mode and not self.database_url.startswith("sqlite"):
             self.database_url = f"sqlite+aiosqlite:///{self.sqlite_path}"
@@ -188,8 +209,18 @@ class Settings(BaseSettings):
         scheme = "https" if self.opensearch_use_ssl else "http"
         return f"{scheme}://{self.opensearch_host}:{self.opensearch_port}"
 
+    @property
+    def opensearch_http_auth(self) -> tuple[str, str] | None:
+        """Basic-auth credentials for OpenSearch, or None when no username is set."""
+        if not self.opensearch_username:
+            return None
+        return (self.opensearch_username, self.opensearch_password)
+
     class Config:
         env_file = ".env"
+        # Validation errors must not echo the offending input: it can hold
+        # secrets (SECRET_KEY, DSNs, a rejected INITIAL_ADMIN_PASSWORD).
+        hide_input_in_errors = True
 
 
 settings = Settings()

@@ -4,8 +4,12 @@ from uuid import uuid4
 import bcrypt as _bcrypt
 from fastapi import Depends, Header, HTTPException, status
 from jose import JWTError, jwt
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..models.user import User
 from .config import settings
+from .database import get_db
 from .valkey import is_token_blacklisted
 
 ALGORITHM = "HS256"
@@ -54,22 +58,6 @@ def create_password_change_token(user_id: str) -> str:
     return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
 
 
-def create_invite_token(user_id: str) -> str:
-    """Create an invite token (48-hour TTL) for a newly invited user.
-
-    Claims: sub=user_id, purpose="invite", jti, kvr, exp.
-    Sent via email so the recipient can set their password and activate the account.
-    """
-    to_encode = {
-        "sub": user_id,
-        "purpose": "invite",
-        "jti": str(uuid4()),
-        "kvr": settings.jwt_key_version,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=48),
-    }
-    return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
-
-
 def create_refresh_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
@@ -111,13 +99,55 @@ def decode_token(token: str) -> dict:
     return payload
 
 
-async def get_current_user(authorization: str = Header(None)) -> dict:
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
+
+
+async def current_role(db: AsyncSession, payload: dict) -> str:
+    """Return the role the token's user holds *now* (one indexed lookup by email).
+
+    The role and active flag are read from the database on every request, not
+    from the token, so deactivating a user or changing a role takes effect
+    immediately instead of at token expiry.
+    """
+    row = (
+        await db.execute(
+            select(User.role, User.is_active).where(User.email == payload["sub"])
+        )
+    ).first()
+    if row is None or not row.is_active:
+        raise _unauthorized("Account is disabled or no longer exists")
+    return row.role
+
+
+async def authenticate_access_token(token: str, db: AsyncSession) -> dict:
+    """Validate an access token and return ``{"email", "role"}`` for its user.
+
+    Rejects refresh tokens and single-purpose tokens (MFA, password
+    change), revoked tokens, and tokens of deactivated or deleted users.
+    """
+    payload = decode_token(token)
+    if payload.get("type") is not None or payload.get("purpose") is not None:
+        raise _unauthorized("Not an access token")
+
+    sub = payload.get("sub")
+    if not sub:
+        raise _unauthorized("Invalid token payload")
+
+    jti = payload.get("jti")
+    if jti and await is_token_blacklisted(jti):
+        raise _unauthorized("Token has been revoked")
+
+    return {"email": sub, "role": await current_role(db, payload)}
+
+
+async def get_current_user(
+    authorization: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     """FastAPI dependency — extract and validate JWT from Authorization header."""
     if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header required",
-        )
+        raise _unauthorized("Authorization header required")
     # Support "Bearer <token>" format
     parts = authorization.split()
     if len(parts) == 2 and parts[0].lower() == "bearer":
@@ -125,19 +155,4 @@ async def get_current_user(authorization: str = Header(None)) -> dict:
     else:
         token = authorization
 
-    payload = decode_token(token)
-    sub = payload.get("sub")
-    if not sub:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload",
-        )
-
-    jti = payload.get("jti")
-    if jti and await is_token_blacklisted(jti):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has been revoked",
-        )
-
-    return {"email": sub, "role": payload.get("role", "viewer")}
+    return await authenticate_access_token(token, db)

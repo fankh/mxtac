@@ -44,7 +44,7 @@ from app.models.user import User
 # ---------------------------------------------------------------------------
 
 LOGIN_URL = "/api/v1/auth/login"
-VALID_CREDS = {"email": "analyst@mxtac.local", "password": "mxtac2026"}
+VALID_CREDS = {"email": "analyst@mxtac.local", "password": "TestPassw0rd9"}
 
 # Patch targets — names as imported inside the endpoint module.
 MOCK_REPO = "app.api.v1.endpoints.auth.UserRepo.get_by_email"
@@ -235,7 +235,7 @@ async def test_login_role_in_token(
     """Each seeded user's role is embedded in their access_token."""
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user(email=email, role=expected_role))):
         with patch(MOCK_VERIFY, return_value=True):
-            resp = await client.post(LOGIN_URL, json={"email": email, "password": "mxtac2026"})
+            resp = await client.post(LOGIN_URL, json={"email": email, "password": "TestPassw0rd9"})
     assert resp.status_code == 200
     payload = _decode(resp.json()["access_token"])
     assert payload["role"] == expected_role
@@ -293,7 +293,7 @@ async def test_login_inactive_account_status(client: AsyncClient) -> None:
         with patch(MOCK_VERIFY, return_value=True):
             resp = await client.post(
                 LOGIN_URL,
-                json={"email": "inactive@mxtac.local", "password": "mxtac2026"},
+                json={"email": "inactive@mxtac.local", "password": "TestPassw0rd9"},
             )
     assert resp.status_code == 403
 
@@ -305,7 +305,7 @@ async def test_login_inactive_account_detail(client: AsyncClient) -> None:
         with patch(MOCK_VERIFY, return_value=True):
             resp = await client.post(
                 LOGIN_URL,
-                json={"email": "inactive@mxtac.local", "password": "mxtac2026"},
+                json={"email": "inactive@mxtac.local", "password": "TestPassw0rd9"},
             )
     assert resp.json()["detail"] == "Account is disabled"
 
@@ -318,7 +318,7 @@ async def test_login_inactive_account_detail(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_login_missing_email(client: AsyncClient) -> None:
     """Request without email field → 422 Unprocessable Entity."""
-    resp = await client.post(LOGIN_URL, json={"password": "mxtac2026"})
+    resp = await client.post(LOGIN_URL, json={"password": "TestPassw0rd9"})
     assert resp.status_code == 422
 
 
@@ -339,14 +339,14 @@ async def test_login_empty_body(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_login_invalid_email_format(client: AsyncClient) -> None:
     """String without '@' in email field → 422 (format validation)."""
-    resp = await client.post(LOGIN_URL, json={"email": "not-an-email", "password": "mxtac2026"})
+    resp = await client.post(LOGIN_URL, json={"email": "not-an-email", "password": "TestPassw0rd9"})
     assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
 async def test_login_null_email(client: AsyncClient) -> None:
     """Null email → 422 Unprocessable Entity."""
-    resp = await client.post(LOGIN_URL, json={"email": None, "password": "mxtac2026"})
+    resp = await client.post(LOGIN_URL, json={"email": None, "password": "TestPassw0rd9"})
     assert resp.status_code == 422
 
 
@@ -362,7 +362,7 @@ async def test_login_form_data_rejected(client: AsyncClient) -> None:
     """Form-encoded body (not JSON) → 422; endpoint only accepts application/json."""
     resp = await client.post(
         LOGIN_URL,
-        data="email=analyst%40mxtac.local&password=mxtac2026",
+        data="email=analyst%40mxtac.local&password=TestPassw0rd9",
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     assert resp.status_code == 422
@@ -429,14 +429,14 @@ async def test_access_token_exp_is_in_future(client: AsyncClient, mock_analyst) 
 @pytest.mark.asyncio
 async def test_login_email_with_leading_whitespace(client: AsyncClient) -> None:
     """Email with leading whitespace fails regex → 422 (no DB call needed)."""
-    resp = await client.post(LOGIN_URL, json={"email": "  analyst@mxtac.local", "password": "mxtac2026"})
+    resp = await client.post(LOGIN_URL, json={"email": "  analyst@mxtac.local", "password": "TestPassw0rd9"})
     assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
 async def test_login_email_without_tld(client: AsyncClient) -> None:
     """Email with no dot in domain part (missing TLD) → 422."""
-    resp = await client.post(LOGIN_URL, json={"email": "analyst@mxtac", "password": "mxtac2026"})
+    resp = await client.post(LOGIN_URL, json={"email": "analyst@mxtac", "password": "TestPassw0rd9"})
     assert resp.status_code == 422
 
 
@@ -1010,7 +1010,7 @@ async def test_lockout_not_cleared_on_inactive_account(client: AsyncClient) -> N
                 with patch(MOCK_CLEAR, mock_clear):
                     resp = await client.post(
                         LOGIN_URL,
-                        json={"email": "inactive@mxtac.local", "password": "mxtac2026"},
+                        json={"email": "inactive@mxtac.local", "password": "TestPassw0rd9"},
                     )
     assert resp.status_code == 403
     mock_clear.assert_not_awaited()

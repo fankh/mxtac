@@ -73,6 +73,10 @@ def _make_alert_manager(queue: InMemoryQueue) -> AlertManager:
         mgr = AlertManager(queue)
     mgr._valkey = AsyncMock()
     mgr._valkey.set = AsyncMock(return_value=True)  # True → not a duplicate
+    # No database in these tests: an unreachable PostgreSQL would otherwise
+    # delay each alert by the connection timeout before it is published.
+    mgr._get_recurrence_count = AsyncMock(return_value=0)
+    mgr._persist_to_db = AsyncMock()
     return mgr
 
 

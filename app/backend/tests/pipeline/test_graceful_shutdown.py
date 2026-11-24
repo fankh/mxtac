@@ -6,7 +6,6 @@ Coverage:
     messages, resolves only after all messages processed, times out gracefully
     when consumers are absent, drains multiple independent topics
   - RedisStreamQueue.drain(): returns immediately (messages persist in stream)
-  - KafkaQueue.drain(): flushes producer when started, skips flush when not
     started, handles flush timeout gracefully, handles flush exception
   - on_shutdown ordering: drain is called before stop (feature 5.7)
   - on_shutdown resilience: drain failure does not prevent stop
@@ -15,7 +14,6 @@ Coverage:
 from __future__ import annotations
 
 import asyncio
-import sys
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,7 +21,6 @@ import pytest
 
 from app.pipeline.queue import (
     InMemoryQueue,
-    KafkaQueue,
     RedisStreamQueue,
     Topic,
 )
@@ -205,69 +202,3 @@ class TestRedisStreamQueueDrain:
         q._redis.xadd.assert_not_called()
         q._redis.xreadgroup.assert_not_called()
         q._redis.aclose.assert_not_called()
-
-
-# ── KafkaQueue.drain() ────────────────────────────────────────────────────────
-
-
-class TestKafkaQueueDrain:
-    async def test_drain_skips_flush_when_producer_not_started(self) -> None:
-        """drain() before start() must not raise — producer is None."""
-        q = KafkaQueue("broker:9092")
-        assert q._producer is None
-        await asyncio.wait_for(q.drain(), timeout=1.0)  # must not raise
-
-    async def test_drain_flushes_producer_when_started(self) -> None:
-        """drain() calls producer.flush() after start()."""
-        mock_producer = AsyncMock()
-        mock_aiokafka = MagicMock()
-        mock_aiokafka.AIOKafkaProducer.return_value = mock_producer
-
-        with patch.dict(sys.modules, {"aiokafka": mock_aiokafka}):
-            q = KafkaQueue("broker:9092")
-            await q.start()
-            await q.drain()
-
-        mock_producer.flush.assert_called_once()
-
-    async def test_drain_timeout_does_not_raise(self) -> None:
-        """If producer.flush() exceeds timeout, drain() logs and returns — no exception."""
-        mock_producer = AsyncMock()
-        mock_producer.flush = AsyncMock(side_effect=asyncio.TimeoutError)
-        mock_aiokafka = MagicMock()
-        mock_aiokafka.AIOKafkaProducer.return_value = mock_producer
-
-        with patch.dict(sys.modules, {"aiokafka": mock_aiokafka}):
-            q = KafkaQueue("broker:9092")
-            await q.start()
-            await asyncio.wait_for(q.drain(timeout=0.01), timeout=2.0)  # must not raise
-
-    async def test_drain_flush_exception_does_not_propagate(self) -> None:
-        """An unexpected flush error must be caught and logged, not propagated."""
-        mock_producer = AsyncMock()
-        mock_producer.flush = AsyncMock(side_effect=RuntimeError("broker gone"))
-        mock_aiokafka = MagicMock()
-        mock_aiokafka.AIOKafkaProducer.return_value = mock_producer
-
-        with patch.dict(sys.modules, {"aiokafka": mock_aiokafka}):
-            q = KafkaQueue("broker:9092")
-            await q.start()
-            await q.drain()  # must not raise RuntimeError
-
-    async def test_drain_respects_timeout_parameter(self) -> None:
-        """drain() uses asyncio.wait_for with the provided timeout."""
-        hang_forever = asyncio.Event()
-
-        async def _blocking_flush():
-            await hang_forever.wait()  # blocks until cancelled
-
-        mock_producer = AsyncMock()
-        mock_producer.flush = _blocking_flush
-        mock_aiokafka = MagicMock()
-        mock_aiokafka.AIOKafkaProducer.return_value = mock_producer
-
-        with patch.dict(sys.modules, {"aiokafka": mock_aiokafka}):
-            q = KafkaQueue("broker:9092")
-            await q.start()
-            # drain with a very short timeout must return quickly without hanging
-            await asyncio.wait_for(q.drain(timeout=0.05), timeout=2.0)

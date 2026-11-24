@@ -328,6 +328,7 @@ class OpenSearchService:
             url = getattr(settings, "opensearch_url", "http://localhost:9200")
             self._client = AsyncOpenSearch(
                 hosts=[url],
+                http_auth=getattr(settings, "opensearch_http_auth", None),
                 http_compress=True,
                 use_ssl=url.startswith("https"),
                 verify_certs=False,

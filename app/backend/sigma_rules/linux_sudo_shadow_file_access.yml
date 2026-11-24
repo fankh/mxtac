@@ -1,0 +1,30 @@
+title: Password Hash File Accessed via Command Line
+id: e5577a5f-cc19-4bed-bd9c-47774ab9ccbf
+status: test
+description: Detects a command that references /etc/shadow or /etc/gshadow, the files that hold local password hashes.
+author: MxTac
+date: 2026-11-24
+references:
+  - https://attack.mitre.org/techniques/T1003/008/
+tags:
+  - attack.credential-access
+  - attack.t1003.008
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - '/etc/shadow'
+      - '/etc/gshadow'
+  filter_account_tools:
+    Image|endswith:
+      - '/vipw'
+      - '/vigr'
+      - '/pwck'
+      - '/grpck'
+  condition: selection and not filter_account_tools
+falsepositives:
+  - Backup jobs that archive /etc
+  - Administrators checking account expiry or file permissions
+level: high

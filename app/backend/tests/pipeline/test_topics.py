@@ -140,6 +140,10 @@ def _make_alert_manager(queue: InMemoryQueue) -> AlertManager:
     # Replace the real Valkey client with a fresh mock; default: not a duplicate
     mgr._valkey = AsyncMock()
     mgr._valkey.set = AsyncMock(return_value=True)  # True → key newly set → not dup
+    # No database in these tests: an unreachable PostgreSQL would otherwise
+    # delay each alert by the connection timeout before it is published.
+    mgr._get_recurrence_count = AsyncMock(return_value=0)
+    mgr._persist_to_db = AsyncMock()
     return mgr
 
 
@@ -235,14 +239,14 @@ class TestNormalizerPipelineTopics:
         assert any(Topic.RAW_SURICATA in name for name in task_names)
         await q.stop()
 
-    async def test_start_creates_exactly_three_subscriptions(self) -> None:
-        # wazuh + zeek + suricata = 3 raw topic subscriptions
+    async def test_start_creates_one_subscription_per_raw_topic(self) -> None:
+        # wazuh + zeek + suricata + syslog + webhook = 5 raw topic subscriptions
         q = InMemoryQueue()
         await q.start()
         pipeline = NormalizerPipeline(q)
         await pipeline.start()
 
-        assert len(q._tasks) == 3
+        assert len(q._tasks) == 5
         await q.stop()
 
     async def test_wazuh_raw_event_published_to_normalized(self) -> None:

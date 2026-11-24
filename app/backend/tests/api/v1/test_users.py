@@ -126,6 +126,65 @@ class TestCreateUserValidation:
         assert resp.status_code == 422
 
 
+class TestCreateUserForcesPasswordChange:
+    """POST /users — the temporary password must be replaced at first sign-in."""
+
+    async def test_created_user_must_change_password(self, client, admin_headers) -> None:
+        with patch(_MOCK_HASH, return_value=_HASHED_PW):
+            resp = await client.post(
+                _BASE,
+                json={"email": "temp1@mxtac.local", "role": "analyst", "password": _VALID_PASSWORD},
+                headers=admin_headers,
+            )
+        assert resp.status_code == 201
+        assert resp.json()["must_change_password"] is True
+
+    async def test_client_cannot_opt_out_of_the_password_change(self, client, admin_headers) -> None:
+        with patch(_MOCK_HASH, return_value=_HASHED_PW):
+            resp = await client.post(
+                _BASE,
+                json={
+                    "email": "temp2@mxtac.local",
+                    "role": "analyst",
+                    "password": _VALID_PASSWORD,
+                    "must_change_password": False,
+                },
+                headers=admin_headers,
+            )
+        assert resp.status_code == 201
+        assert resp.json()["must_change_password"] is True
+
+    async def test_temporary_password_only_yields_a_change_token(self, client, admin_headers) -> None:
+        resp = await client.post(
+            _BASE,
+            json={"email": "temp3@mxtac.local", "role": "analyst", "password": _VALID_PASSWORD},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 201
+
+        login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "temp3@mxtac.local", "password": _VALID_PASSWORD},
+        )
+        assert login.status_code == 200
+        body = login.json()
+        assert body["password_change_required"] is True
+        assert "password_change_token" in body
+        assert "access_token" not in body
+
+
+class TestInviteEndpointRemoved:
+    """POST /users/invite no longer exists."""
+
+    async def test_invite_route_is_gone(self, client, admin_headers) -> None:
+        resp = await client.post(
+            f"{_BASE}/invite",
+            json={"email": "invited@mxtac.local", "role": "analyst"},
+            headers=admin_headers,
+        )
+        assert resp.status_code in (404, 405)
+
+
 class TestGetUserById:
     """GET /users/{id} — retrieve a specific user."""
 

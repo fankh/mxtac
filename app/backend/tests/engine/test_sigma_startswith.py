@@ -164,12 +164,11 @@ def test_startswith_list_multiple_values_match() -> None:
 
 def test_startswith_all_nested_prefixes_match() -> None:
     """startswith|all: both values are prefixes (one is a prefix of the other) → True."""
-    # "c:\\" is a prefix of "c:\\windows\\system32\\cmd.exe"
-    # "c:\\windows" is also a prefix of that path
+    # In a Sigma value an escaped backslash stands for one backslash.
     assert _matches(
         "path|startswith|all",
         ["c:\\\\", "c:\\\\windows"],
-        {"path": "c:\\\\windows\\\\system32\\\\cmd.exe"},
+        {"path": "c:\\windows\\system32\\cmd.exe"},
     ) is True
 
 

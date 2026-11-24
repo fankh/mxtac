@@ -81,7 +81,7 @@ class BaseConnector(ABC):
     @property
     @abstractmethod
     def topic(self) -> str:
-        """Kafka/queue topic to publish raw events to."""
+        """Queue topic to publish raw events to."""
         ...
 
     # ── DB status helper (Feature 6.6) ────────────────────────────────────────

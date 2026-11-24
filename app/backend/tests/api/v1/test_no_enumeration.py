@@ -47,7 +47,7 @@ MOCK_REPO = "app.api.v1.endpoints.auth.UserRepo.get_by_email"
 MOCK_VERIFY = "app.api.v1.endpoints.auth.verify_password"
 
 KNOWN_EMAIL = "analyst@mxtac.local"
-KNOWN_PASSWORD = "mxtac2026"
+KNOWN_PASSWORD = "TestPassw0rd9"
 
 EXPECTED_STATUS = 401
 EXPECTED_DETAIL = "Invalid credentials"

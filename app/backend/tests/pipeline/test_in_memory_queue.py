@@ -261,10 +261,62 @@ class TestInMemoryQueueSubscribe:
         assert len(q._tasks) == 3
         await q.stop()
 
-    async def test_competing_consumers_on_same_topic_no_duplication(self) -> None:
-        """Two consumers on the same topic share the queue — no message is duplicated."""
+    async def test_every_group_on_a_topic_receives_every_message(self) -> None:
+        """Two consumer groups on one topic each get all messages (fan-out).
+
+        The event persister and the Sigma consumer both subscribe to
+        mxtac.normalized: each must see every event.
+        """
         q = InMemoryQueue()
         await q.start()
+
+        received_a: list[dict[str, Any]] = []
+        received_b: list[dict[str, Any]] = []
+
+        async def handler_a(msg: dict[str, Any]) -> None:
+            received_a.append(msg)
+
+        async def slow_handler_b(msg: dict[str, Any]) -> None:
+            await asyncio.sleep(0.005)
+            received_b.append(msg)
+
+        await q.subscribe(Topic.NORMALIZED, "group-a", handler_a)
+        await q.subscribe(Topic.NORMALIZED, "group-b", slow_handler_b)
+
+        messages = [{"n": i} for i in range(10)]
+        for message in messages:
+            await q.publish(Topic.NORMALIZED, message)
+        await q.drain(timeout=5.0)
+
+        assert received_a == messages
+        assert received_b == messages
+        await q.stop()
+
+    async def test_subscribers_in_the_same_group_share_messages(self) -> None:
+        """Two subscribers with one group name: each message is handled once."""
+        q = InMemoryQueue()
+        await q.start()
+
+        received: list[dict[str, Any]] = []
+
+        async def handler(msg: dict[str, Any]) -> None:
+            await asyncio.sleep(0.001)
+            received.append(msg)
+
+        await q.subscribe(Topic.NORMALIZED, "workers", handler)
+        await q.subscribe(Topic.NORMALIZED, "workers", handler)
+
+        for i in range(10):
+            await q.publish(Topic.NORMALIZED, {"n": i})
+        await q.drain(timeout=5.0)
+
+        assert sorted(m["n"] for m in received) == list(range(10))
+        await q.stop()
+
+    async def test_messages_buffered_before_subscribe_go_to_first_group_only(self) -> None:
+        q = InMemoryQueue()
+        await q.start()
+        await q.publish(Topic.NORMALIZED, {"n": 0})
 
         received_a: list[dict[str, Any]] = []
         received_b: list[dict[str, Any]] = []
@@ -277,41 +329,39 @@ class TestInMemoryQueueSubscribe:
 
         await q.subscribe(Topic.NORMALIZED, "group-a", handler_a)
         await q.subscribe(Topic.NORMALIZED, "group-b", handler_b)
+        await q.publish(Topic.NORMALIZED, {"n": 1})
+        await q.drain(timeout=5.0)
 
-        for i in range(10):
-            await q.publish(Topic.NORMALIZED, {"n": i})
-
-        await asyncio.sleep(0.1)
-
-        # Every message is delivered to exactly one handler — no duplication, no loss
-        assert len(received_a) + len(received_b) == 10
+        assert received_a == [{"n": 0}, {"n": 1}]
+        assert received_b == [{"n": 1}]
         await q.stop()
 
-    async def test_competing_consumers_both_get_messages_when_first_is_slow(self) -> None:
-        """A slow first consumer gives the second consumer a chance to dequeue."""
+    async def test_drain_waits_for_messages_published_by_handlers(self) -> None:
+        """drain() follows a message through chained topics (raw → normalized → alerts)."""
         q = InMemoryQueue()
         await q.start()
+        delivered: list[dict[str, Any]] = []
 
-        received_a: list[dict[str, Any]] = []
-        received_b: list[dict[str, Any]] = []
+        async def forward_to_normalized(msg: dict[str, Any]) -> None:
+            await asyncio.sleep(0.01)
+            await q.publish(Topic.NORMALIZED, msg)
 
-        async def slow_handler_a(msg: dict[str, Any]) -> None:
-            await asyncio.sleep(0.02)
-            received_a.append(msg)
+        async def forward_to_alerts(msg: dict[str, Any]) -> None:
+            await asyncio.sleep(0.01)
+            await q.publish(Topic.ALERTS, msg)
 
-        async def handler_b(msg: dict[str, Any]) -> None:
-            received_b.append(msg)
+        async def collect(msg: dict[str, Any]) -> None:
+            await asyncio.sleep(0.01)
+            delivered.append(msg)
 
-        await q.subscribe(Topic.NORMALIZED, "group-a", slow_handler_a)
-        await q.subscribe(Topic.NORMALIZED, "group-b", handler_b)
+        await q.subscribe(Topic.RAW_WAZUH, "normalizer", forward_to_normalized)
+        await q.subscribe(Topic.NORMALIZED, "sigma-eval", forward_to_alerts)
+        await q.subscribe(Topic.ALERTS, "alert-manager", collect)
 
-        for i in range(10):
-            await q.publish(Topic.NORMALIZED, {"n": i})
+        await q.publish(Topic.RAW_WAZUH, {"n": 1})
+        await q.drain(timeout=5.0)
 
-        await asyncio.sleep(0.5)
-
-        assert len(received_a) + len(received_b) == 10
-        assert len(received_b) > 0  # fast consumer gets some while slow one is processing
+        assert delivered == [{"n": 1}]
         await q.stop()
 
 

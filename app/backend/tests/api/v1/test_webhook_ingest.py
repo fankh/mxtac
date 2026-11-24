@@ -16,7 +16,7 @@ Coverage:
   - POST /ingest: body exceeds 5 MB → 413
   - POST /ingest: rate limit exceeded → 429
   - POST /ingest: rate limit fail-open when Valkey is unavailable
-  - POST /ingest: events published to mxtac.raw.{source_name} topic
+  - POST /ingest: events published to the mxtac.raw.webhook topic
   - POST /ingest: _webhook_source and _received_at metadata injected
   - POST /ingest: batch shares single _received_at timestamp
   - POST /ingest/test: valid credentials → 200 {"status": "ok"}
@@ -282,10 +282,10 @@ async def test_published_to_correct_topic(
     generic_connector,
     mock_queue: MagicMock,
 ) -> None:
-    """Events are published to mxtac.raw.{source_name}."""
+    """Events are published to mxtac.raw.webhook, tagged with the source name."""
     await ingest_client.post(BASE, headers=_GOOD_HEADERS, json={"x": 1})
     topic, _payload = mock_queue.publish.call_args.args
-    assert topic == f"mxtac.raw.{_SOURCE}"
+    assert topic == "mxtac.raw.webhook"
 
 
 @pytest.mark.asyncio

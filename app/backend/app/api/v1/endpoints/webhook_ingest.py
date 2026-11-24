@@ -1,8 +1,8 @@
 """Generic webhook ingest endpoint — Feature 35.3 (extends 6.21).
 
 Accepts arbitrary JSON payloads from registered "generic" connectors and
-publishes each event to a dynamic ``mxtac.raw.{source_name}`` topic for
-downstream normalizer processing.
+publishes each event to the ``mxtac.raw.webhook`` topic, tagged with the
+connector name in ``_webhook_source``, for the webhook normalizer.
 
 Authentication:
   X-MxTac-Source — registered connector name (must be type "generic"), required.
@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.valkey import check_webhook_source_rate_limit
-from ....pipeline.queue import MessageQueue, get_queue
+from ....pipeline.queue import MessageQueue, Topic, get_queue
 from ....repositories.connector_repo import ConnectorRepo
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -88,7 +88,7 @@ async def webhook_ingest(
     """Generic webhook receiver — connector-authenticated JSON ingest.
 
     Validates the source connector (type must be "generic") and webhook token,
-    then publishes each event to ``mxtac.raw.{source_name}``.
+    then publishes each event to ``mxtac.raw.webhook``.
 
     Rate limited to 100 requests/minute per source (fail-open on Valkey outage
     so events are never silently dropped).
@@ -149,7 +149,6 @@ async def webhook_ingest(
         )
 
     # 6. Publish valid events; skip and count non-object array items
-    topic = f"mxtac.raw.{x_mxtac_source}"
     received_at = datetime.now(timezone.utc).isoformat()
     accepted = 0
     rejected = 0
@@ -158,7 +157,7 @@ async def webhook_ingest(
         if not isinstance(event, dict):
             rejected += 1
             continue
-        await queue.publish(topic, {
+        await queue.publish(Topic.RAW_WEBHOOK, {
             "_webhook_source": x_mxtac_source,
             "_received_at": received_at,
             **event,

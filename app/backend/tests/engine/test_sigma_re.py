@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.engine.sigma_engine import SigmaEngine, _Condition
+from app.engine.sigma_engine import SigmaEngine, SigmaRuleError, _Condition
 
 
 # ---------------------------------------------------------------------------
@@ -197,9 +197,10 @@ def test_re_word_boundary_no_match_substring() -> None:
 # Invalid regex
 # ---------------------------------------------------------------------------
 
-def test_re_invalid_pattern_returns_false() -> None:
-    """Invalid regex pattern raises re.error internally — should return False, not raise."""
-    assert _matches("name|re", "[invalid(", {"name": "anything"}) is False
+def test_re_invalid_pattern_is_rejected() -> None:
+    """An invalid regex is rejected when the rule is compiled, not silently ignored."""
+    with pytest.raises(SigmaRuleError, match="invalid regular expression"):
+        _matches("name|re", "[invalid(", {"name": "anything"})
 
 
 def test_re_empty_pattern_matches_any() -> None:

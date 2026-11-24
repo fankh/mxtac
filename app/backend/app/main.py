@@ -3,7 +3,6 @@ import glob as _glob
 import os
 import re
 import time
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +23,9 @@ from .core.database import AsyncSessionLocal
 from .core.exceptions import register_exception_handlers
 from .core.logging import configure_logging, get_logger
 from .db.seed import seed_database
+from .engine.sigma_engine import SigmaEngine
 from .pipeline.queue import get_queue, Topic
+from .services.bundled_rules import import_bundled_rules
 from .services.opensearch_client import get_opensearch
 
 configure_logging()
@@ -353,10 +354,11 @@ async def on_startup() -> None:
         from .db.migrate import auto_migrate
         await auto_migrate()
 
-    # 1. Seed database (idempotent)
+    # 1. Seed the bootstrap admin account (idempotent); demo accounts and rows
+    #    only when SEED_DEMO_DATA=true
     try:
         async with AsyncSessionLocal() as session:
-            await seed_database(session)
+            await seed_database(session, demo_data=settings.seed_demo_data)
     except Exception:
         logger.exception("Database seed failed — tables may not exist yet, run alembic upgrade")
 
@@ -375,24 +377,18 @@ async def on_startup() -> None:
     # 3.2. Start storage metrics collection — updates Prometheus gauges every 5 minutes
     asyncio.create_task(_storage_metrics_collector(), name="storage-metrics-collector")
 
-    # 4. Load Sigma rules
+    # 4. Load Sigma rules.  The rules table is the single source of truth:
+    #    bundled rule files are imported into it first (new ones only), then
+    #    the engine is loaded from the table.
+    engine = SigmaEngine()
+    app.state.sigma_engine = engine
     try:
-        from .engine.sigma_engine import SigmaEngine
-        engine = SigmaEngine()
-        rules_dir = Path(__file__).parent.parent / "sigma_rules"
-        if rules_dir.exists():
-            n = await engine.load_rules_from_dir(rules_dir)
-            logger.info("Loaded %d Sigma rules from disk", n)
-        else:
-            logger.info("No sigma_rules/ directory found, skipping disk rule loading")
-        # Load persisted rules from DB (overrides disk rules with same ID)
         async with AsyncSessionLocal() as session:
+            n_bundled = await import_bundled_rules(session)
             n_db = await engine.load_rules_from_db(session)
-            logger.info("Loaded %d Sigma rules from DB", n_db)
-        app.state.sigma_engine = engine
+        logger.info("Loaded %d Sigma rules from DB (%d bundled rules imported)", n_db, n_bundled)
     except Exception:
-        logger.exception("Sigma engine init failed")
-        app.state.sigma_engine = None
+        logger.exception("Sigma rule load failed — the engine starts without rules")
 
     # 5. Wire normalizer pipeline — subscribes to raw topics, publishes to mxtac.normalized
     try:
@@ -492,40 +488,12 @@ async def on_startup() -> None:
             settings.syslog_port,
         )
 
-    # Start scheduled detection engine (per-target aggregation + dedup)
-    try:
-        from .services.detection_engine import DetectionEngine
-        os_client = getattr(app.state, "os_client", None)
-        detection_repo = getattr(app.state, "detection_repo", None)
-        rule_repo = getattr(app.state, "rule_repo", None)
-        if os_client:
-            detection_engine = DetectionEngine(
-                os_client=os_client,
-                detection_repo=detection_repo,
-                rule_repo=rule_repo,
-            )
-            await detection_engine.start()
-            app.state.detection_engine = detection_engine
-            logger.info("Detection engine started (per-target aggregation)")
-        else:
-            logger.info("Detection engine skipped (OpenSearch not available)")
-    except Exception:
-        logger.exception("Detection engine start failed")
-
     logger.info("MxTac API startup complete")
 
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
     logger.info("MxTac API shutting down")
-
-    # Stop detection engine
-    detection_engine = getattr(app.state, "detection_engine", None)
-    if detection_engine:
-        try:
-            await detection_engine.stop()
-        except Exception:
-            pass
 
     # Stop connectors (cancels each connector's poll loop)
     for conn in getattr(app.state, "connectors", {}).values():
@@ -637,6 +605,7 @@ async def readiness() -> JSONResponse:
         from opensearchpy import AsyncOpenSearch
         os_client = AsyncOpenSearch(
             hosts=[settings.opensearch_url],
+            http_auth=settings.opensearch_http_auth,
             http_compress=True,
             use_ssl=settings.opensearch_use_ssl,
             verify_certs=False,

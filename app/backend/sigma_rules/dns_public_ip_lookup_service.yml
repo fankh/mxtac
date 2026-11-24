@@ -1,0 +1,31 @@
+title: DNS Query for a Public IP Lookup Service
+id: 318ba543-1fbc-4867-b4b5-bc180936b656
+status: test
+description: Detects DNS queries for services that return the caller's public IP address. Malware often checks its external address before contacting its operator.
+author: MxTac
+date: 2026-11-24
+references:
+  - https://attack.mitre.org/techniques/T1016/001/
+tags:
+  - attack.discovery
+  - attack.t1016.001
+logsource:
+  category: dns_query
+detection:
+  selection:
+    QueryName|endswith:
+      - 'ifconfig.me'
+      - 'ipinfo.io'
+      - 'api.ipify.org'
+      - 'icanhazip.com'
+      - 'checkip.amazonaws.com'
+      - 'ip-api.com'
+      - 'myexternalip.com'
+      - 'ident.me'
+      - 'ipecho.net'
+      - 'wtfismyip.com'
+  condition: selection
+falsepositives:
+  - Dynamic DNS clients and VPN software
+  - Administrators checking the external address of a network
+level: low

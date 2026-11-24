@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import pyotp
 from cryptography.fernet import Fernet
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.config import settings
@@ -29,6 +29,7 @@ from ....core.valkey import (
     increment_mfa_attempts,
     is_account_locked,
 )
+from ....models.user import User
 from ....repositories.user_repo import UserRepo
 from ....core.rbac import require_permission
 from ....schemas.auth import (
@@ -44,6 +45,7 @@ from ....schemas.auth import (
     MfaVerifyResponse,
     PasswordChangeRequiredResponse,
     RefreshRequest,
+    SelfPasswordChangeRequest,
     TokenResponse,
 )
 
@@ -77,6 +79,17 @@ def _generate_backup_codes() -> list[str]:
 def _hash_backup_code(code: str) -> str:
     """Hash a backup code with HMAC-SHA256 keyed on the application secret."""
     return hmac.new(settings.secret_key.encode(), code.encode(), hashlib.sha256).hexdigest()
+
+
+def _issue_tokens(user: User) -> TokenResponse:
+    """Full session for *user*: access + refresh tokens and the account identity."""
+    return TokenResponse(
+        access_token=create_access_token({"sub": user.email, "role": user.role}),
+        refresh_token=create_refresh_token({"sub": user.email}),
+        expires_in=settings.access_token_expire_minutes * 60,
+        email=user.email,
+        role=user.role,
+    )
 
 
 @router.post("/login")
@@ -150,13 +163,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     if user.mfa_enabled:
         mfa_token = create_mfa_token(str(user.id))
         return MfaLoginResponse(mfa_token=mfa_token)
-    token = create_access_token({"sub": user.email, "role": user.role})
-    refresh = create_refresh_token({"sub": user.email})
-    return TokenResponse(
-        access_token=token,
-        refresh_token=refresh,
-        expires_in=settings.access_token_expire_minutes * 60,
-    )
+    return _issue_tokens(user)
 
 
 @router.post("/mfa/verify", response_model=TokenResponse)
@@ -208,13 +215,7 @@ async def mfa_verify_login(body: MfaVerifyLoginRequest, db: AsyncSession = Depen
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA code")
 
     # 5. Issue full access + refresh tokens
-    token = create_access_token({"sub": user.email, "role": user.role})
-    refresh = create_refresh_token({"sub": user.email})
-    return TokenResponse(
-        access_token=token,
-        refresh_token=refresh,
-        expires_in=settings.access_token_expire_minutes * 60,
-    )
+    return _issue_tokens(user)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -228,13 +229,7 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
     user = await UserRepo.get_by_email(db, email)
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
-    token = create_access_token({"sub": user.email, "role": user.role})
-    new_refresh = create_refresh_token({"sub": user.email})
-    return TokenResponse(
-        access_token=token,
-        refresh_token=new_refresh,
-        expires_in=settings.access_token_expire_minutes * 60,
-    )
+    return _issue_tokens(user)
 
 
 @router.post("/logout", response_model=LogoutResponse)
@@ -369,6 +364,33 @@ async def mfa_disable(
 # ---------------------------------------------------------------------------
 
 
+async def _set_new_password(db: AsyncSession, user: User, new_password: str) -> None:
+    """Replace the password of *user*, enforcing the history rule.
+
+    Shared by the forced change (POST /auth/change-password) and the
+    self-service change (POST /auth/password).  Complexity and length are
+    validated by the request schemas before this is reached.
+    """
+    # Feature 2.4 — Password history: cannot reuse last 2 passwords.
+    # "Last 2" = current password + 1 previous (stored in password_history).
+    history = list(user.password_history or [])
+    candidates = [user.hashed_password] + history
+    for old_hash in candidates:
+        if verify_password(new_password, old_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot reuse one of your last 2 passwords",
+            )
+
+    # Rotate history: move current hash in; keep the 1 most-recent previous entry.
+    user.password_history = [user.hashed_password]
+
+    user.hashed_password = hash_password(new_password)
+    user.must_change_password = False
+    user.password_changed_at = datetime.now(timezone.utc)
+    await db.flush()
+
+
 @router.post("/change-password")
 async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depends(get_db)):
     """Complete a forced first-login password change.
@@ -398,33 +420,56 @@ async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depend
             detail="Invalid password change token",
         )
 
-    # Feature 2.4 — Password history: cannot reuse last 2 passwords.
-    # "Last 2" = current password + 1 previous (stored in password_history).
-    history = list(user.password_history or [])
-    candidates = [user.hashed_password] + history
-    for old_hash in candidates:
-        if verify_password(body.new_password, old_hash):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot reuse one of your last 2 passwords",
-            )
-
-    # Rotate history: move current hash in; keep the 1 most-recent previous entry.
-    user.password_history = [user.hashed_password]
-
-    user.hashed_password = hash_password(body.new_password)
-    user.must_change_password = False
-    user.password_changed_at = datetime.now(timezone.utc)
-    await db.flush()
+    await _set_new_password(db, user, body.new_password)
 
     if user.mfa_enabled:
         mfa_token = create_mfa_token(str(user.id))
         return MfaLoginResponse(mfa_token=mfa_token)
 
-    token = create_access_token({"sub": user.email, "role": user.role})
-    refresh = create_refresh_token({"sub": user.email})
-    return TokenResponse(
-        access_token=token,
-        refresh_token=refresh,
-        expires_in=settings.access_token_expire_minutes * 60,
-    )
+    return _issue_tokens(user)
+
+
+# ---------------------------------------------------------------------------
+# Self-service password change for a signed-in user
+# ---------------------------------------------------------------------------
+
+
+@router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_own_password(
+    body: SelfPasswordChangeRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Change the password of the signed-in user.
+
+    Requires the current password.  Wrong current passwords count towards the
+    same lockout counter as failed logins (5 attempts, 30 minutes), so a
+    stolen session cannot be used to guess the password without limit.  The
+    new password is subject to the same policy and history rules as the
+    forced first-login change.  Returns 204 with no body.
+    """
+    email = current_user["email"]
+    user = await UserRepo.get_by_email(db, email)
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+        )
+
+    if await is_account_locked(email):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Account temporarily locked. Try again in 30 minutes.",
+        )
+
+    if not verify_password(body.current_password, user.hashed_password):
+        await increment_login_attempts(email)
+        # 400, not 401: the session itself is valid and must not be dropped.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    await clear_login_attempts(email)
+    await _set_new_password(db, user, body.new_password)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

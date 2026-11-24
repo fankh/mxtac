@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.engine.sigma_engine import SigmaEngine, _Condition
+from app.engine.sigma_engine import SigmaEngine, SigmaRuleError, _Condition
 
 
 # ---------------------------------------------------------------------------
@@ -285,27 +285,22 @@ def test_cidr_all_single_value_no_match() -> None:
 # Invalid CIDR in rule (graceful degradation)
 # ---------------------------------------------------------------------------
 
-def test_cidr_invalid_single_cidr_returns_false() -> None:
-    """Invalid CIDR in rule appends None — matching returns False."""
-    assert _matches("src_ip|cidr", "not-a-cidr", {"src_ip": "10.0.0.1"}) is False
+def test_cidr_invalid_single_cidr_is_rejected() -> None:
+    """An invalid CIDR is rejected when the rule is compiled, not silently ignored."""
+    with pytest.raises(SigmaRuleError, match="invalid CIDR network"):
+        _matches("src_ip|cidr", "not-a-cidr", {"src_ip": "10.0.0.1"})
 
 
-def test_cidr_invalid_cidr_in_list_others_valid() -> None:
-    """Invalid CIDR mixed with valid: valid network still matches (OR semantics)."""
-    cidrs = ["bad-cidr", "10.0.0.0/8"]
-    assert _matches("src_ip|cidr", cidrs, {"src_ip": "10.5.5.5"}) is True
+def test_cidr_invalid_cidr_in_list_is_rejected() -> None:
+    """One invalid CIDR in a list rejects the rule even when the others are valid."""
+    with pytest.raises(SigmaRuleError, match="bad-cidr"):
+        _matches("src_ip|cidr", ["bad-cidr", "10.0.0.0/8"], {"src_ip": "10.5.5.5"})
 
 
-def test_cidr_invalid_cidr_in_list_no_valid_match() -> None:
-    """Invalid CIDR mixed with valid: IP outside valid network → False."""
-    cidrs = ["bad-cidr", "10.0.0.0/8"]
-    assert _matches("src_ip|cidr", cidrs, {"src_ip": "8.8.8.8"}) is False
-
-
-def test_cidr_all_invalid_cidr_in_list() -> None:
-    """cidr|all with an invalid CIDR (None) in the list → False (None check fails)."""
-    cidrs = ["0.0.0.0/0", "bad-cidr"]
-    assert _matches("src_ip|cidr|all", cidrs, {"src_ip": "1.2.3.4"}) is False
+def test_cidr_all_invalid_cidr_in_list_is_rejected() -> None:
+    """cidr|all with an invalid CIDR in the list → rejected at compile time."""
+    with pytest.raises(SigmaRuleError, match="bad-cidr"):
+        _matches("src_ip|cidr|all", ["0.0.0.0/0", "bad-cidr"], {"src_ip": "1.2.3.4"})
 
 
 # ---------------------------------------------------------------------------

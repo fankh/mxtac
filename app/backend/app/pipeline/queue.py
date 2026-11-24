@@ -1,5 +1,5 @@
 """
-Message queue abstraction — supports Kafka (production) and Valkey Streams (development).
+Message queue abstraction — in-process asyncio queues (default) or Valkey Streams.
 Topic naming convention: mxtac.{stage}.{source}
   - mxtac.raw.wazuh       — raw Wazuh JSON alerts
   - mxtac.raw.zeek        — raw Zeek log lines
@@ -69,6 +69,11 @@ class MessageQueue(ABC):
 class InMemoryQueue(MessageQueue):
     """Asyncio-based in-memory queue. No persistence, single process only.
 
+    Every consumer group that subscribes to a topic receives every message
+    published to it (like consumer groups of a Valkey stream); subscribers
+    that share a group name share the work.  Messages published before the
+    first subscription are buffered and delivered to the first group.
+
     Args:
         maxsize: Maximum number of messages per topic queue.  0 (default) means
                  unbounded — identical to previous behaviour.  A positive value
@@ -79,9 +84,13 @@ class InMemoryQueue(MessageQueue):
 
     def __init__(self, maxsize: int = 0) -> None:
         self._maxsize = maxsize
+        # topic → queue of the topic's first consumer group; it also buffers
+        # messages published before anyone subscribed.
         self._queues: dict[str, asyncio.Queue] = defaultdict(
             lambda: asyncio.Queue(maxsize=self._maxsize)
         )
+        # topic → group → queue.  The first group uses self._queues[topic].
+        self._group_queues: dict[str, dict[str, asyncio.Queue]] = {}
         self._tasks: list[asyncio.Task] = []
         self._backpressure_events: int = 0
 
@@ -91,20 +100,22 @@ class InMemoryQueue(MessageQueue):
         return self._backpressure_events
 
     async def publish(self, topic: str, message: dict[str, Any]) -> None:
-        q = self._queues[topic]
-        try:
-            q.put_nowait(message)
-        except asyncio.QueueFull:
-            self._backpressure_events += 1
-            logger.warning(
-                "InMemoryQueue back-pressure: topic=%s queue full (size=%d maxsize=%d)"
-                " — blocking publisher to slow ingest",
-                topic,
-                q.qsize(),
-                self._maxsize,
-            )
-            await q.put(message)  # block until a consumer frees space
-        logger.debug("InMemoryQueue publish topic=%s size=%d", topic, q.qsize())
+        group_queues = self._group_queues.get(topic)
+        targets = list(group_queues.values()) if group_queues else [self._queues[topic]]
+        for q in targets:
+            try:
+                q.put_nowait(message)
+            except asyncio.QueueFull:
+                self._backpressure_events += 1
+                logger.warning(
+                    "InMemoryQueue back-pressure: topic=%s queue full (size=%d maxsize=%d)"
+                    " — blocking publisher to slow ingest",
+                    topic,
+                    q.qsize(),
+                    self._maxsize,
+                )
+                await q.put(message)  # block until a consumer frees space
+            logger.debug("InMemoryQueue publish topic=%s size=%d", topic, q.qsize())
 
     async def subscribe(
         self,
@@ -112,8 +123,14 @@ class InMemoryQueue(MessageQueue):
         group: str,
         handler: Callable[[dict[str, Any]], Any],
     ) -> None:
+        group_queues = self._group_queues.setdefault(topic, {})
+        if group not in group_queues:
+            group_queues[group] = (
+                asyncio.Queue(maxsize=self._maxsize) if group_queues else self._queues[topic]
+            )
+        q = group_queues[group]
+
         async def _consume() -> None:
-            q = self._queues[topic]
             while True:
                 msg = await q.get()
                 try:
@@ -137,21 +154,40 @@ class InMemoryQueue(MessageQueue):
         consumer tasks while messages are still in-flight.  A configurable
         *timeout* prevents the process from hanging indefinitely when a
         consumer is slow or stalled.
+
+        A handler may publish to another topic (raw → normalized → alerts …),
+        so the queues are joined repeatedly until a full pass finds all of
+        them idle.
         """
-        joins = [q.join() for q in self._queues.values()]
-        if not joins:
+        if not self._all_queues():
             logger.info("InMemoryQueue drain: no queues — nothing to drain")
             return
+
+        async def _join_until_idle() -> None:
+            while True:
+                # _unfinished_tasks: messages put but not yet marked task_done().
+                busy = [q for q in self._all_queues() if q._unfinished_tasks]
+                if not busy:
+                    return
+                await asyncio.gather(*(q.join() for q in busy))
+
         try:
-            await asyncio.wait_for(asyncio.gather(*joins), timeout=timeout)
+            await asyncio.wait_for(_join_until_idle(), timeout=timeout)
             logger.info("InMemoryQueue drained successfully")
         except asyncio.TimeoutError:
-            remaining = sum(q.qsize() for q in self._queues.values())
+            remaining = sum(q.qsize() for q in self._all_queues())
             logger.warning(
                 "InMemoryQueue drain timed out after %.1fs — %d message(s) may be unprocessed",
                 timeout,
                 remaining,
             )
+
+    def _all_queues(self) -> list[asyncio.Queue]:
+        """Every queue of every topic and consumer group, without duplicates."""
+        queues = {id(q): q for q in self._queues.values()}
+        for group_queues in self._group_queues.values():
+            queues.update((id(q), q) for q in group_queues.values())
+        return list(queues.values())
 
     async def stop(self) -> None:
         for task in self._tasks:
@@ -233,94 +269,16 @@ class RedisStreamQueue(MessageQueue):
         await self._redis.aclose()
 
 
-# ── Kafka queue ───────────────────────────────────────────────────────────────
-
-class KafkaQueue(MessageQueue):
-    """Kafka-based queue using aiokafka. Requires aiokafka >= 0.10."""
-
-    def __init__(self, bootstrap_servers: str) -> None:
-        self._bootstrap = bootstrap_servers
-        self._producer = None
-        self._tasks: list[asyncio.Task] = []
-
-    async def start(self) -> None:
-        from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
-        self._producer = AIOKafkaProducer(
-            bootstrap_servers=self._bootstrap,
-            value_serializer=lambda v: json.dumps(v).encode(),
-        )
-        await self._producer.start()
-        logger.info("KafkaQueue started bootstrap=%s", self._bootstrap)
-
-    async def publish(self, topic: str, message: dict[str, Any]) -> None:
-        if self._producer is None:
-            raise RuntimeError("KafkaQueue not started")
-        await self._producer.send_and_wait(topic, message)
-
-    async def subscribe(
-        self,
-        topic: str,
-        group: str,
-        handler: Callable[[dict[str, Any]], Any],
-    ) -> None:
-        from aiokafka import AIOKafkaConsumer  # type: ignore[import-untyped]
-
-        async def _consume() -> None:
-            consumer = AIOKafkaConsumer(
-                topic,
-                bootstrap_servers=self._bootstrap,
-                group_id=group,
-                value_deserializer=lambda v: json.loads(v.decode()),
-                auto_offset_reset="earliest",
-            )
-            await consumer.start()
-            try:
-                async for msg in consumer:
-                    try:
-                        await handler(msg.value)
-                    except Exception:
-                        logger.exception("KafkaQueue handler error topic=%s", topic)
-            finally:
-                await consumer.stop()
-
-        task = asyncio.create_task(_consume(), name=f"kafka-consumer-{topic}-{group}")
-        self._tasks.append(task)
-
-    async def drain(self, timeout: float = 30.0) -> None:
-        """Flush the Kafka producer so all published messages are sent before exit.
-
-        Consumer messages persist in Kafka partitions and will not be lost.
-        The producer flush ensures that any buffered-but-not-yet-sent records
-        are committed to the broker before the process exits.
-        """
-        if self._producer is None:
-            return
-        try:
-            await asyncio.wait_for(self._producer.flush(), timeout=timeout)
-            logger.info("KafkaQueue producer flushed successfully")
-        except asyncio.TimeoutError:
-            logger.warning("KafkaQueue drain flush timed out after %.1fs", timeout)
-        except Exception:
-            logger.exception("KafkaQueue drain flush failed")
-
-    async def stop(self) -> None:
-        for task in self._tasks:
-            task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
-        if self._producer:
-            await self._producer.stop()
-
-
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 def create_queue() -> MessageQueue:
     """Instantiate the right queue backend based on settings."""
     backend = getattr(settings, "queue_backend", "memory")
-    if backend == "kafka":
-        return KafkaQueue(getattr(settings, "kafka_bootstrap_servers", "localhost:9092"))
     if backend == "redis":
         return RedisStreamQueue(settings.valkey_url)
-    return InMemoryQueue()
+    if backend == "memory":
+        return InMemoryQueue()
+    raise ValueError(f"Unsupported QUEUE_BACKEND {backend!r}: use 'memory' or 'redis'")
 
 
 # ── Singleton ─────────────────────────────────────────────────────────────────

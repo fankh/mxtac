@@ -175,11 +175,8 @@ async def test_is_below_threshold_true_when_coverage_low(
     client: AsyncClient, db_session, analyst_headers: dict, auth_headers: dict
 ) -> None:
     """is_below_threshold is True when enabled and current coverage < target."""
-    # With no enabled rules current_pct comes from mock data (COVERAGE_SUMMARY).
-    # Set target above that value so the alert fires.
-    from app.services.mock_data import COVERAGE_SUMMARY
-
-    high_target = COVERAGE_SUMMARY.coverage_pct + 10.0
+    # With no enabled rules current_pct is a real 0.0, so any positive target fires.
+    high_target = 10.0
     await client.put(
         "/api/v1/coverage/target",
         json={"target_pct": high_target, "enabled": True},
@@ -197,9 +194,7 @@ async def test_is_below_threshold_false_when_coverage_meets_target(
     client: AsyncClient, db_session, analyst_headers: dict, auth_headers: dict
 ) -> None:
     """is_below_threshold is False when current coverage >= target."""
-    from app.services.mock_data import COVERAGE_SUMMARY
-
-    low_target = max(0.0, COVERAGE_SUMMARY.coverage_pct - 10.0)
+    low_target = 0.0  # current_pct is 0.0 with no enabled rules
     await client.put(
         "/api/v1/coverage/target",
         json={"target_pct": low_target, "enabled": True},
@@ -217,9 +212,7 @@ async def test_is_below_threshold_false_when_disabled(
     client: AsyncClient, db_session, analyst_headers: dict, auth_headers: dict
 ) -> None:
     """is_below_threshold is always False when enabled=False."""
-    from app.services.mock_data import COVERAGE_SUMMARY
-
-    high_target = COVERAGE_SUMMARY.coverage_pct + 50.0
+    high_target = 50.0
     await client.put(
         "/api/v1/coverage/target",
         json={"target_pct": high_target, "enabled": False},

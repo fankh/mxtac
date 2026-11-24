@@ -7,7 +7,7 @@ Endpoint groups and their per-minute limits:
   auth   — 10/min  (login + MFA; brute-force mitigation)
   export — 5/min   (data export endpoints)
   write  — 60/min  (POST / PATCH / PUT / DELETE)
-  read   — 300/min (GET / HEAD; matches settings.rate_limit_per_minute default)
+  read   — settings.rate_limit_per_minute, default 300/min (GET / HEAD)
 
 Responses for rate-limited requests:
   429 Too Many Requests
@@ -79,7 +79,7 @@ _LIMITS: dict[str, int] = {
     "auth": 10,
     "export": 5,
     "write": 60,
-    "read": 300,
+    "read": settings.rate_limit_per_minute,
 }
 
 

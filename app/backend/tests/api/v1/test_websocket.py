@@ -15,10 +15,6 @@ Coverage:
   - broadcast_alert: wraps payload with type='alert' and publishes via manager (unit)
   - _ping_loop: sends ping message with type and ts fields (unit)
   - _ping_loop: stops cleanly when send_to raises (unit)
-  - _mock_replay: streams one alert message per detection (unit)
-  - _mock_replay: all streamed messages have type='alert' (unit)
-  - _mock_replay: alert data includes required fields (unit)
-  - _mock_replay: stops cleanly when send_to raises (unit)
 
 Feature 17.6 — Distributed broadcast via Valkey pub/sub (multi-instance):
   - _CHANNEL constant is exactly "mxtac:alerts"
@@ -120,7 +116,6 @@ from app.api.v1.endpoints.websocket import (
     manager,
 )
 from app.main import app
-from app.services.mock_data import DETECTIONS
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -143,6 +138,14 @@ def clean_manager():
     manager._sub_client = None
     yield
     manager._connections.clear()
+
+
+@pytest.fixture(autouse=True)
+def authorized():
+    """These tests cover the stream protocol, not authentication — treat every
+    connection as authorized.  Token checks are in test_websocket_auth.py."""
+    with patch.object(ws_module, "_is_authorized", new=AsyncMock(return_value=True)):
+        yield
 
 
 @pytest.fixture
@@ -471,86 +474,13 @@ async def test_ping_loop_stops_on_send_error():
 
 
 # ---------------------------------------------------------------------------
-# Section 5 — _mock_replay unit tests
+# Section 5 — no mock replay
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_mock_replay_sends_one_message_per_detection():
-    """_mock_replay() must send exactly one alert for each entry in DETECTIONS."""
-    ws = _make_ws()
-    sent: list[dict] = []
-
-    async def capture(w, msg):
-        sent.append(msg)
-
-    with (
-        patch("asyncio.sleep", new=AsyncMock()),
-        patch.object(manager, "send_to", side_effect=capture),
-    ):
-        await ws_module._mock_replay(ws)
-
-    assert len(sent) == len(DETECTIONS)
-
-
-@pytest.mark.asyncio
-async def test_mock_replay_all_messages_are_alert_type():
-    """Every message emitted by _mock_replay() must have type='alert'."""
-    ws = _make_ws()
-    sent: list[dict] = []
-
-    async def capture(w, msg):
-        sent.append(msg)
-
-    with (
-        patch("asyncio.sleep", new=AsyncMock()),
-        patch.object(manager, "send_to", side_effect=capture),
-    ):
-        await ws_module._mock_replay(ws)
-
-    assert all(m["type"] == "alert" for m in sent)
-
-
-@pytest.mark.asyncio
-async def test_mock_replay_alert_message_has_required_fields():
-    """Each alert data dict must contain the fields consumed by the frontend."""
-    ws = _make_ws()
-    first: dict | None = None
-
-    async def capture_first(w, msg):
-        nonlocal first
-        if first is None:
-            first = msg
-
-    with (
-        patch("asyncio.sleep", new=AsyncMock()),
-        patch.object(manager, "send_to", side_effect=capture_first),
-    ):
-        await ws_module._mock_replay(ws)
-
-    assert first is not None
-    required = {"id", "score", "severity", "technique_id", "name", "host", "status", "time"}
-    assert required <= set(first["data"])
-
-
-@pytest.mark.asyncio
-async def test_mock_replay_stops_on_send_error():
-    """_mock_replay() must exit after the first send_to failure."""
-    ws = _make_ws()
-    call_count = 0
-
-    async def fail_once(w, msg):
-        nonlocal call_count
-        call_count += 1
-        raise RuntimeError("broken pipe")
-
-    with (
-        patch("asyncio.sleep", new=AsyncMock()),
-        patch.object(manager, "send_to", side_effect=fail_once),
-    ):
-        await ws_module._mock_replay(ws)
-
-    assert call_count == 1  # loop must stop after the first failure
+def test_no_mock_replay_in_websocket_module():
+    """The alert stream only carries real alerts — the mock replay helper is gone."""
+    assert not hasattr(ws_module, "_mock_replay")
 
 
 # ---------------------------------------------------------------------------
@@ -1057,7 +987,6 @@ def test_alerts_ws_starts_ping_loop_on_connect():
     with (
         patch.object(manager, "_ensure_subscriber", new=AsyncMock()),
         patch("app.api.v1.endpoints.websocket._ping_loop", new=mock_ping),
-        patch("app.api.v1.endpoints.websocket._mock_replay", new=AsyncMock()),
     ):
         with TestClient(app) as client:
             with client.websocket_connect(WS_URL) as ws:
@@ -1073,7 +1002,6 @@ def test_alerts_ws_ping_loop_receives_websocket_object():
     with (
         patch.object(manager, "_ensure_subscriber", new=AsyncMock()),
         patch("app.api.v1.endpoints.websocket._ping_loop", new=mock_ping),
-        patch("app.api.v1.endpoints.websocket._mock_replay", new=AsyncMock()),
     ):
         with TestClient(app) as client:
             with client.websocket_connect(WS_URL) as ws:
@@ -1101,7 +1029,6 @@ def test_alerts_ws_ping_task_cancelled_on_disconnect():
     with (
         patch.object(manager, "_ensure_subscriber", new=AsyncMock()),
         patch("app.api.v1.endpoints.websocket._ping_loop", new=cancellable_ping),
-        patch("app.api.v1.endpoints.websocket._mock_replay", new=AsyncMock()),
     ):
         with TestClient(app) as client:
             with client.websocket_connect(WS_URL) as ws:

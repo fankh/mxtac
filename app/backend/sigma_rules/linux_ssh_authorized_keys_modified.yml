@@ -1,0 +1,30 @@
+title: SSH Authorized Keys File Modified via Command Line
+id: 358fd12a-eeda-4705-b4ca-85e738a0f557
+status: test
+description: Detects a command that writes to an authorized_keys file. An added key gives password-less access that survives a password change.
+author: MxTac
+date: 2026-11-24
+references:
+  - https://attack.mitre.org/techniques/T1098/004/
+tags:
+  - attack.persistence
+  - attack.t1098.004
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection_file:
+    CommandLine|contains: 'authorized_keys'
+  selection_write:
+    CommandLine|contains:
+      - '>>'
+      - 'tee '
+      - 'cp '
+      - 'mv '
+      - 'sed -i'
+      - 'install '
+  condition: selection_file and selection_write
+falsepositives:
+  - Key rotation by administrators or configuration-management tools
+  - User onboarding scripts
+level: medium
