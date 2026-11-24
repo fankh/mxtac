@@ -34,10 +34,10 @@ This document describes the deployment files in the repository and how far each 
 | WebSocket | The proxy must pass the `Upgrade` and `Connection` headers for `/api/v1/ws/`. The request carries the access token in the query string; do not log it |
 | Client address | The backend takes the client address for its rate limits from the `X-Forwarded-For` header. The edge proxy must set it to the address of the client |
 | First login | The first start on an empty database creates `admin@mxtac.local`. Read the generated password from the backend log, or set `INITIAL_ADMIN_PASSWORD` for the first start. See [First login](../README.md#first-login) |
-| No stale settings | A `.env` file read by the backend must not contain removed settings such as `KAFKA_*` or `SMTP_*`. See the [upgrade notes](../INSTALL.md#upgrade-notes) |
+| No stale settings | A `.env` file read by the backend must not contain removed settings such as `KAFKA_*` or `SMTP_*`. See the [upgrade notes](installation.md#upgrade-notes) |
 | Network exposure | Publish the reverse proxy only. Do not publish the backend, PostgreSQL, Valkey or OpenSearch ports. See the limitations in [security.md](security.md) |
 
-All settings are listed in [ENV-REFERENCE.md](../ENV-REFERENCE.md).
+All settings are listed in [configuration.md](configuration.md).
 
 ## Development Compose file
 
@@ -93,7 +93,7 @@ Compose stops with a message when a required variable is missing.
    docker compose -f docker-compose.prod.yml logs backend | grep "INITIAL ADMIN PASSWORD"
    ```
 
-The commands are also in [INSTALL.md](../INSTALL.md#option-b-single-host-with-the-production-compose-file).
+The commands are also in [installation.md](installation.md#option-b-single-host-with-the-production-compose-file).
 
 ### How it works
 
@@ -172,7 +172,7 @@ Things to know about this setup:
 - The generated Nginx configuration proxies `/api/` to the backend and everything else to the frontend container. `/docs`, `/health` and `/metrics` of the backend are reachable on the server at `http://localhost:8080` only.
 - The frontend container falls back to `index.html`, so reloading a page such as `/detections` works.
 - The backend uses the Valkey Streams queue (`QUEUE_BACKEND=redis`).
-- An installation created by an older version of the script still has a Redpanda service in its Compose file. See the [upgrade notes](../INSTALL.md#upgrade-notes).
+- An installation created by an older version of the script still has a Redpanda service in its Compose file. See the [upgrade notes](installation.md#upgrade-notes).
 
 ## Other targets
 

@@ -133,7 +133,7 @@ After a change to a Compose file, run `docker compose -f <file> config -q`.
 
 ## Conduct
 
-Be respectful and constructive. Harassment, personal attacks and publishing private information are not accepted. The maintainers may remove comments, commits and contributors that violate this.
+The [code of conduct](CODE_OF_CONDUCT.md) applies. Be respectful and constructive. Harassment, personal attacks and publishing private information are not accepted. The maintainers may remove comments, commits and contributors that violate this.
 
 ## License
 

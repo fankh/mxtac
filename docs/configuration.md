@@ -35,7 +35,7 @@ Unknown settings are handled differently depending on where they come from:
 
 ## First start
 
-These two settings are only read while the `users` table is empty. See [First login](README.md#first-login).
+These two settings are only read while the `users` table is empty. See [First login](../README.md#first-login).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -82,7 +82,7 @@ These two settings are only read while the `users` table is empty. See [First lo
 | `SYSLOG_PROTOCOL` | `udp` | `udp`, `tcp` or `both` |
 | `SYSLOG_MAX_MESSAGE_SIZE` | `65535` | Maximum message size in bytes |
 
-Received messages are normalized, stored and evaluated by Sigma rules. See [docs/integration-guide.md](docs/integration-guide.md#syslog).
+Received messages are normalized, stored and evaluated by Sigma rules. See [docs/integration-guide.md](integration-guide.md#syslog).
 
 ## Detection pipeline
 

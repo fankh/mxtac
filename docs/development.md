@@ -78,7 +78,7 @@ OPENSEARCH_HOST=localhost
 OPENSEARCH_PORT=15004
 ```
 
-Settings are documented in [ENV-REFERENCE.md](../ENV-REFERENCE.md). The backend does not start when `.env` contains a setting that does not exist in `app/core/config.py`.
+Settings are documented in [configuration.md](configuration.md). The backend does not start when `.env` contains a setting that does not exist in `app/core/config.py`.
 
 The generated password of `admin@mxtac.local` is written to the output of `uvicorn` at the first start.
 
@@ -151,7 +151,7 @@ CI checks that there is one migration head, that upgrade, downgrade and upgrade 
 |------|-------|
 | New API route | Add a module in `app/api/v1/endpoints/`, register it in `app/api/v1/router.py`, protect it with `require_permission`, then run `python scripts/gen_api_docs.py` |
 | New permission | `PERMISSIONS` in `app/core/rbac.py`, then `docs/security.md` |
-| New setting | `Settings` in `app/core/config.py`, then `ENV-REFERENCE.md` and `app/backend/.env.example`. When you remove a setting, remove it from every `.env` example and deployment file as well |
+| New setting | `Settings` in `app/core/config.py`, then `docs/configuration.md` and `app/backend/.env.example`. When you remove a setting, remove it from every `.env` example and deployment file as well |
 | New connector | Subclass `BaseConnector` in `app/connectors/`, add it to `CONNECTOR_TYPES` in `app/connectors/registry.py` and in `app/api/v1/endpoints/connectors.py`, add a topic in `app/pipeline/queue.py`, add a normalizer in `app/services/normalizers/` and subscribe it in `NormalizerPipeline`. The normalizer must set `metadata_product`, which Sigma rules match as `logsource.product` |
 | New Sigma rule shipped with the code | A YAML file with an `id` in `app/backend/sigma_rules/`, then `python scripts/gen_rule_table.py --write`. It is imported into the database at the next backend start. Use only the syntax listed in [sigma-engine.md](sigma-engine.md) |
 | New field for Sigma rules | `app/engine/field_mapper.py`, then [sigma-engine.md](sigma-engine.md) |

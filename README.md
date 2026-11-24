@@ -1,5 +1,9 @@
 # MxTac
 
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+[![Backend CI](https://github.com/fankh/mxtac/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/fankh/mxtac/actions/workflows/backend-ci.yml)
+[![Frontend CI](https://github.com/fankh/mxtac/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/fankh/mxtac/actions/workflows/frontend-ci.yml)
+
 MxTac is an open-source detection platform built around MITRE ATT&CK. It collects security events from Wazuh, Zeek, Suricata, syslog and a JSON webhook, normalizes them to OCSF, evaluates Sigma rules against them, and shows the resulting detections, incidents and ATT&CK coverage in a web UI.
 
 This repository is a deliberately small core. It is meant to be read, run and extended. The same company also operates a managed service, [KYRA MDR](https://kyramdr.com/en/?utm_source=mxtac&utm_medium=readme), which is a separate product. See [MxTac and KYRA MDR](#mxtac-and-kyra-mdr) for the difference.
@@ -22,13 +26,11 @@ A new installation contains no detections, incidents or events. Every page shows
 
 ## Screenshots
 
+The screenshots use sample data. A new installation starts empty.
+
 | Overview (light) | Overview (dark) |
 |------------------|-----------------|
 | ![Overview page, light theme](docs/images/overview-light.png) | ![Overview page, dark theme](docs/images/overview-dark.png) |
-
-| Detections | ATT&CK coverage |
-|------------|-----------------|
-| ![Detections page](docs/images/detections.png) | ![ATT&CK coverage page](docs/images/coverage.png) |
 
 ## Quick start
 
@@ -157,7 +159,7 @@ More detail: [docs/architecture.md](docs/architecture.md).
 
 ## Configuration
 
-The backend reads its settings from environment variables or `app/backend/.env`. [ENV-REFERENCE.md](ENV-REFERENCE.md) lists every setting. `app/backend/.env.example` is a starting point.
+The backend reads its settings from environment variables or `app/backend/.env`. [docs/configuration.md](docs/configuration.md) lists every setting. `app/backend/.env.example` is a starting point.
 
 ## Development
 
@@ -189,8 +191,8 @@ Set `VITE_PROXY_TARGET` to forward `/api` to another backend address, for exampl
 
 | Document | Content |
 |----------|---------|
-| [INSTALL.md](INSTALL.md) | Installation and upgrade steps |
-| [ENV-REFERENCE.md](ENV-REFERENCE.md) | Environment variables |
+| [docs/installation.md](docs/installation.md) | Installation and upgrade steps |
+| [docs/configuration.md](docs/configuration.md) | Environment variables |
 | [docs/architecture.md](docs/architecture.md) | Components and the event pipeline |
 | [docs/api.md](docs/api.md) | REST API routes and required permissions |
 | [docs/sigma-engine.md](docs/sigma-engine.md) | Supported Sigma features and the bundled rules |
@@ -240,6 +242,8 @@ More limitations of the security model are listed in [docs/security.md](docs/sec
 MxTac is licensed under the GNU Affero General Public License v3.0. See [LICENSE](LICENSE).
 
 ## Contributing and security
+
+The documentation index is [docs/README.md](docs/README.md). Questions and bug reports: [SUPPORT.md](SUPPORT.md). Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 - Contributions: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Reporting a vulnerability: [SECURITY.md](SECURITY.md)

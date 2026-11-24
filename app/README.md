@@ -84,4 +84,4 @@ frontend/
 | Sigma rules | [docs/sigma-engine.md](../docs/sigma-engine.md) |
 | Development | [docs/development.md](../docs/development.md) |
 | Deployment | [docs/deployment.md](../docs/deployment.md) |
-| Settings | [ENV-REFERENCE.md](../ENV-REFERENCE.md) |
+| Settings | [configuration.md](../docs/configuration.md) |

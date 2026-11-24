@@ -1,6 +1,6 @@
 # Installation
 
-MxTac consists of a FastAPI backend, a React frontend, PostgreSQL, Valkey and OpenSearch. This guide covers three ways to install it. Other deployment files in the repository are described in [docs/deployment.md](docs/deployment.md).
+MxTac consists of a FastAPI backend, a React frontend, PostgreSQL, Valkey and OpenSearch. This guide covers three ways to install it. Other deployment files in the repository are described in [docs/deployment.md](deployment.md).
 
 ## Requirements
 
@@ -46,7 +46,7 @@ sudo sysctl -w vm.max_map_count=262144
    docker compose logs backend | grep "INITIAL ADMIN PASSWORD"
    ```
 
-   The details, and how to choose the password yourself with `INITIAL_ADMIN_PASSWORD`, are in the [README](README.md#first-login).
+   The details, and how to choose the password yourself with `INITIAL_ADMIN_PASSWORD`, are in the [README](../README.md#first-login).
 
 | Service | Address |
 |---------|---------|
@@ -96,7 +96,7 @@ This setup is for a trusted machine. It uses fixed development credentials for t
 
 4. Open `https://mxtac.example.com` and sign in as `admin@mxtac.local`.
 
-[docs/deployment.md](docs/deployment.md#production-compose-file) describes the file, its optional variables and what it does not cover.
+[docs/deployment.md](deployment.md#production-compose-file) describes the file, its optional variables and what it does not cover.
 
 ## Option C: single Ubuntu server with the setup script
 
@@ -108,11 +108,11 @@ cd mxtac/app
 sudo MXTAC_HOST=mxtac.example.com bash setup.sh
 ```
 
-The installation is placed in `/opt/mxtac`. Read [docs/deployment.md](docs/deployment.md#automated-single-host-setup) for what the script does and the steps after it finishes.
+The installation is placed in `/opt/mxtac`. Read [docs/deployment.md](deployment.md#automated-single-host-setup) for what the script does and the steps after it finishes.
 
 ## Running without Docker
 
-See [docs/development.md](docs/development.md). In short:
+See [docs/development.md](development.md). In short:
 
 ```bash
 # Backend with a local SQLite database
@@ -133,7 +133,7 @@ The generated password of `admin@mxtac.local` is written to the output of the ba
 
 ## Configuration
 
-Settings are environment variables. [ENV-REFERENCE.md](ENV-REFERENCE.md) lists all of them. The ones to set for any shared deployment:
+Settings are environment variables. [configuration.md](configuration.md) lists all of them. The ones to set for any shared deployment:
 
 | Variable | Value |
 |----------|-------|
@@ -180,7 +180,7 @@ sudo bash app/update.sh
 
 ### Upgrade notes
 
-Read these when you upgrade an installation that was created before the changes listed under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md).
+Read these when you upgrade an installation that was created before the changes listed under `[Unreleased]` in [CHANGELOG.md](../CHANGELOG.md).
 
 | Change | What to do |
 |--------|------------|
@@ -209,7 +209,7 @@ Variables that are passed to the backend as real environment variables (Compose 
 | Backend exits with `error parsing value for field "cors_origins"` | `CORS_ORIGINS` must be a JSON array |
 | Backend exits with `Input should be a valid boolean` for `seed_demo_data` | `SEED_DEMO_DATA` is set to an empty value. Use `true` or `false`, or remove it |
 | Backend container exits with `docker-entrypoint.sh: ... not found` on Windows | `app/backend/docker-entrypoint.sh` has CRLF line endings. Convert it to LF. `.gitattributes` keeps `*.sh` files in LF on a new clone |
-| The log has no `INITIAL ADMIN PASSWORD` line | The line is written once, by the start that created the account. It is missing when `INITIAL_ADMIN_PASSWORD` was set, when the `users` table was not empty, or when the container that wrote it was removed. See [First login](README.md#first-login) |
+| The log has no `INITIAL ADMIN PASSWORD` line | The line is written once, by the start that created the account. It is missing when `INITIAL_ADMIN_PASSWORD` was set, when the `users` table was not empty, or when the container that wrote it was removed. See [First login](../README.md#first-login) |
 | Login returns `500` and the backend log shows `relation "users" does not exist` | The migrations did not run. Run `docker compose exec backend alembic upgrade head` and restart the backend |
 | Login returns `429` | Five failed logins lock the email address for 30 minutes. The login route also allows 10 requests per minute per IP |
 | UI loads but API calls fail | The frontend calls `/api/v1` on its own origin. Check that the proxy forwards `/api/` to the backend. For the Vite dev server, check `VITE_PROXY_TARGET` |
@@ -225,6 +225,6 @@ docker compose logs -f frontend
 
 ## Further reading
 
-- [docs/deployment.md](docs/deployment.md): deployment files and production notes
-- [docs/integration-guide.md](docs/integration-guide.md): connecting data sources
-- [docs/security.md](docs/security.md): security model and limitations
+- [docs/deployment.md](deployment.md): deployment files and production notes
+- [docs/integration-guide.md](integration-guide.md): connecting data sources
+- [docs/security.md](security.md): security model and limitations

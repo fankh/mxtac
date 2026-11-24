@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Do not open a public GitHub issue for a security vulnerability. Send an email to **security@seekerslab.com** with:
+Do not open a public GitHub issue for a security vulnerability. Report it privately through [GitHub security advisories](https://github.com/fankh/mxtac/security/advisories/new) (repository page, Security tab, "Report a vulnerability"). Include:
 
 - a description of the vulnerability;
 - steps to reproduce it, or a proof of concept;
