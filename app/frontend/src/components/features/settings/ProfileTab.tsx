@@ -93,7 +93,7 @@ export function ProfileTab() {
 
   if (isLoading) {
     return (
-      <div className="grid max-w-4xl gap-4 md:grid-cols-2" aria-label="Loading profile">
+      <div className="grid max-w-4xl grid-cols-1 gap-4 md:grid-cols-2" aria-label="Loading profile">
         <Skeleton className="h-40 w-full rounded-lg" />
         <Skeleton className="h-40 w-full rounded-lg" />
       </div>
@@ -115,7 +115,7 @@ export function ProfileTab() {
   }
 
   return (
-    <div className="grid max-w-4xl gap-4 md:grid-cols-2">
+    <div className="grid max-w-4xl grid-cols-1 gap-4 md:grid-cols-2">
       <Card>
         <CardContent className="p-4">
           <h2 className="text-[12px] font-semibold text-foreground">Profile</h2>

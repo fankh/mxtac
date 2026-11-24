@@ -50,7 +50,7 @@ export function RecentDetectionsTable({ data }: { data: Detection[] }) {
                     <div className="font-mono text-[11px]">{row.technique_id}</div>
                     <div className="truncate text-[11px] text-muted-foreground">{row.technique_name}</div>
                   </TableCell>
-                  <TableCell className="py-2 text-[12px]">{row.host}</TableCell>
+                  <TableCell className="whitespace-nowrap py-2 text-[12px]">{row.host}</TableCell>
                   <TableCell className="py-2"><StatusPill status={row.status} /></TableCell>
                   <TableCell className="whitespace-nowrap py-2 text-[11px] text-muted-foreground" title={new Date(row.time).toLocaleString()}>
                     {timeAgo(row.time)}

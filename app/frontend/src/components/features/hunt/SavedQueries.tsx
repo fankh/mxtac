@@ -97,7 +97,7 @@ export function SaveQueryDialog({ open, onOpenChange, search, editing, onSaved }
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <form
-          className="grid gap-3"
+          className="grid grid-cols-1 gap-3"
           onSubmit={(e) => { e.preventDefault(); if (canSubmit) mutation.mutate() }}
         >
           <DialogHeader>

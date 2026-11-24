@@ -128,7 +128,7 @@ function HuntWorkspace() {
         searching={search.isFetching}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="min-w-0 space-y-4">
           <HuntCharts timeFrom={ranTimeFrom} onPickValue={addFilterAndRun} />
           <HuntResults

@@ -45,7 +45,7 @@ const STATUS_ACTIONS: Record<DetectionStatus, StatusAction[]> = {
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[110px_1fr] gap-2 border-b border-border py-1.5 last:border-0">
+    <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 border-b border-border py-1.5 last:border-0">
       <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
       <dd className="break-words text-[12px] text-foreground">{children}</dd>
     </div>
@@ -130,7 +130,7 @@ function PanelBody({ detection, onUpdated }: { detection: Detection; onUpdated?:
           {detection.user && <Row label="User">{detection.user}</Row>}
           {detection.process && (
             <Row label="Process">
-              <code className="rounded bg-muted px-1 font-mono text-[11px]">{detection.process}</code>
+              <code className="break-all rounded bg-muted px-1 font-mono text-[11px]">{detection.process}</code>
             </Row>
           )}
           {detection.log_source && <Row label="Log source">{detection.log_source}</Row>}

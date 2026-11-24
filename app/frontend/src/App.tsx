@@ -22,7 +22,7 @@ const RulesPage = lazy(() => import('./components/features/rules/RulesPage').the
 
 function PageFallback() {
   return (
-    <div className="space-y-4 p-4" aria-busy="true" aria-label="Loading page">
+    <div className="space-y-4 p-4 max-md:pt-[58px]" aria-busy="true" aria-label="Loading page">
       <Skeleton className="h-8 w-64" />
       <Skeleton className="h-40 w-full rounded-lg" />
     </div>
@@ -34,7 +34,7 @@ function MainLayout() {
   const showShortcutsModal = useUIStore(s => s.showShortcutsModal)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground supports-[height:100dvh]:h-dvh">
       <Sidebar />
       <main className="min-w-0 flex-1 overflow-y-auto">
         <ErrorBoundary>

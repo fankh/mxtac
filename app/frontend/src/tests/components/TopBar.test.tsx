@@ -36,6 +36,18 @@ describe('TopBar', () => {
     expect(screen.getByRole('button', { name: 'New rule' })).toBeInTheDocument()
   })
 
+  it('keeps the actions and the stream state in separate groups so the actions can wrap', () => {
+    render(<TopBar crumb="Rules" actions={<button>New rule</button>} />)
+    const actions = screen.getByRole('button', { name: 'New rule' }).parentElement
+    expect(actions).not.toContainElement(screen.getByTitle('Alert stream: live'))
+    expect(screen.getByRole('banner')).toContainElement(actions)
+  })
+
+  it('renders no actions group when there are no actions', () => {
+    render(<TopBar crumb="Settings" />)
+    expect(screen.getByRole('banner').querySelectorAll(':scope > div')).toHaveLength(1)
+  })
+
   it('shows "Updated <time>" only when updatedAt is given', () => {
     const { rerender } = render(<TopBar crumb="Overview" />)
     expect(screen.queryByText(/^Updated/)).not.toBeInTheDocument()

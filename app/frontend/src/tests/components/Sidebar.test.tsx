@@ -7,9 +7,9 @@ vi.mock('../../components/shared/MfaSetupModal', () => ({
   ),
 }))
 
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
+import { Link, MemoryRouter, useLocation } from 'react-router-dom'
 import { Sidebar } from '../../components/layout/Sidebar'
 import { useUIStore } from '../../stores/uiStore'
 import { useAuthStore } from '../../stores/authStore'
@@ -36,6 +36,30 @@ function renderSidebar(initialPath = '/') {
 
 /** The nav link for a label; the accessible name also holds when the sidebar is collapsed. */
 const navLink = (label: string) => screen.getByTitle(label)
+
+function LocationProbe() {
+  return <span data-testid="location">{useLocation().pathname}</span>
+}
+
+/** The sidebar next to a link the page itself would render, and the current path. */
+function renderWithPage(initialPath = '/') {
+  return render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <Sidebar />
+      <Link to="/incidents">Page link to incidents</Link>
+      <LocationProbe />
+    </MemoryRouter>,
+  )
+}
+
+const menuButton = () => screen.getByRole('button', { name: 'Open navigation', hidden: true })
+const drawer = () => screen.getByRole('dialog', { name: 'Main navigation' })
+const queryDrawer = () => screen.queryByRole('dialog', { name: 'Main navigation' })
+
+function openDrawer() {
+  fireEvent.click(menuButton())
+  return within(drawer())
+}
 
 describe('Sidebar', () => {
   const logout = vi.fn().mockResolvedValue(undefined)
@@ -129,6 +153,110 @@ describe('Sidebar', () => {
       expect(useUIStore.getState().sidebarCollapsed).toBe(false)
       expect(screen.getByText('MxTac')).toBeInTheDocument()
       expect(screen.getByTitle('Collapse sidebar')).toBeInTheDocument()
+    })
+  })
+
+  describe('mobile drawer', () => {
+    it('is closed at first: only the menu button is rendered', () => {
+      renderWithPage()
+      expect(menuButton()).toHaveAttribute('aria-expanded', 'false')
+      expect(queryDrawer()).not.toBeInTheDocument()
+    })
+
+    it('opens from the menu button with every nav link and the KYRA MDR card', () => {
+      renderWithPage('/detections')
+      const inDrawer = openDrawer()
+
+      expect(menuButton()).toHaveAttribute('aria-expanded', 'true')
+      for (const { label, href } of NAV_ITEMS) {
+        expect(inDrawer.getByRole('link', { name: label })).toHaveAttribute('href', href)
+      }
+      expect(inDrawer.getByRole('link', { name: 'Detections' })).toHaveAttribute('aria-current', 'page')
+      const kyra = inDrawer.getByRole('link', { name: /KYRA MDR/ })
+      expect(kyra).toHaveAttribute('href', KYRA_MDR_URL)
+      expect(kyra).toHaveTextContent(/managed service/i)
+    })
+
+    it('keeps the account, theme and sign-out controls, without the collapse button', () => {
+      renderWithPage()
+      const inDrawer = openDrawer()
+
+      expect(inDrawer.getByText('analyst@mxtac.local')).toBeInTheDocument()
+      expect(inDrawer.getByTitle('analyst@mxtac.local: account security')).toBeInTheDocument()
+      expect(inDrawer.getByTitle('Keyboard shortcuts')).toBeInTheDocument()
+      expect(inDrawer.queryByTitle('Collapse sidebar')).not.toBeInTheDocument()
+
+      fireEvent.click(inDrawer.getByTitle('Switch to dark mode'))
+      expect(useUIStore.getState().theme).toBe('dark')
+      expect(drawer()).toBeInTheDocument()
+
+      fireEvent.click(inDrawer.getByTitle('Sign out'))
+      expect(logout).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows labels in the drawer even when the desktop sidebar is collapsed', () => {
+      useUIStore.setState({ sidebarCollapsed: true })
+      renderWithPage()
+      const inDrawer = openDrawer()
+      expect(inDrawer.getByText('Detections')).toBeInTheDocument()
+      expect(inDrawer.getByText('Monitor')).toBeInTheDocument()
+    })
+
+    it('closes when a nav link is followed, and the route changes', async () => {
+      renderWithPage('/')
+      fireEvent.click(openDrawer().getByRole('link', { name: 'Hunt' }))
+
+      expect(screen.getByTestId('location')).toHaveTextContent('/hunt')
+      await waitFor(() => expect(queryDrawer()).not.toBeInTheDocument())
+      expect(menuButton()).toHaveAttribute('aria-expanded', 'false')
+    })
+
+    it('closes when the link of the current page is followed', async () => {
+      renderWithPage('/hunt')
+      fireEvent.click(openDrawer().getByRole('link', { name: 'Hunt' }))
+      await waitFor(() => expect(queryDrawer()).not.toBeInTheDocument())
+    })
+
+    it('closes when the route changes for another reason', async () => {
+      renderWithPage('/')
+      openDrawer()
+      fireEvent.click(screen.getByText('Page link to incidents'))
+
+      expect(screen.getByTestId('location')).toHaveTextContent('/incidents')
+      await waitFor(() => expect(queryDrawer()).not.toBeInTheDocument())
+    })
+
+    it('closes on Escape and returns focus to the menu button', async () => {
+      renderWithPage()
+      openDrawer()
+      fireEvent.keyDown(drawer(), { key: 'Escape' })
+
+      await waitFor(() => expect(queryDrawer()).not.toBeInTheDocument())
+      await waitFor(() => expect(menuButton()).toHaveFocus())
+    })
+
+    it('closes from its close button and returns focus to the menu button', async () => {
+      renderWithPage()
+      fireEvent.click(openDrawer().getByRole('button', { name: 'Close' }))
+
+      await waitFor(() => expect(queryDrawer()).not.toBeInTheDocument())
+      await waitFor(() => expect(menuButton()).toHaveFocus())
+    })
+
+    it('closes and opens the MFA modal from the account button', async () => {
+      renderWithPage()
+      fireEvent.click(openDrawer().getByTitle('analyst@mxtac.local: account security'))
+
+      expect(screen.getByTestId('mfa-setup-modal')).toBeInTheDocument()
+      await waitFor(() => expect(queryDrawer()).not.toBeInTheDocument())
+    })
+
+    it('closes and opens the keyboard shortcuts modal', async () => {
+      renderWithPage()
+      fireEvent.click(openDrawer().getByTitle('Keyboard shortcuts'))
+
+      expect(useUIStore.getState().showShortcutsModal).toBe(true)
+      await waitFor(() => expect(queryDrawer()).not.toBeInTheDocument())
     })
   })
 

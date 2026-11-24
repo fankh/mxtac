@@ -28,7 +28,7 @@ export function IncidentMetricsCards() {
 
   if (isLoading) {
     return (
-      <div className="grid gap-4 md:grid-cols-4" aria-label="Loading incident metrics">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label="Loading incident metrics">
         {Array.from({ length: 4 }).map((_, index) => (
           <Skeleton key={index} className="h-[84px] rounded-lg" />
         ))}
@@ -59,7 +59,7 @@ export function IncidentMetricsCards() {
   ).join(' · ')
 
   return (
-    <div className="grid gap-4 md:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <StatCard
         label="Open incidents"
         value={data.open_incidents_count.toLocaleString('en-US')}

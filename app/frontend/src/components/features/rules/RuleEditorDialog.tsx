@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { apiErrorMessage, rulesApi } from '@/lib/api'
 import { useUIStore } from '@/stores/uiStore'
+import { cn } from '@/lib/utils'
 import type { RuleTestResult } from '@/types/api'
 import { RuleTestPanel } from './RuleTestPanel'
 import {
@@ -19,6 +20,9 @@ import {
 
 type CodeEditor = Parameters<OnMount>[0]
 type Monaco = Parameters<OnMount>[1]
+
+/** Editor height: 360px where there is room, down to 240px on a short phone screen. */
+const EDITOR_HEIGHT = 'h-[clamp(240px,45dvh,360px)]'
 
 interface RuleEditorDialogProps {
   /** The rule to edit; null opens an empty editor for a new rule. */
@@ -152,7 +156,7 @@ export function RuleEditorDialog({ ruleId, canWrite, onClose }: RuleEditorDialog
 
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
-      <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
@@ -164,7 +168,7 @@ export function RuleEditorDialog({ ruleId, canWrite, onClose }: RuleEditorDialog
 
         {loading && (
           <div className="space-y-2" aria-label="Loading rule">
-            <Skeleton className="h-[360px] w-full" />
+            <Skeleton className={cn(EDITOR_HEIGHT, 'w-full')} />
             <Skeleton className="h-8 w-1/2" />
           </div>
         )}
@@ -181,15 +185,15 @@ export function RuleEditorDialog({ ruleId, canWrite, onClose }: RuleEditorDialog
 
         {!loading && !loadFailed && (
           <div className="space-y-3">
-            <div className="overflow-hidden rounded-lg border border-border">
+            <div className={cn(EDITOR_HEIGHT, 'overflow-hidden rounded-lg border border-border')}>
               <Editor
-                height="360px"
+                height="100%"
                 defaultLanguage="yaml"
                 value={yaml}
                 onChange={handleChange}
                 onMount={handleMount}
                 theme={theme === 'light' ? 'vs' : 'vs-dark'}
-                loading={<Skeleton className="h-[360px] w-full" />}
+                loading={<Skeleton className="h-full w-full" />}
                 options={{
                   readOnly: !canWrite,
                   minimap: { enabled: false },
@@ -221,8 +225,8 @@ export function RuleEditorDialog({ ruleId, canWrite, onClose }: RuleEditorDialog
           </div>
         )}
 
-        <DialogFooter className="items-center gap-2 sm:justify-between sm:space-x-0">
-          <div className="flex items-center gap-3">
+        <DialogFooter className="flex-col gap-3 sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
             {canWrite && !loading && !loadFailed && (
               <Button type="button" variant="outline" onClick={handleFormat} title="Re-indent the YAML">Format</Button>
             )}
@@ -233,7 +237,7 @@ export function RuleEditorDialog({ ruleId, canWrite, onClose }: RuleEditorDialog
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose} disabled={saveMutation.isPending}>
               {canWrite ? 'Cancel' : 'Close'}
             </Button>

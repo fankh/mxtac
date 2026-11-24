@@ -144,3 +144,11 @@
 * { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; box-sizing: border-box; }
 
 html { font-size: 14px; }
+
+/*
+ * Touch targets: icon-only buttons are at least 32px on phones and on touch screens.
+ * A mouse-driven desktop keeps the denser sizes set by the component classes.
+ */
+@media (max-width: 767px), (pointer: coarse) {
+  .touch-target { min-width: 32px; min-height: 32px; }
+}

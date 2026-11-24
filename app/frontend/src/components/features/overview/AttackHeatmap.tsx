@@ -30,32 +30,37 @@ export function AttackHeatmap({ rows, tacticLabels }: Props) {
           </Link>
         </div>
 
-        <div className="grid gap-1" style={columns}>
-          <div />
-          {tacticLabels.map((label) => (
-            <div key={label} className="truncate text-center text-[10px] text-muted-foreground" title={label}>
-              {label}
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-1 flex flex-col gap-1">
-          {rows.map((row) => (
-            <div key={row.technique_id} className="grid items-center gap-1" style={columns}>
-              <span className="truncate pr-1 font-mono text-[10px] text-muted-foreground" title={row.technique_id}>
-                {row.technique_id}
-              </span>
-              {row.cells.map((cell) => (
-                <div
-                  key={cell.tactic}
-                  data-testid="heat-cell"
-                  className="h-5 rounded-sm bg-muted"
-                  style={cellStyle(cell.opacity, cell.covered)}
-                  title={`${row.technique_id} · ${cell.tactic}: ${cell.covered} of ${cell.total}`}
-                />
+        {/* 14 tactic columns need about 640px; on a narrower card the grid scrolls sideways. */}
+        <div className="overflow-x-auto">
+          <div className="min-w-[640px]">
+            <div className="grid gap-1" style={columns}>
+              <div />
+              {tacticLabels.map((label) => (
+                <div key={label} className="truncate text-center text-[10px] text-muted-foreground" title={label}>
+                  {label}
+                </div>
               ))}
             </div>
-          ))}
+
+            <div className="mt-1 flex flex-col gap-1">
+              {rows.map((row) => (
+                <div key={row.technique_id} className="grid items-center gap-1" style={columns}>
+                  <span className="truncate pr-1 font-mono text-[10px] text-muted-foreground" title={row.technique_id}>
+                    {row.technique_id}
+                  </span>
+                  {row.cells.map((cell) => (
+                    <div
+                      key={cell.tactic}
+                      data-testid="heat-cell"
+                      className="h-5 rounded-sm bg-muted"
+                      style={cellStyle(cell.opacity, cell.covered)}
+                      title={`${row.technique_id} · ${cell.tactic}: ${cell.covered} of ${cell.total}`}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">

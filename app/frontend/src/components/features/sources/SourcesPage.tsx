@@ -129,7 +129,7 @@ export function SourcesPage() {
         </Button>
       }
     >
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
           { label: 'Sources', value: stats.total },
           { label: 'Running', value: stats.running },

@@ -136,7 +136,7 @@ export function MfaSetupModal({ onClose }: Props) {
 
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
-      <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Security Settings</DialogTitle>
           <DialogDescription>Multi-Factor Authentication</DialogDescription>

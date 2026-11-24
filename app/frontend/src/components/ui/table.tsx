@@ -2,6 +2,10 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+/**
+ * A table scrolls sideways inside its own wrapper when it is wider than the space it has,
+ * so cells keep their text on one line instead of breaking words on a narrow screen.
+ */
 const Table = React.forwardRef<
   HTMLTableElement,
   React.HTMLAttributes<HTMLTableElement>
@@ -70,7 +74,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      "h-8 px-3 text-left align-middle text-[11px] font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0",
+      "h-8 whitespace-nowrap px-3 text-left align-middle text-[11px] font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0",
       className
     )}
     {...props}
@@ -84,7 +88,7 @@ const TableCell = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <td
     ref={ref}
-    className={cn("px-3 py-2.5 align-middle [&:has([role=checkbox])]:pr-0", className)}
+    className={cn("whitespace-nowrap px-3 py-2.5 align-middle [&:has([role=checkbox])]:pr-0", className)}
     {...props}
   />
 ));

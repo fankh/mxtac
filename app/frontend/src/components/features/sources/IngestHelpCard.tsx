@@ -85,7 +85,7 @@ export function IngestHelpCard({ sources }: IngestHelpCardProps) {
             variant="ghost"
             size="icon"
             title="Copy command"
-            className="absolute right-1.5 top-1.5"
+            className="absolute right-1.5 top-1.5 bg-muted"
             onClick={copyCommand}
           >
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

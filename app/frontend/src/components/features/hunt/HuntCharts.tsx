@@ -56,7 +56,7 @@ export function HuntCharts({ timeFrom, onPickValue }: Props) {
   const maxTerm = Math.max(1, ...termBuckets.map((b) => b.count))
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-2">
         <CardContent className="p-4">
           <div className="mb-3">

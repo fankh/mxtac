@@ -29,9 +29,9 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback
       return (
-        <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-3 p-6">
+        <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-3 p-6 max-md:pt-[58px]">
           <div className="text-[13px] font-semibold text-foreground">Something went wrong</div>
-          <div className="text-[11px] text-muted-foreground max-w-md text-center">
+          <div className="max-w-md break-words text-center text-[11px] text-muted-foreground">
             {this.state.error?.message ?? 'An unexpected rendering error occurred.'}
           </div>
           <Button size="sm" onClick={() => this.setState({ hasError: false, error: null })}>

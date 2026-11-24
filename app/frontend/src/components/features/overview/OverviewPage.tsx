@@ -50,7 +50,7 @@ export function OverviewPage() {
   return (
     <Page title="Overview" description="Detections, coverage and source health" actions={rangeSelect}>
       {kpis.isLoading && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6" aria-label="Loading">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6" aria-label="Loading">
           {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-[92px] rounded-lg" />)}
         </div>
       )}
@@ -69,15 +69,15 @@ export function OverviewPage() {
         <>
           <KpiCards data={kpis.data} />
 
-          <div className="grid gap-4 xl:grid-cols-3">
-            <div className="xl:col-span-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <div className="min-w-0 xl:col-span-2">
               <DetectionTimeline data={timeline.data ?? []} rangeLabel={rangeLabel} />
             </div>
             <TacticsTable data={tactics.data ?? []} rangeLabel={rangeLabel} />
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-3">
-            <div className="xl:col-span-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <div className="min-w-0 xl:col-span-2">
               <RecentDetectionsTable data={recent.data ?? []} />
             </div>
             <SourceStatusCard data={sources.data ?? []} />

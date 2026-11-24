@@ -91,7 +91,7 @@ export function CoveragePage() {
         onEditTarget={() => setTargetOpen(true)}
       />
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <CoverageTrendChart targetPct={target.data?.target_pct} />
         <CoverageBySource />
       </div>

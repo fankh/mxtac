@@ -55,7 +55,7 @@ export function KpiCards({ data }: { data: KpiMetrics }) {
   const coverage = data.attack_total > 0 ? (data.attack_covered / data.attack_total) * 100 : 0
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
       <Stat label="Detections" hint={<Delta pct={data.total_detections_delta_pct} />}>
         <span className="text-lg font-bold tabular-nums">{fmtNum(data.total_detections)}</span>
       </Stat>

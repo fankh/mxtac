@@ -13,7 +13,7 @@ export function NotificationToast() {
   if (notifications.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-[320px]">
+    <div className="fixed bottom-4 right-4 z-50 flex w-[320px] max-w-[calc(100vw-2rem)] flex-col gap-2">
       {notifications.map((n) => (
         <div
           key={n.id}

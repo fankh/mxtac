@@ -111,7 +111,7 @@ export function ConnectorFormDialog({ connector, onClose }: ConnectorFormDialogP
 
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose() }}>
-      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{editing ? `Edit ${connector.name}` : 'Add data source'}</DialogTitle>
           <DialogDescription>

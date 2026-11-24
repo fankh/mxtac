@@ -33,7 +33,7 @@ const SEVERITY_SELECT_OPTIONS = SEVERITY_OPTIONS.map((value) => ({ value, label:
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[110px_1fr] gap-2 border-b border-border py-1.5 last:border-0">
+    <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 border-b border-border py-1.5 last:border-0">
       <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
       <dd className="break-words text-[12px] text-foreground">{children}</dd>
     </div>

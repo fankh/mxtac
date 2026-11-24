@@ -17,9 +17,7 @@ export function Page({ title, description, actions, className, children }: PageP
   return (
     <>
       <TopBar crumb={title} description={description} actions={actions} />
-      <div className="pt-[46px]">
-        <div className={cn('space-y-4 p-4', className)}>{children}</div>
-      </div>
+      <div className={cn('space-y-4 p-4', className)}>{children}</div>
     </>
   )
 }

@@ -32,6 +32,10 @@ The screenshots use sample data. A new installation starts empty.
 |------------------|-----------------|
 | ![Overview page, light theme](docs/images/overview-light.png) | ![Overview page, dark theme](docs/images/overview-dark.png) |
 
+| Detections | ATT&CK coverage |
+|------------|-----------------|
+| ![Detections page](docs/images/detections.png) | ![ATT&CK coverage page](docs/images/coverage.png) |
+
 ## Quick start
 
 You need Docker with Compose v2 and Git. The stack starts five containers: backend, frontend, PostgreSQL, Valkey and OpenSearch.
@@ -226,9 +230,8 @@ More about the managed service: <https://kyramdr.com/en/?utm_source=mxtac&utm_me
 Each item was checked against the code at the time of writing.
 
 - **Sigma support is a subset.** Selections, the common value modifiers, wildcards and boolean conditions with `1 of` / `all of` work. Aggregations (`| count()`, `| near`), `timeframe` and correlation rules are rejected with an error when a rule is created, imported or tested. Rules are evaluated one event at a time. See [docs/sigma-engine.md](docs/sigma-engine.md).
-- **Hunt search is limited while OpenSearch is the search backend.** Free-text search only matches the exact event class name, the result table shows no host, user, address, source or summary, and the Host filter only looks at the source endpoint. Exact-match filters on source, class and severity work. The same searches work as expected on the PostgreSQL fallback, which is used when OpenSearch is not reachable. See [docs/architecture.md](docs/architecture.md#current-limitations).
-- **The Overview heatmap stays empty for pipeline detections.** It groups detections by tactic name, and the pipeline stores the tactic ID (for example `TA0006`).
-- **Coverage uses a fixed scope** of 105 techniques across 9 tactics, not the full ATT&CK matrix. See [docs/attack-coverage.md](docs/attack-coverage.md).
+- **Events ingested while OpenSearch is down are missing from Hunt once it is back.** During the outage Hunt answers from PostgreSQL, which has every event. Afterwards it answers from OpenSearch again, which did not index those events. See [docs/architecture.md](docs/architecture.md#current-limitations).
+- **Coverage uses a fixed scope** of 105 techniques across 9 tactics, not the full ATT&CK matrix. The Overview heatmap shows four technique families of that scope. See [docs/attack-coverage.md](docs/attack-coverage.md).
 - **No password reset.** A lost first password cannot be recovered (see [First login](#first-login)). An administrator cannot set a new password for an existing user; a user who forgot the password needs a new account under another email address.
 - **Changing a password does not end other sessions.** Tokens that were issued before the change stay valid until they expire (60 minutes for access tokens, 7 days for refresh tokens by default).
 - **The default queue is in memory.** Events that are in the queue are lost when the backend stops, and the queue works with one backend process only. Use `QUEUE_BACKEND=redis` otherwise.
