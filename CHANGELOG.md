@@ -63,6 +63,14 @@ Read the upgrade notes in `INSTALL.md` before you upgrade an existing installati
 
 - Migration `0008` failed on PostgreSQL. `alembic upgrade head` now works on an empty PostgreSQL database.
 - The Vite dev server forwards the alert WebSocket.
+- Hunt search with OpenSearch as the search backend. The event persister now indexes the same document the API returns (the flat fields `hostname`, `username`, `src_ip`, `dst_ip`, `source`, `summary` and so on, plus the nested event) into `mxtac-events-v2-*`, with an explicit mapping. Search, aggregation and CSV export return the same rows from OpenSearch and from the PostgreSQL fallback: free text is a case-insensitive substring of the summary, class, host, user, addresses or process command line, and every filter field and operator works on both. Before, free text only matched an exact class name, rows had no host, user, addresses, source or summary, and the host filter only looked at the source endpoint.
+- A failed OpenSearch query is answered from PostgreSQL instead of with an empty result.
+- Events of an installation with event indices of an earlier version are re-indexed from PostgreSQL at startup.
+- The free-text search also matches the process command line. `contains` works on the numeric fields `severity_id` and `class_uid`.
+- Detections created by the pipeline store the tactic name in `tactic` (the ID stays in `tactic_id`), so they appear in the Overview tactic list and heatmap and match the tactic filter on the Detections page. Existing detections that hold the tactic ID are read as the tactic they name.
+- A rule with the level `informational` creates a detection with the severity `low`. Before, such a detection made `GET /api/v1/detections` fail.
+- The WebSocket alert subscriber and the rule-reload subscriber no longer time out on an idle Valkey subscription. Before, the backend logged `Valkey subscriber error, reconnecting in 1s` every few seconds and could miss an alert published during the reconnect, and a rule change on one backend replica did not reach the others.
+- Background tasks started at startup are referenced until they end and are cancelled at shutdown, so a subscriber that waits for a message without a timeout is not garbage-collected.
 
 #### Removed
 

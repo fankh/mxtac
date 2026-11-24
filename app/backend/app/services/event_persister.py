@@ -2,21 +2,33 @@
 
 Subscribes to ``mxtac.normalized`` and for each OCSF event:
   1. Extracts flat fields and persists a row to PostgreSQL (via EventRepo).
-  2. Indexes the full OCSF dict to OpenSearch (if a client is available),
-     using the PostgreSQL UUID as the document ID.
+  2. Indexes the event document of that row (``event_document.event_to_dict``:
+     the flat fields plus the full OCSF dict) to OpenSearch, if a client is
+     available, using the PostgreSQL UUID as the document ID.
 
 Both operations are non-fatal: a failure in either store is logged and the
 pipeline continues.
+
+``reindex_legacy_events`` copies the events of an installation whose
+OpenSearch indices were written by an earlier version (nested OCSF dict only)
+from PostgreSQL into the current indices.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from sqlalchemy import select
+
+from ..core.database import AsyncSessionLocal
 from ..core.logging import get_logger
+from ..models.base import new_uuid
+from ..models.event import Event
 from ..pipeline.queue import MessageQueue, Topic
-from ..services.opensearch_client import OpenSearchService
+from ..repositories.event_repo import EventRepo
+from ..services.event_document import event_to_dict
+from ..services.opensearch_client import ILM_RETENTION_DAYS, OpenSearchService
 
 logger = get_logger(__name__)
 
@@ -75,32 +87,79 @@ async def event_persister(queue: MessageQueue, os_client: OpenSearchService) -> 
     """
 
     async def _handle(event_dict: dict[str, Any]) -> None:
-        pg_id: str | None = None
+        fields: dict[str, Any] | None = None
+        doc: dict[str, Any] | None = None
 
         # 1. Persist to PostgreSQL (authoritative store)
         try:
-            from ..core.database import AsyncSessionLocal
-            from ..repositories.event_repo import EventRepo
-
             fields = _extract_event_fields(event_dict)
             async with AsyncSessionLocal() as session:
                 evt = await EventRepo.create(session, **fields)
                 await session.commit()
-                pg_id = evt.id
-            logger.debug("EventPersister persisted to PG id=%s", pg_id)
+                doc = event_to_dict(evt)
+            logger.debug("EventPersister persisted to PG id=%s", doc["id"])
         except Exception:
             logger.exception("EventPersister PostgreSQL write failed (non-fatal)")
 
-        # 2. Index to OpenSearch using the PostgreSQL UUID as document ID
+        # 2. Index the same document to OpenSearch, with the PostgreSQL UUID
+        #    as document ID
         try:
             if os_client.is_available:
-                doc = {**event_dict}
-                if pg_id:
-                    doc["id"] = pg_id
-                await os_client.index_event(doc, doc_id=pg_id)
-                logger.debug("EventPersister indexed to OpenSearch id=%s", pg_id)
+                if doc is None and fields is not None:
+                    # No row was written: index the document under a new ID
+                    doc = event_to_dict(Event(id=new_uuid(), **fields))
+                if doc is not None:
+                    await os_client.index_event(doc, doc_id=doc["id"])
+                    logger.debug("EventPersister indexed to OpenSearch id=%s", doc["id"])
         except Exception:
             logger.exception("EventPersister OpenSearch index failed (non-fatal)")
 
     await queue.subscribe(Topic.NORMALIZED, "event-persister", _handle)
     logger.info("EventPersister subscribed to %s", Topic.NORMALIZED)
+
+
+_REINDEX_BATCH_SIZE = 500
+
+
+async def reindex_legacy_events(os_client: OpenSearchService) -> int:
+    """Re-index events from PostgreSQL after an upgrade from the old index shape.
+
+    Earlier versions indexed the nested OCSF dict into ``mxtac-events-YYYY.MM.DD``.
+    Those indices are no longer searched.  When such an index exists, the events
+    of the retention period are read from PostgreSQL (the authoritative store)
+    and every event that has no document in the current indices is indexed, so
+    that a search on OpenSearch returns the same rows as PostgreSQL.  The legacy
+    indices are then marked as re-indexed; they are left in place and expire
+    under the retention policy.
+
+    Safe to run again after an interruption: events already indexed are skipped.
+    Returns the number of events indexed.
+    """
+    if not os_client.is_available:
+        return 0
+    legacy = await os_client.legacy_event_indices()
+    if not legacy:
+        return 0
+    logger.info("Re-indexing events from PostgreSQL (legacy indices: %s)", ", ".join(legacy))
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=ILM_RETENTION_DAYS)
+    indexed = 0
+    last_id = ""
+    while True:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Event)
+                .where(Event.created_at >= cutoff, Event.id > last_id)
+                .order_by(Event.id)
+                .limit(_REINDEX_BATCH_SIZE)
+            )
+            docs = {e.id: event_to_dict(e) for e in result.scalars()}
+        if not docs:
+            break
+        last_id = max(docs)
+        missing = await os_client.missing_event_ids(list(docs))
+        indexed += await os_client.bulk_index_events([docs[i] for i in sorted(missing)])
+
+    await os_client.mark_legacy_indices_reindexed(legacy)
+    logger.info("Re-indexed %d events from PostgreSQL", indexed)
+    return indexed

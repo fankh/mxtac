@@ -86,7 +86,7 @@ Hunt is open to the hunter, engineer and admin roles. Other roles see a notice i
 | Saved queries | Save the current search, run, edit and delete saved ones |
 | Export CSV | Up to 10,000 rows |
 
-Empty states: "No events match this search", "No events in this time range", "No saved queries". While OpenSearch is the search backend, free-text search and several result columns are limited; see [architecture.md](architecture.md#current-limitations).
+Empty states: "No events match this search", "No events in this time range", "No saved queries". The search text is matched as one case-insensitive substring of the summary, event class, host, user, addresses and process command line; see [architecture.md](architecture.md#event-document).
 
 ### ATT&CK Coverage
 

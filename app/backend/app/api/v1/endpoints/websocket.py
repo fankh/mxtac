@@ -37,6 +37,7 @@ from ....core.logging import get_logger
 from ....core.metrics import websocket_connections
 from ....core.rbac import PERMISSIONS
 from ....core.security import authenticate_access_token
+from ....core.valkey import SUBSCRIBER_OPTIONS
 
 logger = get_logger(__name__)
 
@@ -134,7 +135,7 @@ class DistributedConnectionManager:
         while True:
             try:
                 self._sub_client = aioredis.from_url(
-                    self._valkey_url, decode_responses=True
+                    self._valkey_url, **SUBSCRIBER_OPTIONS
                 )
                 pubsub = self._sub_client.pubsub()
                 await pubsub.subscribe(_CHANNEL)

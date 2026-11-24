@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.models.event import Event
+from app.services.event_document import event_to_dict
 from app.services.event_persister import _extract_event_fields
 
 
@@ -199,8 +201,8 @@ async def test_event_persister_writes_to_postgresql() -> None:
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("app.core.database.AsyncSessionLocal", return_value=mock_session),
-        patch("app.repositories.event_repo.EventRepo") as mock_repo,
+        patch("app.services.event_persister.AsyncSessionLocal", return_value=mock_session),
+        patch("app.services.event_persister.EventRepo") as mock_repo,
     ):
         mock_repo.create = AsyncMock(return_value=mock_event)
 
@@ -224,8 +226,8 @@ async def test_event_persister_indexes_to_opensearch_when_available() -> None:
     queue = InMemoryQueue()
     await queue.start()
 
-    mock_event = MagicMock()
-    mock_event.id = "pg-uuid-002"
+    # The row EventRepo.create returns for the sample event
+    mock_event = Event(id="pg-uuid-002", **_extract_event_fields(_SAMPLE_OCSF))
 
     mock_os = AsyncMock()
     mock_os.is_available = True
@@ -235,8 +237,8 @@ async def test_event_persister_indexes_to_opensearch_when_available() -> None:
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("app.core.database.AsyncSessionLocal", return_value=mock_session),
-        patch("app.repositories.event_repo.EventRepo") as mock_repo,
+        patch("app.services.event_persister.AsyncSessionLocal", return_value=mock_session),
+        patch("app.services.event_persister.EventRepo") as mock_repo,
     ):
         mock_repo.create = AsyncMock(return_value=mock_event)
 
@@ -245,6 +247,20 @@ async def test_event_persister_indexes_to_opensearch_when_available() -> None:
         await asyncio.sleep(0.1)
 
         mock_os.index_event.assert_called_once()
+
+    # The indexed document is the row as the API returns it: the flat fields
+    # the search uses plus the nested event, under the PostgreSQL ID
+    doc = mock_os.index_event.call_args.args[0]
+    assert mock_os.index_event.call_args.kwargs == {"doc_id": "pg-uuid-002"}
+    assert doc == event_to_dict(mock_event)
+    assert doc["id"] == "pg-uuid-002"
+    assert doc["hostname"] == "WIN-DC01"
+    assert doc["username"] == "CORP\\admin"
+    assert doc["src_ip"] == "192.168.1.10"
+    assert doc["dst_ip"] == "10.0.0.1"
+    assert doc["source"] == "Wazuh"
+    assert doc["summary"] == "Suspicious outbound connection"
+    assert doc["src_endpoint"] == _SAMPLE_OCSF["src_endpoint"]
 
     await queue.stop()
 
@@ -271,8 +287,8 @@ async def test_event_persister_skips_opensearch_when_unavailable() -> None:
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("app.core.database.AsyncSessionLocal", return_value=mock_session),
-        patch("app.repositories.event_repo.EventRepo") as mock_repo,
+        patch("app.services.event_persister.AsyncSessionLocal", return_value=mock_session),
+        patch("app.services.event_persister.EventRepo") as mock_repo,
     ):
         mock_repo.create = AsyncMock(return_value=mock_event)
 
@@ -304,8 +320,8 @@ async def test_event_persister_continues_on_postgresql_error() -> None:
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("app.core.database.AsyncSessionLocal", return_value=mock_session),
-        patch("app.repositories.event_repo.EventRepo") as mock_repo,
+        patch("app.services.event_persister.AsyncSessionLocal", return_value=mock_session),
+        patch("app.services.event_persister.EventRepo") as mock_repo,
     ):
         mock_repo.create = AsyncMock(side_effect=RuntimeError("DB connection lost"))
 

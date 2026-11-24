@@ -79,4 +79,6 @@ Which events a rule is actually evaluated against is described in [sigma-engine.
 | Coverage KPI card | Same calculation as `GET /api/v1/coverage`. The change value compares with a stored trend snapshot |
 | Heatmap (`GET /api/v1/overview/coverage/heatmap`) | Built from detections, not rules. A grid of four technique families (`T1059`, `T1003`, `T1021`, `T1078`) by the nine tactics. A cell counts the distinct technique IDs of that family that were detected under that tactic |
 
-Limitation of the heatmap: it reads the `tactic` column of a detection as a tactic name, for example `Credential Access`. Detections created by the pipeline store the tactic ID, for example `TA0006`, and are skipped. With pipeline detections only, every cell stays at zero.
+The heatmap reads the `tactic` column of a detection as a tactic name, for example `Credential Access`. The pipeline stores that name; a row of an earlier version that holds the tactic ID, for example `TA0006`, is counted under the tactic it names.
+
+Limitation of the heatmap: it only has the four technique families and nine tactics listed above. A detection of another technique family, or under a tactic outside the nine (Lateral Movement, Collection, Command and Control, Exfiltration, Impact), is not shown in it. The "Top ATT&CK tactics" list on the Overview page counts every detection.

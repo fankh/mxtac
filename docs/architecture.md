@@ -60,13 +60,13 @@ Steps:
    | Syslog | Authentication for SSH and PAM login results, Process Activity for sudo command logs, Base Event for every other message |
    | Webhook | Process Activity when the event has a process or command line, Network Activity when it has a source and a destination address, otherwise Base Event |
 
-3. **Persist.** The event persister writes the event to the PostgreSQL `events` table and indexes it in OpenSearch (`mxtac-events-YYYY.MM.DD`) with the same ID. A failure in either store is logged and does not stop the pipeline.
+3. **Persist.** The event persister writes the event to the PostgreSQL `events` table and indexes the same event document in OpenSearch (`mxtac-events-v2-YYYY.MM.DD`) with the same ID. A failure in either store is logged and does not stop the pipeline.
 4. **Detect.** The Sigma consumer evaluates the enabled rules that apply to the event. Each match is published to `mxtac.alerts` and increments the rule's hit counter. See [sigma-engine.md](sigma-engine.md).
 5. **Triage.** The alert manager:
    - drops the alert if the same rule fired on the same host in the last 5 minutes (a Valkey key with a 300-second lifetime);
    - adds a GeoIP lookup for public IP addresses when `GEOIP_DB_PATH` points to a MaxMind database;
    - computes a score from 0 to 10 from the rule level and how often the alert recurs;
-   - stores the alert as a row in `detections`. The `tactic` column holds the first ATT&CK tactic ID of the rule, for example `TA0006`;
+   - stores the alert as a row in `detections`. The `tactic` column holds the name of the first ATT&CK tactic of the rule, for example `Credential Access`, and `tactic_id` its ID, for example `TA0006`. Rows written by earlier versions hold the ID in `tactic`; they are read as the tactic they name;
    - if `AUTO_CREATE_INCIDENT_ENABLED` is true, adds the detection to an open incident with the same host and tactic inside `CORRELATION_WINDOW_SECONDS`, or creates an incident when the severity is at least `AUTO_CREATE_INCIDENT_MIN_SEVERITY`;
    - publishes the result to `mxtac.enriched`.
 6. **Notify.** The WebSocket broadcaster sends the enriched alert to every browser connected to `/api/v1/ws/alerts`. A connection needs a valid access token. With several backend replicas, the message is relayed through a Valkey pub/sub channel.
@@ -89,10 +89,33 @@ The `rules` table is the only source of rules for the engine, the Sigma Rules pa
 | Store | Data | Notes |
 |-------|------|-------|
 | PostgreSQL | All application state and a copy of every normalized event | Schema managed by Alembic (`app/backend/alembic/`) |
-| OpenSearch | `mxtac-events-*`, `mxtac-alerts-*`, `mxtac-audit-*`, `mxtac-rules` | Index templates and retention policies are created at startup. Retention is set by the `OPENSEARCH_*_RETENTION_DAYS` settings. `OPENSEARCH_USERNAME` and `OPENSEARCH_PASSWORD` are sent as HTTP basic authentication when the user name is set |
+| OpenSearch | `mxtac-events-v2-*`, `mxtac-alerts-*`, `mxtac-audit-*`, `mxtac-rules` | Index templates and retention policies are created at startup. Retention is set by the `OPENSEARCH_*_RETENTION_DAYS` settings. `OPENSEARCH_USERNAME` and `OPENSEARCH_PASSWORD` are sent as HTTP basic authentication when the user name is set |
 | Valkey | Short-lived keys only | No data that must survive a flush |
 
-Event search (`POST /api/v1/events/search`, `/aggregate`, `/export`) queries OpenSearch and falls back to PostgreSQL when OpenSearch is not reachable. Reading one event or an entity timeline always uses PostgreSQL.
+Event search (`POST /api/v1/events/search`, `/aggregate`, `/export`) queries OpenSearch and falls back to PostgreSQL when OpenSearch is not reachable or a query fails. After a query that could not reach OpenSearch, it is skipped for 30 seconds. Reading one event or an entity timeline always uses PostgreSQL.
+
+### Event document
+
+Both stores hold the same document for an event, and the event endpoints return it (`services/event_document.py`):
+
+- the flat fields `id`, `event_uid`, `time`, `class_name`, `class_uid`, `severity_id`, `src_ip`, `dst_ip`, `hostname`, `username`, `process_hash`, `source` and `summary`. These are the columns of the `events` table. `hostname` is the host of the source endpoint or, if that is empty, of the destination endpoint;
+- on top of them the full normalized event (`src_endpoint`, `dst_endpoint`, `actor_user`, `process`, `unmapped`, `raw` and so on).
+
+A search gives the same rows, in the same order, from either store:
+
+| Part of the request | Match |
+|---------------------|-------|
+| Free text (`query`) | The text as one case-insensitive substring of `summary`, `class_name`, `hostname`, `username`, `src_ip`, `dst_ip` or the process command line. No query syntax is interpreted |
+| Filter `eq`, `ne` | Exact value, case-sensitive. `ne` only matches events that have a value in the field |
+| Filter `contains` | Case-insensitive substring |
+| Filter `gt`, `gte`, `lt`, `lte` | Numeric comparison for `severity_id` and `class_uid`, string comparison for the other fields |
+| Filter fields | The flat fields. The nested names `src_endpoint.ip`, `dst_endpoint.ip`, `dst_endpoint.hostname`, `actor_user.name` and `process.hash_sha256` are accepted as aliases of `src_ip`, `dst_ip`, `hostname`, `username` and `process_hash` |
+| Order | Newest first, then by ID |
+| Terms aggregation | Buckets by count. Events without a value are counted under an empty key |
+
+The index template `mxtac-events-template` maps the flat fields as keywords (numbers as integers) and does not index fields it does not list (`dynamic: false`), so a free-form field of a source cannot cause a mapping conflict. `POST /api/v1/events/query-dsl` returns a Lucene query on the flat fields that can be used in OpenSearch Dashboards on `mxtac-events-v2-*`.
+
+Indices named `mxtac-events-YYYY.MM.DD` were written by earlier versions. They hold the nested event without the flat fields and are not searched. When the backend finds such an index at startup, it copies the events of the last 90 days from PostgreSQL into the current indices and marks the old index as done. The old indices are deleted by the retention policy.
 
 With `SQLITE_MODE=true` the backend uses a local SQLite file instead of PostgreSQL and applies migrations at startup. In this mode `/ready` only requires the database.
 
@@ -105,7 +128,7 @@ API responses are built from these stores only. When a table is empty, the route
 1. Apply migrations (SQLite mode only). With PostgreSQL, run `alembic upgrade head` before starting the backend. The Compose files do this in the backend command.
 2. Run the seeder. When the `users` table is empty it creates `admin@mxtac.local` with a forced password change, and with `SEED_DEMO_DATA=true` also the demo accounts and sample rows. Otherwise it does nothing. See [First login](../README.md#first-login).
 3. Start the queue.
-4. Connect to OpenSearch and create retention policies and index templates.
+4. Connect to OpenSearch and create retention policies and index templates. If event indices of an earlier version exist, start re-indexing the events from PostgreSQL in the background (see [Event document](#event-document)).
 5. Import the bundled Sigma rules that are missing in the `rules` table, then load the engine from the table.
 6. Start the normalizer, dead-letter consumer, event persister, Sigma consumer, alert manager and WebSocket broadcaster.
 7. Start the enabled connectors from the database.
@@ -124,13 +147,8 @@ API responses are built from these stores only. When a table is empty, the route
 
 Each item was checked against the code.
 
-- **Event search on OpenSearch does not match the indexed document.** The event persister indexes the nested OCSF event. The search code (`services/opensearch_client.py`, `api/v1/endpoints/events.py`) expects flat fields:
-  - the free-text query searches `summary`, `class_name`, `hostname` and `username`. Only `class_name` exists in the index, as a keyword, so a query only matches an exact class name such as `"Process Activity"`;
-  - the hits are returned as nested documents, so the `hostname`, `username`, `src_ip`, `dst_ip`, `source` and `summary` values the Hunt table shows are missing;
-  - the `hostname` filter is mapped to `src_endpoint.hostname`, while most host-based events carry the host in `dst_endpoint.hostname` (there is a separate `dst_endpoint.hostname` filter field).
-
-  Exact-match filters on `source`, `class_name`, `class_uid` and `severity_id` work. The PostgreSQL path has none of these problems, because the `events` table has the flat columns. It is used when OpenSearch is not reachable, and always for reading one event and for entity timelines.
-- **The Overview heatmap does not count pipeline detections.** It maps the `tactic` column through a table of tactic names (`repositories/detection_repo.py`), and the alert manager stores the tactic ID.
+- **Events ingested while OpenSearch is not reachable are not indexed later.** They are stored in PostgreSQL only. Event search answers from PostgreSQL during the outage and shows them; once OpenSearch is reachable again, search answers from OpenSearch and those events are missing from the results. Reading one event and entity timelines are not affected. The backend connects to OpenSearch at startup only: if OpenSearch is down at that moment, search stays on PostgreSQL and nothing is indexed until the backend is restarted.
+- Free-text search and `contains` filters match a substring with a leading wildcard, on both stores. On large event volumes these searches are slow; exact-match filters and a short time range keep them fast. In OpenSearch, a summary or command line longer than 8191 characters is not searchable.
 - The in-memory queue is the default. It does not survive a restart and does not work across several backend processes.
 - Sigma rules are evaluated one event at a time. There is no state across events apart from the 5-minute deduplication.
 - The syslog normalizer recognises SSH, PAM and sudo messages. Every other message becomes a Base Event whose text is only available in the `message` field.

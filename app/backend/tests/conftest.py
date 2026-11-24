@@ -55,6 +55,20 @@ def _reset_rate_limiter() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Runtime state — a test that runs the application startup (or sets a queue)
+# leaves ``app.state.queue`` behind in this process.  POST /connectors starts
+# a connector whenever a queue is set, so a later test would get a running
+# connector it did not ask for.  Every test starts without a runtime.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _no_leftover_runtime() -> None:
+    app.state.queue = None
+    app.state.connectors = {}
+
+
+# ---------------------------------------------------------------------------
 # Token-only principals — most tests authenticate with a JWT minted for a user
 # that has no row in the test database.  Production rejects such a token (the
 # role and active flag are read from the users table on every request); here

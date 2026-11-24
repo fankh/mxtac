@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....engine.sigma_engine import tactic_name
 from ....repositories.detection_repo import DetectionRepo
 from ....repositories.incident_repo import IncidentRepo, SortField
 from ....schemas.common import Pagination, PaginatedResponse
@@ -57,7 +58,7 @@ def _detection_to_schema(det) -> dict:
         "technique_name": det.technique_name,
         "name": det.name,
         "host": det.host,
-        "tactic": det.tactic,
+        "tactic": tactic_name(det.tactic),
         "status": det.status,
         "time": det.time,
         "user": det.user,

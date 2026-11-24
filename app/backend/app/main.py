@@ -26,6 +26,7 @@ from .db.seed import seed_database
 from .engine.sigma_engine import SigmaEngine
 from .pipeline.queue import get_queue, Topic
 from .services.bundled_rules import import_bundled_rules
+from .services.event_persister import reindex_legacy_events
 from .services.opensearch_client import get_opensearch
 
 configure_logging()
@@ -154,6 +155,20 @@ class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+# Background tasks started at startup.  The event loop only keeps a weak
+# reference to a task: one that waits on a socket without a timeout (a pub/sub
+# subscriber) is garbage-collected mid-run unless something else refers to it.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro, *, name: str) -> asyncio.Task:
+    """Start *coro* as a background task and keep a reference until it is done."""
+    task = asyncio.create_task(coro, name=name)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
+
 async def _rule_reload_subscriber() -> None:
     """Subscribe to the Valkey rule-reload channel and hot-reload the SigmaEngine.
 
@@ -165,11 +180,11 @@ async def _rule_reload_subscriber() -> None:
 
     Exits silently when Valkey is unavailable.
     """
-    from .core.valkey import RULE_RELOAD_CHANNEL
+    from .core.valkey import RULE_RELOAD_CHANNEL, SUBSCRIBER_OPTIONS
     from .core.database import AsyncSessionLocal
     import valkey.asyncio as aioredis
 
-    sub_client = aioredis.from_url(settings.valkey_url, decode_responses=True)
+    sub_client = aioredis.from_url(settings.valkey_url, **SUBSCRIBER_OPTIONS)
     try:
         pubsub = sub_client.pubsub()
         await pubsub.subscribe(RULE_RELOAD_CHANNEL)
@@ -195,6 +210,16 @@ async def _rule_reload_subscriber() -> None:
             await sub_client.aclose()
         except Exception:
             pass
+
+
+async def _reindex_legacy_events() -> None:
+    """Background task: re-index events from PostgreSQL after an upgrade."""
+    try:
+        await reindex_legacy_events(get_opensearch())
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Event re-indexing failed — it is retried at the next start")
 
 
 async def _daily_snapshot_task() -> None:
@@ -374,8 +399,12 @@ async def on_startup() -> None:
     await os_client.ensure_indices()
     app.state.os_client = os_client
 
+    # 3.1. After an upgrade from the old event index shape: copy the events
+    #      from PostgreSQL into the current indices (no-op otherwise)
+    _spawn(_reindex_legacy_events(), name="reindex-legacy-events")
+
     # 3.2. Start storage metrics collection — updates Prometheus gauges every 5 minutes
-    asyncio.create_task(_storage_metrics_collector(), name="storage-metrics-collector")
+    _spawn(_storage_metrics_collector(), name="storage-metrics-collector")
 
     # 4. Load Sigma rules.  The rules table is the single source of truth:
     #    bundled rule files are imported into it first (new ones only), then
@@ -447,18 +476,18 @@ async def on_startup() -> None:
         async with AsyncSessionLocal() as session:
             connectors = await start_connectors_from_db(session, queue)
         for conn in connectors.values():
-            asyncio.create_task(conn.start(), name=f"connector-start-{conn.config.name}")
+            _spawn(conn.start(), name=f"connector-start-{conn.config.name}")
         app.state.connectors = connectors
         logger.info("Started %d connectors", len(connectors))
     except Exception:
         logger.exception("Connector start failed")
 
     # 10. Subscribe to peer rule-change notifications — keep SigmaEngine in sync across replicas
-    asyncio.create_task(_rule_reload_subscriber(), name="rule-reload-subscriber")
+    _spawn(_rule_reload_subscriber(), name="rule-reload-subscriber")
     logger.info("Rule reload subscriber started")
 
     # 11. Start daily OpenSearch snapshot task — snapshot + retention pruning (feature 38.3)
-    asyncio.create_task(_daily_snapshot_task(), name="daily-snapshot-task")
+    _spawn(_daily_snapshot_task(), name="daily-snapshot-task")
     logger.info("Daily OpenSearch snapshot task started (fires at next UTC midnight)")
 
     # 12. Start syslog receiver — inbound UDP/TCP listener on port 1514 (feature 35.4)
@@ -517,6 +546,20 @@ async def on_shutdown() -> None:
             await queue.stop()
     except Exception:
         logger.exception("Queue stop failed")
+
+    # The runtime is gone: nothing may be started on the stopped queue
+    # (POST /connectors starts a connector when ``app.state.queue`` is set).
+    app.state.queue = None
+    app.state.connectors = {}
+
+    # Cancel the background tasks started at startup.  A task of another
+    # (closed) event loop can neither be cancelled nor finish; it is dropped.
+    loop = asyncio.get_running_loop()
+    tasks = [task for task in _background_tasks if task.get_loop() is loop]
+    _background_tasks.clear()
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
     # Close AlertManager (releases Valkey connection)
     try:

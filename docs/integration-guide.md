@@ -215,7 +215,7 @@ The name of the connector is stored in the field `source` of the event.
 ## Checking that events arrive
 
 1. Open the **Sources** page. A running connector shows its status, event count and the time of the last event.
-2. Open **Hunt** and run a search. Read the note on Hunt search under [Current limitations](architecture.md#current-limitations) first: with OpenSearch as the search backend, search without query text and filter by source.
+2. Open **Hunt** and run a search, for example for a word of the message, the host or the user, or with a filter on the source.
 3. Open **Detections**. An event that matches an enabled rule creates a detection. The same rule on the same host creates at most one detection in 5 minutes.
 4. Check the backend log: `docker compose logs -f backend`.
 5. Check the metrics at `/metrics`, for example the counters for ingested events and dead-letter events.

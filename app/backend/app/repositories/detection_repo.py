@@ -9,6 +9,7 @@ from sqlalchemy import case, func, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.validators import escape_like
+from ..engine.sigma_engine import TACTIC_ID_TO_NAME, tactic_name
 from ..models.detection import Detection
 
 # ---------------------------------------------------------------------------
@@ -39,6 +40,19 @@ TACTIC_LABELS = ["RECON", "RES", "INIT", "EXEC", "PERS", "PRIV", "DEF-E", "CRED"
 _HEATMAP_TECHNIQUE_FAMILIES = ["T1059", "T1003", "T1021", "T1078"]
 
 
+def _count_by_tactic_name(rows) -> dict[str, int]:
+    """Sum ``(tactic, count)`` rows per tactic name.
+
+    Rows written by older versions hold the tactic ID (``TA0006``); they are
+    counted under the tactic name, together with the rows that hold the name.
+    """
+    counts: dict[str, int] = {}
+    for row in rows:
+        name = tactic_name(row.tactic)
+        counts[name] = counts.get(name, 0) + int(row.count)
+    return counts
+
+
 class DetectionRepo:
 
     @staticmethod
@@ -63,7 +77,16 @@ class DetectionRepo:
         if status:
             q = q.where(Detection.status.in_(status))
         if tactic:
-            q = q.where(Detection.tactic.ilike(f"%{escape_like(tactic)}%", escape="\\"))
+            # Rows written by older versions hold the tactic ID instead of the
+            # name; match them through the IDs whose name contains the filter.
+            legacy_ids = [
+                tid for tid, name in TACTIC_ID_TO_NAME.items()
+                if tactic.strip().lower() in name.lower()
+            ]
+            q = q.where(
+                Detection.tactic.ilike(f"%{escape_like(tactic)}%", escape="\\")
+                | Detection.tactic.in_(legacy_ids)
+            )
         if host:
             q = q.where(Detection.host.ilike(f"%{escape_like(host)}%", escape="\\"))
         if search:
@@ -180,7 +203,7 @@ class DetectionRepo:
             .order_by(func.count().desc())
         )
         current_result = await session.execute(current_q)
-        current_rows = {row.tactic: int(row.count) for row in current_result.all()}
+        current_rows = _count_by_tactic_name(current_result.all())
 
         if not current_rows:
             return []
@@ -195,7 +218,7 @@ class DetectionRepo:
             .group_by(Detection.tactic)
         )
         prev_result = await session.execute(prev_q)
-        prev_rows = {row.tactic: int(row.count) for row in prev_result.all()}
+        prev_rows = _count_by_tactic_name(prev_result.all())
 
         result = []
         for tactic, count in sorted(current_rows.items(), key=lambda x: -x[1]):
@@ -315,7 +338,7 @@ class DetectionRepo:
         }
 
         for technique_id, tactic in rows:
-            label = _TACTIC_LABEL_MAP.get(tactic)
+            label = _TACTIC_LABEL_MAP.get(tactic_name(tactic))
             if not label:
                 continue
             for family in _HEATMAP_TECHNIQUE_FAMILIES:

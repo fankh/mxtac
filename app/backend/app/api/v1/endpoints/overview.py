@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....engine.sigma_engine import tactic_name
 from ....models.connector import Connector
 from ....repositories.connector_repo import ConnectorRepo
 from ....repositories.coverage_snapshot_repo import CoverageSnapshotRepo
@@ -244,7 +245,7 @@ async def get_recent_detections(
             "technique_name": d.technique_name,
             "name": d.name,
             "host": d.host,
-            "tactic": d.tactic,
+            "tactic": tactic_name(d.tactic),
             "status": d.status,
             "time": d.time,
             "user": d.user,

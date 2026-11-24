@@ -2,7 +2,11 @@
 OpenSearch event storage service.
 
 Index naming:
-  mxtac-events-{YYYY.MM.DD}   — OCSF-normalized events (daily rollover)
+  mxtac-events-v2-{YYYY.MM.DD} — event documents (daily rollover); the
+                                document is defined in ``event_document.py``
+  mxtac-events-{YYYY.MM.DD}   — legacy event indices of earlier versions
+                                (nested event only, not searched; their
+                                events are re-indexed from PostgreSQL)
   mxtac-alerts-{YYYY.MM.DD}   — enriched alerts
   mxtac-audit-{YYYY.MM}       — audit log entries (monthly rollover, 3-year retention)
   mxtac-rules                 — Sigma rules (single index)
@@ -12,16 +16,37 @@ Uses opensearch-py (async client).
 
 from __future__ import annotations
 
+import re
+import time
 from datetime import datetime, timezone
 from typing import Any
 
+try:
+    from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
+except ImportError:   # opensearch-py not installed — OpenSearch storage is disabled
+    OpenSearchConnectionError = ConnectionError   # type: ignore[assignment,misc]
+
 from ..core.config import settings
 from ..core.logging import get_logger
+from .event_document import CMD_LINE_PATH, FILTER_FIELDS, NUMERIC_FIELDS, TEXT_SEARCH_FIELDS
 
 logger = get_logger(__name__)
 
 # Index templates
 EVENTS_INDEX_TEMPLATE = "mxtac-events"
+# Event documents are written to and searched in the versioned indices only.
+# ``mxtac-events-*`` (retention policy, storage metrics) also covers them.
+EVENTS_INDEX_PREFIX = f"{EVENTS_INDEX_TEMPLATE}-v2"
+# Deepest page of POST /events/search: from_ <= 100000, size <= 1000.
+EVENTS_MAX_RESULT_WINDOW = 101_000
+# After an event query that could not reach OpenSearch, queries are not sent
+# for this many seconds (the caller answers from PostgreSQL).  A request to an
+# unreachable cluster takes several seconds to fail; without the pause every
+# search would.
+QUERY_RETRY_SECONDS = 30.0
+# Mapping ``_meta`` key set on a legacy event index after its events were
+# re-indexed from PostgreSQL into the versioned indices.
+_REINDEXED_META_KEY = "mxtac_reindexed"
 ALERTS_INDEX_TEMPLATE = "mxtac-alerts"
 AUDIT_INDEX_TEMPLATE = "mxtac-audit"
 RULES_INDEX = "mxtac-rules"
@@ -61,15 +86,44 @@ AUDIT_HOT_DAYS = 90
 #   - Counters/IDs  → "integer" or "long"
 # ---------------------------------------------------------------------------
 
-#: Mapping body for mxtac-events-* indices (OCSF-normalised security events).
+# Longest string a keyword field indexes.  A Lucene term is limited to 32766
+# bytes; 8191 characters stay below it in UTF-8.
+_KEYWORD_MAX_CHARS = 8191
+
+#: Mapping body for mxtac-events-v2-* indices (event documents).
+#:
+#: The document is the event row as the API returns it: the flat fields
+#: searches use, plus the nested OCSF event.  Only the fields listed here are
+#: indexed (``dynamic: false``); everything else is kept in ``_source`` and
+#: returned, but a free-form source field can never break the mapping.
 EVENTS_MAPPING: dict[str, Any] = {
+    "dynamic": False,
     "properties": {
+        # ── Flat fields: the columns of the ``events`` table ─────────────
+        # Strings are keywords (exact match, substring match by wildcard,
+        # terms aggregation).  Numbers have a keyword sub-field for the
+        # ``contains`` operator.
+        "id":                     {"type": "keyword"},
+        "event_uid":              {"type": "keyword"},
+        "time":                   {"type": "date_nanos"},
+        "class_name":             {"type": "keyword"},
+        "class_uid":              {
+            "type": "integer",
+            "fields": {"text": {"type": "keyword"}},
+        },
+        "severity_id":            {
+            "type": "integer",
+            "fields": {"text": {"type": "keyword"}},
+        },
+        "src_ip":                 {"type": "keyword"},
+        "dst_ip":                 {"type": "keyword"},
+        "hostname":               {"type": "keyword"},
+        "username":               {"type": "keyword"},
+        "process_hash":           {"type": "keyword"},
+        "source":                 {"type": "keyword"},
+        "summary":                {"type": "keyword", "ignore_above": _KEYWORD_MAX_CHARS},
         # ── Top-level OCSF fields ────────────────────────────────────────
         "metadata_uid":           {"type": "keyword"},
-        "time":                   {"type": "date"},
-        "class_name":             {"type": "keyword"},
-        "class_uid":              {"type": "integer"},
-        "severity_id":            {"type": "integer"},
         "severity_name":          {"type": "keyword"},
         "metadata_product":       {"type": "keyword"},
         "metadata_version":       {"type": "keyword"},
@@ -117,7 +171,7 @@ EVENTS_MAPPING: dict[str, Any] = {
             "properties": {
                 "pid":         {"type": "integer"},
                 "name":        {"type": "keyword"},
-                "cmd_line":    {"type": "text"},
+                "cmd_line":    {"type": "keyword", "ignore_above": _KEYWORD_MAX_CHARS},
                 "path":        {"type": "keyword"},
                 "parent_pid":  {"type": "integer"},
                 "hash_sha256": {"type": "keyword"},
@@ -168,7 +222,7 @@ EVENTS_MAPPING: dict[str, Any] = {
         # ── Catch-all buckets (dynamic mapping preserved) ────────────────
         "unmapped": {"type": "object", "enabled": True},
         "raw":      {"type": "object", "enabled": True},
-    }
+    },
 }
 
 #: Mapping body for mxtac-alerts-* indices (enriched detection alerts).
@@ -248,30 +302,36 @@ RULES_MAPPING: dict[str, Any] = {
     }
 }
 
-# Maps EventFilter.field names to their OpenSearch document field paths.
-# Flat column aliases (e.g. "src_ip") are mapped to the nested OCSF paths
-# used in the indexed document; nested paths pass through unchanged.
-_OS_FIELD_MAP: dict[str, str] = {
-    "severity_id":           "severity_id",
-    "class_name":            "class_name",
-    "class_uid":             "class_uid",
-    "src_ip":                "src_endpoint.ip",
-    "dst_ip":                "dst_endpoint.ip",
-    "hostname":              "src_endpoint.hostname",
-    "username":              "actor_user.name",
-    "process_hash":          "process.hash_sha256",
-    "source":                "metadata_product",
-    # OpenSearch nested-path aliases pass through unchanged
-    "src_endpoint.ip":       "src_endpoint.ip",
-    "dst_endpoint.ip":       "dst_endpoint.ip",
-    "dst_endpoint.hostname": "dst_endpoint.hostname",
-    "actor_user.name":       "actor_user.name",
-    "process.hash_sha256":   "process.hash_sha256",
-}
+# Maps EventFilter.field names to their OpenSearch document fields: the flat
+# fields of the event document, the same ones the PostgreSQL path filters on.
+_OS_FIELD_MAP: dict[str, str] = dict(FILTER_FIELDS)
+
+# Document fields matched by the free-text query.
+_TEXT_SEARCH_FIELDS: tuple[str, ...] = (*TEXT_SEARCH_FIELDS, ".".join(CMD_LINE_PATH))
+
+_WILDCARD_SPECIAL_RE = re.compile(r"([\\*?])")
+
+
+class OpenSearchQueryError(Exception):
+    """An event query could not be answered by OpenSearch.
+
+    Raised instead of returning an empty result, so that the caller can answer
+    from PostgreSQL rather than show "no events".
+    """
+
+
+def _substring_clause(field: str, value: Any) -> dict:
+    """Case-insensitive substring match on a keyword field (SQL ``ILIKE '%v%'``)."""
+    escaped = _WILDCARD_SPECIAL_RE.sub(r"\\\1", str(value))
+    return {"wildcard": {field: {"value": f"*{escaped}*", "case_insensitive": True}}}
 
 
 def filter_to_dsl(field: str, operator: str, value: Any) -> dict | None:
     """Convert an EventFilter (field, operator, value) to an OpenSearch DSL clause.
+
+    The clauses select the same events as ``EventRepo`` does in SQL: ``eq`` is
+    an exact match, ``contains`` a case-insensitive substring, and ``ne`` only
+    matches events that have a value in the field (SQL ``<>`` semantics).
 
     Returns ``None`` if the field is unknown or operator is unsupported, so the
     caller can skip the clause instead of sending a malformed query.
@@ -283,9 +343,16 @@ def filter_to_dsl(field: str, operator: str, value: Any) -> dict | None:
     if operator == "eq":
         return {"term": {os_field: value}}
     if operator == "ne":
-        return {"bool": {"must_not": [{"term": {os_field: value}}]}}
+        return {
+            "bool": {
+                "must":     [{"exists": {"field": os_field}}],
+                "must_not": [{"term": {os_field: value}}],
+            }
+        }
     if operator == "contains":
-        return {"wildcard": {os_field: f"*{value}*"}}
+        if os_field in NUMERIC_FIELDS:
+            os_field = f"{os_field}.text"   # keyword copy of the number
+        return _substring_clause(os_field, value)
     if operator == "gt":
         return {"range": {os_field: {"gt": value}}}
     if operator == "lt":
@@ -295,6 +362,33 @@ def filter_to_dsl(field: str, operator: str, value: Any) -> dict | None:
     if operator == "lte":
         return {"range": {os_field: {"lte": value}}}
     return None
+
+
+def build_event_query(
+    query: str | None,
+    filters: list[dict] | None,
+    time_from: str,
+    time_to: str,
+) -> dict:
+    """Build the OpenSearch query for an event search.
+
+    *query* is free text: a case-insensitive substring of the summary, class
+    name, host, user, addresses or process command line — the same match the
+    PostgreSQL path makes with ``ILIKE``.  *filters* are clauses from
+    :func:`filter_to_dsl`.
+    """
+    must_clauses: list[dict] = []
+    if query:
+        must_clauses.append({
+            "bool": {
+                "should": [_substring_clause(f, query) for f in _TEXT_SEARCH_FIELDS],
+                "minimum_should_match": 1,
+            }
+        })
+    if filters:
+        must_clauses.extend(filters)
+    must_clauses.append({"range": {"time": {"gte": time_from, "lte": time_to}}})
+    return {"bool": {"must": must_clauses}}
 
 
 def _daily_index(base: str) -> str:
@@ -316,6 +410,7 @@ class OpenSearchService:
 
     def __init__(self) -> None:
         self._client = None
+        self._skip_queries_until = 0.0   # time.monotonic() value
 
     @property
     def is_available(self) -> bool:
@@ -343,15 +438,32 @@ class OpenSearchService:
             logger.warning("OpenSearch connection failed: %s", exc)
             self._client = None
 
-    async def index_event(self, event: dict[str, Any], doc_id: str | None = None) -> str | None:
-        """Index a normalized OCSF event. Returns document ID or None.
+    async def _query(self, what: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Run an event query.  Raises :class:`OpenSearchQueryError` on failure.
 
+        When OpenSearch cannot be reached, the next queries fail at once for
+        ``QUERY_RETRY_SECONDS``, without a request to OpenSearch.
+        """
+        if time.monotonic() < self._skip_queries_until:
+            raise OpenSearchQueryError("OpenSearch is skipped after a connection failure")
+        try:
+            return await self._client.search(index=f"{EVENTS_INDEX_PREFIX}-*", body=body)
+        except Exception as exc:
+            logger.error("OpenSearch %s failed: %s", what, exc)
+            if isinstance(exc, OpenSearchConnectionError):
+                self._skip_queries_until = time.monotonic() + QUERY_RETRY_SECONDS
+            raise OpenSearchQueryError(str(exc)) from exc
+
+    async def index_event(self, event: dict[str, Any], doc_id: str | None = None) -> str | None:
+        """Index an event document. Returns document ID or None.
+
+        *event* is the document built by ``event_document.event_to_dict``.
         Pass ``doc_id`` to use the PostgreSQL UUID as the OpenSearch document ID
         so that both stores share the same identifier.
         """
         if self._client is None:
             return None
-        idx = _daily_index(EVENTS_INDEX_TEMPLATE)
+        idx = _daily_index(EVENTS_INDEX_PREFIX)
         try:
             resp = await self._client.index(
                 index=idx, body=event, id=doc_id, refresh="false"
@@ -382,48 +494,24 @@ class OpenSearchService:
         size: int = 100,
         from_: int = 0,
     ) -> dict[str, Any]:
-        """Full-text + filtered event search. Returns OpenSearch hits dict."""
+        """Free-text + filtered event search. Returns OpenSearch hits dict.
+
+        The newest events come first; events with the same time are ordered by
+        ID, as on the PostgreSQL path.  Raises :class:`OpenSearchQueryError`
+        when the query fails.
+        """
         if self._client is None:
             return {"hits": {"total": {"value": 0}, "hits": []}}
 
-        must_clauses = []
-        if query:
-            # Use simple_query_string instead of query_string to prevent Lucene
-            # injection attacks (field boosting bypass, regex patterns, etc.).
-            # simple_query_string supports +/-/|/"" operators but not field:value
-            # or _source:* overrides, making it safe for user-supplied input.
-            must_clauses.append({
-                "simple_query_string": {
-                    "query": query,
-                    "fields": ["summary", "class_name", "hostname", "username"],
-                    "default_operator": "AND",
-                }
-            })
-        if filters:
-            must_clauses.extend(filters)
-
-        must_clauses.append({
-            "range": {
-                "time": {"gte": time_from, "lte": time_to}
-            }
-        })
-
         body = {
-            "query": {"bool": {"must": must_clauses}},
-            "sort":  [{"time": {"order": "desc"}}],
+            "query": build_event_query(query, filters, time_from, time_to),
+            "sort":  [{"time": {"order": "desc"}}, {"id": {"order": "desc"}}],
             "size":  size,
             "from":  from_,
+            "track_total_hits": True,
         }
 
-        try:
-            resp = await self._client.search(
-                index=f"{EVENTS_INDEX_TEMPLATE}-*",
-                body=body,
-            )
-            return resp
-        except Exception as exc:
-            logger.error("OpenSearch search_events failed: %s", exc)
-            return {"hits": {"total": {"value": 0}, "hits": []}}
+        return await self._query("search_events", body)
 
     # ── Aggregation interval mapping ──────────────────────────────────────────
     _CALENDAR_INTERVALS: dict[str, str] = {
@@ -447,12 +535,16 @@ class OpenSearchService:
         """Run a terms or date_histogram aggregation over the events index.
 
         - ``agg_type="terms"`` groups by *field* value; returns buckets sorted by
-          count descending: ``[{"key": value, "count": N}, ...]``.
+          count descending: ``[{"key": value, "count": N}, ...]``.  Events
+          without a value are counted under the key ``""``.
         - ``agg_type="date_histogram"`` buckets events by *interval*; returns
           buckets sorted by time ascending: ``[{"key": iso_ts, "count": N}, ...]``.
 
-        Returns an empty list when the client is unavailable, when a required
-        parameter is missing/unknown, or on any OpenSearch error.
+        The buckets have the same keys and order as those of ``EventRepo``.
+
+        Returns an empty list when the client is unavailable or when a required
+        parameter is missing/unknown.  Raises :class:`OpenSearchQueryError`
+        when the query fails.
         """
         if self._client is None:
             return []
@@ -474,20 +566,25 @@ class OpenSearchService:
                         "terms": {
                             "field": os_field,
                             "size":  size,
-                            "order": {"_count": "desc"},
+                            "order": [{"_count": "desc"}, {"_key": "asc"}],
                         }
-                    }
+                    },
+                    "missing_agg": {"missing": {"field": os_field}},
                 },
             }
-            try:
-                resp = await self._client.search(
-                    index=f"{EVENTS_INDEX_TEMPLATE}-*", body=body
-                )
-                raw = resp.get("aggregations", {}).get("terms_agg", {}).get("buckets", [])
-                return [{"key": str(b["key"]), "count": b["doc_count"]} for b in raw]
-            except Exception as exc:
-                logger.error("OpenSearch aggregate(terms) failed: %s", exc)
-                return []
+            resp = await self._query("aggregate(terms)", body)
+            aggs = resp.get("aggregations", {})
+            buckets = [
+                {"key": str(b["key"]), "count": b["doc_count"]}
+                for b in aggs.get("terms_agg", {}).get("buckets", [])
+            ]
+            # Events without a value: one bucket with an empty key, placed
+            # after the buckets of the same or a higher count
+            missing = aggs.get("missing_agg", {}).get("doc_count", 0)
+            if missing:
+                pos = sum(1 for b in buckets if b["count"] >= missing)
+                buckets.insert(pos, {"key": "", "count": missing})
+            return buckets[:size]
 
         if agg_type == "date_histogram":
             cal_interval = self._CALENDAR_INTERVALS.get(interval)
@@ -507,15 +604,16 @@ class OpenSearchService:
                     }
                 },
             }
-            try:
-                resp = await self._client.search(
-                    index=f"{EVENTS_INDEX_TEMPLATE}-*", body=body
-                )
-                raw = resp.get("aggregations", {}).get("histogram_agg", {}).get("buckets", [])
-                return [{"key": b.get("key_as_string", ""), "count": b["doc_count"]} for b in raw]
-            except Exception as exc:
-                logger.error("OpenSearch aggregate(date_histogram) failed: %s", exc)
-                return []
+            resp = await self._query("aggregate(date_histogram)", body)
+            raw = resp.get("aggregations", {}).get("histogram_agg", {}).get("buckets", [])
+            # Bucket key: start of the interval in UTC, ISO 8601 (``key`` is epoch millis)
+            return [
+                {
+                    "key": datetime.fromtimestamp(b["key"] / 1000, tz=timezone.utc).isoformat(),
+                    "count": b["doc_count"],
+                }
+                for b in raw
+            ]
 
         logger.warning("aggregate: unsupported agg_type %r — returning []", agg_type)
         return []
@@ -523,12 +621,85 @@ class OpenSearchService:
     async def get_event(self, event_id: str, index: str | None = None) -> dict | None:
         if self._client is None:
             return None
-        idx = index or f"{EVENTS_INDEX_TEMPLATE}-*"
+        idx = index or f"{EVENTS_INDEX_PREFIX}-*"
         try:
             resp = await self._client.get(index=idx, id=event_id)
             return resp.get("_source")
         except Exception:
             return None
+
+    # ── Re-indexing from PostgreSQL ───────────────────────────────────────────
+
+    async def legacy_event_indices(self) -> list[str]:
+        """Names of the event indices of earlier versions not yet re-indexed.
+
+        Those indices (``mxtac-events-YYYY.MM.DD``) hold the nested event
+        without the flat fields and are not searched.  An index is marked in
+        its mapping ``_meta`` once its events have been re-indexed.
+        """
+        if self._client is None:
+            return []
+        try:
+            mappings = await self._client.indices.get_mapping(
+                index=f"{EVENTS_INDEX_TEMPLATE}-*,-{EVENTS_INDEX_PREFIX}-*",
+                params={"ignore_unavailable": "true", "allow_no_indices": "true"},
+            )
+        except Exception as exc:
+            logger.warning("OpenSearch legacy_event_indices failed: %s", exc)
+            return []
+        return sorted(
+            name for name, body in mappings.items()
+            if not ((body.get("mappings") or {}).get("_meta") or {}).get(_REINDEXED_META_KEY)
+        )
+
+    async def mark_legacy_indices_reindexed(self, names: list[str]) -> None:
+        """Record in the mapping ``_meta`` of *names* that their events were re-indexed."""
+        if self._client is None:
+            return
+        for name in names:
+            await self._client.indices.put_mapping(
+                index=name, body={"_meta": {_REINDEXED_META_KEY: True}}
+            )
+
+    async def missing_event_ids(self, ids: list[str]) -> set[str]:
+        """Return the IDs from *ids* that have no document in the event indices."""
+        if self._client is None or not ids:
+            return set()
+        resp = await self._client.search(
+            index=f"{EVENTS_INDEX_PREFIX}-*",
+            body={
+                "query": {"ids": {"values": ids}},
+                "size": len(ids),
+                "_source": False,
+            },
+            params={"ignore_unavailable": "true", "allow_no_indices": "true"},
+        )
+        found = {hit["_id"] for hit in resp.get("hits", {}).get("hits", [])}
+        return set(ids) - found
+
+    async def bulk_index_events(self, events: list[dict[str, Any]]) -> int:
+        """Index event documents in one request (document ID = ``event["id"]``).
+
+        Returns the number of documents indexed.
+        """
+        if self._client is None or not events:
+            return 0
+        idx = _daily_index(EVENTS_INDEX_PREFIX)
+        body: list[dict[str, Any]] = []
+        for event in events:
+            body.append({"index": {"_index": idx, "_id": event["id"]}})
+            body.append(event)
+        resp = await self._client.bulk(body=body, params={"refresh": "true"})
+        failed = [
+            item["index"] for item in resp.get("items", [])
+            if item.get("index", {}).get("error")
+        ]
+        if failed:
+            logger.error(
+                "OpenSearch bulk_index_events: %d of %d documents failed, first error: %s",
+                len(failed), len(events), failed[0]["error"],
+            )
+        return len(events) - len(failed)
 
     async def upsert_rule(self, rule: dict[str, Any]) -> None:
         if self._client is None:
@@ -547,7 +718,7 @@ class OpenSearchService:
         """Create index templates for events/alerts and ensure the rules index exists.
 
         Uses ``indices.put_index_template`` for the daily-rollover indices so that
-        every new ``mxtac-events-YYYY.MM.DD`` / ``mxtac-alerts-YYYY.MM.DD`` index
+        every new ``mxtac-events-v2-YYYY.MM.DD`` / ``mxtac-alerts-YYYY.MM.DD`` index
         inherits the correct field mappings automatically.  The static
         ``mxtac-rules`` index is created directly if it does not yet exist.
 
@@ -558,17 +729,23 @@ class OpenSearchService:
         if self._client is None:
             return
 
-        # ── mxtac-events-* index template ─────────────────────────────────────
+        # ── mxtac-events-v2-* index template ──────────────────────────────────
         try:
             await self._client.indices.put_index_template(
                 name="mxtac-events-template",
                 body={
-                    "index_patterns": [f"{EVENTS_INDEX_TEMPLATE}-*"],
+                    "index_patterns": [f"{EVENTS_INDEX_PREFIX}-*"],
                     "template": {
                         "settings": {
                             "number_of_shards": 3,
                             "number_of_replicas": 1,
                             "plugins.index_state_management.policy_id": EVENTS_ILM_POLICY_NAME,
+                            # A value that does not fit its mapped type (a
+                            # non-numeric port, a date out of range) must not
+                            # keep the whole event out of the index.
+                            "index.mapping.ignore_malformed": True,
+                            # The search endpoint pages up to from_=100000, size=1000.
+                            "index.max_result_window": EVENTS_MAX_RESULT_WINDOW,
                         },
                         "mappings": EVENTS_MAPPING,
                     },
@@ -945,12 +1122,12 @@ class OpenSearchService:
         events_per_day: dict[str, int] = {}
         try:
             stats = await self._client.indices.stats(
-                index=f"{EVENTS_INDEX_TEMPLATE}-*", metric="docs"
+                index=f"{EVENTS_INDEX_PREFIX}-*", metric="docs"
             )
             indices_data = stats.get("indices", {})
             for index_name, index_stat in indices_data.items():
-                # Extract date from index name: mxtac-events-YYYY.MM.DD → YYYY-MM-DD
-                suffix = index_name.removeprefix(f"{EVENTS_INDEX_TEMPLATE}-")
+                # Extract date from index name: mxtac-events-v2-YYYY.MM.DD → YYYY-MM-DD
+                suffix = index_name.removeprefix(f"{EVENTS_INDEX_PREFIX}-")
                 # Convert YYYY.MM.DD → YYYY-MM-DD
                 if len(suffix) == 10 and suffix.count(".") == 2:
                     date_str = suffix.replace(".", "-")

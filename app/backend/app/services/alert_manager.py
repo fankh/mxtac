@@ -28,7 +28,7 @@ import valkey.asyncio as aioredis
 from ..core.config import settings
 from ..core.logging import get_logger
 from ..core.metrics import alerts_deduplicated, alerts_processed, pipeline_latency
-from ..engine.sigma_engine import SigmaAlert, LEVEL_SEVERITY
+from ..engine.sigma_engine import SigmaAlert, LEVEL_SEVERITY, tactic_name
 from ..pipeline.queue import MessageQueue, Topic
 
 logger = get_logger(__name__)
@@ -385,10 +385,10 @@ class AlertManager:
                     session,
                     id            = scored["id"],
                     score         = scored["score"],
-                    severity      = scored["level"],
+                    severity      = self._detection_severity(scored["level"]),
                     technique_id  = (technique_ids[0] if technique_ids else "unknown")[:20],
                     technique_name= scored["rule_title"][:255],
-                    tactic        = (tactic_ids[0] if tactic_ids else "unknown")[:100],
+                    tactic        = (tactic_name(tactic_ids[0]) if tactic_ids else "unknown")[:100],
                     tactic_id     = tactic_ids[0] if tactic_ids else None,
                     name          = scored["rule_title"][:500],
                     host          = scored["host"],
@@ -402,6 +402,15 @@ class AlertManager:
             logger.exception(
                 "AlertManager DB persistence failed (non-fatal) id=%s", scored.get("id")
             )
+
+    @classmethod
+    def _detection_severity(cls, level: str | None) -> str:
+        """Map a Sigma rule level to a detection severity.
+
+        Detections have four severities.  The Sigma level ``informational``
+        (and any unknown level) is stored as ``low``.
+        """
+        return level if level in cls._SEVERITY_RANK else "low"
 
     # -- Auto-correlation --------------------------------------------------
 

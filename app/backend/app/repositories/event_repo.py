@@ -11,11 +11,14 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.validators import escape_like
 from ..models.event import Event
+from ..services.event_document import (
+    CMD_LINE_PATH, FILTER_FIELDS, NUMERIC_FIELDS, TEXT_SEARCH_FIELDS,
+)
 
 
 # ── Time parsing ──────────────────────────────────────────────────────────────
@@ -56,25 +59,18 @@ def _parse_time(t: str) -> datetime:
 
 # ── Field mapping ─────────────────────────────────────────────────────────────
 
-# Maps EventFilter.field names (including OpenSearch-style nested paths) to
-# the corresponding SQLAlchemy column on the Event model.
+# Maps EventFilter.field names (including the nested OCSF aliases) to the
+# corresponding SQLAlchemy column on the Event model.
 _FIELD_MAP: dict[str, Any] = {
-    "severity_id":           Event.severity_id,
-    "class_name":            Event.class_name,
-    "class_uid":             Event.class_uid,
-    "src_ip":                Event.src_ip,
-    "dst_ip":                Event.dst_ip,
-    "hostname":              Event.hostname,
-    "username":              Event.username,
-    "process_hash":          Event.process_hash,
-    "source":                Event.source,
-    # OpenSearch nested-field aliases
-    "src_endpoint.ip":       Event.src_ip,
-    "dst_endpoint.ip":       Event.dst_ip,
-    "dst_endpoint.hostname": Event.hostname,
-    "actor_user.name":       Event.username,
-    "process.hash_sha256":   Event.process_hash,
+    name: getattr(Event, flat) for name, flat in FILTER_FIELDS.items()
 }
+
+# Expressions matched by the free-text query: the flat text columns and the
+# process command line inside the stored event.
+_TEXT_SEARCH_COLUMNS: list[Any] = [
+    *(getattr(Event, name) for name in TEXT_SEARCH_FIELDS),
+    Event.raw[CMD_LINE_PATH].as_string(),
+]
 
 # Entity-type → Event column(s) for the entity timeline query
 _ENTITY_MAP: dict[str, list[Any]] = {
@@ -98,6 +94,8 @@ def _apply_event_filter(q, field: str, operator: str, value: Any):
     if operator == "ne":
         return q.where(col != value)
     if operator == "contains":
+        if col.key in NUMERIC_FIELDS:
+            col = cast(col, String)   # substring of the number as text
         return q.where(col.ilike(f"%{escape_like(str(value))}%", escape="\\"))
     if operator == "gt":
         return q.where(col > value)
@@ -131,16 +129,12 @@ class EventRepo:
 
         q = select(Event).where(Event.time >= t_from, Event.time <= t_to)
 
-        # Full-text search across summary, class_name, hostname, username
+        # Free text: case-insensitive substring of the summary, class name,
+        # host, user, addresses or process command line
         if query:
             pattern = f"%{escape_like(query)}%"
             q = q.where(
-                Event.summary.ilike(pattern, escape="\\")
-                | Event.class_name.ilike(pattern, escape="\\")
-                | Event.hostname.ilike(pattern, escape="\\")
-                | Event.username.ilike(pattern, escape="\\")
-                | Event.src_ip.ilike(pattern, escape="\\")
-                | Event.dst_ip.ilike(pattern, escape="\\")
+                or_(*(col.ilike(pattern, escape="\\") for col in _TEXT_SEARCH_COLUMNS))
             )
 
         # Apply structured filters
@@ -151,8 +145,8 @@ class EventRepo:
         count_q = select(func.count()).select_from(q.subquery())
         total = await session.scalar(count_q) or 0
 
-        # Sort by event time descending, then paginate
-        q = q.order_by(Event.time.desc()).offset(from_).limit(size)
+        # Sort by event time descending (id as tie-breaker), then paginate
+        q = q.order_by(Event.time.desc(), Event.id.desc()).offset(from_).limit(size)
 
         result = await session.execute(q)
         return list(result.scalars().all()), total
@@ -197,7 +191,7 @@ class EventRepo:
             select(col.label("key"), func.count().label("count"))
             .where(Event.time >= t_from, Event.time <= t_to)
             .group_by(col)
-            .order_by(func.count().desc())
+            .order_by(func.count().desc(), col.asc().nulls_last())
             .limit(limit)
         )
         rows = await session.execute(q)

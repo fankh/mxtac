@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import valkey.asyncio as aioredis
 
@@ -11,6 +12,18 @@ from .config import settings
 logger = logging.getLogger(__name__)
 
 _client: aioredis.Valkey | None = None
+
+# Connection options for a pub/sub subscriber.  The asyncio client defaults to
+# a 5-second socket timeout, which also applies to the blocking read of
+# ``pubsub.listen()``: an idle subscription raises TimeoutError every 5 seconds
+# and misses what is published while it reconnects.  A subscriber therefore
+# waits for messages without a read timeout; TCP keepalive detects a dead peer.
+SUBSCRIBER_OPTIONS: dict[str, Any] = {
+    "decode_responses": True,
+    "socket_timeout": None,
+    "socket_connect_timeout": 5,
+    "socket_keepalive": True,
+}
 
 
 async def get_valkey_client() -> aioredis.Valkey:
