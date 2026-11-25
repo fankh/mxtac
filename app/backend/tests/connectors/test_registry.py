@@ -62,7 +62,6 @@ import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.connectors.registry import (
@@ -79,7 +78,6 @@ from app.connectors.suricata import SuricataConnector
 from app.connectors.wazuh import WazuhConnector
 from app.connectors.zeek import ZeekConnector
 from app.pipeline.queue import InMemoryQueue
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

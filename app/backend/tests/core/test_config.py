@@ -69,7 +69,7 @@ class TestSecretKeyProductionEnforcement:
 
     def test_production_default_key_raises(self, monkeypatch) -> None:
         """debug=False + default secret_key → ValidationError is raised (app refuses to start)."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             self._reload(monkeypatch, secret_key=_DEV_SECRET, debug=False)
 
     def test_production_default_key_error_mentions_secret_key(self, monkeypatch) -> None:
@@ -103,7 +103,7 @@ class TestSecretKeyProductionEnforcement:
         """debug=False + default secret_key → WARNING is logged before the hard failure."""
         import logging
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             with caplog.at_level(logging.WARNING, logger=_CONFIG_LOGGER):
                 self._reload(monkeypatch, secret_key=_DEV_SECRET, debug=False)
         assert any("SECRET_KEY" in r.message for r in caplog.records)
@@ -304,7 +304,7 @@ class TestSecretKeyWarningBehaviour:
         """debug=False + default key → WARNING containing 'production mode' is emitted."""
         import logging
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             with caplog.at_level(logging.WARNING, logger=_CONFIG_LOGGER):
                 self._reload(monkeypatch, secret_key=_DEV_SECRET, debug=False)
 

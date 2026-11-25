@@ -11,7 +11,7 @@ Found while driving the real UI against the real backend:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -138,7 +138,7 @@ async def _add(session, severity: str, minutes_ago: int, host: str = "h") -> Non
     await DetectionRepo.create(
         session, score=5.0, severity=severity, technique_id="T1059", technique_name="x",
         tactic="Execution", name=f"{severity}-{minutes_ago}", host=host,
-        time=datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc) - timedelta(minutes=minutes_ago),
+        time=datetime(2026, 11, 24, 12, 0, tzinfo=UTC) - timedelta(minutes=minutes_ago),
     )
 
 

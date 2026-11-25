@@ -15,6 +15,8 @@ This file tests:
 
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 from httpx import AsyncClient
 
@@ -333,7 +335,8 @@ async def test_heatmap_supports_gap_table_aggregation(
 
 def _make_detection(**kwargs):
     """Return a minimal Detection ORM instance for heatmap DB tests."""
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from app.models.detection import Detection as DetectionModel
 
     defaults = dict(
@@ -344,7 +347,7 @@ def _make_detection(**kwargs):
         host="host-test",
         tactic_id="TA0002",
         status="active",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         description="test",
         user="root",
         process="cmd",

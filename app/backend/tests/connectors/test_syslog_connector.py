@@ -99,27 +99,26 @@ Coverage:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+import contextlib
+from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.connectors.base import ConnectorConfig, ConnectorStatus
 from app.connectors.syslog import (
     DEFAULT_HOST,
-    DEFAULT_PORT,
     DEFAULT_MAX_MESSAGE_SIZE,
-    FACILITY_NAMES,
+    DEFAULT_PORT,
     SEVERITY_NAMES,
     SyslogUDPConnector,
     SyslogUDPConnectorFactory,
-    _SyslogProtocol,
     _extract_msg_from_sd,
     _fill_priority,
+    _SyslogProtocol,
 )
 from app.pipeline.queue import InMemoryQueue, Topic
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -232,10 +231,9 @@ class TestSyslogPollLoop:
         task = asyncio.create_task(conn._poll_loop())
         await asyncio.sleep(0)  # let the task start
         task.cancel()
-        try:
+        # Expected behaviour: the cancellation propagates to the caller.
+        with contextlib.suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass  # expected behaviour: cancel propagates to the caller
 
 
 # ── _connect() ─────────────────────────────────────────────────────────────────
@@ -640,9 +638,9 @@ class TestParseRFC5424:
     def test_nil_timestamp_falls_back_to_utc_now(self) -> None:
         msg = "<165>1 - myhost myapp 123 - - the message"
         conn = _make_connector()
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         event = conn._parse_syslog(_encode(msg), ("127.0.0.1", 1))
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         # Timestamp should be a valid ISO string close to now
         ts = datetime.fromisoformat(event["timestamp"])
         assert before.timestamp() - 1 <= ts.timestamp() <= after.timestamp() + 1
@@ -841,6 +839,7 @@ class TestSyslogStop:
 class TestSyslogRegistryIntegration:
     def test_build_connector_creates_syslog_connector(self) -> None:
         import json
+
         from app.connectors.registry import build_connector
 
         mock_db_conn = MagicMock()
@@ -856,6 +855,7 @@ class TestSyslogRegistryIntegration:
 
     def test_build_connector_sets_status_callback(self) -> None:
         import json
+
         from app.connectors.registry import build_connector
 
         mock_db_conn = MagicMock()
@@ -872,6 +872,7 @@ class TestSyslogRegistryIntegration:
 
     def test_build_connector_name_matches_db_row(self) -> None:
         import json
+
         from app.connectors.registry import build_connector
 
         mock_db_conn = MagicMock()

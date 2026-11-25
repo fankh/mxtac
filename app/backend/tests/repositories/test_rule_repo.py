@@ -36,7 +36,6 @@ import pytest
 
 from app.repositories.rule_repo import RuleRepo
 
-
 # ---------------------------------------------------------------------------
 # Session factory helpers
 # ---------------------------------------------------------------------------

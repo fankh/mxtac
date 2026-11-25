@@ -13,7 +13,7 @@ Also verifies that viewer cannot investigate or resolve (403 for PATCH detection
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -32,7 +32,7 @@ _INC_DET_REPO = "app.api.v1.endpoints.incidents.DetectionRepo"
 # Helpers — minimal ORM-like namespaces
 # ---------------------------------------------------------------------------
 
-_NOW = datetime(2026, 2, 20, 8, 0, 0, tzinfo=timezone.utc)
+_NOW = datetime(2026, 2, 20, 8, 0, 0, tzinfo=UTC)
 
 
 def _make_detection(**overrides) -> SimpleNamespace:
@@ -433,7 +433,6 @@ class TestAnalystIncidentManagement:
         self, client: AsyncClient, analyst_headers: dict, db_session
     ) -> None:
         """Analyst can advance an incident from 'new' to 'investigating'."""
-        investigating_inc = _make_incident(status="investigating")
         with patch(f"{_INC_REPO}.get_by_id", new=AsyncMock(return_value=_INC)):
             resp = await client.patch(
                 "/api/v1/incidents/1",

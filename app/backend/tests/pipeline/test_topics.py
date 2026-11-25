@@ -20,11 +20,10 @@ Coverage:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from app.engine.sigma_engine import SigmaAlert, SigmaEngine
 from app.pipeline.queue import InMemoryQueue, Topic
@@ -33,7 +32,6 @@ from app.services.normalizers.ocsf import Endpoint, OCSFCategory, OCSFClass, OCS
 from app.services.normalizers.pipeline import NormalizerPipeline
 from app.services.sigma_consumer import sigma_consumer
 from app.services.ws_broadcaster import websocket_broadcaster
-
 
 # ── Async generator helper ─────────────────────────────────────────────────────
 
@@ -106,7 +104,7 @@ def _ocsf_event(**overrides: Any) -> OCSFEvent:
         class_uid=OCSFClass.SECURITY_FINDING,
         class_name="Security Finding",
         category_uid=OCSFCategory.FINDINGS,
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         severity_id=3,
         metadata_product="Wazuh",
         dst_endpoint=Endpoint(hostname="WIN-DC01", ip="192.168.1.10"),
@@ -125,7 +123,7 @@ def _alert_dict(**overrides: Any) -> dict[str, Any]:
         "technique_ids": ["T1059"],
         "tactic_ids": ["TA0002"],
         "host": "WIN-DC01",
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": datetime.now(UTC).isoformat(),
         "event_snapshot": {},
     }
     d.update(overrides)
@@ -200,7 +198,7 @@ class TestTopicSemantics:
         # Topics are not required to sort alphabetically, but their string values
         # must contain the stage name so the pipeline can be reasoned about.
         stage_order = ["normalized", "alerts", "enriched"]
-        for stage, topic in zip(stage_order, self.PROCESSING_TOPICS):
+        for stage, topic in zip(stage_order, self.PROCESSING_TOPICS, strict=False):
             assert stage in topic, f"Stage '{stage}' not found in topic '{topic}'"
 
 
@@ -466,7 +464,7 @@ class TestSigmaConsumerTopics:
             technique_ids=["T1059"],
             tactic_ids=["TA0002"],
             host="WIN-DC01",
-            time=datetime.now(timezone.utc),
+            time=datetime.now(UTC),
             event_snapshot={},
         )
         engine = MagicMock(spec=SigmaEngine)
@@ -520,7 +518,7 @@ class TestSigmaConsumerTopics:
             technique_ids=["T1055"],
             tactic_ids=["TA0005"],
             host="linux-srv",
-            time=datetime.now(timezone.utc),
+            time=datetime.now(UTC),
             event_snapshot={"key": "val"},
         )
         engine = MagicMock(spec=SigmaEngine)
@@ -549,8 +547,8 @@ class TestSigmaConsumerTopics:
         await q.start()
 
         alerts = [
-            SigmaAlert(rule_id="rule-A", host="host1", time=datetime.now(timezone.utc)),
-            SigmaAlert(rule_id="rule-B", host="host1", time=datetime.now(timezone.utc)),
+            SigmaAlert(rule_id="rule-A", host="host1", time=datetime.now(UTC)),
+            SigmaAlert(rule_id="rule-B", host="host1", time=datetime.now(UTC)),
         ]
         engine = MagicMock(spec=SigmaEngine)
         engine.evaluate = MagicMock(side_effect=lambda e: _agen(alerts))
@@ -593,7 +591,7 @@ class TestSigmaConsumerTopics:
         await q.stop()
 
     async def test_alert_time_field_is_iso_format_string(self) -> None:
-        ts = datetime(2026, 2, 20, 10, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2026, 2, 20, 10, 0, 0, tzinfo=UTC)
         alert = SigmaAlert(rule_id="r1", host="host1", time=ts)
 
         q = InMemoryQueue()
@@ -940,7 +938,7 @@ class TestTopicFlowIntegration:
             rule_id="integration-rule",
             rule_title="Integration Test",
             host="WIN-DC01",
-            time=datetime.now(timezone.utc),
+            time=datetime.now(UTC),
         )
         engine = MagicMock(spec=SigmaEngine)
         engine.evaluate = MagicMock(side_effect=lambda e: _agen([fired]))
@@ -1001,7 +999,7 @@ class TestTopicFlowIntegration:
             host="WIN-DC01",
             level="high",
             severity_id=4,
-            time=datetime.now(timezone.utc),
+            time=datetime.now(UTC),
         )
         engine = MagicMock(spec=SigmaEngine)
         engine.evaluate = MagicMock(side_effect=lambda e: _agen([fired]))
@@ -1050,7 +1048,7 @@ class TestTopicFlowIntegration:
                 SigmaAlert(
                     rule_id="multi-source-rule",
                     host=event.dst_endpoint.hostname or "unknown",
-                    time=datetime.now(timezone.utc),
+                    time=datetime.now(UTC),
                 )
             ])
 

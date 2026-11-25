@@ -6,9 +6,6 @@ RBAC:
 
 from __future__ import annotations
 
-import pytest
-
-
 _BASE = "/api/v1/events"
 
 

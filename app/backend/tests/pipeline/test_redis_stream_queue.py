@@ -36,7 +36,6 @@ import pytest
 
 from app.pipeline.queue import MessageQueue, RedisStreamQueue, Topic
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
@@ -986,12 +985,8 @@ class TestRedisStreamQueueIntegration:
 
     async def test_multiple_topics_independent_consume_loops(self) -> None:
         """Two subscriptions on different topics both deliver independently."""
-        mock_redis = make_mock_redis()
-
         wazuh_msg = {"src": "wazuh", "rule": "1001"}
         zeek_msg = {"src": "zeek", "conn": "tcp"}
-
-        call_counts: dict[str, int] = {Topic.RAW_WAZUH: 0, Topic.RAW_ZEEK: 0}
 
         def make_xreadgroup(topic: str, message: dict[str, Any]) -> AsyncMock:
             inner_count = 0

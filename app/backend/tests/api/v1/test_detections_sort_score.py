@@ -22,7 +22,7 @@ All tests mock DetectionRepo.list so no live PostgreSQL instance is needed.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -58,7 +58,7 @@ def _make_detection(det_id: str = "DET-0001", **overrides) -> SimpleNamespace:
         host="WS-01",
         tactic="Execution",
         status="active",
-        time=datetime(2026, 2, 19, 14, 21, 7, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 19, 14, 21, 7, tzinfo=UTC),
         user="admin",
         process="powershell.exe",
         rule_name="win_powershell",

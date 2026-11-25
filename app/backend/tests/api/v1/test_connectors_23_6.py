@@ -45,8 +45,6 @@ Uses in-memory SQLite via the ``client`` fixture (get_db overridden).
 
 from __future__ import annotations
 
-import json
-
 import pytest
 from httpx import AsyncClient
 

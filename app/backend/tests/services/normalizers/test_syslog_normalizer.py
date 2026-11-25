@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -43,7 +43,7 @@ def test_rfc3164_common_fields() -> None:
 
 
 def test_rfc3164_timestamp_gets_current_year_in_utc() -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     event = normalize(RFC3164)
 
     assert (event.time.month, event.time.day, event.time.hour, event.time.minute) == (2, 19, 8, 30)
@@ -66,7 +66,7 @@ def test_rfc3164_without_pid() -> None:
 def test_rfc5424_fields() -> None:
     event = normalize(RFC5424)
 
-    assert event.time == datetime(2026, 2, 19, 8, 30, 0, 250000, tzinfo=timezone.utc)
+    assert event.time == datetime(2026, 2, 19, 8, 30, 0, 250000, tzinfo=UTC)
     assert event.dst_endpoint.hostname == "web01"
     assert event.process.name == "useradd"
     assert event.process.pid == 3120
@@ -81,7 +81,7 @@ def test_rfc5424_nil_values() -> None:
     assert event.dst_endpoint.hostname is None
     assert event.process.name is None
     assert event.process.pid is None
-    assert event.time == datetime(2026, 2, 18, 23, 30, tzinfo=timezone.utc)
+    assert event.time == datetime(2026, 2, 18, 23, 30, tzinfo=UTC)
     assert event.unmapped["message"] == "disk almost full"
     assert event.severity_id == 2                      # syslog notice
 

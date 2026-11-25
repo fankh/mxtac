@@ -17,7 +17,7 @@ from PostgreSQL into the current indices.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -147,7 +147,7 @@ async def reindex_legacy_events(os_client: OpenSearchService) -> int:
         return 0
     logger.info("Re-indexing events from PostgreSQL (legacy indices: %s)", ", ".join(legacy))
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=ILM_RETENTION_DAYS)
+    cutoff = datetime.now(UTC) - timedelta(days=ILM_RETENTION_DAYS)
     indexed = 0
     last_id = ""
     while True:

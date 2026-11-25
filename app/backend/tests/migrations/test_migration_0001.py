@@ -23,6 +23,7 @@ Coverage:
 from __future__ import annotations
 
 import importlib.util
+from datetime import UTC
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock, patch
@@ -762,7 +763,8 @@ class TestDetectionOrmModel:
 
     def test_repr_contains_severity(self) -> None:
         import uuid
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         from app.models.detection import Detection
         d = Detection(
             id=str(uuid.uuid4()),
@@ -774,13 +776,14 @@ class TestDetectionOrmModel:
             name="Suspicious Script Execution",
             status="active",
             host="dc01.corp.local",
-            time=datetime.now(timezone.utc),
+            time=datetime.now(UTC),
         )
         assert "critical" in repr(d)
 
     def test_repr_contains_technique_id(self) -> None:
         import uuid
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         from app.models.detection import Detection
         d = Detection(
             id=str(uuid.uuid4()),
@@ -792,6 +795,6 @@ class TestDetectionOrmModel:
             name="LSASS Memory Dump",
             status="active",
             host="ws01",
-            time=datetime.now(timezone.utc),
+            time=datetime.now(UTC),
         )
         assert "T1003" in repr(d)

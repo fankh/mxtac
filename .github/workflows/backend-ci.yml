@@ -137,15 +137,18 @@ jobs:
           SECRET_KEY: ci-test-secret-key-not-for-production
           ENVIRONMENT: test
 
-      - name: Upgrade to head
+      - name: Upgrade an empty database to head
         run: alembic upgrade head
         env:
           DATABASE_URL: postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac_migrate
           SECRET_KEY: ci-test-secret-key-not-for-production
           ENVIRONMENT: test
 
-      - name: Downgrade to base (rollback verification)
-        run: alembic downgrade base
+      # Migration 0027 drops the tables of removed features and cannot be
+      # downgraded (its downgrade() raises NotImplementedError on purpose), so
+      # the rollback check covers every migration after it.
+      - name: Downgrade to 0027 (rollback verification)
+        run: alembic downgrade 0027
         env:
           DATABASE_URL: postgresql+asyncpg://mxtac:mxtac@localhost:5432/mxtac_migrate
           SECRET_KEY: ci-test-secret-key-not-for-production

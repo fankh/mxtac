@@ -71,9 +71,7 @@ Coverage for ``ocsf_to_sigma_flat()``:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from app.engine.field_mapper import CATEGORY_MAPS, ocsf_to_sigma_flat
 from app.services.normalizers.ocsf import (
@@ -84,7 +82,6 @@ from app.services.normalizers.ocsf import (
     ProcessInfo,
     UserInfo,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helper factories
@@ -97,7 +94,7 @@ def _make_event(**overrides: object) -> OCSFEvent:
         class_uid=OCSFClass.PROCESS_ACTIVITY,
         class_name="Process Activity",
         category_uid=OCSFCategory.SYSTEM_ACTIVITY,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="Wazuh",
     )

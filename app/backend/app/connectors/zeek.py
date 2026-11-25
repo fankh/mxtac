@@ -33,14 +33,15 @@ all events to the correct destination automatically.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from ..core.logging import get_logger
-from ..pipeline.queue import Topic
+from ..pipeline.queue import MessageQueue, Topic
 from .base import BaseConnector, ConnectorConfig
 
 logger = get_logger(__name__)
@@ -60,7 +61,7 @@ class ZeekConnector(BaseConnector):
     def __init__(
         self,
         config: ConnectorConfig,
-        queue,
+        queue: MessageQueue,
         *,
         initial_positions: dict[str, int] | None = None,
         checkpoint_callback: Callable[[dict[str, int]], Awaitable[None]] | None = None,
@@ -182,25 +183,19 @@ class ZeekConnector(BaseConnector):
 
         # ts → float (Unix timestamp)
         if "ts" in event:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 event["ts"] = float(event["ts"])
-            except (ValueError, TypeError):
-                pass
 
         # duration → float
         if "duration" in event:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 event["duration"] = float(event["duration"])
-            except (ValueError, TypeError):
-                pass
 
         # Integer counter / port fields
         for field in self._INT_FIELDS:
             if field in event:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     event[field] = int(event[field])
-                except (ValueError, TypeError):
-                    pass
 
         return event
 
@@ -279,7 +274,7 @@ class ZeekConnectorFactory:
     """Factory for creating ZeekConnector instances from a flat configuration dict."""
 
     @staticmethod
-    def from_dict(cfg: dict[str, Any], queue) -> "ZeekConnector":
+    def from_dict(cfg: dict[str, Any], queue: MessageQueue) -> ZeekConnector:
         """Create a ZeekConnector from a flat configuration dict."""
         config = ConnectorConfig(
             name=cfg.get("name", "zeek"),

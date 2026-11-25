@@ -24,7 +24,7 @@ Coverage:
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pyotp
 import pytest
@@ -238,7 +238,6 @@ async def test_mfa_verify_returns_refresh_token(client: AsyncClient) -> None:
             resp = await client.post(
                 MFA_VERIFY_URL, json={"mfa_token": mfa_token, "code": valid_code}
             )
-    data = resp.json()
     assert refresh_token_of(resp)
 
 

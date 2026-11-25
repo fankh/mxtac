@@ -10,7 +10,7 @@ Covers:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
@@ -58,7 +58,7 @@ async def _insert_detection(
         name="Credential Access Detection",
         host=host,
         status="active",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
     )
     db.add(det)
     await db.flush()
@@ -493,7 +493,7 @@ async def test_list_incidents_filter_multiple_statuses(
     client: AsyncClient, analyst_headers: dict
 ) -> None:
     """Multiple status values are OR-combined."""
-    inc1 = await _create_incident(client, analyst_headers, title="New Inc")
+    await _create_incident(client, analyst_headers, title="New Inc")
     inc2 = await _create_incident(client, analyst_headers, title="Investigating Inc")
     await client.patch(
         f"/api/v1/incidents/{inc2}",

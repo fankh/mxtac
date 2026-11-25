@@ -13,9 +13,19 @@ Coverage:
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
 
-from app.core.config import Settings, _DEFAULT_PG_URL
+from app.core.config import _DEFAULT_PG_URL, Settings
+
+
+@pytest.fixture(autouse=True)
+def _default_database_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Start every test from the default settings.
+
+    CI and developer shells set ``DATABASE_URL`` (and possibly the SQLite
+    variables); these tests describe the defaults, so the variables are removed.
+    """
+    for name in ("DATABASE_URL", "SQLITE_MODE", "SQLITE_PATH"):
+        monkeypatch.delenv(name, raising=False)
 
 
 class TestSqliteModeDefault:

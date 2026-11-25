@@ -14,6 +14,7 @@ from ....core.database import get_db
 from ....core.rbac import require_permission
 from ....core.valkey import publish_rule_reload
 from ....engine.sigma_engine import SigmaEngine, SigmaRuleError
+from ....models.rule import Rule
 from ....repositories.rule_repo import RuleRepo
 
 router = APIRouter(prefix="/rules", tags=["rules"])
@@ -40,7 +41,7 @@ class RuleResponse(BaseModel):
     enabled: bool
     technique_ids: list[str]
     tactic_ids: list[str]
-    logsource: dict
+    logsource: dict[str, Any]
     hit_count: int = 0
     fp_count: int = 0
 
@@ -54,11 +55,11 @@ class RuleDetailResponse(RuleResponse):
 
 class RuleTestRequest(BaseModel):
     content: str = Field(..., max_length=_MAX_YAML_BYTES)   # YAML to test
-    sample_event: dict    # event to test against
+    sample_event: dict[str, Any]    # event to test against
 
 class RuleEventTestRequest(BaseModel):
     """Request body for POST /rules/{rule_id}/test — only sample event, content comes from DB."""
-    sample_event: dict
+    sample_event: dict[str, Any]
 
 class RuleTestResponse(BaseModel):
     matched: bool
@@ -76,7 +77,7 @@ _engine = SigmaEngine()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _rule_to_response(rule: Any) -> dict:
+def _rule_to_response(rule: Any) -> dict[str, Any]:
     """Convert ORM Rule → RuleResponse-compatible dict."""
     try:
         technique_ids = json.loads(rule.technique_ids) if rule.technique_ids else []
@@ -86,7 +87,7 @@ def _rule_to_response(rule: Any) -> dict:
         tactic_ids = json.loads(rule.tactic_ids) if rule.tactic_ids else []
     except (json.JSONDecodeError, TypeError):
         tactic_ids = []
-    logsource: dict = {}
+    logsource: dict[str, Any] = {}
     if rule.logsource_product:
         logsource["product"] = rule.logsource_product
     if rule.logsource_category:
@@ -107,7 +108,7 @@ def _rule_to_response(rule: Any) -> dict:
     }
 
 
-def _rule_to_detail_response(rule: Any) -> dict:
+def _rule_to_detail_response(rule: Any) -> dict[str, Any]:
     """Convert ORM Rule → RuleDetailResponse-compatible dict (superset of RuleResponse)."""
     base = _rule_to_response(rule)
     base.update({
@@ -144,7 +145,7 @@ async def _parse_and_persist(
     enabled: bool = True,
     engine: Any = None,
     errors: list[str] | None = None,
-) -> list:
+) -> list[Rule]:
     """Parse Sigma YAML (single or multi-doc), validate, and persist each to DB.
 
     Syncs each persisted rule into `engine` (app.state.sigma_engine) when provided.
@@ -152,7 +153,7 @@ async def _parse_and_persist(
     Sigma or uses syntax the engine does not support is skipped; the reason is
     appended to `errors` when a list is passed.
     """
-    created = []
+    created: list[Rule] = []
     if errors is None:
         errors = []
     try:
@@ -207,8 +208,8 @@ async def list_rules(
     enabled: bool | None = None,
     level: str | None = None,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("rules:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("rules:read")),
+) -> list[dict[str, Any]]:
     """List all Sigma rules. Supports filtering by enabled/level."""
     rules = await RuleRepo.list(db, enabled=enabled, level=level)
     return [_rule_to_response(r) for r in rules]
@@ -217,8 +218,8 @@ async def list_rules(
 @router.get("/stats/summary", response_model=dict)
 async def rules_summary(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("rules:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("rules:read")),
+) -> dict[str, Any]:
     rules = await RuleRepo.list(db)
     by_level: dict[str, int] = {}
     for r in rules:
@@ -233,8 +234,8 @@ async def rules_summary(
 @router.post("/test", response_model=RuleTestResponse)
 async def test_rule_yaml(
     body: RuleTestRequest,
-    _: dict = Depends(require_permission("rules:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("rules:read")),
+) -> dict[str, Any]:
     """Validate Sigma YAML structure and test it against a sample event (no save).
 
     Validation phases:
@@ -285,8 +286,8 @@ async def import_rules(
     request: Request,
     body: RuleImportRequest,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("rules:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("rules:write")),
+) -> dict[str, Any]:
     """Bulk import Sigma rules from YAML (single or multi-document).
 
     Rules that are invalid or use unsupported Sigma syntax are not imported;
@@ -301,15 +302,15 @@ async def import_rules(
             await _announce_rule_change(db)
         return {"imported": len(created), "total_rules": total, "errors": errors}
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Import failed: {exc}")
+        raise HTTPException(status_code=422, detail=f"Import failed: {exc}") from exc
 
 
 @router.post("/reload", response_model=dict)
 async def reload_rules(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("rules:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("rules:write")),
+) -> dict[str, Any]:
     """Hot-reload all Sigma rules from DB into the in-process engine.
 
     Clears the current engine state and reloads every enabled/disabled rule
@@ -330,8 +331,8 @@ async def reload_rules(
 async def get_rule(
     rule_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("rules:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("rules:read")),
+) -> dict[str, Any]:
     """Fetch a single Sigma rule by ID, including raw YAML content and metadata."""
     rule = await RuleRepo.get_by_id(db, rule_id)
     if not rule:
@@ -344,8 +345,8 @@ async def create_rule(
     request: Request,
     body: RuleCreate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("rules:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("rules:write")),
+) -> dict[str, Any]:
     """Create a custom Sigma rule from raw YAML."""
     engine = getattr(request.app.state, "sigma_engine", None)
     errors: list[str] = []
@@ -365,13 +366,13 @@ async def update_rule(
     rule_id: str,
     body: RuleUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("rules:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("rules:write")),
+) -> dict[str, Any]:
     rule = await RuleRepo.get_by_id(db, rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
 
-    update_kwargs: dict = {}
+    update_kwargs: dict[str, Any] = {}
     sigma_rule = None
     if body.enabled is not None:
         update_kwargs["enabled"] = body.enabled
@@ -379,7 +380,9 @@ async def update_rule(
         try:
             sigma_rule = _engine.parse_rule_yaml(body.content)
         except SigmaRuleError as exc:
-            raise HTTPException(status_code=422, detail=_invalid_rule_detail([str(exc)]))
+            raise HTTPException(
+                status_code=422, detail=_invalid_rule_detail([str(exc)])
+            ) from exc
         # The stored row keeps its id even when the edited YAML names another.
         sigma_rule.id = rule_id
         logsource = sigma_rule.logsource or {}
@@ -419,13 +422,13 @@ async def update_rule(
     return response
 
 
-@router.delete("/{rule_id}", status_code=204)
+@router.delete("/{rule_id}", response_model=None, status_code=204)
 async def delete_rule(
     request: Request,
     rule_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("rules:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("rules:write")),
+) -> None:
     deleted = await RuleRepo.delete(db, rule_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -439,8 +442,8 @@ async def delete_rule(
 async def mark_false_positive(
     rule_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:write")),
+) -> dict[str, Any]:
     """Mark a rule match as a false positive — atomically increments fp_count.
 
     Called by analysts when reviewing an alert triggered by this rule and
@@ -459,8 +462,8 @@ async def test_rule(
     rule_id: str,
     body: RuleEventTestRequest,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("rules:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("rules:read")),
+) -> dict[str, Any]:
     """Test an existing stored rule against a sample event.
 
     The rule content is loaded from the database; only a sample event is required.

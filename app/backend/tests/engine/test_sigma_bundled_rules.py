@@ -17,10 +17,8 @@ Rules under test:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-
-import pytest
 
 from app.engine.sigma_engine import SigmaEngine, SigmaRule
 from app.services.normalizers.ocsf import (
@@ -66,7 +64,7 @@ def _proc_event(**overrides) -> OCSFEvent:
         class_uid=OCSFClass.PROCESS_ACTIVITY,
         class_name="Process Activity",
         category_uid=OCSFCategory.SYSTEM_ACTIVITY,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="windows",
         dst_endpoint=Endpoint(hostname="workstation-01"),
@@ -81,7 +79,7 @@ def _net_event(**overrides) -> OCSFEvent:
         class_uid=OCSFClass.NETWORK_ACTIVITY,
         class_name="Network Activity",
         category_uid=OCSFCategory.NETWORK,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="windows",
         dst_endpoint=Endpoint(hostname="target-host"),
@@ -96,7 +94,7 @@ def _dns_event(**overrides) -> OCSFEvent:
         class_uid=OCSFClass.DNS_ACTIVITY,
         class_name="DNS Activity",
         category_uid=OCSFCategory.NETWORK,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="windows",
         dst_endpoint=Endpoint(hostname="dns-server"),

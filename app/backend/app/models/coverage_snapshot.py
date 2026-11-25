@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import Date, Float, Integer, String, UniqueConstraint
+from sqlalchemy import Date, Float, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, TimestampMixin, new_uuid
@@ -22,10 +22,14 @@ class CoverageSnapshot(Base, TimestampMixin):
     """
 
     __tablename__ = "coverage_snapshots"
-    __table_args__ = (UniqueConstraint("snapshot_date", name="uq_coverage_snapshots_date"),)
+    __table_args__ = (
+        UniqueConstraint("snapshot_date", name="uq_coverage_snapshots_date"),
+        # Name used by migration 0013.
+        Index("ix_coverage_snapshots_date", "snapshot_date"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
     coverage_pct: Mapped[float] = mapped_column(Float, nullable=False)
     covered_count: Mapped[int] = mapped_column(Integer, nullable=False)
     total_count: Mapped[int] = mapped_column(Integer, nullable=False)

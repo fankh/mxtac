@@ -7,19 +7,20 @@ cluster is required.
 from __future__ import annotations
 
 import sys
+from datetime import UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.services.opensearch_client import (
+    ALERTS_HOT_DAYS,
     ALERTS_ILM_POLICY_NAME,
     ALERTS_INDEX_TEMPLATE,
     ALERTS_MAPPING,
+    AUDIT_HOT_DAYS,
     AUDIT_INDEX_TEMPLATE,
     AUDIT_TYPE_ILM_POLICY_NAME,
     EVENTS_HOT_DAYS,
-    ALERTS_HOT_DAYS,
-    AUDIT_HOT_DAYS,
     EVENTS_ILM_POLICY_NAME,
     EVENTS_INDEX_TEMPLATE,
     EVENTS_MAPPING,
@@ -271,18 +272,18 @@ async def test_index_event_exception_returns_none() -> None:
 
 def test_daily_index_returns_base_with_date_suffix() -> None:
     """_daily_index(base) appends today's UTC date in YYYY.MM.DD format."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     result = _daily_index("mxtac-events")
-    today = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    today = datetime.now(UTC).strftime("%Y.%m.%d")
     assert result == f"mxtac-events-{today}"
 
 
 def test_daily_index_frozen_date() -> None:
     """_daily_index() uses UTC time — verifiable by freezing datetime.now."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    fixed_dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+    fixed_dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=UTC)
     with patch("app.services.opensearch_client.datetime") as mock_dt:
         mock_dt.now.return_value = fixed_dt
         result = _daily_index("mxtac-events")
@@ -301,10 +302,10 @@ def test_daily_index_uses_dot_separated_date() -> None:
 
 def test_daily_index_works_for_alerts_base() -> None:
     """_daily_index is reusable — produces the correct name for the alerts base."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     result = _daily_index("mxtac-alerts")
-    today = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    today = datetime.now(UTC).strftime("%Y.%m.%d")
     assert result == f"mxtac-alerts-{today}"
 
 
@@ -348,7 +349,7 @@ async def test_index_event_index_name_matches_daily_pattern() -> None:
 @pytest.mark.asyncio
 async def test_index_event_index_name_uses_utc_today() -> None:
     """The daily index suffix reflects today's UTC date, not local time."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     svc = OpenSearchService()
     mock_client = MagicMock()
@@ -358,21 +359,21 @@ async def test_index_event_index_name_uses_utc_today() -> None:
     await svc.index_event({"class_name": "Process Activity"})
 
     idx = mock_client.index.call_args.kwargs["index"]
-    today = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    today = datetime.now(UTC).strftime("%Y.%m.%d")
     assert idx == f"mxtac-events-v2-{today}"
 
 
 @pytest.mark.asyncio
 async def test_index_event_index_name_frozen_date() -> None:
     """index_event() uses the UTC date at call time — verifiable with frozen datetime."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     svc = OpenSearchService()
     mock_client = MagicMock()
     mock_client.index = AsyncMock(return_value={"_id": "x"})
     svc._client = mock_client
 
-    fixed_dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+    fixed_dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=UTC)
     with patch("app.services.opensearch_client.datetime") as mock_dt:
         mock_dt.now.return_value = fixed_dt
         await svc.index_event({"class_name": "Process Activity"})
@@ -582,7 +583,7 @@ async def test_index_alert_index_name_matches_daily_pattern() -> None:
 @pytest.mark.asyncio
 async def test_index_alert_index_name_uses_utc_today() -> None:
     """The daily index suffix reflects today's UTC date, not local time."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     svc = OpenSearchService()
     mock_client = MagicMock()
@@ -592,7 +593,7 @@ async def test_index_alert_index_name_uses_utc_today() -> None:
     await svc.index_alert({"rule_name": "Suspicious PowerShell"})
 
     idx = mock_client.index.call_args.kwargs["index"]
-    today = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    today = datetime.now(UTC).strftime("%Y.%m.%d")
     assert idx == f"mxtac-alerts-{today}"
 
 
@@ -604,9 +605,9 @@ async def test_index_alert_index_name_frozen_date() -> None:
     mock_client.index = AsyncMock(return_value={"_id": "a1"})
     svc._client = mock_client
 
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    fixed_dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+    fixed_dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=UTC)
     with patch("app.services.opensearch_client.datetime") as mock_dt:
         mock_dt.now.return_value = fixed_dt
         await svc.index_alert({"rule_name": "Suspicious PowerShell"})

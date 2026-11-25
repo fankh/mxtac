@@ -3,7 +3,6 @@
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-
 # ── Exception classes ─────────────────────────────────────────────────────────
 
 class MxTacError(Exception):

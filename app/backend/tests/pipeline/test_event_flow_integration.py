@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
-from datetime import datetime, timezone
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -40,7 +41,6 @@ from app.services.normalizers.ocsf import (
 )
 from app.services.normalizers.pipeline import NormalizerPipeline
 from app.services.sigma_consumer import sigma_consumer
-
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -498,7 +498,7 @@ class TestSyntheticSigmaEvaluation:
 
     async def test_alert_time_matches_event_time(self) -> None:
         engine = await _make_sigma_engine()
-        ts = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2026, 2, 20, 12, 0, 0, tzinfo=UTC)
         event = _process_activity_event(
             time=ts,
             process=ProcessInfo(
@@ -524,6 +524,19 @@ class TestSyntheticEventPipelineEndToEnd:
     normalized events to verify the complete chain.
     """
 
+
+    @pytest.fixture(autouse=True)
+    async def _stop_queues(self) -> AsyncGenerator[None, None]:
+        """Stop every queue a test started, also when the test fails.
+
+        A consumer task left running when the event loop closes is destroyed
+        with the loop and reports ``RuntimeError('Event loop is closed')``.
+        """
+        self._started_queues: list[InMemoryQueue] = []
+        yield
+        for q in self._started_queues:
+            await q.stop()
+
     async def _setup_full_pipeline(
         self,
     ) -> tuple[InMemoryQueue, list[dict], AlertManager]:
@@ -534,6 +547,7 @@ class TestSyntheticEventPipelineEndToEnd:
         the collected enriched alerts.
         """
         q = InMemoryQueue()
+        self._started_queues.append(q)
         await q.start()
 
         # Stage 1 — normalizer
@@ -749,10 +763,24 @@ class TestSyntheticEventDeduplication:
     synthetic event is injected twice versus events from distinct hosts.
     """
 
+
+    @pytest.fixture(autouse=True)
+    async def _stop_queues(self) -> AsyncGenerator[None, None]:
+        """Stop every queue a test started, also when the test fails.
+
+        A consumer task left running when the event loop closes is destroyed
+        with the loop and reports ``RuntimeError('Event loop is closed')``.
+        """
+        self._started_queues: list[InMemoryQueue] = []
+        yield
+        for q in self._started_queues:
+            await q.stop()
+
     async def _full_pipeline_queue_with_mgr(
         self,
     ) -> tuple[InMemoryQueue, list[dict], AlertManager]:
         q = InMemoryQueue()
+        self._started_queues.append(q)
         await q.start()
 
         pipeline = NormalizerPipeline(q)

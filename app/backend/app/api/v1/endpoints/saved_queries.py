@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....models.saved_query import SavedQuery
 from ....repositories.saved_query_repo import SavedQueryRepo
 
 router = APIRouter(prefix="/hunt/queries", tags=["hunt"])
@@ -60,7 +61,7 @@ class SavedQueryUpdate(BaseModel):
 # ── Serialization ─────────────────────────────────────────────────────────────
 
 
-def _to_dict(sq) -> dict:
+def _to_dict(sq: SavedQuery) -> dict[str, Any]:
     return {
         "id":          sq.id,
         "name":        sq.name,
@@ -78,12 +79,12 @@ def _to_dict(sq) -> dict:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=None, status_code=status.HTTP_201_CREATED)
 async def create_saved_query(
     body: SavedQueryCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("hunt_queries:write")),
-):
+    current_user: dict[str, Any] = Depends(require_permission("hunt_queries:write")),
+) -> dict[str, Any]:
     """Save and name the current hunt query for later reuse."""
     sq = await SavedQueryRepo.create(
         db,
@@ -100,22 +101,22 @@ async def create_saved_query(
     return _to_dict(sq)
 
 
-@router.get("")
+@router.get("", response_model=None)
 async def list_saved_queries(
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("hunt_queries:read")),
-):
+    current_user: dict[str, Any] = Depends(require_permission("hunt_queries:read")),
+) -> dict[str, Any]:
     """Return all saved queries belonging to the authenticated user."""
     queries = await SavedQueryRepo.list_for_user(db, current_user["email"])
     return {"items": [_to_dict(sq) for sq in queries], "total": len(queries)}
 
 
-@router.get("/{query_id}")
+@router.get("/{query_id}", response_model=None)
 async def get_saved_query(
     query_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("hunt_queries:read")),
-):
+    current_user: dict[str, Any] = Depends(require_permission("hunt_queries:read")),
+) -> dict[str, Any]:
     """Fetch a single saved query by ID (must belong to the caller)."""
     sq = await SavedQueryRepo.get(db, query_id, current_user["email"])
     if sq is None:
@@ -123,13 +124,13 @@ async def get_saved_query(
     return _to_dict(sq)
 
 
-@router.put("/{query_id}")
+@router.put("/{query_id}", response_model=None)
 async def update_saved_query(
     query_id: str,
     body: SavedQueryUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("hunt_queries:write")),
-):
+    current_user: dict[str, Any] = Depends(require_permission("hunt_queries:write")),
+) -> dict[str, Any]:
     """Update the name, description, or search parameters of a saved query."""
     sq = await SavedQueryRepo.get(db, query_id, current_user["email"])
     if sq is None:
@@ -150,12 +151,12 @@ async def update_saved_query(
     return _to_dict(sq)
 
 
-@router.delete("/{query_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{query_id}", response_model=None, status_code=status.HTTP_204_NO_CONTENT)
 async def delete_saved_query(
     query_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("hunt_queries:write")),
-):
+    current_user: dict[str, Any] = Depends(require_permission("hunt_queries:write")),
+) -> None:
     """Delete a saved query (must belong to the caller)."""
     sq = await SavedQueryRepo.get(db, query_id, current_user["email"])
     if sq is None:

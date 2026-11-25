@@ -15,21 +15,37 @@ Coverage:
 from __future__ import annotations
 
 import pytest
+from httpx import AsyncClient
 from pydantic import ValidationError
 
-# ---------------------------------------------------------------------------
-# Core validator helpers
-# ---------------------------------------------------------------------------
-
+from app.api.v1.endpoints.connectors import ConnectorCreate
+from app.api.v1.endpoints.events import AggregationRequest, EventFilter, SearchRequest
+from app.api.v1.endpoints.rules import (
+    _MAX_IMPORT_YAML_BYTES,
+    _MAX_YAML_BYTES,
+    RuleCreate,
+    RuleImportRequest,
+)
+from app.api.v1.endpoints.users import UserCreate
 from app.core.validators import (
-    EMAIL_MAX_LENGTH,
     PASSWORD_MAX_LENGTH,
-    PASSWORD_MIN_LENGTH,
     escape_like,
     validate_cidr,
     validate_hostname,
     validate_ip_address,
 )
+from app.schemas.auth import (
+    LoginRequest,
+    MfaDisableRequest,
+    MfaVerifyLoginRequest,
+    MfaVerifyRequest,
+)
+from app.schemas.detection import BulkStatusUpdate, DetectionUpdate
+from app.schemas.incident import IncidentCreate, IncidentUpdate
+
+# ---------------------------------------------------------------------------
+# Core validator helpers
+# ---------------------------------------------------------------------------
 
 
 class TestEscapeLike:
@@ -104,8 +120,6 @@ class TestValidateHostname:
 # Pydantic schema validators
 # ---------------------------------------------------------------------------
 
-from app.schemas.auth import LoginRequest, MfaVerifyRequest, MfaVerifyLoginRequest, MfaDisableRequest
-
 
 class TestLoginRequestValidation:
     def test_valid(self):
@@ -177,9 +191,6 @@ class TestMfaDisableRequestValidation:
             MfaDisableRequest(user_id="")
 
 
-from app.schemas.incident import IncidentCreate, IncidentUpdate
-
-
 class TestIncidentCreateValidation:
     def test_description_too_long_raises(self):
         with pytest.raises(ValidationError):
@@ -235,8 +246,6 @@ class TestIncidentUpdateValidation:
 # ---------------------------------------------------------------------------
 # Inline endpoint schema validators
 # ---------------------------------------------------------------------------
-
-from app.api.v1.endpoints.events import EventFilter, SearchRequest, AggregationRequest
 
 
 class TestEventFilterValidation:
@@ -345,9 +354,6 @@ class TestAggregationRequestValidation:
             AggregationRequest(size=1001)
 
 
-from app.api.v1.endpoints.rules import RuleCreate, RuleImportRequest, _MAX_YAML_BYTES, _MAX_IMPORT_YAML_BYTES
-
-
 class TestRuleSchemaValidation:
     def test_content_too_long_raises(self):
         with pytest.raises(ValidationError):
@@ -364,9 +370,6 @@ class TestRuleSchemaValidation:
     def test_import_content_too_long_raises(self):
         with pytest.raises(ValidationError):
             RuleImportRequest(yaml_content="x" * (_MAX_IMPORT_YAML_BYTES + 1))
-
-
-from app.api.v1.endpoints.connectors import ConnectorCreate
 
 
 class TestConnectorCreateValidation:
@@ -399,9 +402,6 @@ class TestConnectorCreateValidation:
             assert c.connector_type == ct
 
 
-from app.api.v1.endpoints.users import UserCreate
-
-
 class TestUserCreateValidation:
     def test_valid(self):
         u = UserCreate(email="admin@example.com", password="SecureP@ss1")
@@ -431,9 +431,6 @@ class TestUserCreateValidation:
 # ---------------------------------------------------------------------------
 # HTTP endpoint tests (body size limit + validator integration)
 # ---------------------------------------------------------------------------
-
-import pytest
-from httpx import AsyncClient
 
 
 @pytest.mark.anyio
@@ -559,8 +556,6 @@ async def test_incident_invalid_assigned_to_returns_422(client: AsyncClient, ana
 # ---------------------------------------------------------------------------
 # DetectionUpdate / BulkStatusUpdate validation
 # ---------------------------------------------------------------------------
-
-from app.schemas.detection import DetectionUpdate, BulkStatusUpdate
 
 
 class TestDetectionUpdateValidation:

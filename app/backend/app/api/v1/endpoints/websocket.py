@@ -24,8 +24,9 @@ Distributed mode:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import valkey.asyncio as aioredis
@@ -67,7 +68,7 @@ class DistributedConnectionManager:
         self._connections: set[WebSocket] = set()
         self._pub_client: aioredis.Valkey | None = None
         self._sub_client: aioredis.Valkey | None = None
-        self._subscriber_task: asyncio.Task | None = None
+        self._subscriber_task: asyncio.Task[None] | None = None
         self._started = False
         self._lock = asyncio.Lock()
 
@@ -134,10 +135,11 @@ class DistributedConnectionManager:
 
         while True:
             try:
-                self._sub_client = aioredis.from_url(
+                sub_client: aioredis.Valkey = aioredis.from_url(
                     self._valkey_url, **SUBSCRIBER_OPTIONS
                 )
-                pubsub = self._sub_client.pubsub()
+                self._sub_client = sub_client
+                pubsub = sub_client.pubsub()
                 await pubsub.subscribe(_CHANNEL)
                 logger.info("Valkey subscriber connected channel=%s", _CHANNEL)
                 retry_delay = 1.0  # reset on successful connect
@@ -158,10 +160,8 @@ class DistributedConnectionManager:
                 retry_delay = min(retry_delay * 2, max_retry_delay)
             finally:
                 if self._sub_client:
-                    try:
+                    with contextlib.suppress(Exception):
                         await self._sub_client.aclose()
-                    except Exception:
-                        pass
                     self._sub_client = None
 
     async def _fanout_local(self, payload: str) -> None:
@@ -193,10 +193,8 @@ class DistributedConnectionManager:
         """Gracefully close Valkey connections and cancel the subscriber."""
         if self._subscriber_task and not self._subscriber_task.done():
             self._subscriber_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._subscriber_task
-            except asyncio.CancelledError:
-                pass
         if self._pub_client:
             await self._pub_client.aclose()
             self._pub_client = None
@@ -231,7 +229,7 @@ async def _is_authorized(token: str | None) -> bool:
 
 
 @router.websocket("/alerts")
-async def alerts_ws(ws: WebSocket):
+async def alerts_ws(ws: WebSocket) -> None:
     """
     Real-time alert stream (requires ``?token=<access token>``).
     Sends a 'ping' every 30s and pushes new alerts from the queue.
@@ -246,7 +244,7 @@ async def alerts_ws(ws: WebSocket):
     await manager.send_to(ws, {
         "type": "connected",
         "message": "Subscribed to real-time alert stream",
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
     })
 
     try:
@@ -261,7 +259,7 @@ async def alerts_ws(ws: WebSocket):
                 msg = json.loads(raw)
                 if msg.get("type") == "filter":
                     await manager.send_to(ws, {"type": "ack", "filter": msg.get("data")})
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass   # No client message -- normal
 
     except WebSocketDisconnect:
@@ -279,7 +277,7 @@ async def _ping_loop(ws: WebSocket) -> None:
         try:
             await manager.send_to(ws, {
                 "type": "ping",
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
             })
         except Exception:
             break

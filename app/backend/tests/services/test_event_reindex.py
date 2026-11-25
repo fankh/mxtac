@@ -7,7 +7,7 @@ upgrade the events are copied from PostgreSQL into the v2 indices.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -49,7 +49,7 @@ class FakeIndexClient:
     async def bulk(self, *, body: list[dict], params: dict | None = None) -> dict:
         self.bulk_calls += 1
         items = []
-        for action, doc in zip(body[::2], body[1::2]):
+        for action, doc in zip(body[::2], body[1::2], strict=False):
             assert action["index"]["_index"].startswith("mxtac-events-v2-")
             self.docs[action["index"]["_id"]] = doc
             items.append({"index": {"_id": action["index"]["_id"], "status": 201}})
@@ -64,7 +64,7 @@ def _service(client: FakeIndexClient) -> OpenSearchService:
 
 @pytest.fixture
 async def events(db_session: AsyncSession) -> list[Event]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     rows = [
         Event(time=now - timedelta(hours=i), class_name="Process Activity", severity_id=3,
               hostname=f"host-{i}", username="alice", source="Webhook", summary=f"event {i}",
@@ -131,8 +131,8 @@ async def test_batches_cover_all_events(events, session_factory) -> None:
 async def test_events_older_than_the_retention_are_not_copied(
     db_session: AsyncSession, events, session_factory,
 ) -> None:
-    old = Event(time=datetime.now(timezone.utc) - timedelta(days=200), summary="old",
-                created_at=datetime.now(timezone.utc) - timedelta(days=200))
+    old = Event(time=datetime.now(UTC) - timedelta(days=200), summary="old",
+                created_at=datetime.now(UTC) - timedelta(days=200))
     db_session.add(old)
     await db_session.flush()
 

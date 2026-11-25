@@ -7,8 +7,8 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.coverage_snapshot import CoverageSnapshot
 from ..models.base import new_uuid
+from ..models.coverage_snapshot import CoverageSnapshot
 
 
 class CoverageSnapshotRepo:

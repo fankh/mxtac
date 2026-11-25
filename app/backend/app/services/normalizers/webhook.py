@@ -46,11 +46,17 @@ otherwise Base Event (class_uid 0).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .ocsf import (
-    Endpoint, OCSFCategory, OCSFClass, OCSFEvent, ProcessInfo, SEVERITY_MAP, UserInfo,
+    SEVERITY_MAP,
+    Endpoint,
+    OCSFCategory,
+    OCSFClass,
+    OCSFEvent,
+    ProcessInfo,
+    UserInfo,
 )
 
 _TIME_KEYS      = ("timestamp", "time", "@timestamp")
@@ -173,18 +179,18 @@ class WebhookNormalizer:
     def _first_str(self, raw: dict[str, Any], keys: tuple[str, ...]) -> str | None:
         """Like :meth:`_first`, for fields that must be a string (scalars only)."""
         value = self._first(raw, keys)
-        if value is None or isinstance(value, (dict, list)):
+        if value is None or isinstance(value, dict | list):
             return None
         return str(value)
 
     def _parse_time(self, ts: Any) -> datetime:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if isinstance(ts, bool):
             return now
-        if isinstance(ts, (int, float)):
+        if isinstance(ts, int | float):
             seconds = ts / 1000 if ts > _EPOCH_MILLIS_THRESHOLD else ts
             try:
-                return datetime.fromtimestamp(seconds, tz=timezone.utc)
+                return datetime.fromtimestamp(seconds, tz=UTC)
             except (OverflowError, OSError, ValueError):
                 return now
         if not isinstance(ts, str):
@@ -193,12 +199,12 @@ class WebhookNormalizer:
             parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         except ValueError:
             return now
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
     def _parse_severity(self, value: Any) -> int:
         if isinstance(value, bool) or value is None:
             return 1
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             return min(max(int(value), 0), 5)
         return _SEVERITY_ALIASES.get(str(value).strip().lower(), 1)
 

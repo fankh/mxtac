@@ -1,6 +1,6 @@
 """Tests for GET /api/v1/overview/* endpoints."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -89,7 +89,7 @@ async def test_kpis_shape_float_fields_are_numeric(client: AsyncClient, auth_hea
 
     for field in _KPI_FLOAT_FIELDS:
         value = data[field]
-        assert isinstance(value, (int, float)), (
+        assert isinstance(value, int | float), (
             f"Field '{field}' should be numeric, got {type(value).__name__} = {value!r}"
         )
 
@@ -323,12 +323,13 @@ async def test_kpis_from_db(
     client: AsyncClient, db_session, auth_headers: dict
 ) -> None:
     """When detections + connectors + rules exist in DB, KPI returns real counts."""
-    from datetime import datetime, timezone
-    from app.models.detection import Detection as DetectionModel
+    from datetime import datetime
+
     from app.models.connector import Connector
+    from app.models.detection import Detection as DetectionModel
     from app.models.rule import Rule
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     det = DetectionModel(
         score=9.5,
         severity="critical",
@@ -394,10 +395,11 @@ async def test_heatmap_from_db(
     client: AsyncClient, db_session, auth_headers: dict
 ) -> None:
     """When detections exist in DB, heatmap returns real coverage data (not mock)."""
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from app.models.detection import Detection as DetectionModel
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     rows = [
         DetectionModel(
             score=9.0,
@@ -503,10 +505,11 @@ async def test_recent_detections_from_db(
     client: AsyncClient, db_session, auth_headers: dict
 ) -> None:
     """When DB has detections, endpoint returns real data — only critical/high, sorted newest first."""
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from app.models.detection import Detection as DetectionModel
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     rows = [
         DetectionModel(
             score=9.5,
@@ -691,7 +694,7 @@ async def test_kpis_mttd_from_incidents(
     client: AsyncClient, db_session, auth_headers: dict
 ) -> None:
     """MTTD comes from incidents; the delta stays null without a previous period."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db_session.add(_incident(now - timedelta(days=1), ttd_seconds=600))
     await db_session.flush()
 
@@ -705,7 +708,7 @@ async def test_kpis_mttd_delta_vs_previous_period(
     client: AsyncClient, db_session, auth_headers: dict
 ) -> None:
     """mttd_delta_minutes = current-period MTTD minus previous-period MTTD."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db_session.add_all([
         _incident(now - timedelta(days=1), ttd_seconds=600),    # current: 10 min
         _incident(now - timedelta(days=10), ttd_seconds=900),   # previous: 15 min

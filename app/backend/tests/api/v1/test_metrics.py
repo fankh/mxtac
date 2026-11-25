@@ -77,8 +77,13 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-from app.core.metrics import alerts_deduplicated, alerts_processed, pipeline_latency, rule_matches, websocket_connections
-
+from app.core.metrics import (
+    alerts_deduplicated,
+    alerts_processed,
+    pipeline_latency,
+    rule_matches,
+    websocket_connections,
+)
 
 METRICS_URL = "/metrics"
 
@@ -145,7 +150,7 @@ async def test_metrics_contains_help_lines(client: AsyncClient) -> None:
     """/metrics body contains at least one # HELP comment line."""
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
-    help_lines = [l for l in lines if l.startswith("# HELP ")]
+    help_lines = [ln for ln in lines if ln.startswith("# HELP ")]
     assert len(help_lines) > 0, "Expected at least one '# HELP' line in /metrics output"
 
 
@@ -154,7 +159,7 @@ async def test_metrics_contains_type_lines(client: AsyncClient) -> None:
     """/metrics body contains at least one # TYPE comment line."""
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
-    type_lines = [l for l in lines if l.startswith("# TYPE ")]
+    type_lines = [ln for ln in lines if ln.startswith("# TYPE ")]
     assert len(type_lines) > 0, "Expected at least one '# TYPE' line in /metrics output"
 
 
@@ -163,8 +168,8 @@ async def test_metrics_help_and_type_lines_are_balanced(client: AsyncClient) -> 
     """Every metric has both a # HELP and a # TYPE line."""
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
-    help_names = {l.split()[2] for l in lines if l.startswith("# HELP ")}
-    type_names = {l.split()[2] for l in lines if l.startswith("# TYPE ")}
+    help_names = {ln.split()[2] for ln in lines if ln.startswith("# HELP ")}
+    type_names = {ln.split()[2] for ln in lines if ln.startswith("# TYPE ")}
     # Every HELP should have a corresponding TYPE
     assert help_names == type_names, (
         f"Mismatched HELP/TYPE sets — HELP-only: {help_names - type_names}, "
@@ -299,7 +304,7 @@ async def test_metrics_mxtac_metrics_have_help_lines(client: AsyncClient) -> Non
     """All MxTac custom metrics have # HELP lines describing them."""
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
-    help_names = {l.split()[2] for l in lines if l.startswith("# HELP ")}
+    help_names = {ln.split()[2] for ln in lines if ln.startswith("# HELP ")}
     missing_help = [name for name in _EXPECTED_MXTAC_METRICS if name not in help_names]
     assert not missing_help, f"Missing # HELP lines for metrics: {missing_help}"
 
@@ -309,7 +314,7 @@ async def test_metrics_mxtac_metrics_have_type_lines(client: AsyncClient) -> Non
     """All MxTac custom metrics have # TYPE lines declaring their type."""
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
-    type_names = {l.split()[2] for l in lines if l.startswith("# TYPE ")}
+    type_names = {ln.split()[2] for ln in lines if ln.startswith("# TYPE ")}
     # Histogram metrics appear with _bucket, _count, _sum suffixes in the body
     # but the TYPE declaration uses the base name
     missing_type = [name for name in _EXPECTED_MXTAC_METRICS if name not in type_names]
@@ -327,7 +332,7 @@ async def test_metrics_pipeline_latency_declared_as_histogram(client: AsyncClien
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     type_line = next(
-        (l for l in lines if l.startswith("# TYPE mxtac_pipeline_latency_seconds")),
+        (ln for ln in lines if ln.startswith("# TYPE mxtac_pipeline_latency_seconds")),
         None,
     )
     assert type_line is not None, "No # TYPE line for mxtac_pipeline_latency_seconds"
@@ -340,7 +345,7 @@ async def test_metrics_sigma_rules_loaded_declared_as_gauge(client: AsyncClient)
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     type_line = next(
-        (l for l in lines if l.startswith("# TYPE mxtac_sigma_rules_loaded")),
+        (ln for ln in lines if ln.startswith("# TYPE mxtac_sigma_rules_loaded")),
         None,
     )
     assert type_line is not None, "No # TYPE line for mxtac_sigma_rules_loaded"
@@ -353,7 +358,7 @@ async def test_metrics_connectors_active_declared_as_gauge(client: AsyncClient) 
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     type_line = next(
-        (l for l in lines if l.startswith("# TYPE mxtac_connectors_active")),
+        (ln for ln in lines if ln.startswith("# TYPE mxtac_connectors_active")),
         None,
     )
     assert type_line is not None, "No # TYPE line for mxtac_connectors_active"
@@ -366,7 +371,7 @@ async def test_metrics_alerts_processed_declared_as_counter(client: AsyncClient)
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     type_line = next(
-        (l for l in lines if l.startswith("# TYPE mxtac_alerts_processed_total")),
+        (ln for ln in lines if ln.startswith("# TYPE mxtac_alerts_processed_total")),
         None,
     )
     assert type_line is not None, "No # TYPE line for mxtac_alerts_processed_total"
@@ -426,8 +431,8 @@ async def test_metrics_alerts_processed_label_key_is_severity(client: AsyncClien
     lines = resp.text.splitlines()
     # Find lines with the metric name and verify the label key is 'severity'
     metric_lines = [
-        l for l in lines
-        if l.startswith("mxtac_alerts_processed_total{") and "severity=" in l
+        ln for ln in lines
+        if ln.startswith("mxtac_alerts_processed_total{") and "severity=" in ln
     ]
     assert len(metric_lines) > 0, (
         "Expected at least one mxtac_alerts_processed_total{severity=...} line in /metrics"
@@ -449,8 +454,8 @@ async def test_metrics_alerts_processed_counter_increments_are_cumulative(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     critical_lines = [
-        l for l in lines
-        if l.startswith("mxtac_alerts_processed_total") and 'severity="critical"' in l
+        ln for ln in lines
+        if ln.startswith("mxtac_alerts_processed_total") and 'severity="critical"' in ln
     ]
     assert len(critical_lines) > 0, (
         "Expected mxtac_alerts_processed_total{severity='critical'} line in /metrics"
@@ -473,7 +478,7 @@ async def test_metrics_alerts_deduplicated_declared_as_counter(client: AsyncClie
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     type_line = next(
-        (l for l in lines if l.startswith("# TYPE mxtac_alerts_deduplicated_total")),
+        (ln for ln in lines if ln.startswith("# TYPE mxtac_alerts_deduplicated_total")),
         None,
     )
     assert type_line is not None, "No # TYPE line for mxtac_alerts_deduplicated_total"
@@ -493,8 +498,8 @@ async def test_metrics_alerts_deduplicated_value_increases_after_inc(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     dedup_lines = [
-        l for l in lines
-        if l.startswith("mxtac_alerts_deduplicated_total") and not l.startswith("#")
+        ln for ln in lines
+        if ln.startswith("mxtac_alerts_deduplicated_total") and not ln.startswith("#")
     ]
     assert len(dedup_lines) > 0, (
         "Expected a mxtac_alerts_deduplicated_total line in /metrics after inc()"
@@ -517,8 +522,8 @@ async def test_metrics_alerts_deduplicated_has_no_labels(client: AsyncClient) ->
     lines = resp.text.splitlines()
     # Find the data line(s) for this metric (not comments)
     dedup_lines = [
-        l for l in lines
-        if l.startswith("mxtac_alerts_deduplicated_total") and not l.startswith("#")
+        ln for ln in lines
+        if ln.startswith("mxtac_alerts_deduplicated_total") and not ln.startswith("#")
     ]
     assert len(dedup_lines) > 0, (
         "Expected a mxtac_alerts_deduplicated_total data line in /metrics"
@@ -544,7 +549,7 @@ async def test_metrics_rule_matches_declared_as_counter(client: AsyncClient) -> 
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     type_line = next(
-        (l for l in lines if l.startswith("# TYPE mxtac_rule_matches_total")),
+        (ln for ln in lines if ln.startswith("# TYPE mxtac_rule_matches_total")),
         None,
     )
     assert type_line is not None, "No # TYPE line for mxtac_rule_matches_total"
@@ -614,8 +619,8 @@ async def test_metrics_rule_matches_value_is_positive_after_increment(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     match_lines = [
-        l for l in lines
-        if l.startswith("mxtac_rule_matches_total") and 'rule_id="rule-value-check"' in l
+        ln for ln in lines
+        if ln.startswith("mxtac_rule_matches_total") and 'rule_id="rule-value-check"' in ln
     ]
     assert len(match_lines) > 0, (
         "Expected mxtac_rule_matches_total{rule_id='rule-value-check',...} line in /metrics"
@@ -635,8 +640,8 @@ async def test_metrics_rule_matches_contains_both_label_keys(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     match_lines = [
-        l for l in lines
-        if l.startswith("mxtac_rule_matches_total{") and 'rule_id="rule-labels-check"' in l
+        ln for ln in lines
+        if ln.startswith("mxtac_rule_matches_total{") and 'rule_id="rule-labels-check"' in ln
     ]
     assert len(match_lines) > 0, (
         "Expected at least one mxtac_rule_matches_total{...} data line"
@@ -673,7 +678,7 @@ async def test_metrics_pipeline_latency_declared_as_histogram_type(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     type_line = next(
-        (l for l in lines if l.startswith("# TYPE mxtac_pipeline_latency_seconds")),
+        (ln for ln in lines if ln.startswith("# TYPE mxtac_pipeline_latency_seconds")),
         None,
     )
     assert type_line is not None, "No # TYPE line for mxtac_pipeline_latency_seconds"
@@ -691,8 +696,8 @@ async def test_metrics_pipeline_latency_bucket_lines_appear_after_observe(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     bucket_lines = [
-        l for l in lines
-        if l.startswith("mxtac_pipeline_latency_seconds_bucket{")
+        ln for ln in lines
+        if ln.startswith("mxtac_pipeline_latency_seconds_bucket{")
     ]
     assert len(bucket_lines) > 0, (
         "Expected mxtac_pipeline_latency_seconds_bucket{...} lines in /metrics after observe()"
@@ -708,8 +713,8 @@ async def test_metrics_pipeline_latency_count_line_appears_after_observe(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     count_lines = [
-        l for l in lines
-        if l.startswith("mxtac_pipeline_latency_seconds_count")
+        ln for ln in lines
+        if ln.startswith("mxtac_pipeline_latency_seconds_count")
     ]
     assert len(count_lines) > 0, (
         "Expected mxtac_pipeline_latency_seconds_count line in /metrics after observe()"
@@ -725,8 +730,8 @@ async def test_metrics_pipeline_latency_sum_line_appears_after_observe(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     sum_lines = [
-        l for l in lines
-        if l.startswith("mxtac_pipeline_latency_seconds_sum")
+        ln for ln in lines
+        if ln.startswith("mxtac_pipeline_latency_seconds_sum")
     ]
     assert len(sum_lines) > 0, (
         "Expected mxtac_pipeline_latency_seconds_sum line in /metrics after observe()"
@@ -742,8 +747,8 @@ async def test_metrics_pipeline_latency_bucket_lines_have_le_label(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     bucket_lines = [
-        l for l in lines
-        if l.startswith("mxtac_pipeline_latency_seconds_bucket{")
+        ln for ln in lines
+        if ln.startswith("mxtac_pipeline_latency_seconds_bucket{")
     ]
     assert len(bucket_lines) > 0, (
         "Expected at least one mxtac_pipeline_latency_seconds_bucket{...} line"
@@ -761,8 +766,8 @@ async def test_metrics_pipeline_latency_count_is_positive_after_observe(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     count_lines = [
-        l for l in lines
-        if l.startswith("mxtac_pipeline_latency_seconds_count") and not l.startswith("#")
+        ln for ln in lines
+        if ln.startswith("mxtac_pipeline_latency_seconds_count") and not ln.startswith("#")
     ]
     assert len(count_lines) > 0, (
         "Expected mxtac_pipeline_latency_seconds_count data line"
@@ -782,8 +787,8 @@ async def test_metrics_pipeline_latency_sum_is_nonnegative_after_observe(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     sum_lines = [
-        l for l in lines
-        if l.startswith("mxtac_pipeline_latency_seconds_sum") and not l.startswith("#")
+        ln for ln in lines
+        if ln.startswith("mxtac_pipeline_latency_seconds_sum") and not ln.startswith("#")
     ]
     assert len(sum_lines) > 0, (
         "Expected mxtac_pipeline_latency_seconds_sum data line"
@@ -836,8 +841,8 @@ async def test_metrics_pipeline_latency_count_increments_per_observe(
     resp_before = await client.get(METRICS_URL)
     lines_before = resp_before.text.splitlines()
     count_lines_before = [
-        l for l in lines_before
-        if l.startswith("mxtac_pipeline_latency_seconds_count") and not l.startswith("#")
+        ln for ln in lines_before
+        if ln.startswith("mxtac_pipeline_latency_seconds_count") and not ln.startswith("#")
     ]
     before = float(count_lines_before[0].split()[-1]) if count_lines_before else 0.0
 
@@ -848,8 +853,8 @@ async def test_metrics_pipeline_latency_count_increments_per_observe(
     resp_after = await client.get(METRICS_URL)
     lines_after = resp_after.text.splitlines()
     count_lines_after = [
-        l for l in lines_after
-        if l.startswith("mxtac_pipeline_latency_seconds_count") and not l.startswith("#")
+        ln for ln in lines_after
+        if ln.startswith("mxtac_pipeline_latency_seconds_count") and not ln.startswith("#")
     ]
     after = float(count_lines_after[0].split()[-1])
 
@@ -866,8 +871,8 @@ async def test_metrics_pipeline_latency_observe_zero_duration(
     resp_before = await client.get(METRICS_URL)
     lines_before = resp_before.text.splitlines()
     count_before_lines = [
-        l for l in lines_before
-        if l.startswith("mxtac_pipeline_latency_seconds_count") and not l.startswith("#")
+        ln for ln in lines_before
+        if ln.startswith("mxtac_pipeline_latency_seconds_count") and not ln.startswith("#")
     ]
     before = float(count_before_lines[0].split()[-1]) if count_before_lines else 0.0
 
@@ -876,8 +881,8 @@ async def test_metrics_pipeline_latency_observe_zero_duration(
     resp_after = await client.get(METRICS_URL)
     lines_after = resp_after.text.splitlines()
     count_after_lines = [
-        l for l in lines_after
-        if l.startswith("mxtac_pipeline_latency_seconds_count") and not l.startswith("#")
+        ln for ln in lines_after
+        if ln.startswith("mxtac_pipeline_latency_seconds_count") and not ln.startswith("#")
     ]
     after = float(count_after_lines[0].split()[-1])
 
@@ -894,7 +899,7 @@ async def test_metrics_pipeline_latency_help_line_present(
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     help_line = next(
-        (l for l in lines if l.startswith("# HELP mxtac_pipeline_latency_seconds")),
+        (ln for ln in lines if ln.startswith("# HELP mxtac_pipeline_latency_seconds")),
         None,
     )
     assert help_line is not None, (
@@ -931,7 +936,7 @@ async def test_metrics_websocket_connections_declared_as_gauge(client: AsyncClie
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     type_line = next(
-        (l for l in lines if l.startswith("# TYPE mxtac_websocket_connections")),
+        (ln for ln in lines if ln.startswith("# TYPE mxtac_websocket_connections")),
         None,
     )
     assert type_line is not None, "No # TYPE line for mxtac_websocket_connections"
@@ -946,7 +951,7 @@ async def test_metrics_websocket_connections_has_help_line(client: AsyncClient) 
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     help_line = next(
-        (l for l in lines if l.startswith("# HELP mxtac_websocket_connections")),
+        (ln for ln in lines if ln.startswith("# HELP mxtac_websocket_connections")),
         None,
     )
     assert help_line is not None, (
@@ -966,8 +971,8 @@ async def test_metrics_websocket_connections_has_no_labels(client: AsyncClient) 
     resp = await client.get(METRICS_URL)
     lines = resp.text.splitlines()
     data_lines = [
-        l for l in lines
-        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+        ln for ln in lines
+        if ln.startswith("mxtac_websocket_connections") and not ln.startswith("#")
     ]
     assert len(data_lines) > 0, (
         "Expected a mxtac_websocket_connections data line in /metrics"
@@ -986,8 +991,8 @@ async def test_metrics_websocket_connections_increases_after_inc(
     resp_before = await client.get(METRICS_URL)
     lines_before = resp_before.text.splitlines()
     before_lines = [
-        l for l in lines_before
-        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+        ln for ln in lines_before
+        if ln.startswith("mxtac_websocket_connections") and not ln.startswith("#")
     ]
     before = float(before_lines[0].split()[-1]) if before_lines else 0.0
 
@@ -996,8 +1001,8 @@ async def test_metrics_websocket_connections_increases_after_inc(
     resp_after = await client.get(METRICS_URL)
     lines_after = resp_after.text.splitlines()
     after_lines = [
-        l for l in lines_after
-        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+        ln for ln in lines_after
+        if ln.startswith("mxtac_websocket_connections") and not ln.startswith("#")
     ]
     assert len(after_lines) > 0, "Expected mxtac_websocket_connections data line"
     after = float(after_lines[0].split()[-1])
@@ -1019,8 +1024,8 @@ async def test_metrics_websocket_connections_decreases_after_dec(
     resp_before = await client.get(METRICS_URL)
     lines_before = resp_before.text.splitlines()
     before_lines = [
-        l for l in lines_before
-        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+        ln for ln in lines_before
+        if ln.startswith("mxtac_websocket_connections") and not ln.startswith("#")
     ]
     before = float(before_lines[0].split()[-1])
 
@@ -1029,8 +1034,8 @@ async def test_metrics_websocket_connections_decreases_after_dec(
     resp_after = await client.get(METRICS_URL)
     lines_after = resp_after.text.splitlines()
     after_lines = [
-        l for l in lines_after
-        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+        ln for ln in lines_after
+        if ln.startswith("mxtac_websocket_connections") and not ln.startswith("#")
     ]
     assert len(after_lines) > 0, "Expected mxtac_websocket_connections data line"
     after = float(after_lines[0].split()[-1])
@@ -1050,8 +1055,8 @@ async def test_metrics_websocket_connections_returns_to_zero_after_connect_disco
     resp_baseline = await client.get(METRICS_URL)
     lines_baseline = resp_baseline.text.splitlines()
     baseline_lines = [
-        l for l in lines_baseline
-        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+        ln for ln in lines_baseline
+        if ln.startswith("mxtac_websocket_connections") and not ln.startswith("#")
     ]
     baseline = float(baseline_lines[0].split()[-1]) if baseline_lines else 0.0
 
@@ -1061,8 +1066,8 @@ async def test_metrics_websocket_connections_returns_to_zero_after_connect_disco
     resp_after = await client.get(METRICS_URL)
     lines_after = resp_after.text.splitlines()
     after_lines = [
-        l for l in lines_after
-        if l.startswith("mxtac_websocket_connections") and not l.startswith("#")
+        ln for ln in lines_after
+        if ln.startswith("mxtac_websocket_connections") and not ln.startswith("#")
     ]
     assert len(after_lines) > 0, "Expected mxtac_websocket_connections data line"
     after = float(after_lines[0].split()[-1])

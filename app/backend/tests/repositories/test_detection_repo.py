@@ -38,7 +38,6 @@ import pytest
 
 from app.repositories.detection_repo import DetectionRepo
 
-
 # ---------------------------------------------------------------------------
 # Session factory helpers
 # ---------------------------------------------------------------------------

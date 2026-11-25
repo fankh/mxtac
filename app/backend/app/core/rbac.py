@@ -12,7 +12,8 @@ Usage in endpoints:
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 from fastapi import Depends
 
@@ -66,7 +67,9 @@ def permissions_for_role(role: str) -> frozenset[str]:
     return ROLE_PERMISSIONS.get(role, frozenset())
 
 
-def require_permission(permission: str) -> Callable:
+def require_permission(
+    permission: str,
+) -> Callable[..., Coroutine[Any, Any, dict[str, Any]]]:
     """Return a FastAPI dependency that enforces *permission* for the current user.
 
     The dependency resolves to the authenticated user dict on success, or raises
@@ -93,7 +96,9 @@ def require_permission(permission: str) -> Callable:
 
     allowed_roles = PERMISSIONS[permission]
 
-    async def _check(current_user: dict = Depends(get_current_user)) -> dict:
+    async def _check(
+        current_user: dict[str, Any] = Depends(get_current_user),
+    ) -> dict[str, Any]:
         role = current_user.get("role", "viewer")
         if role not in allowed_roles:
             raise ForbiddenError(

@@ -13,11 +13,10 @@ We implement the subset relevant to security detections:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Literal
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
-
 
 # ── Shared sub-objects ───────────────────────────────────────────────────────
 
@@ -109,7 +108,7 @@ class OCSFEvent(BaseModel):
     class_uid: int                  # e.g. 4001 (Network), 1007 (Process), 2001 (Finding)
     class_name: str                 # human-readable class name
     category_uid: int               # e.g. 4 (Network), 1 (System), 2 (Findings)
-    time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    time: datetime = Field(default_factory=lambda: datetime.now(UTC))
     severity_id: int = 1
 
     # Source metadata

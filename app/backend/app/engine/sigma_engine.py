@@ -32,12 +32,12 @@ from __future__ import annotations
 import base64
 import ipaddress
 import re
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any
 from uuid import uuid4
 
 import yaml
@@ -46,6 +46,10 @@ from ..core.logging import get_logger
 from ..core.metrics import rule_matches as _rule_matches_counter
 from ..repositories.rule_repo import RuleRepo
 from ..services.normalizers.ocsf import OCSFClass, OCSFEvent
+from .attack_tags import TACTIC_ID_TO_NAME as TACTIC_ID_TO_NAME
+from .attack_tags import TACTIC_NAME_TO_ID as TACTIC_NAME_TO_ID
+from .attack_tags import parse_attack_tags
+from .attack_tags import tactic_name as tactic_name
 from .field_mapper import ocsf_to_sigma_flat
 
 logger = get_logger(__name__)
@@ -100,91 +104,11 @@ class SigmaAlert:
     technique_ids: list[str] = field(default_factory=list)
     tactic_ids:    list[str] = field(default_factory=list)
     host: str = ""
-    time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    time: datetime = field(default_factory=lambda: datetime.now(UTC))
     event_snapshot: dict[str, Any] = field(default_factory=dict)
     # ID of the stored event that matched (assigned by the normalizer pipeline;
     # filled in by the Sigma consumer, None for an event without one).
     event_id: str | None = None
-
-
-# ── ATT&CK tags ──────────────────────────────────────────────────────────────
-
-_TECHNIQUE_TAG_RE = re.compile(r"^attack\.(t\d{4}(?:\.\d{3})?)$", re.IGNORECASE)
-_TACTIC_ID_TAG_RE = re.compile(r"^attack\.(ta\d{4})$", re.IGNORECASE)
-
-# Tactic names as written in Sigma tags (``attack.credential-access`` or
-# ``attack.credential_access``), normalised to underscores.
-TACTIC_NAME_TO_ID: dict[str, str] = {
-    "reconnaissance":       "TA0043",
-    "resource_development": "TA0042",
-    "initial_access":       "TA0001",
-    "execution":            "TA0002",
-    "persistence":          "TA0003",
-    "privilege_escalation": "TA0004",
-    "defense_evasion":      "TA0005",
-    "credential_access":    "TA0006",
-    "discovery":            "TA0007",
-    "lateral_movement":     "TA0008",
-    "collection":           "TA0009",
-    "exfiltration":         "TA0010",
-    "command_and_control":  "TA0011",
-    "impact":               "TA0040",
-}
-
-
-# Tactic names as shown in the UI and stored in ``Detection.tactic``.
-TACTIC_ID_TO_NAME: dict[str, str] = {
-    "TA0043": "Reconnaissance",
-    "TA0042": "Resource Development",
-    "TA0001": "Initial Access",
-    "TA0002": "Execution",
-    "TA0003": "Persistence",
-    "TA0004": "Privilege Escalation",
-    "TA0005": "Defense Evasion",
-    "TA0006": "Credential Access",
-    "TA0007": "Discovery",
-    "TA0008": "Lateral Movement",
-    "TA0009": "Collection",
-    "TA0010": "Exfiltration",
-    "TA0011": "Command and Control",
-    "TA0040": "Impact",
-}
-
-
-def tactic_name(tactic: str | None) -> str | None:
-    """Return the tactic name for a tactic ID (``TA0006`` → ``Credential Access``).
-
-    ``Detection.tactic`` holds the name.  Rows written before the pipeline
-    stored names hold the ID instead, so readers pass the column through this
-    function.  Any other value (a name, ``unknown``, ``None``) is returned
-    unchanged.
-    """
-    if tactic is None:
-        return None
-    return TACTIC_ID_TO_NAME.get(tactic.strip().upper(), tactic)
-
-
-def parse_attack_tags(tags: list[str]) -> tuple[list[str], list[str]]:
-    """Return ``(technique_ids, tactic_ids)`` from Sigma ``attack.*`` tags."""
-    techniques: list[str] = []
-    tactics: list[str] = []
-    for tag in tags:
-        tag = str(tag).strip()
-        if m := _TACTIC_ID_TAG_RE.match(tag):
-            tactic = m.group(1).upper()
-        elif m := _TECHNIQUE_TAG_RE.match(tag):
-            technique = m.group(1).upper()
-            if technique not in techniques:
-                techniques.append(technique)
-            continue
-        elif tag.lower().startswith("attack."):
-            name = tag[len("attack."):].lower().replace("-", "_")
-            tactic = TACTIC_NAME_TO_ID.get(name)
-        else:
-            tactic = None
-        if tactic and tactic not in tactics:
-            tactics.append(tactic)
-    return techniques, tactics
 
 
 # ── Field lookup ─────────────────────────────────────────────────────────────
@@ -224,7 +148,7 @@ _STRING_MODES = ("contains", "startswith", "endswith")
 _WILDCARD_TOKEN_RE = re.compile(r"\\([*?\\])|([*?])")
 
 
-def _parse_wildcards(value: str) -> tuple[str, re.Pattern | None]:
+def _parse_wildcards(value: str) -> tuple[str, re.Pattern[str] | None]:
     """Split a Sigma string into ``(literal, regex)``.
 
     ``*`` and ``?`` are wildcards unless escaped with a backslash; ``\\\\`` is
@@ -325,7 +249,7 @@ def _compile_field(field_expr: str, values: Any) -> Matcher:
 
     matchers: list[ValueMatcher] = []
     for value in value_list:
-        if isinstance(value, (dict, list)):
+        if isinstance(value, dict | list):
             raise SigmaRuleError(f"'{field_expr}' has a nested value; expected a scalar or a list of scalars")
         if value is None:
             matchers.append(lambda fv: fv is None)
@@ -345,7 +269,7 @@ def _compile_field(field_expr: str, values: Any) -> Matcher:
         fv = _get_field(event, key)
         if fv is None:
             return matches_null
-        candidates = fv if isinstance(fv, (list, tuple)) else (fv,)
+        candidates = fv if isinstance(fv, list | tuple) else (fv,)
         return combine(any(m(c) for c in candidates) for m in matchers)
 
     return _match
@@ -382,7 +306,7 @@ def _compile_selection(name: str, selection: Any) -> Matcher:
             if all(isinstance(item, dict) for item in selection):
                 alternatives = [_compile_map(item) for item in selection]
                 return lambda event: any(m(event) for m in alternatives)
-            if any(isinstance(item, (dict, list)) for item in selection):
+            if any(isinstance(item, dict | list) for item in selection):
                 raise SigmaRuleError("a list selection must contain only maps or only keywords")
             return _compile_keywords(selection)
         if selection is None:
@@ -807,7 +731,7 @@ class SigmaEngine:
                 candidates.append(rule)
         return candidates
 
-    def _logsource_keys(self, logsource: dict) -> list[str]:
+    def _logsource_keys(self, logsource: dict[str, Any]) -> list[str]:
         keys = []
         if product := logsource.get("product"):
             keys.append(f"product:{product.lower()}")
@@ -825,8 +749,8 @@ class SigmaEngine:
     def rule_count(self) -> int:
         return len(self._rules)
 
-    def get_rules(self, enabled_only: bool = False) -> list[dict]:
-        rules = self._rules.values()
+    def get_rules(self, enabled_only: bool = False) -> list[dict[str, Any]]:
+        rules: Iterable[SigmaRule] = self._rules.values()
         if enabled_only:
             rules = (r for r in rules if r.enabled)
         return [

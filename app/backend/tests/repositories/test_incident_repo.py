@@ -55,7 +55,6 @@ import pytest
 
 from app.repositories.incident_repo import IncidentRepo
 
-
 # ---------------------------------------------------------------------------
 # Session factory helpers
 # ---------------------------------------------------------------------------
@@ -94,7 +93,7 @@ def _make_incident(**kwargs) -> MagicMock:
     inc.severity = kwargs.get("severity", "critical")
     inc.status = kwargs.get("status", "new")
     inc.priority = kwargs.get("priority", 1)
-    inc.assigned_to = kwargs.get("assigned_to", None)
+    inc.assigned_to = kwargs.get("assigned_to")
     inc.created_by = kwargs.get("created_by", "analyst1")
     inc.detection_ids = kwargs.get("detection_ids", [])
     return inc

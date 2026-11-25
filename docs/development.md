@@ -146,7 +146,7 @@ alembic upgrade head
 alembic downgrade -1
 ```
 
-CI checks that there is one migration head, that upgrade, downgrade and upgrade again succeed on PostgreSQL 16, and that `alembic check` finds no difference between models and migrations.
+CI checks that there is one migration head, that an empty database upgrades to head and that downgrade to `0027` and upgrade again succeed on PostgreSQL 16 (`0027` is one-way), and that `alembic check` finds no difference between models and migrations.
 
 `alembic upgrade head` works on an empty PostgreSQL database. In SQLite mode the backend applies the migrations itself at startup.
 

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,14 +68,14 @@ class RuleRepo:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(session: AsyncSession, **kwargs) -> Rule:
+    async def create(session: AsyncSession, **kwargs: Any) -> Rule:
         rule = Rule(**kwargs)
         session.add(rule)
         await session.flush()
         return rule
 
     @staticmethod
-    async def update(session: AsyncSession, rule_id: str, **kwargs) -> Rule | None:
+    async def update(session: AsyncSession, rule_id: str, **kwargs: Any) -> Rule | None:
         rule = await RuleRepo.get_by_id(session, rule_id)
         if not rule:
             return None
@@ -114,7 +115,7 @@ class RuleRepo:
         is safe to call from high-frequency event handlers without SELECT
         overhead or optimistic-locking conflicts.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         await session.execute(
             update(Rule)
             .where(Rule.id == rule_id)
@@ -131,7 +132,7 @@ class RuleRepo:
         )
 
     @staticmethod
-    async def get_kpi_counts(session: AsyncSession, *, week_start: datetime) -> dict:
+    async def get_kpi_counts(session: AsyncSession, *, week_start: datetime) -> dict[str, Any]:
         """Return rule statistics for the KPI endpoint.
 
         Keys:
@@ -170,7 +171,7 @@ class RuleRepo:
         }
 
     @staticmethod
-    async def get_coverage_summary(session: AsyncSession) -> dict:
+    async def get_coverage_summary(session: AsyncSession) -> dict[str, Any]:
         """Return ATT&CK coverage based on active enabled rules.
 
         Parses ``technique_ids`` JSON arrays from all enabled rules and returns
@@ -187,6 +188,8 @@ class RuleRepo:
 
         covered: set[str] = set()
         for technique_ids_json in rows:
+            if technique_ids_json is None:  # excluded by the query
+                continue
             try:
                 ids = json.loads(technique_ids_json)
                 for tid in ids:
@@ -220,6 +223,8 @@ class RuleRepo:
 
         technique_counts: dict[str, int] = {}
         for technique_ids_json in rows:
+            if technique_ids_json is None:  # excluded by the query
+                continue
             try:
                 ids = json.loads(technique_ids_json)
                 for tid in ids:
@@ -232,7 +237,7 @@ class RuleRepo:
         return technique_counts
 
     @staticmethod
-    async def get_coverage_by_datasource(session: AsyncSession) -> dict:
+    async def get_coverage_by_datasource(session: AsyncSession) -> dict[str, Any]:
         """Return ATT&CK coverage broken down by data source connector.
 
         Groups enabled rules by their Sigma logsource (product/category/service)
@@ -297,7 +302,7 @@ class RuleRepo:
         }
 
     @staticmethod
-    async def get_coverage_gaps(session: AsyncSession) -> dict:
+    async def get_coverage_gaps(session: AsyncSession) -> dict[str, Any]:
         """Return ATT&CK coverage gap data based on enabled vs. all rules.
 
         Collects technique IDs from:
@@ -321,6 +326,8 @@ class RuleRepo:
 
         covered: set[str] = set()
         for technique_ids_json in enabled_rows:
+            if technique_ids_json is None:  # excluded by the query
+                continue
             try:
                 ids = json.loads(technique_ids_json)
                 for tid in ids:
@@ -337,6 +344,8 @@ class RuleRepo:
 
         all_known: set[str] = set()
         for technique_ids_json in all_rows:
+            if technique_ids_json is None:  # excluded by the query
+                continue
             try:
                 ids = json.loads(technique_ids_json)
                 for tid in ids:

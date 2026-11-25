@@ -7,11 +7,6 @@ RBAC:
 
 from __future__ import annotations
 
-from unittest.mock import patch, AsyncMock
-
-import pytest
-
-
 _BASE = "/api/v1/rules"
 
 _VALID_SIGMA_YAML = """

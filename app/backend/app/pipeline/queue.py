@@ -14,11 +14,12 @@ Topic naming convention: mxtac.{stage}.{source}
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
-import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, AsyncGenerator, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ..core.config import settings
 from ..core.logging import get_logger
@@ -86,12 +87,12 @@ class InMemoryQueue(MessageQueue):
         self._maxsize = maxsize
         # topic → queue of the topic's first consumer group; it also buffers
         # messages published before anyone subscribed.
-        self._queues: dict[str, asyncio.Queue] = defaultdict(
+        self._queues: dict[str, asyncio.Queue[dict[str, Any]]] = defaultdict(
             lambda: asyncio.Queue(maxsize=self._maxsize)
         )
         # topic → group → queue.  The first group uses self._queues[topic].
-        self._group_queues: dict[str, dict[str, asyncio.Queue]] = {}
-        self._tasks: list[asyncio.Task] = []
+        self._group_queues: dict[str, dict[str, asyncio.Queue[dict[str, Any]]]] = {}
+        self._tasks: list[asyncio.Task[None]] = []
         self._backpressure_events: int = 0
 
     @property
@@ -166,7 +167,13 @@ class InMemoryQueue(MessageQueue):
         async def _join_until_idle() -> None:
             while True:
                 # _unfinished_tasks: messages put but not yet marked task_done().
-                busy = [q for q in self._all_queues() if q._unfinished_tasks]
+                # asyncio.Queue has no public counter that includes messages a
+                # consumer is still handling, and typeshed omits the attribute.
+                busy = [
+                    q
+                    for q in self._all_queues()
+                    if q._unfinished_tasks  # type: ignore[attr-defined]
+                ]
                 if not busy:
                     return
                 await asyncio.gather(*(q.join() for q in busy))
@@ -174,7 +181,7 @@ class InMemoryQueue(MessageQueue):
         try:
             await asyncio.wait_for(_join_until_idle(), timeout=timeout)
             logger.info("InMemoryQueue drained successfully")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             remaining = sum(q.qsize() for q in self._all_queues())
             logger.warning(
                 "InMemoryQueue drain timed out after %.1fs — %d message(s) may be unprocessed",
@@ -182,7 +189,7 @@ class InMemoryQueue(MessageQueue):
                 remaining,
             )
 
-    def _all_queues(self) -> list[asyncio.Queue]:
+    def _all_queues(self) -> list[asyncio.Queue[dict[str, Any]]]:
         """Every queue of every topic and consumer group, without duplicates."""
         queues = {id(q): q for q in self._queues.values()}
         for group_queues in self._group_queues.values():
@@ -202,9 +209,9 @@ class RedisStreamQueue(MessageQueue):
     """Valkey Streams-based queue (Redis Streams-compatible). Requires valkey >= 6.0."""
 
     def __init__(self, valkey_url: str) -> None:
-        import valkey.asyncio as aioredis  # type: ignore[import-untyped]
+        import valkey.asyncio as aioredis
         self._redis = aioredis.from_url(valkey_url, decode_responses=True)
-        self._tasks: list[asyncio.Task] = []
+        self._tasks: list[asyncio.Task[None]] = []
 
     async def publish(self, topic: str, message: dict[str, Any]) -> None:
         payload = {"data": json.dumps(message)}
@@ -216,11 +223,9 @@ class RedisStreamQueue(MessageQueue):
         group: str,
         handler: Callable[[dict[str, Any]], Any],
     ) -> None:
-        # Create consumer group if it doesn't exist
-        try:
+        # Create the consumer group; an error means it already exists.
+        with contextlib.suppress(Exception):
             await self._redis.xgroup_create(topic, group, id="0", mkstream=True)
-        except Exception:
-            pass  # Group already exists
 
         consumer_name = f"{group}-worker"
 

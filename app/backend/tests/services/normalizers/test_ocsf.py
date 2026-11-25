@@ -14,12 +14,14 @@ Coverage:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
 
 from app.services.normalizers.ocsf import (
+    SEVERITY_ID_TO_NAME,
+    SEVERITY_MAP,
     Analytic,
     AttackInfo,
     AttackTactic,
@@ -30,11 +32,8 @@ from app.services.normalizers.ocsf import (
     OCSFClass,
     OCSFEvent,
     ProcessInfo,
-    SEVERITY_ID_TO_NAME,
-    SEVERITY_MAP,
     UserInfo,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -513,9 +512,9 @@ def test_ocsf_event_default_finding_info_is_none() -> None:
 
 def test_ocsf_event_default_time_is_utc_aware() -> None:
     """OCSFEvent time defaults to a timezone-aware UTC datetime."""
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     event = _minimal_event()
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
     assert before <= event.time <= after
     assert event.time.tzinfo is not None
 
@@ -566,7 +565,7 @@ def test_ocsf_event_custom_metadata_uid() -> None:
 
 def test_ocsf_event_custom_time() -> None:
     """An explicit time value is stored as provided."""
-    fixed_time = datetime(2025, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+    fixed_time = datetime(2025, 6, 15, 12, 0, 0, tzinfo=UTC)
     assert _minimal_event(time=fixed_time).time == fixed_time
 
 

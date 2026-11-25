@@ -27,12 +27,19 @@ Alert event example:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .ocsf import (
-    Analytic, AttackInfo, AttackTactic, AttackTechnique, Endpoint,
-    FindingInfo, OCSFCategory, OCSFClass, OCSFEvent, UserInfo,
+    Analytic,
+    AttackInfo,
+    AttackTactic,
+    AttackTechnique,
+    Endpoint,
+    FindingInfo,
+    OCSFCategory,
+    OCSFClass,
+    OCSFEvent,
 )
 
 # MITRE ATT&CK technique lookup: uid → (name, primary_tactic_uid, primary_tactic_name)
@@ -200,7 +207,7 @@ class SuricataNormalizer:
             raw=raw,
         )
 
-    def _build_attacks(self, metadata: dict) -> list[AttackInfo]:
+    def _build_attacks(self, metadata: dict[str, Any]) -> list[AttackInfo]:
         attacks = []
         for tech_id in metadata.get("mitre_technique_id", []):
             tech_id = tech_id.strip()
@@ -221,8 +228,8 @@ class SuricataNormalizer:
 
     def _parse_time(self, ts: str | None) -> datetime:
         if not ts:
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
         try:
             return datetime.fromisoformat(ts.replace("+0000", "+00:00"))
         except (ValueError, AttributeError):
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)

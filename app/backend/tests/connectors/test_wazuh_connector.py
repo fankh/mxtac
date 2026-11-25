@@ -57,7 +57,7 @@ Common:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -66,7 +66,6 @@ import pytest
 from app.connectors.base import ConnectorConfig, ConnectorStatus
 from app.connectors.wazuh import WazuhConnector, WazuhConnectorFactory
 from app.pipeline.queue import InMemoryQueue, Topic
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -124,9 +123,9 @@ class TestWazuhConnectorInit:
         assert conn._token is None
 
     def test_last_fetched_at_is_approximately_5_min_ago(self) -> None:
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         conn = WazuhConnector(_make_config(), InMemoryQueue())
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         delta = before - conn._last_fetched_at
         assert 4 * 60 < delta.total_seconds() < 6 * 60
         assert conn._last_fetched_at < after
@@ -558,12 +557,12 @@ class TestWazuhConnectorFactory:
 
 class TestWazuhConnectorCheckpoint:
     def test_initial_last_fetched_at_used_when_provided(self) -> None:
-        fixed = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        fixed = datetime(2025, 1, 15, 12, 0, 0, tzinfo=UTC)
         conn = WazuhConnector(_make_config(), InMemoryQueue(), initial_last_fetched_at=fixed)
         assert conn._last_fetched_at == fixed
 
     def test_initial_last_fetched_at_none_falls_back_to_5_min_ago(self) -> None:
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         conn = WazuhConnector(_make_config(), InMemoryQueue(), initial_last_fetched_at=None)
         delta = before - conn._last_fetched_at
         assert 4 * 60 < delta.total_seconds() < 6 * 60
@@ -642,7 +641,7 @@ class TestWazuhConnectorCheckpoint:
         assert call_count == 1
 
     async def test_fetch_query_uses_initial_last_fetched_at(self) -> None:
-        fixed = datetime(2025, 6, 1, 8, 0, 0, tzinfo=timezone.utc)
+        fixed = datetime(2025, 6, 1, 8, 0, 0, tzinfo=UTC)
         conn = WazuhConnector(
             _make_config(), InMemoryQueue(), initial_last_fetched_at=fixed
         )
@@ -915,7 +914,7 @@ class TestWazuhConnectorPublish:
         async def mock_fetch():
             conn._stop_event.set()
             return
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -930,7 +929,7 @@ class TestWazuhConnectorPublish:
         async def mock_fetch():
             conn._stop_event.set()
             return
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -945,7 +944,7 @@ class TestWazuhConnectorPublish:
         async def mock_fetch():
             conn._stop_event.set()
             raise RuntimeError("network error")
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -958,7 +957,7 @@ class TestWazuhConnectorPublish:
         async def mock_fetch():
             conn._stop_event.set()
             raise RuntimeError("network error")
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -973,7 +972,7 @@ class TestWazuhConnectorPublish:
         async def mock_fetch():
             conn._stop_event.set()
             raise ValueError("unexpected response format")
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -1047,7 +1046,7 @@ class TestWazuhConnectorBackoff:
         async def mock_fetch():
             conn._stop_event.set()
             raise RuntimeError("network error")
-            yield  # noqa: unreachable — makes async generator
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
         await conn._poll_loop()
@@ -1062,7 +1061,7 @@ class TestWazuhConnectorBackoff:
         async def mock_fetch():
             conn._stop_event.set()
             raise RuntimeError("error")
-            yield  # noqa: unreachable
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
         await conn._poll_loop()
@@ -1081,7 +1080,7 @@ class TestWazuhConnectorBackoff:
         async def mock_fetch():
             conn._stop_event.set()
             raise RuntimeError("error")
-            yield  # noqa: unreachable
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
         await conn._poll_loop()
@@ -1098,7 +1097,7 @@ class TestWazuhConnectorBackoff:
         async def mock_fetch():
             conn._stop_event.set()
             raise RuntimeError("error")
-            yield  # noqa: unreachable
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
         await conn._poll_loop()
@@ -1117,7 +1116,7 @@ class TestWazuhConnectorBackoff:
         async def mock_fetch():
             conn._stop_event.set()
             return
-            yield  # noqa: unreachable
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
         await conn._poll_loop()
@@ -1134,7 +1133,7 @@ class TestWazuhConnectorBackoff:
         async def mock_fetch():
             conn._stop_event.set()
             raise RuntimeError("error")
-            yield  # noqa: unreachable
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
         await conn._poll_loop()
@@ -1159,7 +1158,7 @@ class TestWazuhConnectorBackoff:
             # Second call: succeed and stop
             conn._stop_event.set()
             return
-            yield  # noqa: unreachable
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
         await conn._poll_loop()
@@ -1186,7 +1185,7 @@ class TestWazuhConnectorBackoff:
         async def mock_fetch():
             conn._stop_event.set()
             raise RuntimeError("error")
-            yield  # noqa: unreachable
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -1218,7 +1217,7 @@ class TestWazuhConnectorStatusCallback:
         async def mock_fetch():
             conn._stop_event.set()
             return
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -1234,7 +1233,7 @@ class TestWazuhConnectorStatusCallback:
         async def mock_fetch():
             conn._stop_event.set()
             raise RuntimeError("connection refused")
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -1249,7 +1248,7 @@ class TestWazuhConnectorStatusCallback:
         async def mock_fetch():
             conn._stop_event.set()
             return
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -1267,7 +1266,7 @@ class TestWazuhConnectorStatusCallback:
         async def mock_fetch():
             conn._stop_event.set()
             return
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 

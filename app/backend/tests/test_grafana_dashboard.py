@@ -284,10 +284,7 @@ def test_data_panels_reference_datasource_variable(data_panels: list[dict]) -> N
     for panel in data_panels:
         ds = panel.get("datasource", {})
         # datasource can be specified at panel level or on individual targets
-        if isinstance(ds, dict):
-            uid = ds.get("uid", "")
-        else:
-            uid = str(ds)
+        uid = ds.get("uid", "") if isinstance(ds, dict) else str(ds)
         has_panel_ds = "${datasource}" in uid
         if not has_panel_ds:
             # Check if all targets specify it

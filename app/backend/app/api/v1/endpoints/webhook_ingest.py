@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import hmac
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.valkey import check_webhook_source_rate_limit
+from ....models.connector import Connector
 from ....pipeline.queue import MessageQueue, Topic, get_queue
 from ....repositories.connector_repo import ConnectorRepo
 
@@ -39,7 +40,7 @@ _RATE_LIMIT_REQS   = 100              # max requests per rate-limit window
 _RATE_WINDOW_SECS  = 60               # rate-limit window in seconds
 
 
-async def _resolve_connector(source_name: str, token: str, db: AsyncSession):
+async def _resolve_connector(source_name: str, token: str, db: AsyncSession) -> Connector:
     """Look up a generic connector by name and validate its webhook token.
 
     Raises ``401 Unauthorized`` when the source is unknown, not a generic
@@ -138,11 +139,11 @@ async def webhook_ingest(
     # 4. Parse JSON
     try:
         body = json.loads(body_bytes)
-    except Exception:
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Request body must be valid JSON",
-        )
+        ) from exc
 
     # 5. Normalise to a list of events
     if isinstance(body, dict):
@@ -156,7 +157,7 @@ async def webhook_ingest(
         )
 
     # 6. Publish valid events; skip and count non-object array items
-    received_at = datetime.now(timezone.utc).isoformat()
+    received_at = datetime.now(UTC).isoformat()
     accepted = 0
     rejected = 0
 

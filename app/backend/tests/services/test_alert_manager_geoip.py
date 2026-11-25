@@ -47,7 +47,7 @@ Coverage:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -55,14 +55,13 @@ import pytest
 
 from app.engine.sigma_engine import SigmaAlert
 from app.pipeline.queue import InMemoryQueue
-from app.services.alert_manager import AlertManager, _GEOIP_NOT_AVAILABLE
-
+from app.services.alert_manager import _GEOIP_NOT_AVAILABLE, AlertManager
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-_NOW = datetime.now(timezone.utc).isoformat()
+_NOW = datetime.now(UTC).isoformat()
 
 _ALERT_DICT = {
     "id": "alert-geo-001",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -51,7 +52,7 @@ class Event(Base, TimestampMixin):
     source: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
 
     # Full OCSF payload as JSON
-    raw: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    raw: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Event {self.id} class={self.class_name} sev={self.severity_id}>"

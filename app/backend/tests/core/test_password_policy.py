@@ -21,10 +21,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.core.validators import validate_password_complexity, validate_password_no_consecutive
 from app.api.v1.endpoints.users import UserCreate
+from app.core.validators import validate_password_complexity, validate_password_no_consecutive
 from app.schemas.auth import ChangePasswordRequest
-
 
 # ---------------------------------------------------------------------------
 # validate_password_complexity — unit tests

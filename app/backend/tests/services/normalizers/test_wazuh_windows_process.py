@@ -23,7 +23,6 @@ import pytest
 
 from app.services.normalizers.wazuh import WazuhNormalizer
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------

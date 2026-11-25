@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,7 +27,7 @@ class SavedQuery(Base, TimestampMixin):
     query: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Structured filter list — serialized as JSON array of {field, operator, value}
-    filters: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    filters: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
 
     # Time range in OpenSearch relative format (e.g. "now-24h", "now-7d")
     time_from: Mapped[str] = mapped_column(String(50), nullable=False, default="now-24h")

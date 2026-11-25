@@ -3,7 +3,8 @@ import hashlib
 import hmac
 import secrets
 import string
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import pyotp
@@ -14,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.config import settings
 from ....core.database import get_db
+from ....core.rbac import require_permission
 from ....core.security import (
     REFRESH_COOKIE_NAME,
     REFRESH_COOKIE_PATH,
@@ -40,7 +42,6 @@ from ....core.valkey import (
 )
 from ....models.user import User
 from ....repositories.user_repo import UserRepo
-from ....core.rbac import require_permission
 from ....schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
@@ -89,7 +90,7 @@ def _hash_backup_code(code: str) -> str:
     return hmac.new(settings.secret_key.encode(), code.encode(), hashlib.sha256).hexdigest()
 
 
-def _refresh_cookie_attributes() -> dict:
+def _refresh_cookie_attributes() -> dict[str, Any]:
     """Attributes of the refresh cookie.
 
     Deleting a cookie only works with the same path, so both the set and the
@@ -141,8 +142,8 @@ def _refresh_refused(detail: str = "Invalid refresh token") -> JSONResponse:
     return refused
 
 
-@router.post("/login")
-async def login(body: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
+@router.post("/login", response_model=None)
+async def login(body: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)) -> TokenResponse | PasswordChangeRequiredResponse | MfaLoginResponse:
     """Sign in with email and password.
 
     Answers with a session (access token in the body, refresh token as an
@@ -171,9 +172,9 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
     # and the user has previously logged in. Accounts that are already inactive
     # are handled by the is_active check below.
     if settings.account_inactivity_days > 0 and user.is_active and user.last_login_at is not None:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=settings.account_inactivity_days)
+        cutoff = datetime.now(UTC) - timedelta(days=settings.account_inactivity_days)
         if user.last_login_at < cutoff:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             user.is_active = False
             user.inactive_locked_at = now
             await db.flush()
@@ -192,7 +193,7 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
     await clear_login_attempts(body.email)
 
     # Record the successful login timestamp (feature 1.7).
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     await db.flush()
 
     # Feature 1.8 — Forced password change on first login.
@@ -210,7 +211,7 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
         settings.password_expiry_days > 0
         and user.password_changed_at is not None
     ):
-        cutoff = datetime.now(timezone.utc) - timedelta(days=settings.password_expiry_days)
+        cutoff = datetime.now(UTC) - timedelta(days=settings.password_expiry_days)
         if user.password_changed_at < cutoff:
             pc_token = create_password_change_token(str(user.id))
             return PasswordChangeRequiredResponse(password_change_token=pc_token)
@@ -224,7 +225,7 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
 @router.post("/mfa/verify", response_model=TokenResponse)
 async def mfa_verify_login(
     body: MfaVerifyLoginRequest, response: Response, db: AsyncSession = Depends(get_db)
-):
+) -> TokenResponse:
     """Verify TOTP code (or backup code) after password authentication.
 
     Accepts the mfa_token issued by POST /auth/login when mfa_enabled=True.
@@ -280,7 +281,7 @@ async def refresh(
     response: Response,
     db: AsyncSession = Depends(get_db),
     refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
-):
+) -> TokenResponse | JSONResponse:
     """Exchange the refresh cookie for a new access token and a new refresh cookie.
 
     The refresh token is single use: it is put on the revocation list as it is
@@ -303,7 +304,7 @@ async def refresh(
     if sid and await is_token_blacklisted(session_revocation_id(sid)):
         return _refresh_refused(SESSION_ENDED_DETAIL)
 
-    remaining = payload.get("exp", 0) - int(datetime.now(timezone.utc).timestamp())
+    remaining = payload.get("exp", 0) - int(datetime.now(UTC).timestamp())
     if not await consume_token(jti, remaining):
         # Reuse of a rotated token: end the session it belongs to.
         if sid:
@@ -319,7 +320,7 @@ async def refresh(
 
 
 @router.post("/logout", response_model=LogoutResponse)
-async def logout(response: Response, authorization: str = Header(None)):
+async def logout(response: Response, authorization: str = Header(None)) -> LogoutResponse:
     """End the session of the presented access token.
 
     Revokes the access token and the session it belongs to, so the refresh
@@ -340,7 +341,7 @@ async def logout(response: Response, authorization: str = Header(None)):
     jti = payload.get("jti")
     if jti:
         exp = payload.get("exp", 0)
-        now = int(datetime.now(timezone.utc).timestamp())
+        now = int(datetime.now(UTC).timestamp())
         ttl = exp - now
         await blacklist_token(jti, ttl)
 
@@ -359,9 +360,9 @@ async def logout(response: Response, authorization: str = Header(None)):
 
 @router.post("/mfa/setup", response_model=MfaSetupResponse)
 async def mfa_setup(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> MfaSetupResponse:
     """Generate a TOTP secret and QR code URI for the authenticated user.
 
     Stores the encrypted secret and hashed backup codes in the DB but does NOT
@@ -389,9 +390,9 @@ async def mfa_setup(
 @router.post("/mfa/verify-setup", response_model=MfaVerifyResponse)
 async def mfa_verify_setup(
     body: MfaVerifyRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> MfaVerifyResponse:
     """Verify a TOTP code and activate MFA for the authenticated user.
 
     Returns 400 if MFA setup has not been initiated or the code is invalid.
@@ -419,9 +420,9 @@ async def mfa_verify_setup(
 
 @router.get("/me", response_model=MeResponse)
 async def get_me(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> MeResponse:
     """Return the authenticated user's profile including MFA status."""
     user = await UserRepo.get_by_email(db, current_user["email"])
     if not user:
@@ -437,9 +438,9 @@ async def get_me(
 @router.post("/mfa/disable", response_model=MfaVerifyResponse)
 async def mfa_disable(
     body: MfaDisableRequest,
-    current_user: dict = Depends(require_permission("users:write")),
+    current_user: dict[str, Any] = Depends(require_permission("users:write")),
     db: AsyncSession = Depends(get_db),
-):
+) -> MfaVerifyResponse:
     """Disable MFA for a given user (admin only).
 
     Clears the TOTP secret and all backup codes for the target user.
@@ -485,17 +486,17 @@ async def _set_new_password(db: AsyncSession, user: User, new_password: str) -> 
 
     user.hashed_password = hash_password(new_password)
     user.must_change_password = False
-    user.password_changed_at = datetime.now(timezone.utc)
+    user.password_changed_at = datetime.now(UTC)
     # End every session of the account: tokens carry the version they were
     # issued under and are refused once it has moved on.
     user.token_version = (user.token_version or 0) + 1
     await db.flush()
 
 
-@router.post("/change-password")
+@router.post("/change-password", response_model=None)
 async def change_password(
     body: ChangePasswordRequest, response: Response, db: AsyncSession = Depends(get_db)
-):
+) -> TokenResponse | MfaLoginResponse:
     """Complete a forced first-login password change.
 
     Accepts the ``password_change_token`` issued by POST /auth/login when
@@ -541,7 +542,7 @@ async def change_password(
 async def change_own_password(
     body: SelfPasswordChangeRequest,
     response: Response,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict[str, Any] = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """Change the password of the signed-in user.

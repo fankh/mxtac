@@ -38,12 +38,12 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from ..core.logging import get_logger
-from ..pipeline.queue import Topic
-from .base import BaseConnector, ConnectorConfig, ConnectorStatus
+from ..pipeline.queue import MessageQueue, Topic
+from .base import BaseConnector, ConnectorConfig
 
 logger = get_logger(__name__)
 
@@ -139,7 +139,7 @@ def _extract_msg_from_sd(sd_and_msg: str) -> str:
 class _SyslogProtocol(asyncio.DatagramProtocol):
     """asyncio DatagramProtocol that forwards received packets to the connector."""
 
-    def __init__(self, connector: "SyslogUDPConnector") -> None:
+    def __init__(self, connector: SyslogUDPConnector) -> None:
         self._connector = connector
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
@@ -177,7 +177,7 @@ class SyslogUDPConnector(BaseConnector):
     def __init__(
         self,
         config: ConnectorConfig,
-        queue,
+        queue: MessageQueue,
         *,
         status_callback: Callable[[str, str | None], Awaitable[None]] | None = None,
     ) -> None:
@@ -234,7 +234,7 @@ class SyslogUDPConnector(BaseConnector):
                         asyncio.shield(self._stop_event.wait()),
                         timeout=COUNTER_FLUSH_SECONDS,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     await self._flush_counters()
         except asyncio.CancelledError:
             pass
@@ -247,7 +247,7 @@ class SyslogUDPConnector(BaseConnector):
             event = self._parse_syslog(data, addr)
             await self.queue.publish(self.topic, event)
             self.health.events_total += 1
-            self.health.last_event_at = datetime.now(timezone.utc)
+            self.health.last_event_at = datetime.now(UTC)
             logger.debug(
                 "SyslogUDPConnector received event src=%s severity=%s facility=%s",
                 addr[0],
@@ -283,7 +283,7 @@ class SyslogUDPConnector(BaseConnector):
             "severity":     None,
             "facility_name": None,
             "severity_name": None,
-            "timestamp":    datetime.now(timezone.utc).isoformat(),
+            "timestamp":    datetime.now(UTC).isoformat(),
             "hostname":     None,
             "app_name":     None,
             "process_id":   None,
@@ -354,7 +354,7 @@ class SyslogUDPConnectorFactory:
     """Convenience factory to create a SyslogUDPConnector from a flat config dict."""
 
     @staticmethod
-    def from_dict(d: dict[str, Any], queue) -> SyslogUDPConnector:
+    def from_dict(d: dict[str, Any], queue: MessageQueue) -> SyslogUDPConnector:
         config = ConnectorConfig(
             name=d.get("name", "syslog"),
             connector_type="syslog",

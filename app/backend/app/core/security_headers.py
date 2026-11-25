@@ -32,8 +32,7 @@ Adds security-relevant HTTP response headers to every API response:
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Awaitable
+from collections.abc import Awaitable, Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request

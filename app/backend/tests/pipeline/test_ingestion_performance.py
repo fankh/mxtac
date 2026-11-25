@@ -25,15 +25,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any, Generator
-
-import pytest
+from typing import Any
 
 from app.pipeline.queue import InMemoryQueue, Topic
 from app.services.normalizers.pipeline import NormalizerPipeline
 from app.services.normalizers.wazuh import WazuhNormalizer
-
 
 # ── Logging control ───────────────────────────────────────────────────────────
 
@@ -53,7 +51,7 @@ def _suppress_debug_logging(*logger_names: str) -> Generator[None, None, None]:
     try:
         yield
     finally:
-        for lg, lvl in zip(loggers, old_levels):
+        for lg, lvl in zip(loggers, old_levels, strict=False):
             lg.setLevel(lvl)
 
 

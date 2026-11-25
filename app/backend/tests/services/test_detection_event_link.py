@@ -17,7 +17,7 @@ Coverage:
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.engine.sigma_engine import SigmaAlert, SigmaEngine
@@ -217,7 +217,7 @@ def _alert(**extra: str) -> dict:
         "technique_ids": ["T1059.004"],
         "tactic_ids": ["TA0002"],
         "host": "app02",
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": datetime.now(UTC).isoformat(),
         "event_snapshot": {},
         **extra,
     }

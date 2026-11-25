@@ -3,20 +3,30 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from math import ceil
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
-from ....engine.sigma_engine import tactic_name
+from ....engine.attack_tags import tactic_name
+from ....models.detection import Detection as DetectionModel
+from ....models.incident import Incident as IncidentModel
 from ....repositories.detection_repo import DetectionRepo
 from ....repositories.incident_repo import IncidentRepo, SortField, time_to_detect_seconds
-from ....schemas.common import Pagination, PaginatedResponse
-from ....schemas.incident import Incident, IncidentCreate, IncidentDetail, IncidentMetrics, IncidentNote, IncidentUpdate, NoteCreate
+from ....schemas.common import PaginatedResponse, Pagination
+from ....schemas.incident import (
+    Incident,
+    IncidentCreate,
+    IncidentDetail,
+    IncidentMetrics,
+    IncidentNote,
+    IncidentUpdate,
+    NoteCreate,
+)
 from ....services.attack_techniques import resolve_technique_name
 from ....services.audit import get_audit_logger
 
@@ -26,7 +36,7 @@ router = APIRouter(prefix="/incidents", tags=["incidents"])
 _STATUS_PROGRESSION = ["new", "investigating", "contained", "resolved", "closed"]
 
 
-def _incident_to_schema(inc) -> dict:
+def _incident_to_schema(inc: IncidentModel) -> dict[str, Any]:
     """Convert ORM Incident to schema dict."""
     return {
         "id": inc.id,
@@ -49,7 +59,7 @@ def _incident_to_schema(inc) -> dict:
     }
 
 
-def _detection_to_schema(det) -> dict:
+def _detection_to_schema(det: DetectionModel) -> dict[str, Any]:
     """Convert ORM Detection to schema dict."""
     return {
         "id": det.id,
@@ -88,8 +98,8 @@ async def list_incidents(
     search: str | None = Query(None, max_length=255, description="Search in title and description"),
     sort: SortField = Query("created_at", description="Sort field: created_at, severity, or status"),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("incidents:read")),
-) -> PaginatedResponse:
+    _: dict[str, Any] = Depends(require_permission("incidents:read")),
+) -> PaginatedResponse[dict[str, Any]]:
     """
     List incidents with pagination and optional filters.
 
@@ -125,8 +135,8 @@ async def create_incident(
     body: IncidentCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("incidents:write")),
-) -> dict:
+    current_user: dict[str, Any] = Depends(require_permission("incidents:write")),
+) -> dict[str, Any]:
     """
     Create a new incident, optionally linking existing detections.
 
@@ -154,7 +164,7 @@ async def create_incident(
         if det.host and det.host not in hosts:
             hosts.append(det.host)
         if det.time is not None:
-            event_times.append(det.time if det.time.tzinfo else det.time.replace(tzinfo=timezone.utc))
+            event_times.append(det.time if det.time.tzinfo else det.time.replace(tzinfo=UTC))
 
     incident = await IncidentRepo.create(
         db,
@@ -192,8 +202,8 @@ async def get_incident_metrics(
     from_date: datetime | None = Query(None, description="Start date (ISO 8601). Defaults to 30 days ago."),
     to_date: datetime | None = Query(None, description="End date (ISO 8601). Defaults to now."),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("incidents:read")),
-) -> dict:
+    _: dict[str, Any] = Depends(require_permission("incidents:read")),
+) -> dict[str, Any]:
     """
     Incident SLA metrics — MTTD, MTTR, open count, and severity breakdown.
 
@@ -203,7 +213,7 @@ async def get_incident_metrics(
     - incidents_this_week / incidents_this_month are calendar-based (not bounded by from_date/to_date).
     - Requires viewer+ role (incidents:read).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     resolved_to = to_date if to_date is not None else now
     resolved_from = from_date if from_date is not None else now - timedelta(days=30)
 
@@ -239,8 +249,8 @@ async def get_incident_metrics(
 async def get_incident(
     incident_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("incidents:read")),
-) -> dict:
+    _: dict[str, Any] = Depends(require_permission("incidents:read")),
+) -> dict[str, Any]:
     """
     Get full incident detail including linked detections and timeline.
 
@@ -264,10 +274,10 @@ async def get_incident(
     # Compute duration
     created = incident.created_at
     if created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
-    end_time = incident.closed_at or datetime.now(timezone.utc)
+        created = created.replace(tzinfo=UTC)
+    end_time = incident.closed_at or datetime.now(UTC)
     if end_time.tzinfo is None:
-        end_time = end_time.replace(tzinfo=timezone.utc)
+        end_time = end_time.replace(tzinfo=UTC)
     duration_seconds = max(0, int((end_time - created).total_seconds()))
 
     # Parse notes — stored as list of dicts in JSON column
@@ -288,8 +298,8 @@ async def update_incident(
     body: IncidentUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("incidents:write")),
-) -> dict:
+    current_user: dict[str, Any] = Depends(require_permission("incidents:write")),
+) -> dict[str, Any]:
     """
     Partially update an incident.
 
@@ -305,7 +315,7 @@ async def update_incident(
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 
     provided = body.model_fields_set
-    changes: dict = {}
+    changes: dict[str, Any] = {}
     old_status: str | None = None
 
     # --- Status transition validation ---
@@ -332,17 +342,17 @@ async def update_incident(
                 "author": current_user["email"],
                 "content": f"Status changed from {old_status} to {new_status} by {current_user['email']}",
                 "note_type": "status_change",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             }
             changes["notes"] = list(incident.notes or []) + [status_note]
 
             # Auto-set closed_at and ttr_seconds on first close
             if new_status in ("resolved", "closed") and incident.closed_at is None:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 changes["closed_at"] = now
                 created = incident.created_at
                 if created.tzinfo is None:
-                    created = created.replace(tzinfo=timezone.utc)
+                    created = created.replace(tzinfo=UTC)
                 changes["ttr_seconds"] = max(0, int((now - created).total_seconds()))
 
     # --- Scalar fields that cannot be cleared (skip explicit None) ---
@@ -389,7 +399,7 @@ async def update_incident(
 
     # --- Audit log (only when something actually changed) ---
     if changes:
-        audit_details: dict = {}
+        audit_details: dict[str, Any] = {}
         if old_status is not None and "status" in changes:
             audit_details["status"] = {"from": old_status, "to": changes["status"]}
         for field in ("title", "severity", "priority", "assigned_to", "description"):
@@ -415,8 +425,8 @@ async def add_note(
     incident_id: int,
     body: NoteCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("incidents:write")),
-) -> dict:
+    current_user: dict[str, Any] = Depends(require_permission("incidents:write")),
+) -> dict[str, Any]:
     """
     Add a timestamped note to an incident's timeline.
 
@@ -428,7 +438,7 @@ async def add_note(
     if incident is None:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     note = {
         "id": str(uuid.uuid4()),
         "author": current_user["email"],
@@ -449,7 +459,7 @@ async def delete_incident(
     incident_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_permission("incidents:delete")),
+    current_user: dict[str, Any] = Depends(require_permission("incidents:delete")),
 ) -> Response:
     """
     Soft-delete an incident by setting its status to 'closed'.
@@ -465,7 +475,7 @@ async def delete_incident(
     if incident is None:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     old_status = incident.status
 
     incident.status = "closed"
@@ -474,7 +484,7 @@ async def delete_incident(
         incident.closed_at = now
         created = incident.created_at
         if created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
+            created = created.replace(tzinfo=UTC)
         incident.ttr_seconds = max(0, int((now - created).total_seconds()))
 
     deletion_note = {
@@ -504,8 +514,8 @@ async def delete_incident(
 async def list_notes(
     incident_id: int,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("incidents:read")),
-) -> list[dict]:
+    _: dict[str, Any] = Depends(require_permission("incidents:read")),
+) -> list[dict[str, Any]]:
     """
     List all notes for an incident in chronological order (oldest first).
 

@@ -29,14 +29,21 @@ Wazuh alert structure (simplified):
 
 from __future__ import annotations
 
-import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .ocsf import (
-    Analytic, AttackInfo, AttackTactic, AttackTechnique,
-    Endpoint, FindingInfo, OCSFCategory, OCSFClass, OCSFEvent,
-    ProcessInfo, SEVERITY_MAP, UserInfo,
+    Analytic,
+    AttackInfo,
+    AttackTactic,
+    AttackTechnique,
+    Endpoint,
+    FindingInfo,
+    OCSFCategory,
+    OCSFClass,
+    OCSFEvent,
+    ProcessInfo,
+    UserInfo,
 )
 
 # Wazuh rule level → OCSF severity_id
@@ -116,7 +123,7 @@ class WazuhNormalizer:
         )
         src = Endpoint(ip=data.get("srcip"))
 
-        unmapped: dict = {}
+        unmapped: dict[str, Any] = {}
 
         # User
         user = UserInfo(name=data.get("dstuser") or data.get("srcuser"))
@@ -161,7 +168,7 @@ class WazuhNormalizer:
     # ── Helpers ──────────────────────────────────────────────────────────────
 
     def _classify(
-        self, rule: dict, data: dict
+        self, rule: dict[str, Any], data: dict[str, Any]
     ) -> tuple[int, str, int]:
         """Pick the best OCSF class for a Wazuh alert."""
         groups = rule.get("groups", [])
@@ -182,7 +189,7 @@ class WazuhNormalizer:
                 return severity_id
         return 1
 
-    def _build_attacks(self, mitre: dict) -> list[AttackInfo]:
+    def _build_attacks(self, mitre: dict[str, Any]) -> list[AttackInfo]:
         """Convert Wazuh rule.mitre metadata into OCSF AttackInfo objects.
 
         Handles:
@@ -236,11 +243,11 @@ class WazuhNormalizer:
 
     def _parse_time(self, ts: str | None) -> datetime:
         if not ts:
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
         try:
             return datetime.fromisoformat(ts.replace("Z", "+00:00"))
         except (ValueError, AttributeError):
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
 
     def _safe_int(self, val: Any) -> int | None:
         try:

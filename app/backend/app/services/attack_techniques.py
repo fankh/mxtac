@@ -20,17 +20,20 @@ DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "attack_techniques
 
 @lru_cache(maxsize=1)
 def _table() -> dict[str, Any]:
-    return json.loads(DATA_FILE.read_text(encoding="utf-8"))
+    table: dict[str, Any] = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+    return table
 
 
 def attack_version() -> str:
     """ATT&CK release the bundled table was generated from, for example ``20.1``."""
-    return _table()["attack_version"]
+    version: str = _table()["attack_version"]
+    return version
 
 
 def attack_retrieved() -> str:
     """Date (ISO) the ATT&CK data of the bundled table was downloaded."""
-    return _table()["retrieved"]
+    retrieved: str = _table()["retrieved"]
+    return retrieved
 
 
 @lru_cache(maxsize=1)

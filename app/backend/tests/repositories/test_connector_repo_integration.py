@@ -30,7 +30,7 @@ Coverage:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -192,7 +192,7 @@ class TestConnectorRepoGetByIdIntegration:
         assert result is None
 
     async def test_returns_correct_connector_among_many(self, db_session: AsyncSession) -> None:
-        conn1 = await _create_connector(db_session, name="first")
+        await _create_connector(db_session, name="first")
         conn2 = await _create_connector(db_session, name="second")
         fetched = await ConnectorRepo.get_by_id(db_session, conn2.id)
         assert fetched is not None
@@ -294,9 +294,9 @@ class TestConnectorRepoUpdateStatusIntegration:
 
     async def test_last_seen_at_is_recent(self, db_session: AsyncSession) -> None:
         conn = await _create_connector(db_session)
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         await ConnectorRepo.update_status(db_session, conn.id, "active")
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         fetched = await ConnectorRepo.get_by_id(db_session, conn.id)
         ts = datetime.fromisoformat(fetched.last_seen_at)
         assert before <= ts <= after

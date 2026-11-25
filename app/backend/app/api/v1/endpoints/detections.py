@@ -1,19 +1,28 @@
 import csv
 import io
+from collections.abc import Iterator
 from datetime import date
-from typing import Literal
 from math import ceil
+from typing import Any, Literal
 
-from fastapi import APIRouter, Query, HTTPException, Path, Depends
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
-from ....engine.sigma_engine import tactic_name
-from ....schemas.detection import Detection, DetectionUpdate, SeverityLevel, DetectionStatus, BulkStatusUpdate, BulkUpdateResult
-from ....schemas.common import PaginatedResponse, Pagination
+from ....engine.attack_tags import tactic_name
+from ....models.detection import Detection as DetectionModel
 from ....repositories.detection_repo import DetectionRepo
+from ....schemas.common import PaginatedResponse, Pagination
+from ....schemas.detection import (
+    BulkStatusUpdate,
+    BulkUpdateResult,
+    Detection,
+    DetectionStatus,
+    DetectionUpdate,
+    SeverityLevel,
+)
 from ....services.attack_techniques import resolve_technique_name
 
 router = APIRouter(prefix="/detections", tags=["detections"])
@@ -21,7 +30,7 @@ router = APIRouter(prefix="/detections", tags=["detections"])
 SortField = Literal["score", "time", "severity", "host", "tactic"]
 
 
-def _detection_to_schema(d) -> dict:
+def _detection_to_schema(d: DetectionModel) -> dict[str, Any]:
     """Convert ORM Detection model to schema dict."""
     return {
         "id": d.id,
@@ -62,8 +71,8 @@ async def list_detections(
     sort: SortField = Query("time"),
     order: Literal["asc", "desc"] = Query("desc"),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> PaginatedResponse[dict[str, Any]]:
     items, total = await DetectionRepo.list(
         db,
         page=page,
@@ -101,15 +110,15 @@ async def export_detections(
     sort: SortField = Query("time"),
     order: Literal["asc", "desc"] = Query("desc"),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> StreamingResponse:
     """Export filtered detections as CSV (max 10,000 rows).
 
     Accepts the same filter parameters as GET /detections.
     Returns a streaming text/csv file with columns:
     id, name, severity, tactic, technique_id, host, status, score, time.
     """
-    items, _ = await DetectionRepo.list(
+    items, _total = await DetectionRepo.list(
         db,
         page=1,
         page_size=_EXPORT_MAX_ROWS,
@@ -122,7 +131,7 @@ async def export_detections(
         order=order,
     )
 
-    def _iter_csv():
+    def _iter_csv() -> Iterator[str]:
         buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(_DETECTION_CSV_COLS)
@@ -155,8 +164,8 @@ async def export_detections(
 async def get_detection(
     detection_id: str = Path(..., description="Detection ID"),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> dict[str, Any]:
     d = await DetectionRepo.get(db, detection_id)
     if not d:
         raise HTTPException(status_code=404, detail=f"Detection {detection_id} not found")
@@ -168,8 +177,8 @@ async def update_detection(
     detection_id: str,
     body: DetectionUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:write")),
+) -> dict[str, Any]:
     d = await DetectionRepo.update(db, detection_id, **body.model_dump(exclude_none=True))
     if not d:
         raise HTTPException(status_code=404, detail=f"Detection {detection_id} not found")
@@ -180,18 +189,18 @@ async def update_detection(
 async def bulk_update_detections(
     body: BulkStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:write")),
+) -> dict[str, Any]:
     result = await DetectionRepo.bulk_update_status(db, body.ids, body.status)
     return result
 
 
-@router.delete("/{detection_id}", status_code=204)
+@router.delete("/{detection_id}", response_model=None, status_code=204)
 async def delete_detection(
     detection_id: str = Path(..., description="Detection ID"),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:delete")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:delete")),
+) -> None:
     deleted = await DetectionRepo.delete(db, detection_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Detection {detection_id} not found")

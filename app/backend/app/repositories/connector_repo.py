@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,14 +35,14 @@ class ConnectorRepo:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(session: AsyncSession, **kwargs) -> Connector:
+    async def create(session: AsyncSession, **kwargs: Any) -> Connector:
         conn = Connector(**kwargs)
         session.add(conn)
         await session.flush()
         return conn
 
     @staticmethod
-    async def update(session: AsyncSession, connector_id: str, **kwargs) -> Connector | None:
+    async def update(session: AsyncSession, connector_id: str, **kwargs: Any) -> Connector | None:
         conn = await ConnectorRepo.get_by_id(session, connector_id)
         if not conn:
             return None
@@ -62,7 +63,7 @@ class ConnectorRepo:
         if not conn:
             return None
         conn.status = status
-        conn.last_seen_at = datetime.now(timezone.utc).isoformat()
+        conn.last_seen_at = datetime.now(UTC).isoformat()
         conn.error_message = error_message
         await session.flush()
         return conn
@@ -83,10 +84,10 @@ class ConnectorRepo:
         the connector is also set to ``active`` (a push source that just
         delivered events).
         """
-        values: dict = {}
+        values: dict[str, Any] = {}
         if events:
             values["events_total"] = Connector.events_total + events
-            values["last_seen_at"] = datetime.now(timezone.utc).isoformat()
+            values["last_seen_at"] = datetime.now(UTC).isoformat()
         if errors:
             values["errors_total"] = Connector.errors_total + errors
         if mark_active:
@@ -114,7 +115,7 @@ class ConnectorRepo:
         return result or 0
 
     @staticmethod
-    async def get_status_counts(session: AsyncSession) -> dict:
+    async def get_status_counts(session: AsyncSession) -> dict[str, Any]:
         """Return active (enabled + connected/active status) and total connector counts."""
         total = await session.scalar(select(func.count()).select_from(Connector)) or 0
         active = await session.scalar(

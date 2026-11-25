@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import bcrypt as _bcrypt
@@ -25,15 +26,20 @@ def session_revocation_id(sid: str) -> str:
     return f"sid:{sid}"
 
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+def _encode(claims: dict[str, Any]) -> str:
+    token: str = jwt.encode(claims, settings.secret_key, algorithm=ALGORITHM)
+    return token
+
+
+def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
+    expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
     to_encode["exp"] = expire
     to_encode.setdefault("jti", str(uuid4()))
     # Include the current key version so tokens can be mass-invalidated by
     # bumping jwt_key_version in config (e.g. after a secret rotation).
     to_encode["kvr"] = settings.jwt_key_version
-    return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
+    return _encode(to_encode)
 
 
 def create_mfa_token(user_id: str) -> str:
@@ -47,9 +53,9 @@ def create_mfa_token(user_id: str) -> str:
         "purpose": "mfa",
         "jti": str(uuid4()),
         "kvr": settings.jwt_key_version,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+        "exp": datetime.now(UTC) + timedelta(minutes=5),
     }
-    return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
+    return _encode(to_encode)
 
 
 def create_password_change_token(user_id: str) -> str:
@@ -63,21 +69,21 @@ def create_password_change_token(user_id: str) -> str:
         "purpose": "password_change",
         "jti": str(uuid4()),
         "kvr": settings.jwt_key_version,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
+        "exp": datetime.now(UTC) + timedelta(minutes=15),
     }
-    return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
+    return _encode(to_encode)
 
 
-def create_refresh_token(data: dict) -> str:
+def create_refresh_token(data: dict[str, Any]) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+    expire = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
     to_encode.update({
         "exp": expire,
         "type": "refresh",
         "jti": str(uuid4()),
         "kvr": settings.jwt_key_version,
     })
-    return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
+    return _encode(to_encode)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -88,14 +94,14 @@ def hash_password(password: str) -> str:
     return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt(10)).decode()
 
 
-def decode_token(token: str) -> dict:
+def decode_token(token: str) -> dict[str, Any]:
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
-    except JWTError:
+        payload: dict[str, Any] = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    except JWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
-        )
+        ) from exc
 
     # Reject tokens that were issued before the current key rotation epoch.
     # Operators bump jwt_key_version to invalidate all outstanding tokens after
@@ -112,19 +118,19 @@ def decode_token(token: str) -> dict:
 SESSION_ENDED_DETAIL = "Session has ended. Sign in again."
 
 
-def token_version_matches(payload: dict, token_version: int | None) -> bool:
+def token_version_matches(payload: dict[str, Any], token_version: int | None) -> bool:
     """True when the token was issued under the account's current token version.
 
     Tokens issued before the claim existed count as version 0.
     """
-    return payload.get("tv", 0) == (token_version or 0)
+    return bool(payload.get("tv", 0) == (token_version or 0))
 
 
 def _unauthorized(detail: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
 
 
-async def current_role(db: AsyncSession, payload: dict) -> str:
+async def current_role(db: AsyncSession, payload: dict[str, Any]) -> str:
     """Return the role the token's user holds *now* (one indexed lookup by email).
 
     The role and active flag are read from the database on every request, not
@@ -143,10 +149,11 @@ async def current_role(db: AsyncSession, payload: dict) -> str:
         raise _unauthorized("Account is disabled or no longer exists")
     if not token_version_matches(payload, row.token_version):
         raise _unauthorized(SESSION_ENDED_DETAIL)
-    return row.role
+    role: str = row.role
+    return role
 
 
-async def authenticate_access_token(token: str, db: AsyncSession) -> dict:
+async def authenticate_access_token(token: str, db: AsyncSession) -> dict[str, Any]:
     """Validate an access token and return ``{"email", "role"}`` for its user.
 
     Rejects refresh tokens and single-purpose tokens (MFA, password
@@ -170,15 +177,12 @@ async def authenticate_access_token(token: str, db: AsyncSession) -> dict:
 async def get_current_user(
     authorization: str = Header(None),
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> dict[str, Any]:
     """FastAPI dependency — extract and validate JWT from Authorization header."""
     if not authorization:
         raise _unauthorized("Authorization header required")
     # Support "Bearer <token>" format
     parts = authorization.split()
-    if len(parts) == 2 and parts[0].lower() == "bearer":
-        token = parts[1]
-    else:
-        token = authorization
+    token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else authorization
 
     return await authenticate_access_token(token, db)

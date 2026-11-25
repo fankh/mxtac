@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import secrets
 import string
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -103,14 +103,15 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
     logger.info("Seeding database (demo data: %s)...", "on" if demo_data else "off")
 
     # ── Users ────────────────────────────────────────────────────────────────
-    initial_password = settings.initial_admin_password
-    generated = not initial_password
-    if generated:
-        initial_password = generate_initial_password()
-    else:
+    configured_password = settings.initial_admin_password
+    generated = not configured_password
+    if configured_password:
         # Settings already rejects a weak value at startup; checked again here
         # so the seeder can never store a password that violates the policy.
-        validate_password_policy(initial_password)
+        validate_password_policy(configured_password)
+        initial_password = configured_password
+    else:
+        initial_password = generate_initial_password()
     hashed = hash_password(initial_password)
 
     accounts = [(ADMIN_EMAIL, "Admin", "admin")]
@@ -146,7 +147,7 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
             name="DCSync via DRSUAPI GetNCChanges",
             host="DC-PROD-01", tactic="Credential Access",
             status="active",
-            time=datetime(2026, 2, 19, 14, 21, 7, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 19, 14, 21, 7, tzinfo=UTC),
             user="CORP\\svc-backup", process="lsass.exe (PID: 4)",
             rule_name="win_dcsync_replication", log_source="Elastic SIEM · Windows Security",
             event_id="4662", occurrence_count=14,
@@ -161,7 +162,7 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
             name="Process Injection via DLL",
             host="WS-PROD-114", tactic="Defense Evasion",
             status="active",
-            time=datetime(2026, 2, 19, 14, 28, 0, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 19, 14, 28, 0, tzinfo=UTC),
             rule_name="win_process_injection_dll", log_source="Elastic SIEM",
             occurrence_count=3, cvss_v3=8.5, confidence=91, tactic_id="TA0005",
             assigned_to="K. Lee", priority="P1 Urgent",
@@ -173,7 +174,7 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
             name="Kerberoasting — SPN Enumeration",
             host="SRV-AUTH-07", tactic="Credential Access",
             status="investigating",
-            time=datetime(2026, 2, 19, 14, 9, 0, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 19, 14, 9, 0, tzinfo=UTC),
             rule_name="win_kerberoasting", log_source="MS Sentinel",
             occurrence_count=7, cvss_v3=8.1, confidence=88, tactic_id="TA0006",
             assigned_to="M. Park", priority="P2 High",
@@ -185,7 +186,7 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
             name="Pass the Ticket — Lateral Move",
             host="WS-FIN-022", tactic="Lateral Movement",
             status="resolved",
-            time=datetime(2026, 2, 19, 13, 58, 0, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 19, 13, 58, 0, tzinfo=UTC),
             rule_name="win_pass_the_ticket", log_source="Elastic SIEM",
             occurrence_count=2, cvss_v3=7.9, confidence=85, tactic_id="TA0008",
             assigned_to="J. Smith", priority="P2 High",
@@ -197,7 +198,7 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
             name="Valid Domain Admin Account Login",
             host="FS-CORP-05", tactic="Initial Access",
             status="active",
-            time=datetime(2026, 2, 19, 13, 44, 0, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 19, 13, 44, 0, tzinfo=UTC),
             rule_name="win_admin_logon_unusual", log_source="Elastic SIEM",
             occurrence_count=1, cvss_v3=7.5, confidence=79, tactic_id="TA0001",
             assigned_to="K. Lee", priority="P2 High",
@@ -209,7 +210,7 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
             name="PowerShell Encoded Command Exec",
             host="WS-DEV-031", tactic="Execution",
             status="resolved",
-            time=datetime(2026, 2, 19, 13, 30, 0, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 19, 13, 30, 0, tzinfo=UTC),
             rule_name="win_powershell_encoded", log_source="Elastic SIEM",
             occurrence_count=5, cvss_v3=6.1, confidence=72, tactic_id="TA0002",
             assigned_to="M. Park", priority="P3 Medium",
@@ -221,7 +222,7 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
             name="RDP Lateral Movement",
             host="WS-MGMT-04", tactic="Lateral Movement",
             status="investigating",
-            time=datetime(2026, 2, 19, 13, 15, 0, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 19, 13, 15, 0, tzinfo=UTC),
             rule_name="win_rdp_lateral", log_source="Elastic SIEM",
             occurrence_count=3, cvss_v3=6.0, confidence=68, tactic_id="TA0008",
             assigned_to="J. Smith", priority="P3 Medium",
@@ -233,7 +234,7 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
             name="Rundll32 Proxy Execution",
             host="WS-DEV-018", tactic="Defense Evasion",
             status="resolved",
-            time=datetime(2026, 2, 19, 12, 58, 0, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 19, 12, 58, 0, tzinfo=UTC),
             rule_name="win_rundll32_proxy", log_source="Elastic SIEM",
             occurrence_count=2, cvss_v3=5.6, confidence=65, tactic_id="TA0005",
             assigned_to="K. Lee", priority="P3 Medium",
@@ -245,7 +246,7 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
             name="New Local Admin Account Created",
             host="SRV-JUMP-02", tactic="Persistence",
             status="active",
-            time=datetime(2026, 2, 19, 12, 41, 0, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 19, 12, 41, 0, tzinfo=UTC),
             rule_name="win_new_local_admin", log_source="MS Sentinel",
             occurrence_count=1, cvss_v3=5.5, confidence=82, tactic_id="TA0003",
             assigned_to="M. Park", priority="P3 Medium",
@@ -257,7 +258,7 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
             name="Azure AD Credential Added",
             host="CLOUDAzure-04", tactic="Persistence",
             status="investigating",
-            time=datetime(2026, 2, 19, 12, 20, 0, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 19, 12, 20, 0, tzinfo=UTC),
             rule_name="azure_cred_added", log_source="MS Sentinel",
             occurrence_count=1, cvss_v3=5.0, confidence=70, tactic_id="TA0003",
             assigned_to="J. Smith", priority="P3 Medium",
@@ -269,7 +270,7 @@ async def seed_database(session: AsyncSession, *, demo_data: bool = False) -> No
             name="File Deletion to Cover Tracks",
             host="WS-HR-011", tactic="Defense Evasion",
             status="resolved",
-            time=datetime(2026, 2, 19, 11, 55, 0, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 19, 11, 55, 0, tzinfo=UTC),
             rule_name="win_file_deletion_cover", log_source="Elastic SIEM",
             occurrence_count=8, cvss_v3=3.3, confidence=55, tactic_id="TA0005",
             assigned_to="K. Lee", priority="P4 Low",

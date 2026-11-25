@@ -31,7 +31,7 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -68,7 +68,7 @@ def _make_alert_dict(
         "technique_ids": ["T1059"] if technique_ids is None else technique_ids,
         "tactic_ids": ["execution"] if tactic_ids is None else tactic_ids,
         "host": host,
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": datetime.now(UTC).isoformat(),
         "event_snapshot": {"pid": 1234},
     }
 
@@ -232,7 +232,7 @@ async def test_find_open_by_host_tactic_respects_window(db_session):
     await db_session.execute(
         update(Incident)
         .where(Incident.id == incident.id)
-        .values(created_at=datetime.now(timezone.utc) - timedelta(hours=2))
+        .values(created_at=datetime.now(UTC) - timedelta(hours=2))
     )
 
     found = await IncidentRepo.find_open_by_host_tactic(

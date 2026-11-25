@@ -1,6 +1,11 @@
 from collections.abc import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from .config import settings
 
@@ -9,7 +14,7 @@ def _is_sqlite(url: str) -> bool:
     return url.startswith("sqlite")
 
 
-def _build_engine():
+def _build_engine() -> AsyncEngine:
     url = settings.database_url
     if _is_sqlite(url):
         # SQLite does not support connection pool settings (pool_size, max_overflow).

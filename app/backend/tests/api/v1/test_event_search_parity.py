@@ -17,7 +17,7 @@ from __future__ import annotations
 import csv
 import io
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -26,7 +26,6 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
-from app.models.event import Event
 from app.repositories.event_repo import EventRepo, _parse_time
 from app.services.event_persister import event_persister
 from app.services.normalizers.webhook import WebhookNormalizer
@@ -76,7 +75,7 @@ def _doc_value(doc: dict[str, Any], field: str) -> Any:
 
 def _as_time(value: str) -> datetime:
     parsed = _parse_time(value)
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 class FakeOpenSearch:
@@ -169,7 +168,7 @@ class FakeOpenSearch:
             unit = aggs["histogram_agg"]["date_histogram"]["calendar_interval"]
             counts = {}
             for d in hits:
-                t = datetime.fromisoformat(d["time"].replace("Z", "+00:00")).astimezone(timezone.utc)
+                t = datetime.fromisoformat(d["time"].replace("Z", "+00:00")).astimezone(UTC)
                 t = t.replace(second=0, microsecond=0)
                 if unit != "minute":
                     t = t.replace(minute=0)
@@ -202,7 +201,7 @@ class FakeOpenSearch:
 # Fixtures: the same events in both stores, written by the event persister
 # ---------------------------------------------------------------------------
 
-_NOW = datetime.now(timezone.utc).replace(microsecond=0)
+_NOW = datetime.now(UTC).replace(microsecond=0)
 
 
 def _ts(minutes_ago: int) -> str:

@@ -38,13 +38,10 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch, call
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock
 
 from app.pipeline.queue import InMemoryQueue, Topic
 from app.services.dlq_consumer import dlq_consumer
-
 
 # ── Helper fixtures ───────────────────────────────────────────────────────────
 
@@ -318,8 +315,6 @@ class TestDLQConsumerIntegration:
         await q.start()
         await dlq_consumer(q)
 
-        received: list[dict] = []
-
         # Subscribe a secondary consumer to intercept calls (via metrics)
         # We verify indirectly via metric increment
         from app.core.metrics import dlq_events_total
@@ -381,9 +376,10 @@ class TestDLQConsumerIntegration:
     async def test_normalizer_pipeline_failure_reaches_dlq_consumer(self) -> None:
         """End-to-end: normalizer rejects an event → DLQ consumer increments metric."""
         from unittest.mock import MagicMock
+
+        from pydantic import BaseModel, ValidationError
+
         from app.services.normalizers.pipeline import NormalizerPipeline
-        from pydantic import ValidationError
-        from pydantic import BaseModel
 
         # Construct a real ValidationError
         class _Stub(BaseModel):

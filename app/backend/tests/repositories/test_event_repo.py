@@ -24,13 +24,12 @@ Coverage:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.repositories.event_repo import EventRepo
-
 
 # ---------------------------------------------------------------------------
 # Session / result factory helpers
@@ -60,8 +59,8 @@ def _make_event_mock(**kwargs) -> MagicMock:
     evt.src_ip = kwargs.get("src_ip", "10.0.0.1")
     evt.dst_ip = kwargs.get("dst_ip", "10.0.0.2")
     evt.username = kwargs.get("username", "user01")
-    evt.process_hash = kwargs.get("process_hash", None)
-    evt.time = kwargs.get("time", datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc))
+    evt.process_hash = kwargs.get("process_hash")
+    evt.time = kwargs.get("time", datetime(2026, 1, 15, 12, 0, tzinfo=UTC))
     return evt
 
 

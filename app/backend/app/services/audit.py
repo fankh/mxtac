@@ -24,7 +24,7 @@ inherits the correct field mappings and ISM policy automatically.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from fastapi import Request
@@ -34,6 +34,7 @@ from ..core.logging import get_logger
 from .opensearch_client import AUDIT_INDEX_TEMPLATE, _monthly_index
 
 if TYPE_CHECKING:
+    from opensearchpy import AsyncOpenSearch
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
@@ -43,14 +44,14 @@ class AuditLogger:
     """Writes audit log entries to OpenSearch (monthly-rollover indices)."""
 
     def __init__(self) -> None:
-        self._client = None
+        self._client: AsyncOpenSearch | None = None
 
     async def _ensure_client(self) -> None:
         """Lazy-init the OpenSearch async client."""
         if self._client is not None:
             return
         try:
-            from opensearchpy import AsyncOpenSearch  # type: ignore[import-untyped]
+            from opensearchpy import AsyncOpenSearch
 
             url = settings.opensearch_url
             self._client = AsyncOpenSearch(
@@ -74,7 +75,7 @@ class AuditLogger:
         resource_id: str = "",
         details: dict[str, Any] | None = None,
         request: Request | None = None,
-        session: "AsyncSession | None" = None,
+        session: AsyncSession | None = None,
     ) -> str | None:
         """
         Write an audit log entry.
@@ -144,7 +145,7 @@ class AuditLogger:
             idx = _monthly_index(AUDIT_INDEX_TEMPLATE)
             doc: dict[str, Any] = {
                 "id":            doc_id,
-                "timestamp":     datetime.now(timezone.utc).isoformat(),
+                "timestamp":     datetime.now(UTC).isoformat(),
                 "actor":         actor,
                 "action":        action,
                 "resource_type": resource_type,

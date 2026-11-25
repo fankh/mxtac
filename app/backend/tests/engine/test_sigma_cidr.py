@@ -40,7 +40,6 @@ import pytest
 
 from app.engine.sigma_engine import SigmaEngine, SigmaRuleError, _Condition
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

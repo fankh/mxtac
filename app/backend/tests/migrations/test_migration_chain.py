@@ -14,7 +14,6 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import ModuleType
-from typing import Optional
 
 import pytest
 
@@ -147,7 +146,7 @@ class TestMigrationChain:
             pytest.skip("Chain is branched; skipping reachability check")
 
         visited: list[str] = []
-        current: Optional[str] = heads[0]
+        current: str | None = heads[0]
         while current is not None:
             assert current in revision_map, (
                 f"Revision {current!r} referenced in chain but not found in versions/"

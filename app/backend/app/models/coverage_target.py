@@ -10,7 +10,7 @@ from __future__ import annotations
 from sqlalchemy import Boolean, Float, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base, TimestampMixin, new_uuid
+from .base import Base, TimestampMixin
 
 _SINGLETON_ID = "singleton"
 

@@ -61,7 +61,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -71,7 +71,6 @@ from app.services.normalizers.field_mapping import (
     _set_nested,
 )
 from app.services.normalizers.ocsf import OCSFEvent
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

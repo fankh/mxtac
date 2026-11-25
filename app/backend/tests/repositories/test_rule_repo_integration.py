@@ -216,7 +216,7 @@ class TestRuleRepoGetByIdIntegration:
         assert result is None
 
     async def test_returns_correct_rule_among_many(self, db_session: AsyncSession) -> None:
-        rule1 = await _create_rule(db_session, title="First")
+        await _create_rule(db_session, title="First")
         rule2 = await _create_rule(db_session, title="Second")
         fetched = await RuleRepo.get_by_id(db_session, rule2.id)
         assert fetched is not None

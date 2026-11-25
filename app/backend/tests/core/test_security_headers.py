@@ -19,16 +19,13 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
 from httpx import AsyncClient
 
 from app.core.security_headers import (
-    SecurityHeadersMiddleware,
     _HSTS_HEADER,
     _HSTS_VALUE,
     _STATIC_HEADERS,
 )
-
 
 # ---------------------------------------------------------------------------
 # Unit tests — static header map

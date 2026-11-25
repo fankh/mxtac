@@ -40,12 +40,11 @@ Coverage for SigmaEngine.load_rules_from_dir():
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
-from typing import Any
 
-from app.engine.sigma_engine import SigmaEngine, SigmaRule, _Condition
+import pytest
 
+from app.engine.sigma_engine import SigmaEngine, _Condition
 
 # ---------------------------------------------------------------------------
 # YAML fixtures
@@ -541,7 +540,6 @@ class TestLoadRulesFromDirNonExistent:
 class TestLoadRulesFromDirRealRules:
     async def test_real_sigma_rules_dir_loads_successfully(self) -> None:
         """Load from the actual sigma_rules directory in the project."""
-        import os
         # Navigate to the sigma_rules directory relative to the backend root
         backend_root = Path(__file__).parent.parent.parent
         sigma_rules_dir = backend_root / "sigma_rules"

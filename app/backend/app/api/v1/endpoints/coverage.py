@@ -1,7 +1,7 @@
 """ATT&CK Coverage endpoints."""
 
-from datetime import date, datetime, timezone
-from typing import Annotated
+from datetime import UTC, date, datetime
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
@@ -16,10 +16,10 @@ from ....schemas.overview import (
     CoverageByDataSource,
     CoverageGaps,
     CoverageSummary,
-    CoverageTrend,
-    CoverageTrendPoint,
     CoverageTargetRead,
     CoverageTargetUpdate,
+    CoverageTrend,
+    CoverageTrendPoint,
 )
 
 router = APIRouter(prefix="/coverage", tags=["coverage"])
@@ -28,8 +28,8 @@ router = APIRouter(prefix="/coverage", tags=["coverage"])
 @router.get("", response_model=CoverageSummary)
 async def get_coverage(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> CoverageSummary:
     """Overall ATT&CK coverage percentage and technique count.
 
     Coverage is calculated from active (enabled) Sigma rules: counts the distinct
@@ -43,8 +43,8 @@ async def get_coverage(
 @router.get("/gaps", response_model=CoverageGaps)
 async def get_coverage_gaps(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> CoverageGaps:
     """ATT&CK techniques not covered by any enabled Sigma rule.
 
     Returns coverage gap metrics and an actionable list of technique IDs that
@@ -62,7 +62,7 @@ async def get_coverage_gaps(
 @router.get("/navigator")
 async def get_navigator_layer(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
 ) -> JSONResponse:
     """Export ATT&CK Navigator-compatible layer JSON.
 
@@ -99,7 +99,7 @@ async def get_navigator_layer(
         "domain": "enterprise-attack",
         "description": (
             f"ATT&CK coverage exported from MxTac on "
-            f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}. "
+            f"{datetime.now(UTC).strftime('%Y-%m-%d')}. "
             f"Score = number of enabled Sigma rules covering the technique."
         ),
         "filters": {
@@ -137,8 +137,8 @@ async def get_navigator_layer(
 @router.get("/by-datasource", response_model=CoverageByDataSource)
 async def get_coverage_by_datasource(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> CoverageByDataSource:
     """ATT&CK coverage breakdown by data source connector.
 
     Groups enabled Sigma rules by their Sigma logsource (product/category/service)
@@ -156,8 +156,8 @@ async def get_coverage_by_datasource(
 async def get_coverage_trend(
     days: Annotated[int, Query(ge=1, le=365, description="Number of calendar days to include")] = 30,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> CoverageTrend:
     """ATT&CK coverage trend — daily snapshots over the last N days.
 
     Automatically captures today's coverage as a snapshot (upsert) before
@@ -201,14 +201,14 @@ async def get_coverage_trend(
 async def _get_current_pct(db: AsyncSession) -> float:
     """Return the live coverage percentage from enabled rules (0.0 when no rules)."""
     summary = await RuleRepo.get_coverage_summary(db)
-    return summary["coverage_pct"]
+    return float(summary["coverage_pct"])
 
 
 @router.get("/target", response_model=CoverageTargetRead)
 async def get_coverage_target(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> CoverageTargetRead:
     """Return the configured coverage target and current alert status.
 
     - ``target_pct``         — the operator-configured threshold (0–100)
@@ -245,8 +245,8 @@ async def get_coverage_target(
 async def upsert_coverage_target(
     body: CoverageTargetUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:write")),
+) -> CoverageTargetRead:
     """Create or update the coverage target threshold.
 
     Sets the percentage that the live ATT&CK coverage must meet or exceed.

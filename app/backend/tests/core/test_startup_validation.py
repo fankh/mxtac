@@ -22,15 +22,12 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
-
-from app.core.config import settings
-
 
 # ---------------------------------------------------------------------------
 # _check_startup_config — startup warning tests

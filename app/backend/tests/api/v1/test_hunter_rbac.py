@@ -14,7 +14,7 @@ Also verifies that analyst cannot access hunter-exclusive endpoints (403).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -22,10 +22,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.main import app
 from app.models.event import Event
 from app.models.saved_query import SavedQuery
-from app.services.opensearch_client import get_opensearch_dep
 
 # ---------------------------------------------------------------------------
 # Mock repo paths
@@ -39,7 +37,7 @@ _INC_DET_REPO = "app.api.v1.endpoints.incidents.DetectionRepo"
 # Helpers — minimal ORM-like namespaces and factories
 # ---------------------------------------------------------------------------
 
-_NOW = datetime.now(timezone.utc)
+_NOW = datetime.now(UTC)
 
 
 def _make_detection(**overrides) -> SimpleNamespace:

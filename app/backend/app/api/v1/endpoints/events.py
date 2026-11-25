@@ -17,6 +17,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+from collections.abc import Iterator
 from datetime import date
 from typing import Any, Literal
 
@@ -121,7 +122,7 @@ class AggregationRequest(BaseModel):
 _event_to_dict = event_to_dict
 
 
-def _os_hit_to_dict(hit: dict) -> dict:
+def _os_hit_to_dict(hit: dict[str, Any]) -> dict[str, Any]:
     """Return the event document of an OpenSearch search hit.
 
     The hit ``_source`` is the document the event persister indexed — the
@@ -135,7 +136,7 @@ def _os_hit_to_dict(hit: dict) -> dict:
 
 async def _search_opensearch(
     os_client: OpenSearchService, body: SearchRequest, *, size: int, from_: int,
-) -> tuple[list[dict], int] | None:
+) -> tuple[list[dict[str, Any]], int] | None:
     """Run the search on OpenSearch.  Returns ``(items, total)``.
 
     Returns ``None`` when OpenSearch is not connected or the query fails; the
@@ -169,13 +170,13 @@ async def _search_opensearch(
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
-@router.post("/search")
+@router.post("/search", response_model=None)
 async def search_events(
     body: SearchRequest,
     db: AsyncSession = Depends(get_db),
     os_client: OpenSearchService = Depends(get_opensearch_dep),
-    _: dict = Depends(require_permission("events:search")),
-):
+    _: dict[str, Any] = Depends(require_permission("events:search")),
+) -> dict[str, Any]:
     """Full-text + filtered event search with time range.
 
     Backend priority:
@@ -212,13 +213,13 @@ async def search_events(
     }
 
 
-@router.post("/aggregate")
+@router.post("/aggregate", response_model=None)
 async def aggregate_events(
     body: AggregationRequest,
     db: AsyncSession = Depends(get_db),
     os_client: OpenSearchService = Depends(get_opensearch_dep),
-    _: dict = Depends(require_permission("events:search")),
-):
+    _: dict[str, Any] = Depends(require_permission("events:search")),
+) -> dict[str, Any]:
     """Aggregate events by field (terms) or over time (date_histogram).
 
     Backend priority:
@@ -228,7 +229,7 @@ async def aggregate_events(
     - ``agg_type=terms`` — count events grouped by a field value; requires *field*.
     - ``agg_type=date_histogram`` — count events bucketed by time; uses *interval*.
     """
-    buckets: list[dict] | None = None
+    buckets: list[dict[str, Any]] | None = None
     if os_client.is_available:
         try:
             buckets = await os_client.aggregate(
@@ -278,14 +279,14 @@ async def aggregate_events(
 _ALLOWED_ENTITY_TYPES = frozenset({"ip", "host", "user", "hash"})
 
 
-@router.get("/entity/{entity_type}/{entity_value}")
+@router.get("/entity/{entity_type}/{entity_value}", response_model=None)
 async def entity_timeline(
     entity_type: str = Path(..., max_length=20),
     entity_value: str = Path(..., max_length=512),
     time_from: str = Query("now-7d", max_length=50),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("events:search")),
-):
+    _: dict[str, Any] = Depends(require_permission("events:search")),
+) -> dict[str, Any]:
     """Return all events involving a specific entity (IP, host, user, hash)."""
     if entity_type not in _ALLOWED_ENTITY_TYPES:
         raise HTTPException(
@@ -307,11 +308,11 @@ async def entity_timeline(
     }
 
 
-@router.post("/query-dsl")
+@router.post("/query-dsl", response_model=None)
 async def build_query_dsl(
     body: SearchRequest,
-    _: dict = Depends(require_permission("events:search")),
-):
+    _: dict[str, Any] = Depends(require_permission("events:search")),
+) -> dict[str, Any]:
     """Translate a SearchRequest into a Lucene query string.
 
     Returns the Lucene DSL that represents the same search as the supplied
@@ -342,8 +343,8 @@ async def export_events(
     body: SearchRequest,
     db: AsyncSession = Depends(get_db),
     os_client: OpenSearchService = Depends(get_opensearch_dep),
-    _: dict = Depends(require_permission("events:search")),
-):
+    _: dict[str, Any] = Depends(require_permission("events:search")),
+) -> StreamingResponse:
     """Export event search results as CSV (max 10,000 rows).
 
     Accepts the same request body as POST /search.
@@ -352,9 +353,9 @@ async def export_events(
     """
     found = await _search_opensearch(os_client, body, size=_EXPORT_MAX_ROWS, from_=0)
     if found is not None:
-        items: list[dict] = found[0]
+        items: list[dict[str, Any]] = found[0]
     else:
-        items_pg, _ = await EventRepo.search(
+        items_pg, _total = await EventRepo.search(
             db,
             query=body.query,
             filters=body.filters,
@@ -365,7 +366,7 @@ async def export_events(
         )
         items = [_event_to_dict(e) for e in items_pg]
 
-    def _iter_csv():
+    def _iter_csv() -> Iterator[str]:
         buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(_EVENT_CSV_COLS)
@@ -384,12 +385,12 @@ async def export_events(
     )
 
 
-@router.get("/{event_id}")
+@router.get("/{event_id}", response_model=None)
 async def get_event(
     event_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("events:search")),
-):
+    _: dict[str, Any] = Depends(require_permission("events:search")),
+) -> dict[str, Any]:
     """Retrieve a single event by its UUID primary key."""
     event = await EventRepo.get(db, event_id)
     if not event:

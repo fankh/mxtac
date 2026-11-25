@@ -31,10 +31,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import select
 
-from app.services.audit import AuditLogger, get_audit_logger
 from app.models.audit_log import AuditLog
 from app.repositories.audit_log_repo import AuditLogRepo
-
+from app.services.audit import AuditLogger, get_audit_logger
 
 # ---------------------------------------------------------------------------
 # Helpers

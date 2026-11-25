@@ -19,11 +19,8 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from app.pipeline.queue import InMemoryQueue, Topic
 from app.services.normalizers.pipeline import NormalizerPipeline
-
 
 # ── Minimal raw-event fixtures ─────────────────────────────────────────────────
 

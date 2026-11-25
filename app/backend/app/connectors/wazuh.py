@@ -11,14 +11,15 @@ Required config.extra keys:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncGenerator
+import contextlib
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 
 from ..core.logging import get_logger
-from ..pipeline.queue import Topic
+from ..pipeline.queue import MessageQueue, Topic
 from .base import BaseConnector, ConnectorConfig, ConnectorStatus
 
 logger = get_logger(__name__)
@@ -34,7 +35,7 @@ class WazuhConnector(BaseConnector):
     def __init__(
         self,
         config: ConnectorConfig,
-        queue,
+        queue: MessageQueue,
         *,
         initial_last_fetched_at: datetime | None = None,
         checkpoint_callback: Callable[[datetime], Awaitable[None]] | None = None,
@@ -46,7 +47,7 @@ class WazuhConnector(BaseConnector):
         self._last_fetched_at: datetime = (
             initial_last_fetched_at
             if initial_last_fetched_at is not None
-            else datetime.now(timezone.utc) - timedelta(minutes=5)
+            else datetime.now(UTC) - timedelta(minutes=5)
         )
         self._checkpoint_callback = checkpoint_callback
         self._backoff_delay: float = BACKOFF_BASE
@@ -104,7 +105,7 @@ class WazuhConnector(BaseConnector):
         offset  = 0
 
         while True:
-            params = {
+            params: dict[str, str | int] = {
                 "limit":  DEFAULT_PAGE_SIZE,
                 "offset": offset,
                 "q":      f"timestamp>{since}",
@@ -132,7 +133,7 @@ class WazuhConnector(BaseConnector):
             if offset >= total_items:
                 break
 
-        self._last_fetched_at = datetime.now(timezone.utc)
+        self._last_fetched_at = datetime.now(UTC)
         if self._checkpoint_callback is not None:
             await self._checkpoint_callback(self._last_fetched_at)
 
@@ -151,7 +152,7 @@ class WazuhConnector(BaseConnector):
                 async for event in self._fetch_events():
                     await self.queue.publish(self.topic, event)
                     self.health.events_total += 1
-                    self.health.last_event_at = datetime.now(timezone.utc)
+                    self.health.last_event_at = datetime.now(UTC)
                 # Success — reset backoff to base
                 self._backoff_delay = BACKOFF_BASE
                 # Feature 6.6: persist active status to DB after a successful cycle
@@ -172,25 +173,21 @@ class WazuhConnector(BaseConnector):
                 await self._update_db_status(ConnectorStatus.ERROR.value, str(exc))
                 await self._flush_counters()
                 # Sleep for the current backoff delay before retrying
-                try:
+                with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(
                         asyncio.shield(self._stop_event.wait()),
                         timeout=self._backoff_delay,
                     )
-                except asyncio.TimeoutError:
-                    pass
                 # Increase backoff for the next failure, capped at maximum
                 self._backoff_delay = min(self._backoff_delay * 2, BACKOFF_MAX)
                 continue  # skip the normal inter-poll sleep
 
             # Normal inter-poll sleep (success path only)
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     asyncio.shield(self._stop_event.wait()),
                     timeout=self.config.poll_interval_seconds,
                 )
-            except asyncio.TimeoutError:
-                pass
 
     # ── Cleanup ──────────────────────────────────────────────────────────────
 
@@ -207,7 +204,7 @@ class WazuhConnectorFactory:
     """Convenience factory from environment/config dict."""
 
     @staticmethod
-    def from_dict(d: dict[str, Any], queue) -> WazuhConnector:
+    def from_dict(d: dict[str, Any], queue: MessageQueue) -> WazuhConnector:
         config = ConnectorConfig(
             name=d.get("name", "wazuh"),
             connector_type="wazuh",

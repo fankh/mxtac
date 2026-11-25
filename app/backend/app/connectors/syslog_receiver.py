@@ -30,11 +30,11 @@ from __future__ import annotations
 
 import asyncio
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from ..core.logging import get_logger
-from ..pipeline.queue import Topic
+from ..pipeline.queue import MessageQueue, Topic
 
 logger = get_logger(__name__)
 
@@ -125,7 +125,7 @@ def parse_syslog(raw: str, addr: tuple[str, int]) -> dict[str, Any]:
         "severity":      None,
         "facility_name": None,
         "severity_name": None,
-        "timestamp":     datetime.now(timezone.utc).isoformat(),
+        "timestamp":     datetime.now(UTC).isoformat(),
         "hostname":      None,
         "app_name":      None,
         "process_id":    None,
@@ -198,7 +198,7 @@ def parse_syslog(raw: str, addr: tuple[str, int]) -> dict[str, Any]:
 class _SyslogUDPProtocol(asyncio.DatagramProtocol):
     """asyncio DatagramProtocol that forwards received packets to SyslogReceiver."""
 
-    def __init__(self, receiver: "SyslogReceiver") -> None:
+    def __init__(self, receiver: SyslogReceiver) -> None:
         self._receiver = receiver
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
@@ -225,7 +225,7 @@ class _SyslogUDPProtocol(asyncio.DatagramProtocol):
 
 
 async def _handle_tcp_client(
-    receiver: "SyslogReceiver",
+    receiver: SyslogReceiver,
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
 ) -> None:
@@ -245,7 +245,7 @@ async def _handle_tcp_client(
                     reader.readline(),
                     timeout=60.0,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.debug("SyslogReceiver TCP client idle timeout src=%s", addr[0])
                 break
 
@@ -298,7 +298,7 @@ class SyslogReceiver:
 
     def __init__(
         self,
-        queue,
+        queue: MessageQueue,
         *,
         host: str = DEFAULT_HOST,
         port: int = DEFAULT_PORT,

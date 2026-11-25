@@ -47,15 +47,12 @@ Coverage:
 
 from __future__ import annotations
 
-from dataclasses import asdict, fields
-from datetime import datetime, timezone
+from dataclasses import fields
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from app.engine.sigma_engine import LEVEL_SEVERITY, SigmaAlert, SigmaRule
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -391,7 +388,7 @@ class TestSigmaAlertDefaults:
         alert = SigmaAlert()
         assert isinstance(alert.time, datetime)
         assert alert.time.tzinfo is not None
-        assert alert.time.tzinfo == timezone.utc
+        assert alert.time.tzinfo == UTC
 
     def test_default_event_snapshot_is_empty_dict(self) -> None:
         assert SigmaAlert().event_snapshot == {}
@@ -459,7 +456,7 @@ class TestSigmaAlertExplicitFields:
         assert alert.host == "workstation-01"
 
     def test_explicit_time(self) -> None:
-        t = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        t = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
         alert = SigmaAlert(time=t)
         assert alert.time == t
 
@@ -469,7 +466,7 @@ class TestSigmaAlertExplicitFields:
         assert alert.event_snapshot == snap
 
     def test_all_fields_set_together(self) -> None:
-        t = datetime(2026, 2, 1, 0, 0, 0, tzinfo=timezone.utc)
+        t = datetime(2026, 2, 1, 0, 0, 0, tzinfo=UTC)
         alert = SigmaAlert(
             id="test-alert-999",
             rule_id="rule-xyz",

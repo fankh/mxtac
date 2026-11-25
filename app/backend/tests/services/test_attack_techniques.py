@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -151,7 +151,7 @@ async def _persisted(technique_ids: list[str]) -> dict:
         "technique_ids": technique_ids,
         "tactic_ids": ["TA0006"],
         "host": "dc01",
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": datetime.now(UTC).isoformat(),
     }
     session = AsyncMock()
     session.__aenter__ = AsyncMock(return_value=session)
@@ -192,7 +192,7 @@ async def test_new_detection_without_a_technique_stores_unknown() -> None:
 async def legacy_rows(db_session: AsyncSession) -> None:
     """Rows as the pipeline wrote them before the table existed: the rule title
     sits in technique_name."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db_session.add_all([
         Detection(
             id="det-known", score=9.0, severity="critical", technique_id="T1003.001",

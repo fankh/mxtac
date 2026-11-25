@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from math import ceil
+from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from sqlalchemy import case, func, select, update as sa_update
+from sqlalchemy import ColumnElement, case, func, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from ..core.validators import escape_like
-from ..engine.sigma_engine import TACTIC_ID_TO_NAME, tactic_name
+from ..engine.attack_tags import TACTIC_ID_TO_NAME, tactic_name
 from ..models.detection import Detection
 
 # Severity rank for sorting: descending puts the most severe first.
@@ -47,7 +50,7 @@ TACTIC_LABELS = ["RECON", "RES", "INIT", "EXEC", "PERS", "PRIV", "DEF-E", "CRED"
 _HEATMAP_TECHNIQUE_FAMILIES = ["T1059", "T1003", "T1021", "T1078"]
 
 
-def _count_by_tactic_name(rows) -> dict[str, int]:
+def _count_by_tactic_name(rows: Iterable[Any]) -> dict[str, int]:
     """Sum ``(tactic, count)`` rows per tactic name.
 
     Rows written by older versions hold the tactic ID (``TA0006``); they are
@@ -60,6 +63,11 @@ def _count_by_tactic_name(rows) -> dict[str, int]:
     return counts
 
 
+# ``DetectionRepo.list`` shadows the builtin ``list`` inside the class body, so
+# annotations there use these aliases (and ``Sequence`` for parameters).
+_Rows = list[dict[str, Any]]
+
+
 class DetectionRepo:
 
     @staticmethod
@@ -68,8 +76,8 @@ class DetectionRepo:
         *,
         page: int = 1,
         page_size: int = 25,
-        severity: list[str] | None = None,
-        status: list[str] | None = None,
+        severity: Sequence[str] | None = None,
+        status: Sequence[str] | None = None,
         tactic: str | None = None,
         host: str | None = None,
         search: str | None = None,
@@ -112,7 +120,11 @@ class DetectionRepo:
         # Sort
         # Severity is sorted by rank, not by its name ("high" < "low" < "medium").
         # Time and ID break ties, so rows keep one order across pages.
-        sort_col = _SEVERITY_RANK if sort == "severity" else getattr(Detection, sort, Detection.time)
+        sort_col: ColumnElement[Any] | InstrumentedAttribute[Any]
+        if sort == "severity":
+            sort_col = _SEVERITY_RANK
+        else:
+            sort_col = getattr(Detection, sort, Detection.time)
         q = q.order_by(
             sort_col.desc() if order == "desc" else sort_col.asc(),
             Detection.time.desc(),
@@ -134,14 +146,14 @@ class DetectionRepo:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(session: AsyncSession, **kwargs) -> Detection:
+    async def create(session: AsyncSession, **kwargs: Any) -> Detection:
         det = Detection(**kwargs)
         session.add(det)
         await session.flush()
         return det
 
     @staticmethod
-    async def update(session: AsyncSession, detection_id: str, **kwargs) -> Detection | None:
+    async def update(session: AsyncSession, detection_id: str, **kwargs: Any) -> Detection | None:
         det = await DetectionRepo.get(session, detection_id)
         if not det:
             return None
@@ -167,8 +179,8 @@ class DetectionRepo:
 
     @staticmethod
     async def bulk_update_status(
-        session: AsyncSession, ids: list[str], status: str
-    ) -> dict:
+        session: AsyncSession, ids: Sequence[str], status: str
+    ) -> dict[str, Any]:
         """Update status for multiple detections by ID.
 
         Returns a dict with:
@@ -198,7 +210,7 @@ class DetectionRepo:
         from_date: datetime,
         to_date: datetime,
         prev_from_date: datetime,
-    ) -> list[dict]:
+    ) -> _Rows:
         """Return per-tactic detection counts + trend_pct for a date range.
 
         trend_pct compares the current period (from_date..to_date) to the
@@ -236,10 +248,7 @@ class DetectionRepo:
         result = []
         for tactic, count in sorted(current_rows.items(), key=lambda x: -x[1]):
             prev_count = prev_rows.get(tactic, 0)
-            if prev_count > 0:
-                trend_pct = round((count - prev_count) / prev_count * 100, 1)
-            else:
-                trend_pct = 0.0
+            trend_pct = round((count - prev_count) / prev_count * 100, 1) if prev_count > 0 else 0.0
             result.append({"tactic": tactic, "count": count, "trend_pct": trend_pct})
 
         return result
@@ -252,7 +261,7 @@ class DetectionRepo:
         to_date: datetime,
         prev_from_date: datetime,
         today_start: datetime,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Return detection counts needed for the KPI endpoint.
 
         Keys:
@@ -298,7 +307,7 @@ class DetectionRepo:
         }
 
     @staticmethod
-    async def get_coverage_summary(session: AsyncSession) -> dict | None:
+    async def get_coverage_summary(session: AsyncSession) -> dict[str, Any] | None:
         """Return overall ATT&CK coverage: distinct technique_ids detected vs. total in scope.
 
         total_count is the sum of all sub-technique slots tracked across the 9 heatmap tactics
@@ -325,7 +334,7 @@ class DetectionRepo:
         }
 
     @staticmethod
-    async def get_heatmap(session: AsyncSession) -> list[dict]:
+    async def get_heatmap(session: AsyncSession) -> _Rows:
         """Build heatmap coverage from distinct (technique_id, tactic) detection pairs.
 
         For each of the 4 top technique families × 9 tactic columns:
@@ -345,7 +354,7 @@ class DetectionRepo:
         rows = result.all()
 
         # Build coverage sets: {family: {label: set_of_covered_technique_ids}}
-        coverage: dict[str, dict[str, set]] = {
+        coverage: dict[str, dict[str, set[str]]] = {
             family: {label: set() for label in TACTIC_LABELS}
             for family in _HEATMAP_TECHNIQUE_FAMILIES
         }
@@ -358,7 +367,7 @@ class DetectionRepo:
                 if technique_id.startswith(family):
                     coverage[family][label].add(technique_id)
 
-        heatmap: list[dict] = []
+        heatmap: _Rows = []
         for row_idx, family in enumerate(_HEATMAP_TECHNIQUE_FAMILIES):
             cells = [
                 {
@@ -386,7 +395,7 @@ class DetectionRepo:
         in the lookback window drives a higher recurrence_bonus (capped at 1.0 for 10+
         occurrences).
         """
-        from_time = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+        from_time = datetime.now(UTC) - timedelta(seconds=window_seconds)
         result = await session.scalar(
             select(func.count())
             .select_from(Detection)
@@ -402,7 +411,7 @@ class DetectionRepo:
         *,
         from_date: datetime,
         to_date: datetime,
-    ) -> list[dict]:
+    ) -> _Rows:
         """Return daily detection counts grouped by severity for a date range.
 
         Each returned dict has keys: day (YYYY-MM-DD str), critical, high, medium, total.

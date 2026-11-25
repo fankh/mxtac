@@ -8,7 +8,7 @@ linked event to the creation of the incident.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from sqlalchemy import select
@@ -19,7 +19,7 @@ from app.repositories.incident_repo import time_to_detect_seconds
 from app.services.alert_manager import AlertManager
 
 INCIDENTS = "/api/v1/incidents"
-NOW = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 24, 12, 0, tzinfo=UTC)
 
 
 def test_time_to_detect_is_the_time_since_the_first_event() -> None:
@@ -37,7 +37,7 @@ async def _detection(session, minutes_ago: int) -> str:
     detection = await DetectionRepo.create(
         session, score=5.8, severity="high", technique_id="T1059.004", technique_name="x",
         tactic="Execution", tactic_id="TA0002", name="Reverse Shell Command Line", host="web-01",
-        time=datetime.now(timezone.utc) - timedelta(minutes=minutes_ago),
+        time=datetime.now(UTC) - timedelta(minutes=minutes_ago),
     )
     return detection.id
 
@@ -76,7 +76,7 @@ async def test_auto_created_incident_has_time_to_detect_and_readable_description
         "technique_ids": ["T1059.004"],
         "tactic_ids": ["TA0002"],
         "host": "web-01.example.org",
-        "time": (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
+        "time": (datetime.now(UTC) - timedelta(minutes=30)).isoformat(),
     }
 
     await manager._correlate_incident(db_session, scored)

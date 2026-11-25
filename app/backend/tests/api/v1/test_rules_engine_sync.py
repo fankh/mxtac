@@ -21,6 +21,8 @@ Coverage:
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 from httpx import AsyncClient
 
@@ -92,10 +94,8 @@ def sigma_engine():
     engine = SigmaEngine()
     app.state.sigma_engine = engine
     yield engine
-    try:
+    with contextlib.suppress(AttributeError, KeyError):
         delattr(app.state, "sigma_engine")
-    except (AttributeError, KeyError):
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -375,8 +375,6 @@ async def test_delete_rule_not_in_engine_is_safe(
 ) -> None:
     """DELETE /rules/{id} is safe even if the rule was never in the engine."""
     # Create via repo (bypasses engine sync) then delete via API
-    from app.repositories.rule_repo import RuleRepo
-    from app.core.database import get_db as real_get_db
 
     # Create rule in DB but not in engine by directly using the db fixture session
     await client.post(
@@ -408,10 +406,8 @@ async def test_create_rule_works_without_engine(
 ) -> None:
     """POST /rules works correctly even when app.state.sigma_engine is not set."""
     # Ensure engine is not set (no sigma_engine fixture)
-    try:
+    with contextlib.suppress(AttributeError, KeyError):
         delattr(app.state, "sigma_engine")
-    except (AttributeError, KeyError):
-        pass
 
     resp = await client.post(
         BASE_URL,
@@ -428,10 +424,8 @@ async def test_patch_rule_works_without_engine(
     engineer_headers: dict,
 ) -> None:
     """PATCH /rules/{id} works correctly even when app.state.sigma_engine is not set."""
-    try:
+    with contextlib.suppress(AttributeError, KeyError):
         delattr(app.state, "sigma_engine")
-    except (AttributeError, KeyError):
-        pass
 
     await client.post(
         BASE_URL,
@@ -453,10 +447,8 @@ async def test_delete_rule_works_without_engine(
     engineer_headers: dict,
 ) -> None:
     """DELETE /rules/{id} works correctly even when app.state.sigma_engine is not set."""
-    try:
+    with contextlib.suppress(AttributeError, KeyError):
         delattr(app.state, "sigma_engine")
-    except (AttributeError, KeyError):
-        pass
 
     await client.post(
         BASE_URL,
@@ -480,8 +472,9 @@ async def test_load_rules_from_db_populates_engine(
     db_session,
 ) -> None:
     """load_rules_from_db adds DB-persisted rules to a fresh engine."""
-    from app.repositories.rule_repo import RuleRepo
     import json
+
+    from app.repositories.rule_repo import RuleRepo
 
     await RuleRepo.create(
         db_session,
@@ -509,8 +502,9 @@ async def test_load_rules_from_db_respects_enabled_false(
     db_session,
 ) -> None:
     """load_rules_from_db marks engine rules disabled when DB enabled=False."""
-    from app.repositories.rule_repo import RuleRepo
     import json
+
+    from app.repositories.rule_repo import RuleRepo
 
     await RuleRepo.create(
         db_session,
@@ -537,8 +531,9 @@ async def test_load_rules_from_db_overrides_disk_rule(
     db_session,
 ) -> None:
     """load_rules_from_db uses upsert: DB version replaces a disk-loaded rule with same ID."""
-    from app.repositories.rule_repo import RuleRepo
     import json
+
+    from app.repositories.rule_repo import RuleRepo
 
     rule_id = "disk-vs-db-rule"
     disk_yaml = f"""\
@@ -607,8 +602,9 @@ async def test_load_rules_from_db_skips_empty_content(
     db_session,
 ) -> None:
     """load_rules_from_db skips DB rules with no content."""
-    from app.repositories.rule_repo import RuleRepo
     import json
+
+    from app.repositories.rule_repo import RuleRepo
 
     # Create a rule with empty content (shouldn't be possible normally, but defensive)
     # We patch content after creation to simulate this edge case

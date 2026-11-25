@@ -20,12 +20,10 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from pydantic import ValidationError
 
 from app.pipeline.queue import InMemoryQueue, Topic
 from app.services.normalizers.pipeline import NormalizerPipeline
-
 
 # ── Test fixtures ──────────────────────────────────────────────────────────────
 
@@ -347,7 +345,6 @@ class TestDLQMessageStructure:
         assert dt is not None
 
     async def test_dlq_message_failed_at_is_utc(self) -> None:
-        from datetime import timezone
 
         msg = await self._get_dlq_message(
             "_handle_wazuh", _wazuh_raw(), RuntimeError("fail"), "_wazuh"

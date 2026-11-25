@@ -20,7 +20,7 @@ Verifies the two layers that make zero-downtime Kubernetes rolling updates work:
 
 from __future__ import annotations
 
-import os
+import contextlib
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,7 +29,6 @@ import yaml
 from httpx import AsyncClient
 
 from app.main import app, on_shutdown
-
 
 # ---------------------------------------------------------------------------
 # Paths to the Kubernetes manifests under test
@@ -339,7 +338,6 @@ class TestReadinessProbeContract:
         endpoint pool so that requests are routed to healthy replicas.
         """
         import sys
-        from unittest.mock import patch
 
         # Simulate Postgres failure
         session = AsyncMock()
@@ -462,9 +460,7 @@ class TestGracefulShutdown:
         """Shutdown must not raise when startup was interrupted mid-way."""
         # Simulate startup that crashed before setting state
         for attr in ("queue", "alert_mgr", "os_client", "connectors"):
-            try:
+            with contextlib.suppress(AttributeError):
                 delattr(app.state, attr)
-            except AttributeError:
-                pass
 
         await on_shutdown()  # must not raise

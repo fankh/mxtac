@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -26,7 +26,7 @@ def _detection(tactic: str, technique_id: str, *, host: str = "host-1", **kwargs
     return Detection(
         score=7.0, severity="high", technique_id=technique_id, technique_name="Technique",
         tactic=tactic, name=f"{technique_id} on {host}", host=host,
-        time=datetime.now(timezone.utc) - timedelta(hours=1), **kwargs,
+        time=datetime.now(UTC) - timedelta(hours=1), **kwargs,
     )
 
 

@@ -19,7 +19,6 @@ import pytest
 from app.pipeline.queue import InMemoryQueue, Topic
 from app.services.ws_broadcaster import websocket_broadcaster
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

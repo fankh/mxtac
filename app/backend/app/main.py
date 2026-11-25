@@ -1,30 +1,34 @@
 import asyncio
+import contextlib
 import glob as _glob
 import os
 import re
 import time
+from collections.abc import Coroutine
+from datetime import UTC
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from sqlalchemy import text
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-
 from prometheus_fastapi_instrumentator import Instrumentator
+from sqlalchemy import text
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
+from starlette.types import ASGIApp
 
 from .api.v1.router import api_router
 from .core import metrics as _metrics  # noqa: F401 — registers all mxtac_ metrics
 from .core.access_log import AccessLogMiddleware
-from .core.config import settings, redact_dsn, _DEV_SECRET, _DEFAULT_PG_URL
-from .core.rate_limit import RateLimitMiddleware
-from .core.security_headers import SecurityHeadersMiddleware
+from .core.config import _DEFAULT_PG_URL, settings
 from .core.database import AsyncSessionLocal
 from .core.exceptions import register_exception_handlers
 from .core.logging import configure_logging, get_logger
+from .core.rate_limit import RateLimitMiddleware
+from .core.security_headers import SecurityHeadersMiddleware
 from .db.seed import seed_database
 from .engine.sigma_engine import SigmaEngine
-from .pipeline.queue import get_queue, Topic
+from .pipeline.queue import Topic, get_queue
 from .services.bundled_rules import import_bundled_rules
 from .services.event_persister import reindex_legacy_events
 from .services.opensearch_client import get_opensearch
@@ -135,11 +139,11 @@ class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
     additional defence layer for chunked transfers without Content-Length.
     """
 
-    def __init__(self, app, max_bytes: int = _MAX_BODY_SIZE) -> None:
+    def __init__(self, app: ASGIApp, max_bytes: int = _MAX_BODY_SIZE) -> None:
         super().__init__(app)
         self.max_bytes = max_bytes
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         content_length = request.headers.get("content-length")
         if content_length is not None:
             try:
@@ -158,10 +162,10 @@ class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
 # Background tasks started at startup.  The event loop only keeps a weak
 # reference to a task: one that waits on a socket without a timeout (a pub/sub
 # subscriber) is garbage-collected mid-run unless something else refers to it.
-_background_tasks: set[asyncio.Task] = set()
+_background_tasks: set[asyncio.Task[None]] = set()
 
 
-def _spawn(coro, *, name: str) -> asyncio.Task:
+def _spawn(coro: Coroutine[Any, Any, None], *, name: str) -> asyncio.Task[None]:
     """Start *coro* as a background task and keep a reference until it is done."""
     task = asyncio.create_task(coro, name=name)
     _background_tasks.add(task)
@@ -180,9 +184,10 @@ async def _rule_reload_subscriber() -> None:
 
     Exits silently when Valkey is unavailable.
     """
-    from .core.valkey import RULE_RELOAD_CHANNEL, SUBSCRIBER_OPTIONS
-    from .core.database import AsyncSessionLocal
     import valkey.asyncio as aioredis
+
+    from .core.database import AsyncSessionLocal
+    from .core.valkey import RULE_RELOAD_CHANNEL, SUBSCRIBER_OPTIONS
 
     sub_client = aioredis.from_url(settings.valkey_url, **SUBSCRIBER_OPTIONS)
     try:
@@ -206,10 +211,8 @@ async def _rule_reload_subscriber() -> None:
     except Exception:
         logger.debug("Rule reload subscriber exiting — Valkey may not be reachable")
     finally:
-        try:
+        with contextlib.suppress(Exception):
             await sub_client.aclose()
-        except Exception:
-            pass
 
 
 async def _reindex_legacy_events() -> None:
@@ -233,13 +236,13 @@ async def _daily_snapshot_task() -> None:
 
     Runs silently when OpenSearch is unavailable.
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     _REPO_NAME = "mxtac-snapshots"
 
     while True:
         # Sleep until next midnight UTC.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         next_midnight = (now + timedelta(days=1)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -257,7 +260,7 @@ async def _daily_snapshot_task() -> None:
                 continue
 
             repo_path = settings.opensearch_snapshot_repo
-            snapshot_name = f"mxtac-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+            snapshot_name = f"mxtac-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
 
             await os_client.create_snapshot_repo(_REPO_NAME, repo_path)
             await os_client.create_snapshot(_REPO_NAME, snapshot_name)
@@ -265,7 +268,7 @@ async def _daily_snapshot_task() -> None:
 
             # Prune snapshots older than the configured retention window.
             retention_days = settings.opensearch_snapshot_retention_days
-            cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+            cutoff = datetime.now(UTC) - timedelta(days=retention_days)
             snapshots = await os_client.list_snapshots(_REPO_NAME)
             for snap in snapshots:
                 start_str = snap.get("start_time", "")
@@ -304,7 +307,7 @@ async def _storage_metrics_collector() -> None:
 
     Runs silently when OpenSearch is unavailable.
     """
-    from .core.metrics import opensearch_index_size_bytes, opensearch_events_per_day
+    from .core.metrics import opensearch_events_per_day, opensearch_index_size_bytes
 
     _INTERVAL_SECONDS = 300  # 5 minutes
 
@@ -589,7 +592,7 @@ async def on_shutdown() -> None:
 
 
 @app.get("/health", tags=["ops"])
-async def health() -> dict:
+async def health() -> dict[str, Any]:
     return {"status": "ok", "version": settings.version}
 
 
@@ -621,7 +624,7 @@ async def readiness() -> JSONResponse:
     try:
         await asyncio.wait_for(_check_db(), timeout=_READY_CHECK_TIMEOUT)
         checks["db"] = "ok"
-    except asyncio.TimeoutError:
+    except TimeoutError:
         checks["db"] = "error: timeout"
     except Exception as e:
         checks["db"] = _sanitize_check_error(f"error: {e}")
@@ -638,7 +641,7 @@ async def readiness() -> JSONResponse:
     try:
         await asyncio.wait_for(_check_valkey(), timeout=_READY_CHECK_TIMEOUT)
         checks["valkey"] = "ok"
-    except asyncio.TimeoutError:
+    except TimeoutError:
         checks["valkey"] = "error: timeout"
     except Exception as e:
         checks["valkey"] = _sanitize_check_error(f"error: {e}")
@@ -662,7 +665,7 @@ async def readiness() -> JSONResponse:
     try:
         await asyncio.wait_for(_check_opensearch(), timeout=_READY_CHECK_TIMEOUT)
         checks["opensearch"] = "ok"
-    except asyncio.TimeoutError:
+    except TimeoutError:
         checks["opensearch"] = "error: timeout"
     except Exception as e:
         checks["opensearch"] = _sanitize_check_error(f"error: {e}")
@@ -682,10 +685,7 @@ async def readiness() -> JSONResponse:
     # In SQLite/single-binary mode only the DB check is required; external
     # services (Valkey, OpenSearch) are optional and their failures are
     # informational only.
-    if _sqlite:
-        all_ok = _required.get("db") == "ok"
-    else:
-        all_ok = all(v == "ok" for v in _required.values())
+    all_ok = _required.get("db") == "ok" if _sqlite else all(v == "ok" for v in _required.values())
 
     return JSONResponse(
         status_code=200 if all_ok else 503,

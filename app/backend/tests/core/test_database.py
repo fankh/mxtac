@@ -26,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 import app.core.database as db_module
 from app.core.database import AsyncSessionLocal, _build_engine, _is_sqlite, engine, get_db
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -238,7 +237,7 @@ class TestGetDbExceptionHandling:
             gen = get_db()
             await gen.__anext__()
             with pytest.raises(IOError):
-                await gen.athrow(IOError("disk error"))
+                await gen.athrow(OSError("disk error"))
 
         cm.__aexit__.assert_awaited_once()
 

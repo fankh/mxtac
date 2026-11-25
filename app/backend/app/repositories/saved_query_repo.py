@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +20,7 @@ class SavedQueryRepo:
         created_by: str,
         description: str | None = None,
         query: str | None = None,
-        filters: list | None = None,
+        filters: list[dict[str, Any]] | None = None,
         time_from: str = "now-24h",
         time_to: str = "now",
     ) -> SavedQuery:
@@ -72,7 +74,7 @@ class SavedQueryRepo:
         name: str | None = None,
         description: str | None = None,
         query: str | None = None,
-        filters: list | None = None,
+        filters: list[dict[str, Any]] | None = None,
         time_from: str | None = None,
         time_to: str | None = None,
     ) -> SavedQuery:

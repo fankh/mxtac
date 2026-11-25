@@ -18,9 +18,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.normalizers.suricata import SuricataNormalizer
 from app.services.normalizers.ocsf import Endpoint
-
+from app.services.normalizers.suricata import SuricataNormalizer
 
 # ---------------------------------------------------------------------------
 # Fixtures

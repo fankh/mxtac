@@ -123,23 +123,23 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.engine.sigma_engine import SigmaAlert
 from app.pipeline.queue import InMemoryQueue, Topic
 from app.services.alert_manager import (
-    AlertManager,
+    _DEDUP_PREFIX,
     DEDUP_WINDOW_SECONDS,
-    MAX_SCORE,
     HOST_CRITICALITY,
+    MAX_SCORE,
     W_HOST,
     W_RECUR,
     W_SEVERITY,
-    _DEDUP_PREFIX,
+    AlertManager,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -164,7 +164,7 @@ def _make_alert_dict(
         "technique_ids": technique_ids or ["T1059"],
         "tactic_ids": tactic_ids or ["execution"],
         "host": host,
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": datetime.now(UTC).isoformat(),
         "event_snapshot": {"pid": 1234},
     }
 
@@ -267,7 +267,7 @@ async def test_persist_to_db_calls_detection_repo_create():
         "technique_ids": ["T1059"],
         "tactic_ids": ["execution"],
         "host": "srv-01",
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": datetime.now(UTC).isoformat(),
     }
 
     mock_session = AsyncMock()
@@ -308,7 +308,7 @@ async def test_persist_to_db_handles_empty_technique_ids():
         "technique_ids": [],
         "tactic_ids": [],
         "host": "lin-01",
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": datetime.now(UTC).isoformat(),
     }
 
     mock_session = AsyncMock()
@@ -343,7 +343,7 @@ async def test_persist_to_db_is_non_fatal_on_db_error():
         "technique_ids": ["T1234"],
         "tactic_ids": ["discovery"],
         "host": "win-01",
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": datetime.now(UTC).isoformat(),
     }
 
     mock_session_ctx = AsyncMock()
@@ -397,8 +397,6 @@ async def test_is_duplicate_returns_false_for_new_alert():
     mgr = AlertManager(queue)
     alert = _make_alert_dict()
 
-    from app.engine.sigma_engine import SigmaAlert
-
     sigma_alert = SigmaAlert(
         id=alert["id"],
         rule_id=alert["rule_id"],
@@ -408,7 +406,7 @@ async def test_is_duplicate_returns_false_for_new_alert():
         technique_ids=alert["technique_ids"],
         tactic_ids=alert["tactic_ids"],
         host=alert["host"],
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot=alert["event_snapshot"],
     )
 
@@ -426,8 +424,6 @@ async def test_is_duplicate_returns_true_for_seen_alert_within_window():
     mgr = AlertManager(queue)
     alert = _make_alert_dict()
 
-    from app.engine.sigma_engine import SigmaAlert
-
     sigma_alert = SigmaAlert(
         id=alert["id"],
         rule_id=alert["rule_id"],
@@ -437,7 +433,7 @@ async def test_is_duplicate_returns_true_for_seen_alert_within_window():
         technique_ids=alert["technique_ids"],
         tactic_ids=alert["tactic_ids"],
         host=alert["host"],
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot=alert["event_snapshot"],
     )
 
@@ -455,8 +451,6 @@ async def test_is_duplicate_valkey_called_with_nx_ex_300():
     mgr = AlertManager(queue)
     alert = _make_alert_dict()
 
-    from app.engine.sigma_engine import SigmaAlert
-
     sigma_alert = SigmaAlert(
         id=alert["id"],
         rule_id=alert["rule_id"],
@@ -466,7 +460,7 @@ async def test_is_duplicate_valkey_called_with_nx_ex_300():
         technique_ids=alert["technique_ids"],
         tactic_ids=alert["tactic_ids"],
         host=alert["host"],
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot=alert["event_snapshot"],
     )
 
@@ -487,8 +481,6 @@ async def test_is_duplicate_fail_open_on_valkey_error():
     mgr = AlertManager(queue)
     alert = _make_alert_dict()
 
-    from app.engine.sigma_engine import SigmaAlert
-
     sigma_alert = SigmaAlert(
         id=alert["id"],
         rule_id=alert["rule_id"],
@@ -498,7 +490,7 @@ async def test_is_duplicate_fail_open_on_valkey_error():
         technique_ids=alert["technique_ids"],
         tactic_ids=alert["tactic_ids"],
         host=alert["host"],
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot=alert["event_snapshot"],
     )
 
@@ -514,8 +506,6 @@ def test_dedup_key_is_consistent_for_same_rule_and_host():
     mgr = AlertManager(queue)
     alert = _make_alert_dict()
 
-    from app.engine.sigma_engine import SigmaAlert
-
     sigma_alert = SigmaAlert(
         id=alert["id"],
         rule_id=alert["rule_id"],
@@ -525,7 +515,7 @@ def test_dedup_key_is_consistent_for_same_rule_and_host():
         technique_ids=alert["technique_ids"],
         tactic_ids=alert["tactic_ids"],
         host=alert["host"],
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot=alert["event_snapshot"],
     )
 
@@ -540,12 +530,10 @@ def test_dedup_key_differs_for_different_rule_id():
     queue = InMemoryQueue()
     mgr = AlertManager(queue)
 
-    from app.engine.sigma_engine import SigmaAlert
-
     base = dict(
         rule_title="Test", level="medium", severity_id=3,
         technique_ids=[], tactic_ids=[], host="srv-01",
-        time=datetime.now(timezone.utc), event_snapshot={},
+        time=datetime.now(UTC), event_snapshot={},
     )
     a1 = SigmaAlert(id="1", rule_id="sigma-A", **base)
     a2 = SigmaAlert(id="2", rule_id="sigma-B", **base)
@@ -558,12 +546,10 @@ def test_dedup_key_differs_for_different_host():
     queue = InMemoryQueue()
     mgr = AlertManager(queue)
 
-    from app.engine.sigma_engine import SigmaAlert
-
     base = dict(
         rule_id="sigma-T1059", rule_title="Test", level="medium", severity_id=3,
         technique_ids=[], tactic_ids=[],
-        time=datetime.now(timezone.utc), event_snapshot={},
+        time=datetime.now(UTC), event_snapshot={},
     )
     a1 = SigmaAlert(id="1", host="srv-01", **base)
     a2 = SigmaAlert(id="2", host="dc-01", **base)
@@ -640,8 +626,6 @@ async def test_is_duplicate_accepts_same_alert_after_ttl_expiry():
     mgr = AlertManager(queue)
     alert = _make_alert_dict()
 
-    from app.engine.sigma_engine import SigmaAlert
-
     sigma_alert = SigmaAlert(
         id=alert["id"],
         rule_id=alert["rule_id"],
@@ -651,7 +635,7 @@ async def test_is_duplicate_accepts_same_alert_after_ttl_expiry():
         technique_ids=alert["technique_ids"],
         tactic_ids=alert["tactic_ids"],
         host=alert["host"],
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot=alert["event_snapshot"],
     )
 
@@ -686,8 +670,6 @@ async def test_is_duplicate_renews_ttl_on_expiry_acceptance():
     mgr = AlertManager(queue)
     alert = _make_alert_dict()
 
-    from app.engine.sigma_engine import SigmaAlert
-
     sigma_alert = SigmaAlert(
         id=alert["id"],
         rule_id=alert["rule_id"],
@@ -697,7 +679,7 @@ async def test_is_duplicate_renews_ttl_on_expiry_acceptance():
         technique_ids=alert["technique_ids"],
         tactic_ids=alert["tactic_ids"],
         host=alert["host"],
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot=alert["event_snapshot"],
     )
 
@@ -789,11 +771,11 @@ def _mgr_no_init() -> AlertManager:
 
 def test_score_formula_weight_constants_are_correct():
     """W_SEVERITY=0.60, W_HOST=0.25, W_RECUR=0.15, MAX_SCORE=10.0 and weights sum to 1.0."""
-    assert W_SEVERITY == pytest.approx(0.60)
-    assert W_HOST    == pytest.approx(0.25)
-    assert W_RECUR    == pytest.approx(0.15)
-    assert MAX_SCORE  == pytest.approx(10.0)
-    assert W_SEVERITY + W_HOST + W_RECUR == pytest.approx(1.0)
+    assert pytest.approx(0.60) == W_SEVERITY
+    assert pytest.approx(0.25)    == W_HOST
+    assert pytest.approx(0.15)    == W_RECUR
+    assert pytest.approx(10.0)  == MAX_SCORE
+    assert pytest.approx(1.0) == W_SEVERITY + W_HOST + W_RECUR
 
 
 def _expected_score(severity_id: int, recurrence_count: int = 0) -> float:
@@ -810,7 +792,7 @@ def _expected_score(severity_id: int, recurrence_count: int = 0) -> float:
 
 def test_score_formula_host_criticality_is_medium():
     """Every host is weighted as medium criticality: the midpoint of the 0-1 range."""
-    assert HOST_CRITICALITY == pytest.approx(0.5)
+    assert pytest.approx(0.5) == HOST_CRITICALITY
 
 
 @pytest.mark.parametrize("severity_id", [1, 2, 3, 4, 5])
@@ -980,8 +962,7 @@ def _make_shared_valkey_pair() -> tuple:
     return mock_a, mock_b, store
 
 
-def _make_sigma_alert(**overrides) -> "SigmaAlert":
-    from app.engine.sigma_engine import SigmaAlert
+def _make_sigma_alert(**overrides) -> SigmaAlert:
     defaults = dict(
         id="dist-001",
         rule_id="sigma-T1059",
@@ -991,7 +972,7 @@ def _make_sigma_alert(**overrides) -> "SigmaAlert":
         technique_ids=["T1059"],
         tactic_ids=["execution"],
         host="srv-01",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot={"pid": 1234},
     )
     defaults.update(overrides)
@@ -1302,8 +1283,6 @@ async def test_process_counter_incremented_before_dedup_check():
     async def mock_is_duplicate(alert):
         call_order.append("is_duplicate")
         return False
-
-    original_labels = None
 
     class MockCounter:
         def labels(self, **kwargs):
@@ -1856,8 +1835,8 @@ def test_dedup_key_differs_for_different_alert_times_same_rule_host() -> None:
     not by hashing the timestamp into the key.
     """
     mgr = _mgr_bare()
-    t1 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    t2 = datetime(2026, 1, 1, 0, 4, 59, tzinfo=timezone.utc)  # 1 second before window expires
+    t1 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
+    t2 = datetime(2026, 1, 1, 0, 4, 59, tzinfo=UTC)  # 1 second before window expires
     a1 = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01", time=t1)
     a2 = _make_sigma_alert(rule_id="sigma-T1059", host="srv-01", time=t2)
     assert mgr._dedup_key(a1) == mgr._dedup_key(a2), (
@@ -1937,8 +1916,6 @@ async def test_process_valkey_set_key_has_mxtac_dedup_prefix() -> None:
     alert_dict = _make_alert_dict(rule_id="sigma-T1059", host="srv-01")
 
     valkey_keys_used: list[str] = []
-
-    original_set = mgr._valkey.set
 
     async def spy_set(key: str, value: str, *, nx: bool = False, ex: int | None = None):
         valkey_keys_used.append(key)
@@ -2519,7 +2496,7 @@ async def test_dedup_window_close_releases_valkey_connection() -> None:
 
 def test_9_4_w_severity_constant_is_0_60() -> None:
     """W_SEVERITY must equal exactly 0.60 as defined by feature 9.4."""
-    assert W_SEVERITY == pytest.approx(0.60)
+    assert pytest.approx(0.60) == W_SEVERITY
 
 
 def test_9_4_w_severity_is_dominant_weight() -> None:
@@ -3113,7 +3090,7 @@ async def test_9_10_published_payload_score_is_float() -> None:
         await mgr.process(_make_alert_dict())
 
     score = payloads[0]["score"]
-    assert isinstance(score, (int, float)), (
+    assert isinstance(score, int | float), (
         f"score must be numeric; got {type(score)}"
     )
 
@@ -3370,7 +3347,6 @@ async def test_9_3_is_duplicate_calls_valkey_set_with_nx_true() -> None:
     queue = InMemoryQueue()
     mgr = AlertManager(queue)
 
-    from app.engine.sigma_engine import SigmaAlert
     alert = SigmaAlert(
         id="test-9.3-nx",
         rule_id="sigma-nx-test",
@@ -3380,7 +3356,7 @@ async def test_9_3_is_duplicate_calls_valkey_set_with_nx_true() -> None:
         technique_ids=["T1059"],
         tactic_ids=["execution"],
         host="srv-01",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot={},
     )
 
@@ -3409,7 +3385,6 @@ async def test_9_3_is_duplicate_calls_valkey_set_with_correct_ex() -> None:
     queue = InMemoryQueue()
     mgr = AlertManager(queue)
 
-    from app.engine.sigma_engine import SigmaAlert
     alert = SigmaAlert(
         id="test-9.3-ex",
         rule_id="sigma-ex-test",
@@ -3419,7 +3394,7 @@ async def test_9_3_is_duplicate_calls_valkey_set_with_correct_ex() -> None:
         technique_ids=[],
         tactic_ids=[],
         host="win-02",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot={},
     )
 
@@ -3449,7 +3424,6 @@ async def test_9_3_is_duplicate_calls_valkey_set_with_value_one() -> None:
     queue = InMemoryQueue()
     mgr = AlertManager(queue)
 
-    from app.engine.sigma_engine import SigmaAlert
     alert = SigmaAlert(
         id="test-9.3-val",
         rule_id="sigma-val-test",
@@ -3459,7 +3433,7 @@ async def test_9_3_is_duplicate_calls_valkey_set_with_value_one() -> None:
         technique_ids=[],
         tactic_ids=[],
         host="lin-03",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot={},
     )
 
@@ -3487,7 +3461,6 @@ async def test_9_3_is_duplicate_returns_false_when_set_succeeds() -> None:
     queue = InMemoryQueue()
     mgr = AlertManager(queue)
 
-    from app.engine.sigma_engine import SigmaAlert
     alert = SigmaAlert(
         id="test-9.3-new",
         rule_id="sigma-T1003",
@@ -3497,7 +3470,7 @@ async def test_9_3_is_duplicate_returns_false_when_set_succeeds() -> None:
         technique_ids=["T1003"],
         tactic_ids=["credential-access"],
         host="dc-01",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot={},
     )
 
@@ -3515,7 +3488,6 @@ async def test_9_3_is_duplicate_returns_true_when_set_fails() -> None:
     queue = InMemoryQueue()
     mgr = AlertManager(queue)
 
-    from app.engine.sigma_engine import SigmaAlert
     alert = SigmaAlert(
         id="test-9.3-dup",
         rule_id="sigma-T1003",
@@ -3525,7 +3497,7 @@ async def test_9_3_is_duplicate_returns_true_when_set_fails() -> None:
         technique_ids=["T1003"],
         tactic_ids=["credential-access"],
         host="dc-01",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot={},
     )
 
@@ -3548,7 +3520,6 @@ async def test_9_3_fail_open_on_valkey_exception() -> None:
     queue = InMemoryQueue()
     mgr = AlertManager(queue)
 
-    from app.engine.sigma_engine import SigmaAlert
     alert = SigmaAlert(
         id="test-9.3-fail",
         rule_id="sigma-T9999",
@@ -3558,7 +3529,7 @@ async def test_9_3_fail_open_on_valkey_exception() -> None:
         technique_ids=[],
         tactic_ids=[],
         host="srv-99",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot={},
     )
 
@@ -3588,7 +3559,6 @@ async def test_9_3_no_get_before_set_atomic_operation() -> None:
     queue = InMemoryQueue()
     mgr = AlertManager(queue)
 
-    from app.engine.sigma_engine import SigmaAlert
     alert = SigmaAlert(
         id="test-9.3-atomic",
         rule_id="sigma-atomic",
@@ -3598,7 +3568,7 @@ async def test_9_3_no_get_before_set_atomic_operation() -> None:
         technique_ids=[],
         tactic_ids=[],
         host="srv-01",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot={},
     )
 
@@ -3628,7 +3598,6 @@ def test_9_3_two_replicas_produce_identical_dedup_key() -> None:
     mgr_a = AlertManager(queue)
     mgr_b = AlertManager(queue)
 
-    from app.engine.sigma_engine import SigmaAlert
     alert = SigmaAlert(
         id="test-key-det",
         rule_id="sigma-T1059",
@@ -3638,7 +3607,7 @@ def test_9_3_two_replicas_produce_identical_dedup_key() -> None:
         technique_ids=["T1059"],
         tactic_ids=["execution"],
         host="srv-01",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         event_snapshot={},
     )
 

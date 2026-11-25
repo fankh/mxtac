@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -11,7 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ....core.database import get_db
 from ....core.rbac import require_permission
 from ....core.security import hash_password
-from ....core.validators import EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validate_password_complexity, validate_password_no_consecutive
+from ....core.validators import (
+    EMAIL_MAX_LENGTH,
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+    validate_password_complexity,
+    validate_password_no_consecutive,
+)
+from ....models.user import User
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -63,7 +71,7 @@ class UserResponse(BaseModel):
     must_change_password: bool
 
 
-def _user_to_response(u) -> dict:
+def _user_to_response(u: User) -> dict[str, Any]:
     return {
         "id": u.id,
         "email": u.email,
@@ -78,8 +86,8 @@ def _user_to_response(u) -> dict:
 @router.get("", response_model=list[UserResponse])
 async def list_users(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("users:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("users:read")),
+) -> list[dict[str, Any]]:
     from ....repositories.user_repo import UserRepo
     # Deactivated accounts are listed too: the Users tab reactivates them from this list.
     users = await UserRepo.list(db, include_inactive=True)
@@ -90,8 +98,8 @@ async def list_users(
 async def get_user(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("users:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("users:read")),
+) -> dict[str, Any]:
     from ....repositories.user_repo import UserRepo
     user = await UserRepo.get_by_id(db, user_id)
     if not user or not user.is_active:
@@ -103,8 +111,8 @@ async def get_user(
 async def create_user(
     body: UserCreate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("users:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("users:write")),
+) -> dict[str, Any]:
     from ....repositories.user_repo import UserRepo
     if body.role not in ROLES:
         raise HTTPException(status_code=422, detail=f"Invalid role. Must be one of: {ROLES}")
@@ -127,8 +135,8 @@ async def update_user(
     user_id: str,
     body: UserUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("users:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("users:write")),
+) -> dict[str, Any]:
     from ....repositories.user_repo import UserRepo
     if body.role is not None and body.role not in ROLES:
         raise HTTPException(status_code=422, detail=f"Invalid role: {body.role}")
@@ -138,12 +146,12 @@ async def update_user(
     return _user_to_response(user)
 
 
-@router.delete("/{user_id}", status_code=204)
+@router.delete("/{user_id}", response_model=None, status_code=204)
 async def delete_user(
     user_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("users:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("users:write")),
+) -> None:
     from ....repositories.user_repo import UserRepo
     deleted = await UserRepo.delete(db, user_id)
     if not deleted:

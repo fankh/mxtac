@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import timedelta
+from datetime import UTC, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from unittest.mock import AsyncMock, MagicMock
 
 from app.models.event import Event
 from app.services.opensearch_client import get_opensearch_dep
@@ -32,9 +32,9 @@ BASE_URL = "/api/v1/events/export"
 
 
 def _make_event_kwargs(**kwargs) -> dict:
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime
     defaults = {
-        "time": datetime.now(timezone.utc) - timedelta(minutes=30),
+        "time": datetime.now(UTC) - timedelta(minutes=30),
         "class_name": "Process Activity",
         "severity_id": 3,
         "hostname": "host-01",

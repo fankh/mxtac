@@ -6,7 +6,7 @@ Usage (from the repository root, with the backend dependencies installed):
     python scripts/gen_rule_table.py --write    # replace the table in docs/sigma-rules.md
 
 The table is built from the YAML files in app/backend/sigma_rules/. ATT&CK tags
-are parsed with the same function the Sigma engine uses. The "Applies to"
+are parsed with the same function the Sigma engine uses (app/backend/app/engine/attack_tags.py). The "Applies to"
 column is derived from each rule's logsource, following the selection logic in
 app/backend/app/engine/sigma_engine.py.
 """

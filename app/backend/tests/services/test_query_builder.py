@@ -13,13 +13,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import pytest
-
 from app.services.query_builder import (
     _filter_to_lucene,
     build_lucene_query,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test helper — mimics EventFilter without importing the FastAPI schema

@@ -30,11 +30,11 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Awaitable, Callable
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from typing import Any
 
 from ..core.logging import get_logger
-from ..pipeline.queue import Topic
+from ..pipeline.queue import MessageQueue, Topic
 from .base import BaseConnector, ConnectorConfig
 
 logger = get_logger(__name__)
@@ -46,7 +46,7 @@ class SuricataConnector(BaseConnector):
     def __init__(
         self,
         config: ConnectorConfig,
-        queue,
+        queue: MessageQueue,
         *,
         initial_position: int | None = None,
         checkpoint_callback: Callable[[int], Awaitable[None]] | None = None,
@@ -104,7 +104,7 @@ class SuricataConnector(BaseConnector):
         if not os.path.isfile(eve_file):
             return
 
-        with open(eve_file, "r", errors="replace") as f:
+        with open(eve_file, errors="replace") as f:
             f.seek(self._file_position)
             for line in f:
                 line = line.strip()

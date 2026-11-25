@@ -54,11 +54,9 @@ from __future__ import annotations
 
 import asyncio
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from app.engine.sigma_engine import SigmaEngine
 from app.pipeline.queue import InMemoryQueue, Topic
@@ -71,7 +69,6 @@ from app.services.normalizers.ocsf import (
     ProcessInfo,
 )
 from app.services.sigma_consumer import sigma_consumer
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -149,7 +146,7 @@ def _process_ocsf_event(**overrides: Any) -> OCSFEvent:
         class_uid=OCSFClass.PROCESS_ACTIVITY,
         class_name="Process Activity",
         category_uid=OCSFCategory.SYSTEM_ACTIVITY,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="windows",
         process=ProcessInfo(name="powershell.exe", cmd_line="powershell -enc abc123"),

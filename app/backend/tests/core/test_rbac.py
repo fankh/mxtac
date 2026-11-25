@@ -46,10 +46,15 @@ from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
-from unittest.mock import AsyncMock, patch
 
 from app.core.exceptions import ForbiddenError
-from app.core.rbac import PERMISSIONS, ROLE_PERMISSIONS, ROLES, permissions_for_role, require_permission
+from app.core.rbac import (
+    PERMISSIONS,
+    ROLE_PERMISSIONS,
+    ROLES,
+    permissions_for_role,
+    require_permission,
+)
 
 # ---------------------------------------------------------------------------
 # Constants under test
@@ -126,15 +131,15 @@ class TestPermissionsMatrix:
     def test_permissions_has_eleven_entries(self) -> None:
         assert len(PERMISSIONS) == 15
 
-    @pytest.mark.parametrize("perm", list(_EXPECTED_PERMISSIONS))
+    @pytest.mark.parametrize("perm", sorted(_EXPECTED_PERMISSIONS))
     def test_expected_permission_exists(self, perm: str) -> None:
         assert perm in PERMISSIONS
 
-    @pytest.mark.parametrize("perm", list(_EXPECTED_PERMISSIONS))
+    @pytest.mark.parametrize("perm", sorted(_EXPECTED_PERMISSIONS))
     def test_permission_value_is_set(self, perm: str) -> None:
         assert isinstance(PERMISSIONS[perm], set)
 
-    @pytest.mark.parametrize("perm", list(_EXPECTED_PERMISSIONS))
+    @pytest.mark.parametrize("perm", sorted(_EXPECTED_PERMISSIONS))
     def test_permission_roles_are_valid_strings(self, perm: str) -> None:
         for role in PERMISSIONS[perm]:
             assert role in _ALL_ROLES, f"Unknown role '{role}' in '{perm}'"

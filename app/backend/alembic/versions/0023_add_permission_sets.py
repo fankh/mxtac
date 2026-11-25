@@ -5,13 +5,13 @@ Revises: 0022
 Create Date: 2026-02-22
 """
 
-from typing import Union
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "0023"
-down_revision: Union[str, None] = "0022a"
+down_revision: str | None = "0022a"
 branch_labels = None
 depends_on = None
 

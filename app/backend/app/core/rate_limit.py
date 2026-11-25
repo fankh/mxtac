@@ -25,14 +25,13 @@ can track their quota without triggering 429s.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
-from typing import Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
+import valkey.asyncio as aioredis
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-
-import valkey.asyncio as aioredis
 
 from .config import settings
 from .logging import get_logger
@@ -145,7 +144,11 @@ class RateLimiter:
         """Increment counter and return (allowed, remaining, reset_at_epoch)."""
         try:
             client = get_valkey_client()
-            result = await client.eval(_RATE_LUA, 1, key, _WINDOW_SECS)
+            # valkey annotates eval() for both clients (``Awaitable[str] | str``)
+            # and its key/argument parameters as ``str``.
+            result = await cast(
+                Awaitable[Any], client.eval(_RATE_LUA, 1, key, str(_WINDOW_SECS))
+            )
             count, ttl = int(result[0]), int(result[1])
             reset_at = int(time.time()) + max(ttl, 0)
             remaining = max(0, limit - count)

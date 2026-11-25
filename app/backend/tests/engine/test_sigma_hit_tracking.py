@@ -23,16 +23,21 @@ Verifies:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engine.sigma_engine import SigmaEngine
 from app.repositories.rule_repo import RuleRepo
+from app.services.normalizers.ocsf import (
+    Endpoint,
+    OCSFCategory,
+    OCSFClass,
+    OCSFEvent,
+    ProcessInfo,
+)
 from app.services.sigma_consumer import sigma_consumer
-
 
 # ---------------------------------------------------------------------------
 # DB fixtures — real SQLite in-memory via conftest.db_session
@@ -191,22 +196,12 @@ detection:
 # ---------------------------------------------------------------------------
 
 
-from datetime import timezone
-from app.services.normalizers.ocsf import (
-    Endpoint,
-    OCSFCategory,
-    OCSFClass,
-    OCSFEvent,
-    ProcessInfo,
-)
-
-
 def _matching_event_dict() -> dict:
     event = OCSFEvent(
         class_uid=OCSFClass.PROCESS_ACTIVITY,
         class_name="Process Activity",
         category_uid=OCSFCategory.SYSTEM_ACTIVITY,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="windows",
         process=ProcessInfo(name="powershell.exe", cmd_line="powershell -enc abc123"),
@@ -220,7 +215,7 @@ def _non_matching_event_dict() -> dict:
         class_uid=OCSFClass.PROCESS_ACTIVITY,
         class_name="Process Activity",
         category_uid=OCSFCategory.SYSTEM_ACTIVITY,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="windows",
         process=ProcessInfo(name="notepad.exe", cmd_line="notepad.exe"),
@@ -393,7 +388,7 @@ detection:
             class_uid=OCSFClass.PROCESS_ACTIVITY,
             class_name="Process Activity",
             category_uid=OCSFCategory.SYSTEM_ACTIVITY,
-            time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+            time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
             severity_id=1,
             metadata_product="windows",
             process=ProcessInfo(name="powershell.exe", cmd_line="powershell -enc mimikatz"),

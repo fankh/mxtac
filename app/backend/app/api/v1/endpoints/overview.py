@@ -1,11 +1,12 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
-from ....engine.sigma_engine import tactic_name
+from ....engine.attack_tags import tactic_name
 from ....models.connector import Connector
 from ....repositories.connector_repo import ConnectorRepo
 from ....repositories.coverage_snapshot_repo import CoverageSnapshotRepo
@@ -13,8 +14,8 @@ from ....repositories.detection_repo import TACTIC_LABELS, DetectionRepo
 from ....repositories.incident_repo import IncidentRepo
 from ....repositories.rule_repo import RuleRepo
 from ....schemas.detection import Detection
+from ....schemas.overview import HeatRow, IntegrationStatus, KpiMetrics, TacticBar, TimelinePoint
 from ....services.attack_techniques import resolve_technique_name, technique_name
-from ....schemas.overview import KpiMetrics, TimelinePoint, TacticBar, HeatRow, IntegrationStatus
 
 router = APIRouter(prefix="/overview", tags=["overview"])
 
@@ -29,10 +30,10 @@ def _parse_range_days(range_str: str) -> int:
 async def get_kpis(
     range: str = Query("7d", description="Time range: 24h | 7d | 30d"),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> KpiMetrics:
     """KPI metrics for the Security Overview dashboard header cards."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     days = _parse_range_days(range)
     from_date = now - timedelta(days=days)
     prev_from_date = from_date - timedelta(days=days)
@@ -111,11 +112,11 @@ async def get_kpis(
 async def get_timeline(
     range: str = Query("7d", description="Time range: 24h | 7d | 30d | 90d"),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> list[TimelinePoint]:
     """Detection counts per day broken down by severity."""
     days = _parse_range_days(range)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     from_date = now - timedelta(days=days)
 
     db_rows = await DetectionRepo.get_timeline(db, from_date=from_date, to_date=now)
@@ -145,11 +146,11 @@ async def get_timeline(
 async def get_tactics(
     range: str = Query("7d", description="Time range: 24h | 7d | 30d | 90d"),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> list[TacticBar]:
     """Top ATT&CK tactic breakdown with counts and trend percentage (empty when no detections)."""
     days = _parse_range_days(range)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     from_date = now - timedelta(days=days)
     prev_from_date = from_date - timedelta(days=days)
 
@@ -162,8 +163,8 @@ async def get_tactics(
 @router.get("/coverage/heatmap", response_model=list[HeatRow])
 async def get_heatmap(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> list[HeatRow]:
     """ATT&CK technique coverage heatmap — 4 rows × 9 tactic columns.
 
     The grid is always complete; cells have ``covered == 0`` when no detections exist.
@@ -174,8 +175,8 @@ async def get_heatmap(
 
 @router.get("/coverage/tactic-labels", response_model=list[str])
 async def get_tactic_labels(
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> list[str]:
     """Ordered tactic abbreviation labels for heatmap columns."""
     return TACTIC_LABELS
 
@@ -216,8 +217,8 @@ def _connector_to_integration_status(conn: Connector) -> IntegrationStatus:
 @router.get("/integrations", response_model=list[IntegrationStatus])
 async def get_integrations(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> list[IntegrationStatus]:
     """Integration status for all configured connectors (empty when none are registered)."""
     connectors = await ConnectorRepo.list(db)
     return [_connector_to_integration_status(c) for c in connectors]
@@ -227,8 +228,8 @@ async def get_integrations(
 async def get_recent_detections(
     limit: int = Query(6, le=20),
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("detections:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("detections:read")),
+) -> list[dict[str, Any]]:
     """Recent critical/high detections for the overview table (empty when none exist)."""
     items, _total = await DetectionRepo.list(
         db,

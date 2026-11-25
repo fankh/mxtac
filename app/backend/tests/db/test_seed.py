@@ -35,6 +35,14 @@ from __future__ import annotations
 import logging
 from unittest.mock import AsyncMock, MagicMock
 
+# ---------------------------------------------------------------------------
+# Bcrypt compat shim — passlib 1.7.4 + bcrypt >= 4 incompatibility
+#
+# passlib's detect_wrap_bug sends a >72-byte test password to bcrypt during
+# backend init; bcrypt >= 4 now raises ValueError for such inputs.  The shim
+# truncates the oversized test password so passlib initialises correctly.
+# ---------------------------------------------------------------------------
+import bcrypt as _raw_bcrypt  # noqa: E402
 import pytest
 from pydantic import ValidationError
 
@@ -47,17 +55,6 @@ from app.models.detection import Detection
 from app.models.incident import Incident
 from app.models.rule import Rule
 from app.models.user import User
-
-
-# ---------------------------------------------------------------------------
-# Bcrypt compat shim — passlib 1.7.4 + bcrypt >= 4 incompatibility
-#
-# passlib's detect_wrap_bug sends a >72-byte test password to bcrypt during
-# backend init; bcrypt >= 4 now raises ValueError for such inputs.  The shim
-# truncates the oversized test password so passlib initialises correctly.
-# ---------------------------------------------------------------------------
-
-import bcrypt as _raw_bcrypt  # noqa: E402
 
 _ORIG_HASHPW = _raw_bcrypt.hashpw
 

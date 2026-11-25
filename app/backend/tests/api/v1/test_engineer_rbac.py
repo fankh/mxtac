@@ -12,7 +12,7 @@ Also verifies that hunter cannot access engineer-exclusive write operations (403
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -38,7 +38,7 @@ _CONN_REPO = "app.api.v1.endpoints.connectors.ConnectorRepo"
 # Helpers — minimal ORM-like namespaces
 # ---------------------------------------------------------------------------
 
-_NOW = datetime.now(timezone.utc)
+_NOW = datetime.now(UTC)
 
 _MINIMAL_SIGMA_YAML = """\
 title: Engineer Test Rule

@@ -76,10 +76,41 @@ addopts = "--cov=app --cov-report=term-missing"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI declares dependencies and parameters as call defaults
+# (``Depends(...)``, ``Query(...)``).  These calls are evaluated once and are
+# the documented FastAPI pattern, so B008 must not report them.
+# ``require_permission`` builds such a dependency for ``Depends``.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+    "fastapi.Security",
+    "app.core.rbac.require_permission",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Nested ``with patch(...)`` blocks in tests read better than one long line.
+"tests/**" = ["SIM117"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
+# valkey.asyncio.from_url() has no annotations; calling it is allowed.
+untyped_calls_exclude = ["valkey"]
+
+[[tool.mypy.overrides]]
+# PyYAML and python-jose ship no type information, and their stub packages
+# (types-PyYAML, types-python-jose) are not project dependencies.
+module = ["yaml", "yaml.*", "jose", "jose.*"]
 ignore_missing_imports = true

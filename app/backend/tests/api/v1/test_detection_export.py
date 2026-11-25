@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -42,7 +42,7 @@ def _make_detection(**overrides) -> SimpleNamespace:
         "host": "DC-PROD-01",
         "tactic": "Credential Access",
         "status": "active",
-        "time": datetime(2026, 2, 19, 14, 21, 7, tzinfo=timezone.utc),
+        "time": datetime(2026, 2, 19, 14, 21, 7, tzinfo=UTC),
         "user": None,
         "process": None,
         "rule_name": None,

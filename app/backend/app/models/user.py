@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, JSON, String
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, TimestampMixin, new_uuid
@@ -12,14 +12,14 @@ class User(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    full_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="analyst")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     # MFA fields (feature 32.1)
     mfa_secret: Mapped[str | None] = mapped_column(String(512), nullable=True, default=None)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    mfa_backup_codes: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    mfa_backup_codes: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=None)
 
     # Inactive account lock fields (feature 1.7)
     last_login_at: Mapped[datetime | None] = mapped_column(
@@ -41,7 +41,7 @@ class User(Base, TimestampMixin):
     # Password history — cannot reuse last 2 (feature 2.4)
     # Stores up to 1 previous hashed password (the one before the current).
     # Together with the current hashed_password, this enforces a "last 2" no-reuse window.
-    password_history: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    password_history: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=None)
 
     # Session invalidation: every access and refresh token carries the value
     # this had when the token was issued ("tv" claim) and is rejected once the

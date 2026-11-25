@@ -43,7 +43,9 @@ class HeatCell(BaseModel):
     covered: int
     total: int
 
-    @computed_field
+    # mypy does not support decorators on top of @property; pydantic documents
+    # this ignore for @computed_field.
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def opacity(self) -> float:
         if self.total == 0:

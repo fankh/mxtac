@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -40,7 +40,7 @@ def test_common_fields_are_mapped() -> None:
 
     assert event.metadata_product == "Webhook"
     assert event.metadata_uid == "9001"
-    assert event.time == datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    assert event.time == datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     assert event.severity_id == 4
     assert event.dst_endpoint.hostname == "web01"
     assert event.dst_endpoint.ip == "10.0.0.8"
@@ -102,11 +102,11 @@ def test_first_present_alias_wins() -> None:
 @pytest.mark.parametrize(
     ("fields", "expected"),
     [
-        ({"timestamp": "2026-01-01T12:00:00+09:00"}, datetime(2026, 1, 1, 3, 0, tzinfo=timezone.utc)),
-        ({"time": "2026-01-01T12:00:00"}, datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)),
-        ({"@timestamp": "2026-01-01T12:00:00.500Z"}, datetime(2026, 1, 1, 12, 0, 0, 500000, tzinfo=timezone.utc)),
-        ({"timestamp": 1767268800}, datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)),
-        ({"timestamp": 1767268800000}, datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)),
+        ({"timestamp": "2026-01-01T12:00:00+09:00"}, datetime(2026, 1, 1, 3, 0, tzinfo=UTC)),
+        ({"time": "2026-01-01T12:00:00"}, datetime(2026, 1, 1, 12, 0, tzinfo=UTC)),
+        ({"@timestamp": "2026-01-01T12:00:00.500Z"}, datetime(2026, 1, 1, 12, 0, 0, 500000, tzinfo=UTC)),
+        ({"timestamp": 1767268800}, datetime(2026, 1, 1, 12, 0, tzinfo=UTC)),
+        ({"timestamp": 1767268800000}, datetime(2026, 1, 1, 12, 0, tzinfo=UTC)),
     ],
 )
 def test_timestamp_formats(fields: dict[str, Any], expected: datetime) -> None:
@@ -115,7 +115,7 @@ def test_timestamp_formats(fields: dict[str, Any], expected: datetime) -> None:
 
 @pytest.mark.parametrize("fields", [{}, {"timestamp": "yesterday"}, {"timestamp": None}, {"time": True}])
 def test_missing_or_bad_timestamp_falls_back_to_now(fields: dict[str, Any]) -> None:
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     assert normalize(fields).time >= before
 
 

@@ -25,11 +25,12 @@ Coverage:
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.services.audit import AuditLogger
 from app.services.opensearch_client import (
     AUDIT_ILM_POLICY_NAME,
     AUDIT_ILM_RETENTION_DAYS,
@@ -40,8 +41,6 @@ from app.services.opensearch_client import (
     OpenSearchService,
     _monthly_index,
 )
-from app.services.audit import AuditLogger
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -116,7 +115,7 @@ def test_audit_mapping_has_user_agent_text() -> None:
 def test_monthly_index_returns_base_with_month_suffix() -> None:
     """_monthly_index(base) appends today's UTC month in YYYY.MM format."""
     result = _monthly_index("mxtac-audit")
-    today = datetime.now(timezone.utc).strftime("%Y.%m")
+    today = datetime.now(UTC).strftime("%Y.%m")
     assert result == f"mxtac-audit-{today}"
 
 
@@ -131,7 +130,7 @@ def test_monthly_index_format_is_year_dot_month() -> None:
 
 def test_monthly_index_frozen_date() -> None:
     """_monthly_index() uses UTC time — verifiable by freezing datetime.now."""
-    fixed_dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+    fixed_dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=UTC)
     with patch("app.services.opensearch_client.datetime") as mock_dt:
         mock_dt.now.return_value = fixed_dt
         result = _monthly_index("mxtac-audit")
@@ -149,7 +148,7 @@ def test_monthly_index_matches_pattern() -> None:
 
 def test_monthly_index_december() -> None:
     """_monthly_index handles December (month 12) correctly."""
-    fixed_dt = datetime(2025, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+    fixed_dt = datetime(2025, 12, 31, 23, 59, 59, tzinfo=UTC)
     with patch("app.services.opensearch_client.datetime") as mock_dt:
         mock_dt.now.return_value = fixed_dt
         result = _monthly_index("mxtac-audit")
@@ -476,7 +475,6 @@ async def test_ensure_indices_audit_template_exception_does_not_crash() -> None:
     mock_client = MagicMock()
     mock_client.indices = _make_indices_client(rules_exist=True)
     # Make the first two calls succeed (events, alerts), fail on audit
-    original = mock_client.indices.put_index_template
     call_count = {"n": 0}
 
     async def _side_effect(*args, **kwargs):
@@ -558,7 +556,7 @@ async def test_audit_logger_log_index_uses_utc_month() -> None:
     await audit.log(actor="u@u.com", action="login", resource_type="session")
 
     idx = mock_client.index.call_args.kwargs["index"]
-    today_month = datetime.now(timezone.utc).strftime("%Y.%m")
+    today_month = datetime.now(UTC).strftime("%Y.%m")
     assert idx == f"mxtac-audit-{today_month}"
 
 
@@ -570,7 +568,7 @@ async def test_audit_logger_log_index_frozen_month() -> None:
     mock_client.index = AsyncMock(return_value={"_id": "x"})
     audit._client = mock_client
 
-    fixed_dt = datetime(2026, 2, 21, 10, 0, 0, tzinfo=timezone.utc)
+    fixed_dt = datetime(2026, 2, 21, 10, 0, 0, tzinfo=UTC)
     with patch("app.services.opensearch_client.datetime") as mock_dt:
         mock_dt.now.return_value = fixed_dt
         await audit.log(actor="u@u.com", action="login", resource_type="session")

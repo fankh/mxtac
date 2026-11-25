@@ -8,18 +8,20 @@ Full OpenSearch integration is tracked separately in feature 11.5 / 12.x.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import Select, String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.validators import escape_like
 from ..models.event import Event
 from ..services.event_document import (
-    CMD_LINE_PATH, FILTER_FIELDS, NUMERIC_FIELDS, TEXT_SEARCH_FIELDS,
+    CMD_LINE_PATH,
+    FILTER_FIELDS,
+    NUMERIC_FIELDS,
+    TEXT_SEARCH_FIELDS,
 )
-
 
 # ── Time parsing ──────────────────────────────────────────────────────────────
 
@@ -39,7 +41,7 @@ def _parse_time(t: str) -> datetime:
     """
     m = _RELATIVE_RE.match(t.strip())
     if m:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if m.group(1) is None:
             return now
         n, unit = int(m.group(1)), m.group(2)
@@ -83,7 +85,9 @@ _ENTITY_MAP: dict[str, list[Any]] = {
 
 # ── Filter helpers ────────────────────────────────────────────────────────────
 
-def _apply_event_filter(q, field: str, operator: str, value: Any):
+def _apply_event_filter(
+    q: Select[tuple[Event]], field: str, operator: str, value: Any
+) -> Select[tuple[Event]]:
     """Return the query with one EventFilter applied (or unchanged if unknown field)."""
     col = _FIELD_MAP.get(field)
     if col is None:
@@ -117,7 +121,7 @@ class EventRepo:
         session: AsyncSession,
         *,
         query: str | None = None,
-        filters: list | None = None,          # list[EventFilter] (duck-typed)
+        filters: list[Any] | None = None,     # list[EventFilter] (duck-typed)
         time_from: str = "now-7d",
         time_to: str = "now",
         size: int = 100,
@@ -160,7 +164,7 @@ class EventRepo:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(session: AsyncSession, **kwargs) -> Event:
+    async def create(session: AsyncSession, **kwargs: Any) -> Event:
         """Insert a new event row and flush (no commit — caller manages transaction)."""
         evt = Event(**kwargs)
         session.add(evt)
@@ -170,17 +174,18 @@ class EventRepo:
     @staticmethod
     async def count_by_field(
         session: AsyncSession,
-        field: str,
+        field: str | None,
         *,
         time_from: str = "now-7d",
         time_to: str = "now",
         limit: int = 10,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Return term counts for *field* within the time window (terms aggregation).
 
         Returns a list of ``{"key": value, "count": N}`` dicts, sorted by count desc.
+        Without a known *field* the list is empty.
         """
-        col = _FIELD_MAP.get(field)
+        col = _FIELD_MAP.get(field) if field is not None else None
         if col is None:
             return []
 
@@ -205,7 +210,7 @@ class EventRepo:
         interval: str = "1h",
         time_from: str = "now-7d",
         time_to: str = "now",
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Return event counts grouped by time interval (date_histogram aggregation).
 
         Bucketing is done in Python after fetching the ``time`` column so the
@@ -257,7 +262,7 @@ class EventRepo:
         counts: dict[datetime, int] = {}
         for (t,) in rows:
             if t.tzinfo is None:
-                t = t.replace(tzinfo=timezone.utc)
+                t = t.replace(tzinfo=UTC)
             bucket = trunc_fn(t)
             counts[bucket] = counts.get(bucket, 0) + 1
 

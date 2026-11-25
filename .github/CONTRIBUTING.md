@@ -82,7 +82,7 @@ mypy app/
 pytest tests/ -v --tb=short --cov=app --cov-report=term-missing
 ```
 
-CI also applies the migrations to an empty PostgreSQL 16 database, downgrades to base, upgrades again, and runs `alembic check`. A change to a model needs a matching migration.
+CI also applies the migrations to an empty PostgreSQL 16 database, downgrades to `0027` (migration `0027` drops the tables of removed features and cannot be reversed), upgrades again, and runs `alembic check`. A change to a model needs a matching migration.
 
 Frontend:
 

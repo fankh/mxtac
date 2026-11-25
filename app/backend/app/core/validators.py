@@ -52,8 +52,8 @@ def validate_ip_address(v: str) -> str:
     """Return *v* if it is a valid IPv4 or IPv6 address, else raise ValueError."""
     try:
         ipaddress.ip_address(v)
-    except ValueError:
-        raise ValueError(f"Invalid IP address: {v!r}")
+    except ValueError as exc:
+        raise ValueError(f"Invalid IP address: {v!r}") from exc
     return v
 
 
@@ -61,8 +61,8 @@ def validate_cidr(v: str) -> str:
     """Return *v* if it is a valid CIDR network string, else raise ValueError."""
     try:
         ipaddress.ip_network(v, strict=False)
-    except ValueError:
-        raise ValueError(f"Invalid CIDR notation: {v!r}")
+    except ValueError as exc:
+        raise ValueError(f"Invalid CIDR notation: {v!r}") from exc
     return v
 
 

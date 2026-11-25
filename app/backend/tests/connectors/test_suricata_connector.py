@@ -78,7 +78,6 @@ Feature 6.17 — Track file offset across restarts:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import tempfile
@@ -90,7 +89,6 @@ import pytest
 from app.connectors.base import ConnectorConfig, ConnectorStatus
 from app.connectors.suricata import SuricataConnector
 from app.pipeline.queue import InMemoryQueue, Topic
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

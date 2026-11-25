@@ -9,7 +9,7 @@ All tests mock UserRepo and pyotp so the suite runs without a live database.
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pyotp
 import pytest
@@ -206,7 +206,7 @@ async def test_mfa_setup_stores_hashed_backup_codes(client: AsyncClient) -> None
     assert user.mfa_backup_codes is not None
     assert len(user.mfa_backup_codes) == 8
     # Stored codes must differ from plaintext (they are hashed)
-    for plaintext, stored in zip(plaintext_codes, user.mfa_backup_codes):
+    for plaintext, stored in zip(plaintext_codes, user.mfa_backup_codes, strict=False):
         assert plaintext != stored
 
 

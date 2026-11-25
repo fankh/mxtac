@@ -2,7 +2,13 @@ import re
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from ..core.validators import EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validate_password_complexity, validate_password_no_consecutive
+from ..core.validators import (
+    EMAIL_MAX_LENGTH,
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+    validate_password_complexity,
+    validate_password_no_consecutive,
+)
 
 # Accepts any user@domain.tld format — including RFC 6762 .local names used
 # by internal service accounts (e.g. analyst@mxtac.local).

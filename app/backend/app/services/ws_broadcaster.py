@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ..core.logging import get_logger
 from ..pipeline.queue import MessageQueue, Topic
 
@@ -11,7 +13,7 @@ logger = get_logger(__name__)
 async def websocket_broadcaster(queue: MessageQueue) -> None:
     """Subscribe to mxtac.enriched and broadcast to all WebSocket clients."""
 
-    async def _handle(alert: dict) -> None:
+    async def _handle(alert: dict[str, Any]) -> None:
         try:
             from ..api.v1.endpoints.websocket import broadcast_alert
             await broadcast_alert(alert)

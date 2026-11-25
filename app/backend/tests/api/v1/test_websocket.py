@@ -2695,7 +2695,7 @@ async def test_28_29_subscriber_loop_reconnects_when_listen_exhausts():
     async def fake_listen():
         # Terminates without yielding any message — simulates server closing the stream
         return
-        yield  # noqa: unreachable — makes this an async generator
+        yield  # unreachable; makes this function an async generator
 
     mock_client = MagicMock()
     mock_client.aclose = AsyncMock()

@@ -109,25 +109,20 @@ Coverage:
 from __future__ import annotations
 
 import asyncio
-from datetime import timezone
-from unittest.mock import AsyncMock, MagicMock, patch, call
-
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.connectors.syslog_receiver import (
     DEFAULT_HOST,
     DEFAULT_MAX_MESSAGE_SIZE,
     DEFAULT_PORT,
-    FACILITY_NAMES,
     SEVERITY_NAMES,
     SyslogReceiver,
-    _SyslogUDPProtocol,
     _extract_msg_from_sd,
     _handle_tcp_client,
+    _SyslogUDPProtocol,
     parse_syslog,
 )
 from app.pipeline.queue import InMemoryQueue, Topic
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

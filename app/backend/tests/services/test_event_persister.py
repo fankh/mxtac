@@ -6,7 +6,7 @@ the dual-write behaviour (PostgreSQL + OpenSearch) using mocked dependencies.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,7 +15,6 @@ from app.models.event import Event
 from app.services.event_document import event_to_dict
 from app.services.event_persister import _extract_event_fields
 from app.services.normalizers.ocsf import EVENT_ID_KEY
-
 
 # ---------------------------------------------------------------------------
 # _extract_event_fields — field extraction helper
@@ -131,7 +130,7 @@ def test_extract_missing_nested_dicts_safe() -> None:
 
 def test_extract_time_already_datetime() -> None:
     """If 'time' is already a datetime object it passes through unchanged."""
-    dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=timezone.utc)
+    dt = datetime(2026, 2, 20, 12, 0, 0, tzinfo=UTC)
     ocsf = {**_SAMPLE_OCSF, "time": dt}
     fields = _extract_event_fields(ocsf)
     assert fields["time"] == dt
@@ -170,7 +169,7 @@ def test_extract_time_fallback_to_utcnow_when_missing() -> None:
 @pytest.mark.asyncio
 async def test_event_persister_subscribes_to_normalized_topic() -> None:
     """event_persister() registers a consumer on the mxtac.normalized topic."""
-    from app.pipeline.queue import InMemoryQueue, Topic
+    from app.pipeline.queue import InMemoryQueue
     from app.services.event_persister import event_persister
 
     queue = InMemoryQueue()

@@ -18,16 +18,15 @@ Coverage:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
+from app.services.normalizers.ocsf import OCSFCategory, OCSFClass
 from app.services.normalizers.suricata import (
     SURICATA_SEV_MAP,
     SuricataNormalizer,
 )
-from app.services.normalizers.ocsf import OCSFCategory, OCSFClass
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -786,9 +785,9 @@ def test_parse_time_iso8601_with_plus0000(
 def test_parse_time_none_returns_utc_now(
     normalizer: SuricataNormalizer,
 ) -> None:
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     result = normalizer._parse_time(None)
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
     assert result.tzinfo is not None
     assert before <= result <= after
 
@@ -796,9 +795,9 @@ def test_parse_time_none_returns_utc_now(
 def test_parse_time_invalid_string_returns_utc_now(
     normalizer: SuricataNormalizer,
 ) -> None:
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     result = normalizer._parse_time("not-a-timestamp")
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
     assert result.tzinfo is not None
     assert before <= result <= after
 

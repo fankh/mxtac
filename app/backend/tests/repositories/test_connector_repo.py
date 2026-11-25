@@ -28,13 +28,12 @@ Coverage:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.repositories.connector_repo import ConnectorRepo
-
 
 # ---------------------------------------------------------------------------
 # Session factory helpers
@@ -73,8 +72,8 @@ def _make_connector(**kwargs) -> MagicMock:
     conn.connector_type = kwargs.get("connector_type", "wazuh")
     conn.status = kwargs.get("status", "inactive")
     conn.enabled = kwargs.get("enabled", True)
-    conn.error_message = kwargs.get("error_message", None)
-    conn.last_seen_at = kwargs.get("last_seen_at", None)
+    conn.error_message = kwargs.get("error_message")
+    conn.last_seen_at = kwargs.get("last_seen_at")
     return conn
 
 
@@ -369,10 +368,10 @@ class TestConnectorRepoUpdateStatus:
         conn = _make_connector()
         session = _make_session()
 
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         with patch.object(ConnectorRepo, "get_by_id", new=AsyncMock(return_value=conn)):
             await ConnectorRepo.update_status(session, "conn-1", "active")
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         ts = datetime.fromisoformat(conn.last_seen_at)
         assert before <= ts <= after

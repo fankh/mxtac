@@ -18,13 +18,16 @@ from __future__ import annotations
 
 import re
 import time
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 try:
     from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 except ImportError:   # opensearch-py not installed — OpenSearch storage is disabled
     OpenSearchConnectionError = ConnectionError   # type: ignore[assignment,misc]
+
+if TYPE_CHECKING:
+    from opensearchpy import AsyncOpenSearch
 
 from ..core.config import settings
 from ..core.logging import get_logger
@@ -320,13 +323,13 @@ class OpenSearchQueryError(Exception):
     """
 
 
-def _substring_clause(field: str, value: Any) -> dict:
+def _substring_clause(field: str, value: Any) -> dict[str, Any]:
     """Case-insensitive substring match on a keyword field (SQL ``ILIKE '%v%'``)."""
     escaped = _WILDCARD_SPECIAL_RE.sub(r"\\\1", str(value))
     return {"wildcard": {field: {"value": f"*{escaped}*", "case_insensitive": True}}}
 
 
-def filter_to_dsl(field: str, operator: str, value: Any) -> dict | None:
+def filter_to_dsl(field: str, operator: str, value: Any) -> dict[str, Any] | None:
     """Convert an EventFilter (field, operator, value) to an OpenSearch DSL clause.
 
     The clauses select the same events as ``EventRepo`` does in SQL: ``eq`` is
@@ -366,10 +369,10 @@ def filter_to_dsl(field: str, operator: str, value: Any) -> dict | None:
 
 def build_event_query(
     query: str | None,
-    filters: list[dict] | None,
+    filters: list[dict[str, Any]] | None,
     time_from: str,
     time_to: str,
-) -> dict:
+) -> dict[str, Any]:
     """Build the OpenSearch query for an event search.
 
     *query* is free text: a case-insensitive substring of the summary, class
@@ -377,7 +380,7 @@ def build_event_query(
     PostgreSQL path makes with ``ILIKE``.  *filters* are clauses from
     :func:`filter_to_dsl`.
     """
-    must_clauses: list[dict] = []
+    must_clauses: list[dict[str, Any]] = []
     if query:
         must_clauses.append({
             "bool": {
@@ -392,7 +395,7 @@ def build_event_query(
 
 
 def _daily_index(base: str) -> str:
-    return f"{base}-{datetime.now(timezone.utc).strftime('%Y.%m.%d')}"
+    return f"{base}-{datetime.now(UTC).strftime('%Y.%m.%d')}"
 
 
 def _monthly_index(base: str) -> str:
@@ -402,14 +405,14 @@ def _monthly_index(base: str) -> str:
     With a 3-year retention policy this caps the total number of audit
     indices at 36, compared to 1 095 if daily rollover were used.
     """
-    return f"{base}-{datetime.now(timezone.utc).strftime('%Y.%m')}"
+    return f"{base}-{datetime.now(UTC).strftime('%Y.%m')}"
 
 
 class OpenSearchService:
     """Async wrapper around opensearch-py for MxTac event storage."""
 
     def __init__(self) -> None:
-        self._client = None
+        self._client: AsyncOpenSearch | None = None
         self._skip_queries_until = 0.0   # time.monotonic() value
 
     @property
@@ -419,7 +422,7 @@ class OpenSearchService:
 
     async def connect(self) -> None:
         try:
-            from opensearchpy import AsyncOpenSearch  # type: ignore[import-untyped]
+            from opensearchpy import AsyncOpenSearch
             url = getattr(settings, "opensearch_url", "http://localhost:9200")
             self._client = AsyncOpenSearch(
                 hosts=[url],
@@ -446,8 +449,13 @@ class OpenSearchService:
         """
         if time.monotonic() < self._skip_queries_until:
             raise OpenSearchQueryError("OpenSearch is skipped after a connection failure")
+        if self._client is None:
+            raise OpenSearchQueryError("OpenSearch is not connected")
         try:
-            return await self._client.search(index=f"{EVENTS_INDEX_PREFIX}-*", body=body)
+            result: dict[str, Any] = await self._client.search(
+                index=f"{EVENTS_INDEX_PREFIX}-*", body=body
+            )
+            return result
         except Exception as exc:
             logger.error("OpenSearch %s failed: %s", what, exc)
             if isinstance(exc, OpenSearchConnectionError):
@@ -468,7 +476,8 @@ class OpenSearchService:
             resp = await self._client.index(
                 index=idx, body=event, id=doc_id, refresh="false"
             )
-            return resp.get("_id")
+            event_doc_id: str | None = resp.get("_id")
+            return event_doc_id
         except Exception as exc:
             logger.error("OpenSearch index_event failed: %s", exc)
             return None
@@ -480,7 +489,8 @@ class OpenSearchService:
         idx = _daily_index(ALERTS_INDEX_TEMPLATE)
         try:
             resp = await self._client.index(index=idx, body=alert, refresh="true")
-            return resp.get("_id")
+            alert_doc_id: str | None = resp.get("_id")
+            return alert_doc_id
         except Exception as exc:
             logger.error("OpenSearch index_alert failed: %s", exc)
             return None
@@ -488,7 +498,7 @@ class OpenSearchService:
     async def search_events(
         self,
         query: str | None = None,
-        filters: list[dict] | None = None,
+        filters: list[dict[str, Any]] | None = None,
         time_from: str = "now-7d",
         time_to: str = "now",
         size: int = 100,
@@ -531,7 +541,7 @@ class OpenSearchService:
         time_from: str = "now-7d",
         time_to: str = "now",
         size: int = 10,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Run a terms or date_histogram aggregation over the events index.
 
         - ``agg_type="terms"`` groups by *field* value; returns buckets sorted by
@@ -609,7 +619,7 @@ class OpenSearchService:
             # Bucket key: start of the interval in UTC, ISO 8601 (``key`` is epoch millis)
             return [
                 {
-                    "key": datetime.fromtimestamp(b["key"] / 1000, tz=timezone.utc).isoformat(),
+                    "key": datetime.fromtimestamp(b["key"] / 1000, tz=UTC).isoformat(),
                     "count": b["doc_count"],
                 }
                 for b in raw
@@ -618,13 +628,14 @@ class OpenSearchService:
         logger.warning("aggregate: unsupported agg_type %r — returning []", agg_type)
         return []
 
-    async def get_event(self, event_id: str, index: str | None = None) -> dict | None:
+    async def get_event(self, event_id: str, index: str | None = None) -> dict[str, Any] | None:
         if self._client is None:
             return None
         idx = index or f"{EVENTS_INDEX_PREFIX}-*"
         try:
             resp = await self._client.get(index=idx, id=event_id)
-            return resp.get("_source")
+            source: dict[str, Any] | None = resp.get("_source")
+            return source
         except Exception:
             return None
 
@@ -1184,7 +1195,7 @@ class OpenSearchService:
         if self._client is None:
             return None
         try:
-            resp = await self._client.snapshot.create(
+            resp: dict[str, Any] = await self._client.snapshot.create(
                 repository=repo,
                 snapshot=name,
                 body={

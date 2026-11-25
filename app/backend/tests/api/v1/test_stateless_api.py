@@ -13,7 +13,6 @@ from httpx import AsyncClient
 
 from app.core.valkey import RULE_RELOAD_CHANNEL, publish_rule_reload
 
-
 # ── Rule reload pub/sub ───────────────────────────────────────────────────────
 
 

@@ -20,13 +20,11 @@ Coverage:
 
 from __future__ import annotations
 
+import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from app.main import app, on_shutdown, on_startup
 from app.pipeline.queue import InMemoryQueue, MessageQueue
-
 
 # ── Startup: state initialisation ────────────────────────────────────────────
 
@@ -310,10 +308,8 @@ class TestShutdownCleanup:
         """If state attributes were never set (e.g. startup crashed), shutdown must not raise."""
         # Wipe all relevant attributes
         for attr in ("queue", "alert_mgr", "os_client", "connectors"):
-            try:
+            with contextlib.suppress(AttributeError):
                 delattr(app.state, attr)
-            except AttributeError:
-                pass
 
         await on_shutdown()  # must not raise
 

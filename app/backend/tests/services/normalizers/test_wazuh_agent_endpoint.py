@@ -18,11 +18,11 @@ Coverage:
 from __future__ import annotations
 
 import json
+
 import pytest
 
 from app.services.normalizers.ocsf import Endpoint
 from app.services.normalizers.wazuh import WazuhNormalizer
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

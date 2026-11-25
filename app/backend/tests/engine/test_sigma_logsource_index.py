@@ -50,7 +50,7 @@ _get_candidates():
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -61,7 +61,6 @@ from app.services.normalizers.ocsf import (
     OCSFEvent,
     ProcessInfo,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -110,7 +109,7 @@ def _make_event(
         class_uid=class_uid,
         class_name=class_name,
         category_uid=category_uid,
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         severity_id=1,
         metadata_product=metadata_product,
         process=ProcessInfo(name="test.exe"),

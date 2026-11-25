@@ -15,7 +15,7 @@ import pytest
 import yaml
 
 from app.connectors.syslog_receiver import parse_syslog
-from app.engine.sigma_engine import SigmaEngine, TACTIC_NAME_TO_ID
+from app.engine.sigma_engine import TACTIC_NAME_TO_ID, SigmaEngine
 from app.services.normalizers.field_mapping import FieldMappingConfig
 from app.services.normalizers.ocsf import OCSFEvent
 from app.services.normalizers.suricata import SuricataNormalizer

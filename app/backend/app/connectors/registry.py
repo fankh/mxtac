@@ -6,7 +6,6 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,10 +16,10 @@ from ..models.connector import Connector
 from ..pipeline.queue import MessageQueue
 from ..repositories.connector_repo import ConnectorRepo
 from .base import BaseConnector, ConnectorConfig
-from .wazuh import WazuhConnector
-from .zeek import ZeekConnector
 from .suricata import SuricataConnector
 from .syslog import SyslogUDPConnector
+from .wazuh import WazuhConnector
+from .zeek import ZeekConnector
 
 logger = get_logger(__name__)
 
@@ -221,7 +220,7 @@ async def start_connectors_from_db(
     connector is logged and skipped so that remaining connectors still start.
     """
     result = await session.execute(
-        select(Connector).where(Connector.enabled == True)
+        select(Connector).where(Connector.enabled.is_(True))
     )
     db_connectors = result.scalars().all()
 

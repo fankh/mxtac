@@ -16,11 +16,12 @@ Scoring formula:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import ipaddress
 import json
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import valkey.asyncio as aioredis
@@ -28,7 +29,8 @@ import valkey.asyncio as aioredis
 from ..core.config import settings
 from ..core.logging import get_logger
 from ..core.metrics import alerts_deduplicated, alerts_processed, pipeline_latency
-from ..engine.sigma_engine import SigmaAlert, LEVEL_SEVERITY, tactic_name
+from ..engine.attack_tags import tactic_name
+from ..engine.sigma_engine import SigmaAlert
 from ..pipeline.queue import MessageQueue, Topic
 from .attack_techniques import resolve_technique_name
 
@@ -81,7 +83,7 @@ class AlertManager:
                 tactic_ids=alert_dict.get("tactic_ids", []),
                 host=alert_dict.get("host", ""),
                 time=datetime.fromisoformat(
-                    alert_dict.get("time", datetime.now(timezone.utc).isoformat())
+                    alert_dict.get("time", datetime.now(UTC).isoformat())
                 ),
                 event_snapshot=alert_dict.get("event_snapshot", {}),
                 event_id=alert_dict.get("event_id"),
@@ -258,7 +260,6 @@ class AlertManager:
         in the database (``AddressNotFoundError``) or any other error occurs.
         """
         try:
-            import geoip2.errors  # noqa: PLC0415
             response = self._geoip_reader.city(ip)
             region = (
                 response.subdivisions.most_specific.name
@@ -291,7 +292,8 @@ class AlertManager:
         try:
             cached = await self._valkey.get(cache_key)
             if cached is not None:
-                return json.loads(cached)
+                cached_result: dict[str, Any] = json.loads(cached)
+                return cached_result
         except Exception:
             pass  # Cache unavailable — fall through to DB lookup
 
@@ -300,14 +302,12 @@ class AlertManager:
 
         # Cache write (non-fatal)
         if result is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await self._valkey.set(
                     cache_key,
                     json.dumps(result),
                     ex=settings.geoip_cache_ttl,
                 )
-            except Exception:
-                pass
 
         return result
 
@@ -385,11 +385,11 @@ class AlertManager:
         def text(limit: int, *keys: str) -> str | None:
             for key in keys:
                 value = snapshot.get(key)
-                if value is None or isinstance(value, (dict, list)):
+                if value is None or isinstance(value, dict | list):
                     continue
-                value = str(value).strip()
-                if value:
-                    return value[:limit]
+                stripped = str(value).strip()
+                if stripped:
+                    return stripped[:limit]
             return None
 
         return {

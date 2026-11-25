@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -12,11 +12,11 @@ from ...models.base import new_uuid
 from ...pipeline.queue import MessageQueue, Topic
 from .field_mapping import FieldMappingConfig
 from .ocsf import EVENT_ID_KEY, OCSFEvent
-from .wazuh import WazuhNormalizer
-from .zeek import ZeekNormalizer
 from .suricata import SuricataNormalizer
 from .syslog import SyslogNormalizer
+from .wazuh import WazuhNormalizer
 from .webhook import WebhookNormalizer
+from .zeek import ZeekNormalizer
 
 logger = get_logger(__name__)
 
@@ -72,7 +72,7 @@ class NormalizerPipeline:
             "raw": raw,
             "error": str(exc),
             "error_type": error_type,
-            "failed_at": datetime.now(timezone.utc).isoformat(),
+            "failed_at": datetime.now(UTC).isoformat(),
         }
         await self._queue.publish(Topic.DLQ, dlq_message)
         logger.warning(

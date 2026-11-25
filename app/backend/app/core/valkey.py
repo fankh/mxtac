@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from collections.abc import Awaitable
+from typing import Any, cast
 
 import valkey.asyncio as aioredis
 
@@ -183,7 +184,11 @@ async def check_webhook_source_rate_limit(
     try:
         client = await get_valkey_client()
         key = f"rate_limit:webhook:{source_name}"
-        current = await client.eval(_RATE_LIMIT_LUA, 1, key, 1, window_secs)
+        # valkey annotates eval() for both clients (``Awaitable[str] | str``)
+        # and its key/argument parameters as ``str``.
+        current = await cast(
+            Awaitable[Any], client.eval(_RATE_LIMIT_LUA, 1, key, "1", str(window_secs))
+        )
         return int(current) <= limit
     except Exception:
         logger.debug(

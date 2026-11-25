@@ -38,11 +38,14 @@ Feature 7.9 — Zeek ssl.log → NetworkActivity (class_uid 4001):
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .ocsf import (
-    Endpoint, OCSFCategory, OCSFClass, OCSFEvent,
+    Endpoint,
+    OCSFCategory,
+    OCSFClass,
+    OCSFEvent,
 )
 
 # Zeek conn_state → severity_id
@@ -252,11 +255,11 @@ class ZeekNormalizer:
 
     def _parse_ts(self, ts: Any) -> datetime:
         if ts is None:
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
         try:
-            return datetime.fromtimestamp(float(ts), tz=timezone.utc)
+            return datetime.fromtimestamp(float(ts), tz=UTC)
         except (ValueError, TypeError):
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
 
     def _safe_int(self, val: Any) -> int | None:
         try:

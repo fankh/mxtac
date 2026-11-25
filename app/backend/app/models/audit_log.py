@@ -1,6 +1,7 @@
-from datetime import datetime, timezone
+from datetime import datetime
+from typing import Any
 
-from sqlalchemy import DateTime, JSON, String, Text, func
+from sqlalchemy import JSON, DateTime, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, new_uuid
@@ -46,15 +47,15 @@ class AuditLog(Base):
     )  # primary key of the resource
 
     # Extra context
-    details: Mapped[dict] = mapped_column(
+    details: Mapped[dict[str, Any]] = mapped_column(
         JSON, nullable=True
     )  # arbitrary key-value context
 
     # HTTP request metadata
-    request_ip: Mapped[str] = mapped_column(String(45), nullable=True)   # IPv4 or IPv6
-    request_method: Mapped[str] = mapped_column(String(16), nullable=True)
-    request_path: Mapped[str] = mapped_column(String(1024), nullable=True)
-    user_agent: Mapped[str] = mapped_column(Text, nullable=True)
+    request_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)   # IPv4 or IPv6
+    request_method: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    request_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     def __repr__(self) -> str:
         return (

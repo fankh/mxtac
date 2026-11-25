@@ -48,7 +48,6 @@ from pydantic import BaseModel
 
 from .ocsf import OCSFEvent
 
-
 # ── Path helpers ──────────────────────────────────────────────────────────────
 
 def _get_nested(obj: dict[str, Any], path: str) -> Any:
@@ -101,7 +100,7 @@ class FieldMappingConfig(BaseModel):
     # ── Factory ───────────────────────────────────────────────────────────────
 
     @classmethod
-    def from_config(cls, data: Any) -> "FieldMappingConfig":
+    def from_config(cls, data: Any) -> FieldMappingConfig:
         """Build a ``FieldMappingConfig`` from a connector config value.
 
         *data* may be:

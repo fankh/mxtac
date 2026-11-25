@@ -70,8 +70,8 @@ async def test_trend_returns_stored_snapshots_ascending(
     client: AsyncClient, db_session, auth_headers: dict
 ) -> None:
     """Stored snapshots are returned ordered ascending by date."""
-    from app.models.coverage_snapshot import CoverageSnapshot
     from app.models.base import new_uuid
+    from app.models.coverage_snapshot import CoverageSnapshot
 
     today = date.today()
     snapshots = [
@@ -123,8 +123,8 @@ async def test_trend_days_parameter_filters_window(
     client: AsyncClient, db_session, auth_headers: dict
 ) -> None:
     """Only snapshots within the requested `days` window are returned."""
-    from app.models.coverage_snapshot import CoverageSnapshot
     from app.models.base import new_uuid
+    from app.models.coverage_snapshot import CoverageSnapshot
 
     today = date.today()
     old_snapshot = CoverageSnapshot(

@@ -18,7 +18,6 @@ from typing import Any
 
 from ..services.normalizers.ocsf import OCSFEvent
 
-
 # ── Per-category Sigma field name → OCSF attribute path ──────────────────────
 #
 # Paths use dot-notation.  Leading segment is an OCSFEvent attribute; nested
@@ -89,10 +88,7 @@ def _get_nested(obj: Any, path: str) -> Any:
     for part in path.split("."):
         if val is None:
             return None
-        if isinstance(val, dict):
-            val = val.get(part)
-        else:
-            val = getattr(val, part, None)
+        val = val.get(part) if isinstance(val, dict) else getattr(val, part, None)
     return val
 
 

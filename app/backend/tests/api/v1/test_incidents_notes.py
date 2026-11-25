@@ -91,7 +91,7 @@ async def test_note_type_defaults_to_comment(client: AsyncClient, analyst_header
 async def test_add_note_author_from_jwt(client: AsyncClient, hunter_headers: dict) -> None:
     """Author is automatically set from the JWT, not from request body."""
     # Create incident as analyst, add note as hunter
-    analyst_resp = await client.post(
+    await client.post(
         "/api/v1/incidents",
         json=_BASE_INCIDENT,
         headers={"Authorization": "Bearer " + _token_from_headers(hunter_headers)},

@@ -26,7 +26,7 @@ async def sigma_consumer(
     swallowed so that a database outage never stalls the evaluation pipeline.
     """
 
-    async def _handle(event_dict: dict) -> None:
+    async def _handle(event_dict: dict[str, Any]) -> None:
         try:
             event = OCSFEvent(**event_dict)
             async for alert in engine.evaluate(event):

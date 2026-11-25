@@ -29,7 +29,7 @@ backend initialisation that breaks runtime hash computation).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -136,7 +136,6 @@ async def test_login_returns_access_token(client: AsyncClient, mock_analyst) -> 
 async def test_login_returns_refresh_token(client: AsyncClient, mock_analyst) -> None:
     """Response contains a non-empty refresh_token string."""
     resp = await client.post(LOGIN_URL, json=VALID_CREDS)
-    data = resp.json()
     assert refresh_token_of(resp)
 
 
@@ -1050,7 +1049,7 @@ def _user_with_last_login(days_ago: int) -> User:
         full_name="Test User",
         role="analyst",
         is_active=True,
-        last_login_at=datetime.now(timezone.utc) - timedelta(days=days_ago),
+        last_login_at=datetime.now(UTC) - timedelta(days=days_ago),
     )
 
 
@@ -1159,7 +1158,7 @@ async def test_inactivity_lock_sets_inactive_locked_at(client: AsyncClient) -> N
 @pytest.mark.asyncio
 async def test_successful_login_updates_last_login_at(client: AsyncClient) -> None:
     """Successful login sets last_login_at to a recent datetime on the user object."""
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     user = _user_with_last_login(10)
     with patch(MOCK_IS_LOCKED, new=AsyncMock(return_value=False)):
         with patch(MOCK_REPO, new=AsyncMock(return_value=user)):
@@ -1546,7 +1545,7 @@ def _user_with_password_age(days: int | None, mfa_enabled: bool = False) -> User
     u.id = _EXPIRY_USER_ID
     u.mfa_enabled = mfa_enabled
     u.password_changed_at = (
-        datetime.now(timezone.utc) - timedelta(days=days) if days is not None else None
+        datetime.now(UTC) - timedelta(days=days) if days is not None else None
     )
     return u
 
@@ -1679,7 +1678,7 @@ async def test_change_password_updates_password_changed_at(client: AsyncClient) 
     """Calling change-password sets password_changed_at to approximately now."""
     user = _user_with_password_age(days=91)
     token = create_password_change_token(_EXPIRY_USER_ID)
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     with patch(MOCK_REPO_BY_ID, new=AsyncMock(return_value=user)):
         with patch(MOCK_VERIFY, return_value=False):
             with patch(MOCK_HASH, return_value="$2b$12$newhash"):
@@ -1724,6 +1723,7 @@ async def test_change_password_for_expired_returns_access_token(client: AsyncCli
 # ---------------------------------------------------------------------------
 
 import pyotp  # noqa: E402
+
 from app.api.v1.endpoints.auth import _encrypt_secret  # noqa: E402
 
 MFA_SETUP_URL = "/api/v1/auth/mfa/setup"

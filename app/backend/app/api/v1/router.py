@@ -1,5 +1,20 @@
 from fastapi import APIRouter
-from .endpoints import attack, auth, connectors, coverage, detections, events, incidents, overview, rules, saved_queries, users, websocket, webhook_ingest
+
+from .endpoints import (
+    attack,
+    auth,
+    connectors,
+    coverage,
+    detections,
+    events,
+    incidents,
+    overview,
+    rules,
+    saved_queries,
+    users,
+    webhook_ingest,
+    websocket,
+)
 
 api_router = APIRouter()
 api_router.include_router(auth.router)

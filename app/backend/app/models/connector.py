@@ -18,8 +18,8 @@ class Connector(Base, TimestampMixin):
     # Status
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="inactive")
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    last_seen_at: Mapped[str] = mapped_column(String(50), nullable=True)
-    error_message: Mapped[str] = mapped_column(Text, nullable=True)
+    last_seen_at: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Metrics
     events_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

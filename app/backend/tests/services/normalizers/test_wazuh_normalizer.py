@@ -22,18 +22,17 @@ Feature 7.3 additions:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
+from app.services.normalizers.ocsf import OCSFCategory, OCSFClass
 from app.services.normalizers.wazuh import (
     LEVEL_TO_SEVERITY,
-    MITRE_TACTIC_MAP,
     MITRE_TACTIC_FULL_NAME_MAP,
+    MITRE_TACTIC_MAP,
     WazuhNormalizer,
 )
-from app.services.normalizers.ocsf import OCSFCategory, OCSFClass
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -255,16 +254,16 @@ def test_parse_time_iso_offset(normalizer: WazuhNormalizer) -> None:
 
 
 def test_parse_time_none_returns_utc_now(normalizer: WazuhNormalizer) -> None:
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     ts = normalizer._parse_time(None)
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
     assert before <= ts <= after
 
 
 def test_parse_time_invalid_returns_utc_now(normalizer: WazuhNormalizer) -> None:
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     ts = normalizer._parse_time("not-a-timestamp")
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
     assert before <= ts <= after
 
 
@@ -404,9 +403,9 @@ def test_normalize_minimal_alert(normalizer: WazuhNormalizer) -> None:
 
 
 def test_normalize_missing_timestamp_uses_now(normalizer: WazuhNormalizer) -> None:
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     event = normalizer.normalize({"rule": {"level": 5}})
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
     assert before <= event.time <= after
 
 

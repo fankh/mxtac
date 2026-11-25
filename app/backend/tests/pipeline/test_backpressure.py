@@ -37,7 +37,6 @@ import pytest
 
 from app.pipeline.queue import InMemoryQueue, Topic
 
-
 # ── Initialisation ─────────────────────────────────────────────────────────────
 
 
@@ -156,13 +155,14 @@ class TestBackpressureCounter:
         async def _free_after_block() -> None:
             # Let the publish task block first
             await asyncio.sleep(0)
-            item = await q._queues[Topic.RAW_WAZUH].get()
+            await q._queues[Topic.RAW_WAZUH].get()
             q._queues[Topic.RAW_WAZUH].task_done()
             freed.set()
 
         free_task = asyncio.create_task(_free_after_block())
         await q.publish(Topic.RAW_WAZUH, {"n": 1})  # blocks briefly
         await freed.wait()
+        await free_task
 
         assert q.backpressure_count == 1
         await q.stop()
@@ -203,6 +203,7 @@ class TestBackpressureCounter:
             free_task = asyncio.create_task(_free())
             await q.publish(Topic.RAW_WAZUH, {"n": i * 2 + 1})  # triggers back-pressure
             await freed.wait()
+            await free_task
 
         assert q.backpressure_count == N
         await q.stop()
@@ -358,6 +359,7 @@ class TestBackpressureBlocking:
         # Blocked publish should now complete
         await asyncio.wait_for(publish_done.wait(), timeout=1.0)
         assert publish_done.is_set()
+        await task
 
         await q.stop()
 
@@ -490,6 +492,7 @@ class TestBackpressureTopicIndependence:
         assert publish_done.is_set(), (
             "Publish to an uncongested topic must not block due to another topic being full"
         )
+        await task
 
         await q.stop()
 

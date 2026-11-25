@@ -1,5 +1,7 @@
 """ATT&CK reference data."""
 
+from typing import Any
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
@@ -18,7 +20,7 @@ class AttackTechniques(BaseModel):
 
 
 @router.get("/techniques", response_model=AttackTechniques)
-async def list_attack_techniques(_: dict = Depends(get_current_user)) -> AttackTechniques:
+async def list_attack_techniques(_: dict[str, Any] = Depends(get_current_user)) -> AttackTechniques:
     """Names of the MITRE ATT&CK Enterprise techniques and sub-techniques.
 
     The table is bundled with the backend, so no request leaves the server.

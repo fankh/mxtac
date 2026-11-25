@@ -48,16 +48,15 @@ Coverage (Feature 28.12 — Zeek conn → NetworkActivity):
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
+from app.services.normalizers.ocsf import OCSFCategory, OCSFClass
 from app.services.normalizers.zeek import (
     CONN_STATE_SEVERITY,
     ZeekNormalizer,
 )
-from app.services.normalizers.ocsf import OCSFCategory, OCSFClass
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -619,17 +618,17 @@ def test_parse_ts_unix_string(normalizer: ZeekNormalizer) -> None:
 
 
 def test_parse_ts_none_returns_utc_now(normalizer: ZeekNormalizer) -> None:
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     ts = normalizer._parse_ts(None)
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
     assert before <= ts <= after
     assert ts.tzinfo is not None
 
 
 def test_parse_ts_invalid_string_returns_utc_now(normalizer: ZeekNormalizer) -> None:
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     ts = normalizer._parse_ts("not-a-timestamp")
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
     assert before <= ts <= after
 
 

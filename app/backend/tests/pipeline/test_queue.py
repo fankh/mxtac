@@ -32,7 +32,6 @@ from app.pipeline.queue import (
     get_queue,
 )
 
-
 # ── Topic constants ────────────────────────────────────────────────────────────
 
 class TestTopic:

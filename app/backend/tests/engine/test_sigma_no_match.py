@@ -27,7 +27,7 @@ no SigmaAlert when the event does not satisfy the rule's detection logic:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -38,7 +38,6 @@ from app.services.normalizers.ocsf import (
     OCSFEvent,
     ProcessInfo,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -62,7 +61,7 @@ def _ocsf_process_event(**overrides: object) -> OCSFEvent:
         class_uid=OCSFClass.PROCESS_ACTIVITY,
         class_name="Process Activity",
         category_uid=OCSFCategory.SYSTEM_ACTIVITY,
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
         severity_id=1,
         metadata_product="windows",
         process=ProcessInfo(name="cmd.exe", cmd_line="cmd /c whoami"),

@@ -137,7 +137,7 @@ def _filter_to_lucene(field: str, operator: str, value: Any) -> str | None:
 
 def build_lucene_query(
     query: str | None,
-    filters: list,  # list[EventFilter] (duck-typed: .field, .operator, .value)
+    filters: list[Any],  # list[EventFilter] (duck-typed: .field, .operator, .value)
     time_from: str = "now-7d",
     time_to: str = "now",
 ) -> str:

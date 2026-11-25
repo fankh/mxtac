@@ -20,7 +20,6 @@ from __future__ import annotations
 import pytest
 from httpx import AsyncClient
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -249,7 +248,7 @@ async def test_filter_status_multi(
     client: AsyncClient, analyst_headers: dict, viewer_headers: dict
 ) -> None:
     """Multiple status values are OR-combined."""
-    new_inc = await _create_incident(client, analyst_headers, title="New Inc")
+    await _create_incident(client, analyst_headers, title="New Inc")
     inv_inc = await _create_incident(client, analyst_headers, title="Inv Inc")
     await client.patch(
         f"/api/v1/incidents/{inv_inc['id']}",
@@ -416,7 +415,7 @@ async def test_sort_status(
     client: AsyncClient, analyst_headers: dict, viewer_headers: dict
 ) -> None:
     """sort=status orders: new → investigating → ... → closed."""
-    inc_new = await _create_incident(client, analyst_headers, title="New Inc")
+    await _create_incident(client, analyst_headers, title="New Inc")
     inc_inv = await _create_incident(client, analyst_headers, title="Inv Inc")
     await client.patch(
         f"/api/v1/incidents/{inc_inv['id']}",

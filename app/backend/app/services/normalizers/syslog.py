@@ -37,7 +37,7 @@ Everything else is a Base Event (class_uid 0).
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ...connectors.syslog_receiver import parse_syslog
@@ -133,7 +133,7 @@ class SyslogNormalizer:
             class_name=class_name,
             category_uid=category_uid,
             time=self._parse_time(parsed.get("timestamp")),
-            severity_id=SYSLOG_SEV_MAP.get(parsed.get("severity"), 1),
+            severity_id=SYSLOG_SEV_MAP.get(parsed.get("severity", -1), 1),
             metadata_product="Syslog",
             src_endpoint=src,
             dst_endpoint=Endpoint(hostname=parsed.get("hostname"), ip=parsed.get("host")),
@@ -163,17 +163,17 @@ class SyslogNormalizer:
         return None
 
     def _parse_time(self, ts: Any) -> datetime:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if not isinstance(ts, str) or not ts:
             return now
         try:  # RFC 5424: ISO 8601
             parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
         except ValueError:
             pass
         try:  # RFC 3164: "Feb 19 08:30:00" — no year, no zone
             parsed = datetime.strptime(f"{now.year} {ts}", "%Y %b %d %H:%M:%S").replace(
-                tzinfo=timezone.utc
+                tzinfo=UTC
             )
         except ValueError:
             return now

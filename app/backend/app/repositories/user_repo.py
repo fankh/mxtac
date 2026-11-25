@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,14 +32,14 @@ class UserRepo:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(session: AsyncSession, **kwargs) -> User:
+    async def create(session: AsyncSession, **kwargs: Any) -> User:
         user = User(**kwargs)
         session.add(user)
         await session.flush()
         return user
 
     @staticmethod
-    async def update(session: AsyncSession, user_id: str, **kwargs) -> User | None:
+    async def update(session: AsyncSession, user_id: str, **kwargs: Any) -> User | None:
         user = await UserRepo.get_by_id(session, user_id)
         if not user:
             return None

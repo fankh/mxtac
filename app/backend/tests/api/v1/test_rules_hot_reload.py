@@ -20,6 +20,7 @@ Coverage:
 
 from __future__ import annotations
 
+import contextlib
 import json
 
 import pytest
@@ -90,10 +91,8 @@ def sigma_engine():
     engine = SigmaEngine()
     app.state.sigma_engine = engine
     yield engine
-    try:
+    with contextlib.suppress(AttributeError, KeyError):
         delattr(app.state, "sigma_engine")
-    except (AttributeError, KeyError):
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -273,10 +272,8 @@ async def test_reload_returns_503_when_engine_absent(
     engineer_headers: dict,
 ) -> None:
     """POST /rules/reload returns 503 when app.state.sigma_engine is not set."""
-    try:
+    with contextlib.suppress(AttributeError, KeyError):
         delattr(app.state, "sigma_engine")
-    except (AttributeError, KeyError):
-        pass
 
     resp = await client.post(f"{BASE_URL}/reload", headers=engineer_headers)
     assert resp.status_code == 503

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import yaml
 from sqlalchemy import select
@@ -29,7 +30,7 @@ BUNDLED_RULES_DIR = Path(__file__).parent.parent.parent / "sigma_rules"
 BUNDLED_SOURCE = "bundled"
 
 
-def _read_bundled_rules(directory: Path) -> dict[str, dict]:
+def _read_bundled_rules(directory: Path) -> dict[str, dict[str, Any]]:
     """Parse every rule file in *directory* into ``{rule_id: Rule column values}``.
 
     Files that are invalid, unsupported by the engine or have no ``id`` are
@@ -37,7 +38,7 @@ def _read_bundled_rules(directory: Path) -> dict[str, dict]:
     idempotent.
     """
     engine = SigmaEngine()
-    rules: dict[str, dict] = {}
+    rules: dict[str, dict[str, Any]] = {}
     for path in sorted(directory.rglob("*.y*ml")):
         content = path.read_text(encoding="utf-8")
         try:

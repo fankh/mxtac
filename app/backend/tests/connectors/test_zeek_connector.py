@@ -64,7 +64,6 @@ Feature 6.13 — Add `_path` field from filename stem:
 from __future__ import annotations
 
 import json
-import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -72,9 +71,8 @@ from typing import Any
 import pytest
 
 from app.connectors.base import ConnectorConfig, ConnectorStatus
-from app.connectors.zeek import LOG_SUFFIXES, ZeekConnector, ZeekConnectorFactory
+from app.connectors.zeek import ZeekConnector, ZeekConnectorFactory
 from app.pipeline.queue import InMemoryQueue, Topic
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -598,7 +596,7 @@ class TestZeekConnectorPublish:
         async def mock_fetch():
             conn._stop_event.set()
             return
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -612,7 +610,7 @@ class TestZeekConnectorPublish:
         async def mock_fetch():
             conn._stop_event.set()
             return
-            yield  # noqa: unreachable
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -626,7 +624,7 @@ class TestZeekConnectorPublish:
         async def mock_fetch():
             conn._stop_event.set()
             raise RuntimeError("file read error")
-            yield  # noqa: unreachable
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -638,7 +636,7 @@ class TestZeekConnectorPublish:
         async def mock_fetch():
             conn._stop_event.set()
             raise RuntimeError("file read error")
-            yield  # noqa: unreachable
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 
@@ -652,7 +650,7 @@ class TestZeekConnectorPublish:
         async def mock_fetch():
             conn._stop_event.set()
             raise ValueError("unexpected log format")
-            yield  # noqa: unreachable
+            yield  # unreachable; makes this function an async generator
 
         conn._fetch_events = mock_fetch  # type: ignore[method-assign]
 

@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 _MOCK_HASH = "app.api.v1.endpoints.users.hash_password"
 _HASHED_PW = "$2b$12$test_placeholder_hash_not_real"
 

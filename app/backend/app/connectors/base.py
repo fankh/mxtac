@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, AsyncGenerator
+from typing import Any
 
 from ..core.logging import get_logger
-from ..pipeline.queue import MessageQueue, Topic
+from ..pipeline.queue import MessageQueue
 
 logger = get_logger(__name__)
 
@@ -62,7 +63,7 @@ class BaseConnector(ABC):
         self.config  = config
         self.queue   = queue
         self.health  = ConnectorHealth(status=ConnectorStatus.INACTIVE)
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
         self._status_callback = status_callback
         # Set by the registry: persists event and error totals to the database.
@@ -78,8 +79,11 @@ class BaseConnector(ABC):
         ...
 
     @abstractmethod
-    async def _fetch_events(self) -> AsyncGenerator[dict[str, Any], None]:
-        """Yield raw events from the source. Called every poll interval."""
+    def _fetch_events(self) -> AsyncIterator[dict[str, Any]]:
+        """Yield raw events from the source. Called every poll interval.
+
+        Implementations are async generators (``async def`` with ``yield``).
+        """
         ...
 
     @property
@@ -189,7 +193,7 @@ class BaseConnector(ABC):
                         event = {**event, "_mxtac_field_mapping": _field_mapping}
                     await self.queue.publish(self.topic, event)
                     self.health.events_total += 1
-                    self.health.last_event_at = datetime.now(timezone.utc)
+                    self.health.last_event_at = datetime.now(UTC)
                 # Feature 6.6: persist active status to DB after a successful cycle
                 await self._update_db_status(ConnectorStatus.ACTIVE.value)
             except asyncio.CancelledError:
@@ -205,13 +209,12 @@ class BaseConnector(ABC):
 
             await self._flush_counters()
 
-            try:
+            # A timeout is normal: the next poll is due.
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     asyncio.shield(self._stop_event.wait()),
                     timeout=self.config.poll_interval_seconds,
                 )
-            except asyncio.TimeoutError:
-                pass  # Normal — just continue polling
 
     def get_health(self) -> dict[str, Any]:
         return {

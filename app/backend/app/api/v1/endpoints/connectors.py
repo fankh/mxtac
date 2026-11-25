@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ....connectors.registry import build_connector
 from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....models.connector import Connector
 from ....repositories.connector_repo import ConnectorRepo
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
@@ -83,7 +84,7 @@ def _idle_status(connector_type: str, enabled: bool) -> str:
     return "active" if connector_type == "generic" and enabled else "inactive"
 
 
-def _conn_to_response(c) -> dict:
+def _conn_to_response(c: Connector) -> dict[str, Any]:
     return {
         "id": c.id,
         "name": c.name,
@@ -100,8 +101,8 @@ def _conn_to_response(c) -> dict:
 @router.get("", response_model=list[ConnectorResponse])
 async def list_connectors(
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("connectors:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("connectors:read")),
+) -> list[dict[str, Any]]:
     connectors = await ConnectorRepo.list(db)
     return [_conn_to_response(c) for c in connectors]
 
@@ -110,8 +111,8 @@ async def list_connectors(
 async def get_connector(
     connector_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("connectors:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("connectors:read")),
+) -> dict[str, Any]:
     conn = await ConnectorRepo.get_by_id(db, connector_id)
     if not conn:
         raise HTTPException(status_code=404, detail="Connector not found")
@@ -123,8 +124,8 @@ async def create_connector(
     body: ConnectorCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("connectors:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("connectors:write")),
+) -> dict[str, Any]:
     if await ConnectorRepo.get_by_name(db, body.name) is not None:
         raise HTTPException(
             status_code=409,
@@ -142,7 +143,7 @@ async def create_connector(
     # Auto-start connector if enabled and runtime queue is available
     if body.enabled:
         queue = getattr(request.app.state, "queue", None)
-        running: dict = getattr(request.app.state, "connectors", {})
+        running: dict[str, Any] = getattr(request.app.state, "connectors", {})
         if queue is not None and conn.id not in running:
             connector = build_connector(conn, queue)
             if connector is not None:
@@ -153,7 +154,7 @@ async def create_connector(
                 await db.commit()
                 asyncio.create_task(connector.start(), name=f"connector-start-{conn.name}")
                 running[conn.id] = connector
-                conn = await ConnectorRepo.get_by_id(db, conn.id)
+                conn = await ConnectorRepo.get_by_id(db, conn.id) or conn
 
     return _conn_to_response(conn)
 
@@ -163,31 +164,30 @@ async def update_connector(
     connector_id: str,
     body: ConnectorUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("connectors:write")),
-):
-    updates = {}
+    _: dict[str, Any] = Depends(require_permission("connectors:write")),
+) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
     conn = await ConnectorRepo.get_by_id(db, connector_id)
     if body.enabled is not None:
         updates["enabled"] = body.enabled
         if conn and conn.connector_type == "generic":
             updates["status"] = _idle_status("generic", body.enabled)
-    if body.config is not None:
-        if conn:
-            existing = json.loads(conn.config_json) if conn.config_json else {}
-            existing.update(body.config)
-            updates["config_json"] = json.dumps(existing)
+    if body.config is not None and conn:
+        existing = json.loads(conn.config_json) if conn.config_json else {}
+        existing.update(body.config)
+        updates["config_json"] = json.dumps(existing)
     conn = await ConnectorRepo.update(db, connector_id, **updates)
     if not conn:
         raise HTTPException(status_code=404, detail="Connector not found")
     return _conn_to_response(conn)
 
 
-@router.delete("/{connector_id}", status_code=204)
+@router.delete("/{connector_id}", response_model=None, status_code=204)
 async def delete_connector(
     connector_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("connectors:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("connectors:write")),
+) -> None:
     deleted = await ConnectorRepo.delete(db, connector_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Connector not found")
@@ -196,7 +196,7 @@ async def delete_connector(
 # ── Connection test helpers ───────────────────────────────────────────────────
 
 
-async def _test_wazuh_connection(config: dict) -> tuple[bool, str]:
+async def _test_wazuh_connection(config: dict[str, Any]) -> tuple[bool, str]:
     """Verify Wazuh API connectivity by attempting JWT authentication."""
     url = config.get("url", "").rstrip("/")
     username = config.get("username", "")
@@ -223,7 +223,7 @@ async def _test_wazuh_connection(config: dict) -> tuple[bool, str]:
         return False, f"Connection test failed: {exc}"
 
 
-async def _test_zeek_connection(config: dict) -> tuple[bool, str]:
+async def _test_zeek_connection(config: dict[str, Any]) -> tuple[bool, str]:
     """Verify Zeek connector by checking whether the configured log directory exists."""
     log_dir = config.get("log_dir", "/opt/zeek/logs/current")
     if os.path.isdir(log_dir):
@@ -231,7 +231,7 @@ async def _test_zeek_connection(config: dict) -> tuple[bool, str]:
     return False, f"Zeek log directory not found: {log_dir}"
 
 
-async def _test_suricata_connection(config: dict) -> tuple[bool, str]:
+async def _test_suricata_connection(config: dict[str, Any]) -> tuple[bool, str]:
     """Verify Suricata connector by checking whether the EVE JSON file exists."""
     eve_file = config.get("eve_file", "/var/log/suricata/eve.json")
     if os.path.isfile(eve_file):
@@ -250,8 +250,8 @@ _CONNECTION_TESTERS: dict[str, Any] = {
 async def test_connector(
     connector_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("connectors:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("connectors:write")),
+) -> dict[str, Any]:
     conn = await ConnectorRepo.get_by_id(db, connector_id)
     if not conn:
         raise HTTPException(status_code=404, detail="Connector not found")
@@ -281,8 +281,8 @@ async def test_connector(
 async def connector_health(
     connector_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("connectors:read")),
-):
+    _: dict[str, Any] = Depends(require_permission("connectors:read")),
+) -> ConnectorHealthResponse:
     conn = await ConnectorRepo.get_by_id(db, connector_id)
     if not conn:
         raise HTTPException(status_code=404, detail="Connector not found")
@@ -309,8 +309,8 @@ async def start_connector(
     connector_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("connectors:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("connectors:write")),
+) -> dict[str, Any]:
     """Start a connector at runtime without restarting the server.
 
     Idempotent: if the connector is already running, returns its current state.
@@ -321,7 +321,7 @@ async def start_connector(
     if not conn:
         raise HTTPException(status_code=404, detail="Connector not found")
 
-    running: dict = getattr(request.app.state, "connectors", {})
+    running: dict[str, Any] = getattr(request.app.state, "connectors", {})
     if connector_id not in running:
         queue = getattr(request.app.state, "queue", None)
         if queue is None:
@@ -337,7 +337,7 @@ async def start_connector(
         asyncio.create_task(connector.start(), name=f"connector-start-{conn.name}")
         running[connector_id] = connector
         await ConnectorRepo.update_status(db, connector_id, "connecting")
-        conn = await ConnectorRepo.get_by_id(db, connector_id)
+        conn = await ConnectorRepo.get_by_id(db, connector_id) or conn
 
     return _conn_to_response(conn)
 
@@ -347,8 +347,8 @@ async def stop_connector(
     connector_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_permission("connectors:write")),
-):
+    _: dict[str, Any] = Depends(require_permission("connectors:write")),
+) -> dict[str, Any]:
     """Stop a running connector at runtime without restarting the server.
 
     Idempotent: if the connector is not currently running, its DB status is
@@ -358,12 +358,12 @@ async def stop_connector(
     if not conn:
         raise HTTPException(status_code=404, detail="Connector not found")
 
-    running: dict = getattr(request.app.state, "connectors", {})
+    running: dict[str, Any] = getattr(request.app.state, "connectors", {})
     connector = running.pop(connector_id, None)
     if connector is not None:
         await connector.stop()
 
     await ConnectorRepo.update_status(db, connector_id, "inactive")
-    conn = await ConnectorRepo.get_by_id(db, connector_id)
+    conn = await ConnectorRepo.get_by_id(db, connector_id) or conn
 
     return _conn_to_response(conn)

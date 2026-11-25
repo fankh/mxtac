@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import os
 import time
-from unittest.mock import AsyncMock, patch
-
-import pytest
+from unittest.mock import patch
 
 
 class TestHealthEndpoint:
@@ -80,7 +78,7 @@ class TestReadyEndpoint:
     async def test_ready_all_ok_when_db_available(self, client) -> None:
         """When all service checks report 'ok', status is 'ready' and HTTP 200."""
         with (
-            patch("app.main.AsyncSessionLocal") as mock_session_factory,
+            patch("app.main.AsyncSessionLocal"),
             patch("app.main.asyncio.wait_for") as mock_wait_for,
         ):
             mock_wait_for.return_value = None  # all checks succeed instantly

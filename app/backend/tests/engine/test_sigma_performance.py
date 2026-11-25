@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 from app.engine.sigma_engine import SigmaEngine, SigmaRule, _Condition
 
 # ---------------------------------------------------------------------------

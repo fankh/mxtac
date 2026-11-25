@@ -28,17 +28,13 @@ Coverage:
 from __future__ import annotations
 
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.testclient import TestClient
-from starlette.applications import Starlette
-from starlette.routing import Route
 
-from app.core.access_log import AccessLogMiddleware, _SKIP_PATHS
-
+from app.core.access_log import _SKIP_PATHS, AccessLogMiddleware
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -13,7 +13,13 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The repository was reduced to a small detection core: ingestion from Wazuh, Zeek, Suricata, syslog and a JSON webhook, OCSF normalization, Sigma rule evaluation, detections, incidents, event search and ATT&CK coverage. Entries below this section describe earlier versions and mention features that no longer exist.
 
-Read the upgrade notes in `INSTALL.md` before you upgrade an existing installation.
+Read the upgrade notes in `docs/installation.md` before you upgrade an existing installation.
+
+#### Build and CI
+
+- Backend CI passes: ruff and mypy findings fixed, the migration check stops at the one-way migration `0027`, and tests no longer depend on the `DATABASE_URL` of the machine running them.
+- Migration `0029` sets `created_at`/`updated_at` to NOT NULL on six tables (existing NULLs are filled with the migration time) and aligns the coverage snapshot index name with the model.
+- The Docker workflow pins the Trivy scan action to a version that still exists.
 
 #### Added
 

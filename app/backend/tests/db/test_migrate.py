@@ -12,13 +12,9 @@ Coverage:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.db.migrate import _ALEMBIC_INI, _run_alembic_upgrade, auto_migrate
-
 
 # ---------------------------------------------------------------------------
 # _ALEMBIC_INI path

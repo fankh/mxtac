@@ -14,7 +14,7 @@ Verifies:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
@@ -60,7 +60,7 @@ async def _insert_detection(
         name="Suspicious Script Execution",
         host=host,
         status="active",
-        time=datetime.now(timezone.utc),
+        time=datetime.now(UTC),
     )
     db.add(det)
     await db.flush()
@@ -200,8 +200,9 @@ async def test_detail_skips_missing_detection_ids(
     ghost_id = str(uuid.uuid4())
 
     # Bypass the endpoint (which validates detection existence) by updating the DB
-    from app.models.incident import Incident as IncidentModel
     from sqlalchemy import select
+
+    from app.models.incident import Incident as IncidentModel
 
     result = await db_session.execute(
         select(IncidentModel).where(IncidentModel.id == incident_id)

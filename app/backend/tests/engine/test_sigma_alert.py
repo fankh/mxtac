@@ -62,13 +62,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, fields
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 
 from app.engine.sigma_engine import LEVEL_SEVERITY, SigmaAlert
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -126,7 +125,7 @@ class TestSigmaAlertDefaults:
     def test_default_time_is_utc_aware(self) -> None:
         alert = SigmaAlert()
         assert alert.time.tzinfo is not None
-        assert alert.time.tzinfo == timezone.utc
+        assert alert.time.tzinfo == UTC
 
     def test_default_event_snapshot_is_empty_dict(self) -> None:
         assert SigmaAlert().event_snapshot == {}
@@ -250,7 +249,7 @@ class TestSigmaAlertExplicitFields:
         assert alert.host == "workstation-42"
 
     def test_explicit_time(self) -> None:
-        t = datetime(2026, 1, 15, 9, 30, 0, tzinfo=timezone.utc)
+        t = datetime(2026, 1, 15, 9, 30, 0, tzinfo=UTC)
         alert = SigmaAlert(time=t)
         assert alert.time == t
 
@@ -260,7 +259,7 @@ class TestSigmaAlertExplicitFields:
         assert alert.event_snapshot == snap
 
     def test_all_fields_set_together(self) -> None:
-        t = datetime(2026, 2, 22, 10, 0, 0, tzinfo=timezone.utc)
+        t = datetime(2026, 2, 22, 10, 0, 0, tzinfo=UTC)
         snap = {"process": {"name": "powershell.exe", "pid": 777}}
         alert = SigmaAlert(
             id="full-alert-001",
@@ -329,7 +328,7 @@ class TestSigmaAlertTypes:
 class TestSigmaAlertTime:
     def test_default_time_tzinfo_is_utc(self) -> None:
         alert = SigmaAlert()
-        assert alert.time.tzinfo == timezone.utc
+        assert alert.time.tzinfo == UTC
 
     def test_sequential_instances_time_is_non_decreasing(self) -> None:
         a = SigmaAlert()
@@ -344,10 +343,10 @@ class TestSigmaAlertTime:
         assert alert.time.tzinfo is None
 
     def test_explicit_utc_datetime_stored_as_is(self) -> None:
-        t = datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        t = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
         alert = SigmaAlert(time=t)
         assert alert.time == t
-        assert alert.time.tzinfo == timezone.utc
+        assert alert.time.tzinfo == UTC
 
 
 # ---------------------------------------------------------------------------
@@ -379,7 +378,7 @@ class TestSigmaAlertStructure:
         assert isinstance(d["time"], datetime)
 
     def test_asdict_round_trips_explicit_values(self) -> None:
-        t = datetime(2026, 3, 1, 0, 0, 0, tzinfo=timezone.utc)
+        t = datetime(2026, 3, 1, 0, 0, 0, tzinfo=UTC)
         alert = SigmaAlert(
             id="roundtrip-id",
             rule_id="r1",

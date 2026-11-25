@@ -56,7 +56,7 @@ Coverage:
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -68,7 +68,6 @@ from app.services.normalizers.ocsf import (
     OCSFEvent,
     ProcessInfo,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -86,7 +85,7 @@ def _ocsf_process_event(**overrides: object) -> OCSFEvent:
         class_uid=OCSFClass.PROCESS_ACTIVITY,
         class_name="Process Activity",
         category_uid=OCSFCategory.SYSTEM_ACTIVITY,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="windows",
         process=ProcessInfo(name="powershell.exe", cmd_line="powershell -enc abc123"),
@@ -101,7 +100,7 @@ def _ocsf_network_event(**overrides: object) -> OCSFEvent:
         class_uid=OCSFClass.NETWORK_ACTIVITY,
         class_name="Network Activity",
         category_uid=OCSFCategory.NETWORK,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="zeek",
         dst_endpoint=Endpoint(hostname="target-host", ip="192.168.1.1"),
@@ -115,7 +114,7 @@ def _ocsf_dns_event(**overrides: object) -> OCSFEvent:
         class_uid=OCSFClass.DNS_ACTIVITY,
         class_name="DNS Activity",
         category_uid=OCSFCategory.NETWORK,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="windows",
         dst_endpoint=Endpoint(hostname="dns-server-01"),
@@ -129,7 +128,7 @@ def _ocsf_auth_event(**overrides: object) -> OCSFEvent:
         class_uid=OCSFClass.AUTHENTICATION,
         class_name="Authentication",
         category_uid=OCSFCategory.IAM,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="windows",
         dst_endpoint=Endpoint(hostname="dc-01"),
@@ -398,7 +397,7 @@ async def test_alert_host_empty_when_neither_hostname_nor_ip(engine_with_ps_enco
 @pytest.mark.asyncio
 async def test_alert_time_matches_event_time(engine_with_ps_encoded: SigmaEngine) -> None:
     """Alert.time equals the event's time field."""
-    t = datetime(2026, 2, 22, 15, 30, 0, tzinfo=timezone.utc)
+    t = datetime(2026, 2, 22, 15, 30, 0, tzinfo=UTC)
     event = _ocsf_process_event(time=t)
     alerts = [a async for a in engine_with_ps_encoded.evaluate(event)]
     assert alerts[0].time == t
@@ -625,7 +624,7 @@ async def test_network_activity_event_triggers_network_connection_rule(engine: S
         class_uid=OCSFClass.NETWORK_ACTIVITY,
         class_name="Network Activity",
         category_uid=OCSFCategory.NETWORK,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="zeek",
         src_endpoint=Endpoint(hostname="network-probe-sensor"),
@@ -649,7 +648,7 @@ async def test_dns_activity_event_triggers_dns_query_rule(engine: SigmaEngine) -
         class_uid=OCSFClass.DNS_ACTIVITY,
         class_name="DNS Activity",
         category_uid=OCSFCategory.NETWORK,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="windows",
         src_endpoint=Endpoint(hostname="dns-probe-client"),
@@ -673,7 +672,7 @@ async def test_authentication_event_triggers_authentication_rule(engine: SigmaEn
         class_uid=OCSFClass.AUTHENTICATION,
         class_name="Authentication",
         category_uid=OCSFCategory.IAM,
-        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=timezone.utc),
+        time=datetime(2026, 2, 22, 12, 0, 0, tzinfo=UTC),
         severity_id=1,
         metadata_product="windows",
         src_endpoint=Endpoint(hostname="auth-probe-workstation"),

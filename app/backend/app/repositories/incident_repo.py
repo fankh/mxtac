@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
-from typing import Literal
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
 
 from sqlalchemy import ColumnElement, String, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,12 +24,12 @@ def time_to_detect_seconds(first_event_time: datetime | None, now: datetime | No
     if first_event_time is None:
         return None
     if first_event_time.tzinfo is None:
-        first_event_time = first_event_time.replace(tzinfo=timezone.utc)
-    now = now or datetime.now(timezone.utc)
+        first_event_time = first_event_time.replace(tzinfo=UTC)
+    now = now or datetime.now(UTC)
     return max(0, int((now - first_event_time).total_seconds()))
 
 
-def _json_array_contains(column: InstrumentedAttribute, value: str) -> ColumnElement[bool]:
+def _json_array_contains(column: InstrumentedAttribute[Any], value: str) -> ColumnElement[bool]:
     """Filter: the JSON array stored in *column* contains the string *value*.
 
     The array is compared as text (``["web01", "db02"]`` contains ``"web01"``),
@@ -56,6 +57,11 @@ _STATUS_ORDER = case(
 SortField = Literal["created_at", "severity", "status"]
 
 
+# ``IncidentRepo.list`` shadows the builtin ``list`` inside the class body, so
+# annotations there use this alias (and ``Sequence`` for parameters).
+_Incidents = list[Incident]
+
+
 class IncidentRepo:
 
     @staticmethod
@@ -64,8 +70,8 @@ class IncidentRepo:
         *,
         skip: int = 0,
         limit: int = 25,
-        severity: list[str] | None = None,
-        status: list[str] | None = None,
+        severity: Sequence[str] | None = None,
+        status: Sequence[str] | None = None,
         assigned_to: str | None = None,
         search: str | None = None,
         sort: SortField = "created_at",
@@ -117,14 +123,14 @@ class IncidentRepo:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(session: AsyncSession, **kwargs) -> Incident:
+    async def create(session: AsyncSession, **kwargs: Any) -> Incident:
         incident = Incident(**kwargs)
         session.add(incident)
         await session.flush()
         return incident
 
     @staticmethod
-    async def update(session: AsyncSession, incident_id: int, **kwargs) -> Incident | None:
+    async def update(session: AsyncSession, incident_id: int, **kwargs: Any) -> Incident | None:
         incident = await IncidentRepo.get_by_id(session, incident_id)
         if not incident:
             return None
@@ -161,7 +167,7 @@ class IncidentRepo:
         Only incidents whose tactic_ids JSON array contains the given tactic are matched.
         The correlation window is measured from the incident's created_at timestamp.
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+        cutoff = datetime.now(UTC) - timedelta(seconds=window_seconds)
         result = await session.execute(
             select(Incident)
             .where(_json_array_contains(Incident.hosts, host))
@@ -174,7 +180,7 @@ class IncidentRepo:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def get_by_detection(session: AsyncSession, detection_id: str) -> list[Incident]:
+    async def get_by_detection(session: AsyncSession, detection_id: str) -> _Incidents:
         """Return all incidents that reference the given detection_id in their detection_ids JSON array."""
         result = await session.execute(
             select(Incident)
@@ -188,7 +194,7 @@ class IncidentRepo:
         session: AsyncSession,
         from_date: datetime,
         to_date: datetime,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Compute incident SLA metrics within the given date range.
 
         Returns a dict with keys:
@@ -240,7 +246,7 @@ class IncidentRepo:
         severity_counts: dict[str, int] = {row.severity: row.cnt for row in severity_result}
 
         # Incidents created this calendar week (Monday 00:00 UTC)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         week_start = (now - timedelta(days=now.weekday())).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
