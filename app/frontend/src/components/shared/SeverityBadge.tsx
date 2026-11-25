@@ -1,28 +1,30 @@
 import type { SeverityLevel } from '../../types/api'
+import { cn } from '@/lib/utils'
 
-const MAP: Record<SeverityLevel, { circle: string; pill: string; label: string }> = {
-  critical: { circle: 'bg-crit-bg text-crit-text', pill: 'bg-crit-bg text-crit-text', label: 'Critical' },
-  high:     { circle: 'bg-high-bg text-high-text', pill: 'bg-high-bg text-high-text', label: 'High' },
-  medium:   { circle: 'bg-med-bg  text-med-text',  pill: 'bg-med-bg  text-med-text',  label: 'Medium' },
-  low:      { circle: 'bg-low-bg  text-low-text',  pill: 'bg-low-bg  text-low-text',  label: 'Low' },
+const MAP: Record<SeverityLevel, { cls: string; label: string }> = {
+  critical: { cls: 'sev-critical', label: 'Critical' },
+  high: { cls: 'sev-high', label: 'High' },
+  medium: { cls: 'sev-medium', label: 'Medium' },
+  low: { cls: 'sev-low', label: 'Low' },
 }
+const FALLBACK = { cls: 'sev-info', label: 'Info' }
 
 export function ScoreCircle({ score, severity }: { score: number; severity: SeverityLevel }) {
-  const { circle } = MAP[severity]
+  const { cls, label } = MAP[severity] ?? FALLBACK
   return (
     <span
-      className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-full text-[9px] font-bold ${circle}`}
-      aria-label={`Score ${score}, ${MAP[severity].label}`}
+      className={cn('inline-flex h-6 w-6 items-center justify-center rounded-full border text-[9px] font-bold tabular-nums', cls)}
+      aria-label={`Score ${score}, ${label}`}
     >
       {score.toFixed(1)}
     </span>
   )
 }
 
-export function SeverityPill({ severity }: { severity: SeverityLevel }) {
-  const { pill, label } = MAP[severity]
+export function SeverityPill({ severity, className }: { severity: SeverityLevel; className?: string }) {
+  const { cls, label } = MAP[severity] ?? FALLBACK
   return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-medium ${pill}`}>
+    <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium leading-none', cls, className)}>
       {label}
     </span>
   )

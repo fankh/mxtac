@@ -1,0 +1,27 @@
+title: Download Piped to Shell
+id: 5c6ca083-feda-4ee0-b01b-b9c6626e5c15
+status: test
+description: Detects a command line that downloads content with curl or wget and pipes it straight into a shell.
+author: MxTac
+date: 2026-11-24
+references:
+  - https://attack.mitre.org/techniques/T1105/
+  - https://attack.mitre.org/techniques/T1059/004/
+tags:
+  - attack.command-and-control
+  - attack.execution
+  - attack.t1105
+  - attack.t1059.004
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine:
+      - '*curl *|*sh*'
+      - '*wget *|*sh*'
+  condition: selection
+falsepositives:
+  - Vendor install scripts that are documented as a curl-to-shell one-liner
+  - Bootstrap steps of configuration-management tools
+level: medium

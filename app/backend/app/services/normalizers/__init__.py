@@ -2,7 +2,14 @@ from .ocsf import OCSFEvent
 from .wazuh import WazuhNormalizer
 from .zeek import ZeekNormalizer
 from .suricata import SuricataNormalizer
-from .prowler import ProwlerNormalizer
-from .velociraptor import VelociraptorNormalizer
+from .syslog import SyslogNormalizer
+from .webhook import WebhookNormalizer
 
-__all__ = ["OCSFEvent", "WazuhNormalizer", "ZeekNormalizer", "SuricataNormalizer", "ProwlerNormalizer", "VelociraptorNormalizer"]
+__all__ = [
+    "OCSFEvent",
+    "WazuhNormalizer",
+    "ZeekNormalizer",
+    "SuricataNormalizer",
+    "SyslogNormalizer",
+    "WebhookNormalizer",
+]

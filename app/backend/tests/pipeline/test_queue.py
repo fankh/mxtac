@@ -8,7 +8,6 @@ Coverage:
     error isolation, task naming, task_done() contract
   - RedisStreamQueue: xadd/xreadgroup wiring, JSON serialisation,
     maxlen enforcement, group creation, handler delivery, ack
-  - KafkaQueue: producer lifecycle, publish wiring, stop cleanup
   - create_queue() factory: all three backends + fallback/defaults
   - get_queue() singleton: same-instance contract, module state
 """
@@ -26,7 +25,6 @@ import pytest
 import app.pipeline.queue as queue_module
 from app.pipeline.queue import (
     InMemoryQueue,
-    KafkaQueue,
     MessageQueue,
     RedisStreamQueue,
     Topic,
@@ -392,94 +390,6 @@ class TestInMemoryQueueErrorHandling:
         await q.stop()
 
 
-# ── KafkaQueue ────────────────────────────────────────────────────────────────
-
-class TestKafkaQueue:
-    def test_init_stores_bootstrap_servers(self) -> None:
-        q = KafkaQueue("broker1:9092,broker2:9092")
-        assert q._bootstrap == "broker1:9092,broker2:9092"
-
-    def test_init_producer_is_none_before_start(self) -> None:
-        q = KafkaQueue("broker:9092")
-        assert q._producer is None
-
-    def test_init_tasks_list_is_empty(self) -> None:
-        q = KafkaQueue("broker:9092")
-        assert q._tasks == []
-
-    async def test_publish_before_start_raises_runtime_error(self) -> None:
-        q = KafkaQueue("broker:9092")
-        with pytest.raises(RuntimeError, match="not started"):
-            await q.publish(Topic.ALERTS, {"test": True})
-
-    async def test_start_creates_and_starts_producer(self) -> None:
-        mock_producer = AsyncMock()
-        mock_aiokafka = MagicMock()
-        mock_aiokafka.AIOKafkaProducer.return_value = mock_producer
-
-        with patch.dict(sys.modules, {"aiokafka": mock_aiokafka}):
-            q = KafkaQueue("broker:9092")
-            await q.start()
-
-        assert q._producer is mock_producer
-        mock_producer.start.assert_called_once()
-
-    async def test_start_passes_bootstrap_servers_to_producer(self) -> None:
-        mock_producer = AsyncMock()
-        mock_aiokafka = MagicMock()
-        mock_aiokafka.AIOKafkaProducer.return_value = mock_producer
-
-        with patch.dict(sys.modules, {"aiokafka": mock_aiokafka}):
-            q = KafkaQueue("my-broker:9092")
-            await q.start()
-
-        mock_aiokafka.AIOKafkaProducer.assert_called_once()
-        call_kwargs = mock_aiokafka.AIOKafkaProducer.call_args.kwargs
-        assert call_kwargs["bootstrap_servers"] == "my-broker:9092"
-
-    async def test_publish_calls_send_and_wait_with_correct_args(self) -> None:
-        mock_producer = AsyncMock()
-        mock_aiokafka = MagicMock()
-        mock_aiokafka.AIOKafkaProducer.return_value = mock_producer
-
-        with patch.dict(sys.modules, {"aiokafka": mock_aiokafka}):
-            q = KafkaQueue("broker:9092")
-            await q.start()
-            await q.publish(Topic.ALERTS, {"alert": "test"})
-
-        mock_producer.send_and_wait.assert_called_once_with(Topic.ALERTS, {"alert": "test"})
-
-    async def test_stop_cancels_tasks_and_stops_producer(self) -> None:
-        mock_producer = AsyncMock()
-        mock_aiokafka = MagicMock()
-        mock_aiokafka.AIOKafkaProducer.return_value = mock_producer
-
-        with patch.dict(sys.modules, {"aiokafka": mock_aiokafka}):
-            q = KafkaQueue("broker:9092")
-            await q.start()
-            await q.stop()
-
-        mock_producer.stop.assert_called_once()
-
-    async def test_stop_without_start_does_not_raise(self) -> None:
-        """stop() with _producer=None must be safe."""
-        q = KafkaQueue("broker:9092")
-        await q.stop()
-
-    async def test_subscribe_creates_task_for_consumer(self) -> None:
-        mock_consumer = AsyncMock()
-        mock_consumer.__aiter__ = MagicMock(return_value=iter([]))
-        mock_aiokafka = MagicMock()
-        mock_aiokafka.AIOKafkaConsumer.return_value = mock_consumer
-
-        with patch.dict(sys.modules, {"aiokafka": mock_aiokafka}):
-            q = KafkaQueue("broker:9092")
-            await q.subscribe(Topic.RAW_WAZUH, "grp", AsyncMock())
-            assert len(q._tasks) == 1
-            assert q._tasks[0].get_name() == f"kafka-consumer-{Topic.RAW_WAZUH}-grp"
-            await q.stop()
-
-
 # ── RedisStreamQueue ──────────────────────────────────────────────────────────
 
 class TestRedisStreamQueue:
@@ -728,11 +638,13 @@ class TestCreateQueue:
             result = create_queue()
         assert isinstance(result, InMemoryQueue)
 
-    def test_returns_in_memory_queue_for_unknown_backend(self) -> None:
+    @pytest.mark.parametrize("backend", ["unknown-backend", "kafka"])
+    def test_rejects_unsupported_backend(self, backend: str) -> None:
+        """A typo or a removed backend must not silently fall back to memory."""
         with patch("app.pipeline.queue.settings") as mock_settings:
-            mock_settings.queue_backend = "unknown-backend"
-            result = create_queue()
-        assert isinstance(result, InMemoryQueue)
+            mock_settings.queue_backend = backend
+            with pytest.raises(ValueError, match="Unsupported QUEUE_BACKEND"):
+                create_queue()
 
     def test_returns_in_memory_queue_when_attribute_missing(self) -> None:
         """getattr fallback: no queue_backend on settings → InMemoryQueue."""
@@ -743,25 +655,6 @@ class TestCreateQueue:
         with patch("app.pipeline.queue.settings", _MinimalSettings()):
             result = create_queue()
         assert isinstance(result, InMemoryQueue)
-
-    def test_returns_kafka_queue_for_kafka_backend(self) -> None:
-        with patch("app.pipeline.queue.settings") as mock_settings:
-            mock_settings.queue_backend = "kafka"
-            mock_settings.kafka_bootstrap_servers = "broker:9092"
-            result = create_queue()
-        assert isinstance(result, KafkaQueue)
-        assert result._bootstrap == "broker:9092"
-
-    def test_kafka_defaults_bootstrap_when_attribute_absent(self) -> None:
-        """getattr fallback: no kafka_bootstrap_servers → 'localhost:9092'."""
-
-        class _KafkaSettings:
-            queue_backend = "kafka"
-
-        with patch("app.pipeline.queue.settings", _KafkaSettings()):
-            result = create_queue()
-        assert isinstance(result, KafkaQueue)
-        assert result._bootstrap == "localhost:9092"
 
     def test_returns_redis_queue_for_redis_backend(self) -> None:
         mock_valkey_asyncio = MagicMock()

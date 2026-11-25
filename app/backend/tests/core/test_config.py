@@ -28,6 +28,21 @@ _DEV_SECRET = "dev-secret-change-in-production"
 _CONFIG_LOGGER = "app.core.config"
 
 
+@pytest.fixture(autouse=True)
+def _keep_original_settings():
+    """Put the original ``settings`` object back after each test.
+
+    Several tests reload ``app.core.config``, which builds a new ``settings``
+    object.  Modules imported earlier keep a reference to the original one, so
+    later tests that patch ``app.core.config.settings`` must see that same object.
+    """
+    import app.core.config as config_module
+
+    original_settings = config_module.settings
+    yield
+    config_module.settings = original_settings
+
+
 class TestSecretKeyProductionEnforcement:
     """Settings raises ValidationError in production with the development default key."""
 

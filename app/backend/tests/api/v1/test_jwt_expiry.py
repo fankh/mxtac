@@ -23,6 +23,7 @@ from jose import jwt
 from app.core.config import settings
 from app.core.security import create_access_token, create_refresh_token
 from app.models.user import User
+from tests.auth_cookies import refresh_cookie, refresh_token_of
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -30,7 +31,7 @@ from app.models.user import User
 
 LOGIN_URL = "/api/v1/auth/login"
 REFRESH_URL = "/api/v1/auth/refresh"
-VALID_CREDS = {"email": "analyst@mxtac.local", "password": "mxtac2026"}
+VALID_CREDS = {"email": "analyst@mxtac.local", "password": "TestPassw0rd9"}
 
 MOCK_REPO = "app.api.v1.endpoints.auth.UserRepo.get_by_email"
 MOCK_VERIFY = "app.api.v1.endpoints.auth.verify_password"
@@ -134,7 +135,7 @@ async def test_refresh_token_exp_claim_is_7_days(client: AsyncClient) -> None:
         with patch(MOCK_VERIFY, return_value=True):
             resp = await client.post(LOGIN_URL, json=VALID_CREDS)
     now = time.time()
-    payload = _decode(resp.json()["refresh_token"])
+    payload = _decode(refresh_token_of(resp))
     expected_exp = now + REFRESH_TOKEN_SECONDS
     assert abs(payload["exp"] - expected_exp) <= REFRESH_TOLERANCE, (
         f"refresh_token exp={payload['exp']}, expected ~{expected_exp} "
@@ -149,7 +150,7 @@ async def test_refresh_token_exp_not_less_than_7_days(client: AsyncClient) -> No
         with patch(MOCK_VERIFY, return_value=True):
             resp = await client.post(LOGIN_URL, json=VALID_CREDS)
     now = time.time()
-    payload = _decode(resp.json()["refresh_token"])
+    payload = _decode(refresh_token_of(resp))
     min_exp = now + REFRESH_TOKEN_SECONDS - REFRESH_TOLERANCE
     assert payload["exp"] >= min_exp
 
@@ -161,7 +162,7 @@ async def test_refresh_token_exp_not_more_than_7_days(client: AsyncClient) -> No
         with patch(MOCK_VERIFY, return_value=True):
             resp = await client.post(LOGIN_URL, json=VALID_CREDS)
     now = time.time()
-    payload = _decode(resp.json()["refresh_token"])
+    payload = _decode(refresh_token_of(resp))
     max_exp = now + REFRESH_TOKEN_SECONDS + REFRESH_TOLERANCE
     assert payload["exp"] <= max_exp
 
@@ -176,7 +177,7 @@ async def test_refresh_token_longer_lived_than_access_token(
             resp = await client.post(LOGIN_URL, json=VALID_CREDS)
     data = resp.json()
     access_exp = _decode(data["access_token"])["exp"]
-    refresh_exp = _decode(data["refresh_token"])["exp"]
+    refresh_exp = _decode(refresh_token_of(resp))["exp"]
     # refresh must outlive access by at least 6 days
     assert refresh_exp - access_exp >= timedelta(days=6).total_seconds()
 
@@ -225,10 +226,10 @@ async def test_rotated_refresh_token_exp_is_7_days(client: AsyncClient) -> None:
     """POST /auth/refresh issues a new refresh token with a fresh 7-day expiry."""
     original_refresh = create_refresh_token({"sub": "analyst@mxtac.local"})
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": original_refresh})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(original_refresh))
     assert resp.status_code == 200
     now = time.time()
-    new_refresh_payload = _decode(resp.json()["refresh_token"])
+    new_refresh_payload = _decode(refresh_token_of(resp))
     expected_exp = now + REFRESH_TOKEN_SECONDS
     assert abs(new_refresh_payload["exp"] - expected_exp) <= REFRESH_TOLERANCE
 
@@ -238,7 +239,7 @@ async def test_rotated_access_token_exp_is_60_minutes(client: AsyncClient) -> No
     """POST /auth/refresh issues a new access token with a fresh 60-minute expiry."""
     original_refresh = create_refresh_token({"sub": "analyst@mxtac.local"})
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": original_refresh})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(original_refresh))
     assert resp.status_code == 200
     now = time.time()
     access_payload = _decode(resp.json()["access_token"])
@@ -251,7 +252,7 @@ async def test_refresh_endpoint_expires_in_matches_config(client: AsyncClient) -
     """POST /auth/refresh expires_in equals settings.access_token_expire_minutes * 60."""
     original_refresh = create_refresh_token({"sub": "analyst@mxtac.local"})
     with patch(MOCK_REPO, new=AsyncMock(return_value=_active_user())):
-        resp = await client.post(REFRESH_URL, json={"refresh_token": original_refresh})
+        resp = await client.post(REFRESH_URL, headers=refresh_cookie(original_refresh))
     assert resp.json()["expires_in"] == settings.access_token_expire_minutes * 60
 
 

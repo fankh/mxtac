@@ -237,7 +237,7 @@ describe('useNewAlertIds', () => {
   // =========================================================================
   describe('cleanup on unmount', () => {
     it('does not throw or update state after unmount', () => {
-      const { result, unmount } = renderHook(() => useNewAlertIds())
+      const { unmount } = renderHook(() => useNewAlertIds())
 
       act(() => {
         useDetectionStore.getState().addLiveAlert(makeDetection({ id: 'will-expire' }))

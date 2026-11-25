@@ -7,6 +7,7 @@ Provides:
 - validate_hostname()                — RFC 952 / 1123 hostname validation
 - validate_password_complexity()     — min 8 chars + 3 of 4 character types (feature 2.1)
 - validate_password_no_consecutive() — no more than 3 consecutive identical chars (feature 2.2)
+- validate_password_policy()         — length bounds plus both rules above
 - EMAIL_MAX_LENGTH                   — RFC 5321 maximum email address length
 - PASSWORD_MIN_LENGTH / PASSWORD_MAX_LENGTH — password length bounds
 """
@@ -112,6 +113,22 @@ def validate_password_no_consecutive(v: str) -> str:
             "Password must not contain more than 3 consecutive identical characters"
         )
     return v
+
+
+def validate_password_policy(v: str) -> str:
+    """Return *v* if it satisfies the whole password policy, else raise ValueError.
+
+    Combines the length bounds (normally enforced by Pydantic ``Field``
+    constraints on request bodies) with the complexity and repetition rules,
+    for passwords that do not arrive through a request schema (for example
+    the bootstrap ``INITIAL_ADMIN_PASSWORD``).
+    """
+    if len(v) < PASSWORD_MIN_LENGTH:
+        raise ValueError(f"Password must have at least {PASSWORD_MIN_LENGTH} characters")
+    if len(v) > PASSWORD_MAX_LENGTH:
+        raise ValueError(f"Password must have at most {PASSWORD_MAX_LENGTH} characters")
+    validate_password_complexity(v)
+    return validate_password_no_consecutive(v)
 
 
 # ── Hostname validator ────────────────────────────────────────────────────────

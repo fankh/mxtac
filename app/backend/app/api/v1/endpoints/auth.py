@@ -4,15 +4,20 @@ import hmac
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import pyotp
 from cryptography.fernet import Fernet
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.config import settings
 from ....core.database import get_db
 from ....core.security import (
+    REFRESH_COOKIE_NAME,
+    REFRESH_COOKIE_PATH,
+    SESSION_ENDED_DETAIL,
     create_access_token,
     create_mfa_token,
     create_password_change_token,
@@ -20,23 +25,23 @@ from ....core.security import (
     decode_token,
     get_current_user,
     hash_password,
+    session_revocation_id,
+    token_version_matches,
     verify_password,
 )
 from ....core.valkey import (
     blacklist_token,
     clear_login_attempts,
+    consume_token,
     increment_login_attempts,
     increment_mfa_attempts,
     is_account_locked,
+    is_token_blacklisted,
 )
+from ....models.user import User
 from ....repositories.user_repo import UserRepo
-from ....repositories.api_key_repo import APIKeyRepo
-from ....repositories.permission_set_repo import PermissionSetRepo
-from ....core.rbac import require_permission, permissions_for_role
+from ....core.rbac import require_permission
 from ....schemas.auth import (
-    APIKeyCreate,
-    APIKeyCreateResponse,
-    APIKeyResponse,
     ChangePasswordRequest,
     LoginRequest,
     LogoutResponse,
@@ -48,7 +53,7 @@ from ....schemas.auth import (
     MfaVerifyRequest,
     MfaVerifyResponse,
     PasswordChangeRequiredResponse,
-    RefreshRequest,
+    SelfPasswordChangeRequest,
     TokenResponse,
 )
 
@@ -84,8 +89,66 @@ def _hash_backup_code(code: str) -> str:
     return hmac.new(settings.secret_key.encode(), code.encode(), hashlib.sha256).hexdigest()
 
 
+def _refresh_cookie_attributes() -> dict:
+    """Attributes of the refresh cookie.
+
+    Deleting a cookie only works with the same path, so both the set and the
+    delete use these.
+    """
+    return {
+        "key": REFRESH_COOKIE_NAME,
+        "path": REFRESH_COOKIE_PATH,
+        "httponly": True,
+        "secure": settings.refresh_cookie_secure,
+        "samesite": "strict",
+    }
+
+
+def _refresh_lifetime_seconds() -> int:
+    return settings.refresh_token_expire_days * 86400
+
+
+def _issue_tokens(response: Response, user: User, sid: str | None = None) -> TokenResponse:
+    """Full session for *user*: the access token and the account identity in
+    the body, the refresh token as an HttpOnly cookie on *response*.
+
+    *sid* identifies the session.  A sign-in starts a new one; a refresh keeps
+    the one of the token it replaces, so that logout and reuse detection can
+    end every token that descends from the same sign-in.
+    """
+    claims = {
+        "sub": user.email,
+        "sid": sid or str(uuid4()),
+        "tv": user.token_version or 0,
+    }
+    response.set_cookie(
+        value=create_refresh_token(claims),
+        max_age=_refresh_lifetime_seconds(),
+        **_refresh_cookie_attributes(),
+    )
+    return TokenResponse(
+        access_token=create_access_token({**claims, "role": user.role}),
+        expires_in=settings.access_token_expire_minutes * 60,
+        email=user.email,
+        role=user.role,
+    )
+
+
+def _refresh_refused(detail: str = "Invalid refresh token") -> JSONResponse:
+    """401 for POST /auth/refresh that also removes the cookie from the browser."""
+    refused = JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": detail})
+    refused.delete_cookie(**_refresh_cookie_attributes())
+    return refused
+
+
 @router.post("/login")
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(body: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
+    """Sign in with email and password.
+
+    Answers with a session (access token in the body, refresh token as an
+    HttpOnly cookie), or with the one-time token of the step the account has
+    to complete first: a password change or an MFA code.
+    """
     # 1. Check account lockout before doing any further work.
     if await is_account_locked(body.email):
         raise HTTPException(
@@ -155,17 +218,13 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     if user.mfa_enabled:
         mfa_token = create_mfa_token(str(user.id))
         return MfaLoginResponse(mfa_token=mfa_token)
-    token = create_access_token({"sub": user.email, "role": user.role})
-    refresh = create_refresh_token({"sub": user.email})
-    return TokenResponse(
-        access_token=token,
-        refresh_token=refresh,
-        expires_in=settings.access_token_expire_minutes * 60,
-    )
+    return _issue_tokens(response, user)
 
 
 @router.post("/mfa/verify", response_model=TokenResponse)
-async def mfa_verify_login(body: MfaVerifyLoginRequest, db: AsyncSession = Depends(get_db)):
+async def mfa_verify_login(
+    body: MfaVerifyLoginRequest, response: Response, db: AsyncSession = Depends(get_db)
+):
     """Verify TOTP code (or backup code) after password authentication.
 
     Accepts the mfa_token issued by POST /auth/login when mfa_enabled=True.
@@ -213,37 +272,59 @@ async def mfa_verify_login(body: MfaVerifyLoginRequest, db: AsyncSession = Depen
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA code")
 
     # 5. Issue full access + refresh tokens
-    token = create_access_token({"sub": user.email, "role": user.role})
-    refresh = create_refresh_token({"sub": user.email})
-    return TokenResponse(
-        access_token=token,
-        refresh_token=refresh,
-        expires_in=settings.access_token_expire_minutes * 60,
-    )
+    return _issue_tokens(response, user)
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
-    payload = decode_token(body.refresh_token)
-    if payload.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+async def refresh(
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKIE_NAME),
+):
+    """Exchange the refresh cookie for a new access token and a new refresh cookie.
+
+    The refresh token is single use: it is put on the revocation list as it is
+    exchanged.  Presenting it a second time means the token was copied, so the
+    whole session (every refresh token that descends from the same sign-in) is
+    ended.  Every refusal also deletes the cookie.
+    """
+    if not refresh_token:
+        return _refresh_refused("Refresh token required")
+    try:
+        payload = decode_token(refresh_token)
+    except HTTPException:
+        return _refresh_refused()
     email = payload.get("sub")
-    if not email:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    jti = payload.get("jti")
+    if payload.get("type") != "refresh" or not email or not jti:
+        return _refresh_refused()
+
+    sid = payload.get("sid")
+    if sid and await is_token_blacklisted(session_revocation_id(sid)):
+        return _refresh_refused(SESSION_ENDED_DETAIL)
+
+    remaining = payload.get("exp", 0) - int(datetime.now(timezone.utc).timestamp())
+    if not await consume_token(jti, remaining):
+        # Reuse of a rotated token: end the session it belongs to.
+        if sid:
+            await blacklist_token(session_revocation_id(sid), _refresh_lifetime_seconds())
+        return _refresh_refused(SESSION_ENDED_DETAIL)
+
     user = await UserRepo.get_by_email(db, email)
     if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
-    token = create_access_token({"sub": user.email, "role": user.role})
-    new_refresh = create_refresh_token({"sub": user.email})
-    return TokenResponse(
-        access_token=token,
-        refresh_token=new_refresh,
-        expires_in=settings.access_token_expire_minutes * 60,
-    )
+        return _refresh_refused("User not found or inactive")
+    if not token_version_matches(payload, user.token_version):
+        return _refresh_refused(SESSION_ENDED_DETAIL)
+    return _issue_tokens(response, user, sid=sid)
 
 
 @router.post("/logout", response_model=LogoutResponse)
-async def logout(authorization: str = Header(None)):
+async def logout(response: Response, authorization: str = Header(None)):
+    """End the session of the presented access token.
+
+    Revokes the access token and the session it belongs to, so the refresh
+    token of that session stops working as well, and deletes the refresh cookie.
+    """
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -262,6 +343,11 @@ async def logout(authorization: str = Header(None)):
         now = int(datetime.now(timezone.utc).timestamp())
         ttl = exp - now
         await blacklist_token(jti, ttl)
+
+    sid = payload.get("sid")
+    if sid:
+        await blacklist_token(session_revocation_id(sid), _refresh_lifetime_seconds())
+    response.delete_cookie(**_refresh_cookie_attributes())
 
     return LogoutResponse(message="Logged out")
 
@@ -315,7 +401,9 @@ async def mfa_verify_setup(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MFA setup not initiated")
 
     secret = _decrypt_secret(user.mfa_secret)
-    if not pyotp.TOTP(secret).verify(body.code):
+    # Same tolerance as at sign-in: one time step in each direction.  Without
+    # it a code typed near the end of its 30 seconds is refused.
+    if not pyotp.TOTP(secret).verify(body.code, valid_window=1):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
 
     user.mfa_enabled = True
@@ -374,8 +462,40 @@ async def mfa_disable(
 # ---------------------------------------------------------------------------
 
 
+async def _set_new_password(db: AsyncSession, user: User, new_password: str) -> None:
+    """Replace the password of *user*, enforcing the history rule.
+
+    Shared by the forced change (POST /auth/change-password) and the
+    self-service change (POST /auth/password).  Complexity and length are
+    validated by the request schemas before this is reached.
+    """
+    # Feature 2.4 — Password history: cannot reuse last 2 passwords.
+    # "Last 2" = current password + 1 previous (stored in password_history).
+    history = list(user.password_history or [])
+    candidates = [user.hashed_password] + history
+    for old_hash in candidates:
+        if verify_password(new_password, old_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot reuse one of your last 2 passwords",
+            )
+
+    # Rotate history: move current hash in; keep the 1 most-recent previous entry.
+    user.password_history = [user.hashed_password]
+
+    user.hashed_password = hash_password(new_password)
+    user.must_change_password = False
+    user.password_changed_at = datetime.now(timezone.utc)
+    # End every session of the account: tokens carry the version they were
+    # issued under and are refused once it has moved on.
+    user.token_version = (user.token_version or 0) + 1
+    await db.flush()
+
+
 @router.post("/change-password")
-async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depends(get_db)):
+async def change_password(
+    body: ChangePasswordRequest, response: Response, db: AsyncSession = Depends(get_db)
+):
     """Complete a forced first-login password change.
 
     Accepts the ``password_change_token`` issued by POST /auth/login when
@@ -403,161 +523,62 @@ async def change_password(body: ChangePasswordRequest, db: AsyncSession = Depend
             detail="Invalid password change token",
         )
 
-    # Feature 2.4 — Password history: cannot reuse last 2 passwords.
-    # "Last 2" = current password + 1 previous (stored in password_history).
-    history = list(user.password_history or [])
-    candidates = [user.hashed_password] + history
-    for old_hash in candidates:
-        if verify_password(body.new_password, old_hash):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot reuse one of your last 2 passwords",
-            )
-
-    # Rotate history: move current hash in; keep the 1 most-recent previous entry.
-    user.password_history = [user.hashed_password]
-
-    user.hashed_password = hash_password(body.new_password)
-    user.must_change_password = False
-    user.password_changed_at = datetime.now(timezone.utc)
-    await db.flush()
+    await _set_new_password(db, user, body.new_password)
 
     if user.mfa_enabled:
         mfa_token = create_mfa_token(str(user.id))
         return MfaLoginResponse(mfa_token=mfa_token)
 
-    token = create_access_token({"sub": user.email, "role": user.role})
-    refresh = create_refresh_token({"sub": user.email})
-    return TokenResponse(
-        access_token=token,
-        refresh_token=refresh,
-        expires_in=settings.access_token_expire_minutes * 60,
-    )
+    return _issue_tokens(response, user)
 
 
 # ---------------------------------------------------------------------------
-# Feature 1.11 — Scoped API key management
-# Feature 3.9 — Scoped API keys (per-permission set)
+# Self-service password change for a signed-in user
 # ---------------------------------------------------------------------------
 
-_API_KEY_BYTES = 32  # 256-bit entropy
 
-
-def _generate_api_key() -> str:
-    """Return a cryptographically random API key with a recognisable prefix."""
-    return "mxtac_" + secrets.token_urlsafe(_API_KEY_BYTES)
-
-
-@router.post("/api-keys", response_model=APIKeyCreateResponse, status_code=201)
-async def create_api_key(
-    body: APIKeyCreate,
+@router.post("/password", response_model=TokenResponse)
+async def change_own_password(
+    body: SelfPasswordChangeRequest,
+    response: Response,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
-    """Create a scoped API key for the authenticated user.
+) -> TokenResponse:
+    """Change the password of the signed-in user.
 
-    The raw key is returned **once** in this response — store it securely,
-    it cannot be retrieved again.
+    Requires the current password.  Wrong current passwords count towards the
+    same lockout counter as failed logins (5 attempts, 30 minutes), so a
+    stolen session cannot be used to guess the password without limit.  The
+    new password is subject to the same policy and history rules as the
+    forced first-login change.
 
-    Requested scopes must be a subset of the permissions granted to the
-    caller's role.  Admins may assign any valid scope.
-
-    Feature 3.9: Alternatively, supply ``permission_set_id`` to derive scopes
-    from a named PermissionSet.  The effective scopes are snapshotted at
-    creation time; later changes to the PermissionSet do not affect the key.
+    The change ends every session of the account, including the one that made
+    the request.  The answer is a new session (access token in the body,
+    refresh cookie) so that the caller stays signed in; all other browsers and
+    API clients of the account have to sign in again.
     """
-    user_permissions = permissions_for_role(current_user["role"])
-
-    # Feature 3.9: resolve scopes from permission set if provided
-    permission_set_id: str | None = None
-    if body.permission_set_id is not None:
-        ps = await PermissionSetRepo.get_by_id(db, body.permission_set_id)
-        if ps is None or not ps.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Permission set not found",
-            )
-        effective_scopes: list[str] = ps.permissions
-        permission_set_id = ps.id
-    else:
-        effective_scopes = body.scopes  # type: ignore[assignment]  # validated by schema
-
-    # Scope escalation check: requested scopes must be within the caller's role
-    forbidden = [s for s in effective_scopes if s not in user_permissions]
-    if forbidden:
+    email = current_user["email"]
+    user = await UserRepo.get_by_email(db, email)
+    if not user or not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Scopes exceed your role permissions: {forbidden}",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
         )
 
-    user = await UserRepo.get_by_email(db, current_user["email"])
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    raw_key = _generate_api_key()
-    api_key = await APIKeyRepo.create(
-        db,
-        raw_key=raw_key,
-        label=body.label,
-        owner_id=str(user.id),
-        scopes=effective_scopes,
-        expires_at=body.expires_at,
-        permission_set_id=permission_set_id,
-    )
-    return APIKeyCreateResponse(
-        id=api_key.id,
-        label=api_key.label,
-        scopes=api_key.scopes or [],
-        permission_set_id=api_key.permission_set_id,
-        is_active=api_key.is_active,
-        created_at=api_key.created_at,
-        expires_at=api_key.expires_at,
-        last_used_at=api_key.last_used_at,
-        key=raw_key,
-    )
-
-
-@router.get("/api-keys", response_model=list[APIKeyResponse])
-async def list_api_keys(
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """List all active API keys belonging to the authenticated user."""
-    user = await UserRepo.get_by_email(db, current_user["email"])
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    keys = await APIKeyRepo.list_by_owner(db, str(user.id))
-    return [
-        APIKeyResponse(
-            id=k.id,
-            label=k.label,
-            scopes=k.scopes or [],
-            permission_set_id=k.permission_set_id,
-            is_active=k.is_active,
-            created_at=k.created_at,
-            expires_at=k.expires_at,
-            last_used_at=k.last_used_at,
+    if await is_account_locked(email):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Account temporarily locked. Try again in 30 minutes.",
         )
-        for k in keys
-    ]
 
+    if not verify_password(body.current_password, user.hashed_password):
+        await increment_login_attempts(email)
+        # 400, not 401: the session itself is valid and must not be dropped.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
 
-@router.delete("/api-keys/{key_id}", status_code=204)
-async def revoke_api_key(
-    key_id: str,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Revoke (deactivate) an API key.
-
-    Users can revoke only their own keys.  Admins can revoke any key.
-    Returns 404 when the key is not found or belongs to a different owner.
-    """
-    user = await UserRepo.get_by_email(db, current_user["email"])
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    owner_filter = None if current_user["role"] == "admin" else str(user.id)
-    revoked = await APIKeyRepo.revoke(db, key_id, owner_id=owner_filter)
-    if not revoked:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
+    await clear_login_attempts(email)
+    await _set_new_password(db, user, body.new_password)
+    return _issue_tokens(response, user)

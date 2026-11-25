@@ -140,6 +140,10 @@ def _make_alert_manager(queue: InMemoryQueue) -> AlertManager:
     # Replace the real Valkey client with a fresh mock; default: not a duplicate
     mgr._valkey = AsyncMock()
     mgr._valkey.set = AsyncMock(return_value=True)  # True → key newly set → not dup
+    # No database in these tests: an unreachable PostgreSQL would otherwise
+    # delay each alert by the connection timeout before it is published.
+    mgr._get_recurrence_count = AsyncMock(return_value=0)
+    mgr._persist_to_db = AsyncMock()
     return mgr
 
 
@@ -235,8 +239,8 @@ class TestNormalizerPipelineTopics:
         assert any(Topic.RAW_SURICATA in name for name in task_names)
         await q.stop()
 
-    async def test_start_creates_exactly_five_subscriptions(self) -> None:
-        # wazuh + zeek + suricata + prowler + velociraptor = 5 raw topic subscriptions
+    async def test_start_creates_one_subscription_per_raw_topic(self) -> None:
+        # wazuh + zeek + suricata + syslog + webhook = 5 raw topic subscriptions
         q = InMemoryQueue()
         await q.start()
         pipeline = NormalizerPipeline(q)
@@ -669,23 +673,6 @@ class TestAlertManagerTopics:
         assert "score" in received[0]
         await q.stop()
 
-    async def test_enriched_alert_has_asset_criticality(self) -> None:
-        q = InMemoryQueue()
-        await q.start()
-        mgr = _make_alert_manager(q)
-
-        received: list[dict] = []
-
-        async def capture(msg: dict) -> None:
-            received.append(msg)
-
-        await q.subscribe(Topic.ENRICHED, "test", capture)
-        await mgr.process(_alert_dict(host="dc01.corp"))
-        await asyncio.sleep(0.05)
-
-        assert "asset_criticality" in received[0]
-        await q.stop()
-
     async def test_duplicate_alert_not_published_to_enriched(self) -> None:
         """When _is_duplicate returns True the alert must not reach ENRICHED."""
         q = InMemoryQueue()
@@ -796,39 +783,6 @@ class TestAlertManagerTopics:
         assert enriched["host"] == "dc01.corp"
         await q.stop()
 
-    async def test_dc_host_has_highest_asset_criticality(self) -> None:
-        """Domain controller prefix ('dc') must produce the highest criticality score."""
-        q = InMemoryQueue()
-        await q.start()
-        mgr = _make_alert_manager(q)
-
-        received: list[dict] = []
-
-        async def capture(msg: dict) -> None:
-            received.append(msg)
-
-        await q.subscribe(Topic.ENRICHED, "test", capture)
-
-        # Patch CMDB lookup: DC hosts get criticality 1.0, workstations get 0.5
-        async def _host_criticality(hostname: str) -> float:
-            return 1.0 if hostname.startswith("dc") else 0.5
-
-        mgr._asset_criticality = _host_criticality  # type: ignore[method-assign]
-
-        mgr._valkey.set = AsyncMock(return_value=True)
-        await mgr.process(_alert_dict(rule_id="dc-rule", host="dc01"))
-        mgr._valkey.set = AsyncMock(return_value=True)
-        await mgr.process(_alert_dict(rule_id="win-rule", host="win-workstation"))
-
-        await asyncio.sleep(0.1)
-        assert len(received) == 2
-
-        dc_msg = next(m for m in received if m["host"] == "dc01")
-        win_msg = next(m for m in received if m["host"] == "win-workstation")
-        assert dc_msg["asset_criticality"] > win_msg["asset_criticality"]
-        await q.stop()
-
-
 # ── WebSocketBroadcaster topic routing ────────────────────────────────────────
 
 class TestWebSocketBroadcasterTopics:
@@ -871,7 +825,7 @@ class TestWebSocketBroadcasterTopics:
         ) as mock_broadcast:
             await websocket_broadcaster(q)
 
-            enriched = _alert_dict(score=7.5, asset_criticality=0.8)
+            enriched = _alert_dict(score=7.5)
             await q.publish(Topic.ENRICHED, enriched)
             await asyncio.sleep(0.1)
 
@@ -1078,7 +1032,6 @@ class TestTopicFlowIntegration:
         assert len(enriched) == 1
         result = enriched[0]
         assert "score" in result
-        assert "asset_criticality" in result
         assert result["rule_id"] == "full-pipeline-rule"
         assert 0.0 <= result["score"] <= 10.0
         await q.stop()

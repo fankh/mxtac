@@ -8,7 +8,7 @@ from ..core.logging import get_logger
 from ..engine.sigma_engine import SigmaEngine
 from ..pipeline.queue import MessageQueue, Topic
 from ..repositories.rule_repo import RuleRepo
-from ..services.normalizers.ocsf import OCSFEvent
+from ..services.normalizers.ocsf import EVENT_ID_KEY, OCSFEvent
 
 logger = get_logger(__name__)
 
@@ -41,6 +41,8 @@ async def sigma_consumer(
                     "host": alert.host,
                     "time": alert.time.isoformat(),
                     "event_snapshot": alert.event_snapshot,
+                    # ID under which the event persister stores this event
+                    "event_id": event_dict.get(EVENT_ID_KEY),
                 }
                 await queue.publish(Topic.ALERTS, alert_dict)
                 logger.debug("Sigma match rule_id=%s host=%s", alert.rule_id, alert.host)

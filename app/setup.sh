@@ -3,16 +3,26 @@
 # MxTac — Automated Server Setup
 # Target: Ubuntu 22.04 / 24.04 LTS
 # Usage:  sudo bash setup.sh
+#         sudo MXTAC_HOST=mxtac.example.com bash setup.sh
+#
+# MXTAC_HOST is the hostname or IP address users will open in the browser.
+# It is used for CORS, the self-signed certificate and the printed URLs.
+# Default: the first address reported by `hostname -I`.
 #
 # What this script does (idempotent — safe to re-run):
 #   1. System prerequisites + UFW firewall
 #   2. Docker Engine + Compose V2
 #   3. sysctl tuning (OpenSearch requirement)
 #   4. Generate secrets (.env)
-#   5. Deploy full stack via docker compose
+#   5. Deploy full stack via docker compose (the backend applies the database
+#      migrations each time it starts)
 #   6. Wait for health checks
-#   7. Run Alembic migrations
-#   8. Print access URLs
+#   7. Check the migration state
+#   8. Print access URLs and how to sign in for the first time
+#
+# Optional, for the first start only:
+#   INITIAL_ADMIN_PASSWORD  password of admin@mxtac.local. Without it a random
+#                           one is generated and written once to the backend log.
 # =============================================================================
 
 set -euo pipefail
@@ -37,6 +47,13 @@ DEPLOY_DIR="/opt/mxtac"
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"   # directory where setup.sh lives
 ENV_FILE="${DEPLOY_DIR}/.env"
 COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.yml"
+MXTAC_HOST="${MXTAC_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+MXTAC_HOST="${MXTAC_HOST:-localhost}"
+if [[ "${MXTAC_HOST}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  CERT_SAN="IP:${MXTAC_HOST}"
+else
+  CERT_SAN="DNS:${MXTAC_HOST}"
+fi
 
 # ── Detect OS ─────────────────────────────────────────────────────────────────
 if [[ ! -f /etc/os-release ]]; then
@@ -169,7 +186,6 @@ VALKEY_URL=redis://valkey:6379/0
 
 # ── Queue ─────────────────────────────────────────────────────────────────────
 QUEUE_BACKEND=redis
-KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
 
 # ── OpenSearch ────────────────────────────────────────────────────────────────
 OPENSEARCH_HOST=opensearch
@@ -177,7 +193,14 @@ OPENSEARCH_PORT=9200
 OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
-CORS_ORIGINS=["http://localhost","http://115.90.24.199"]
+CORS_ORIGINS=["https://${MXTAC_HOST}"]
+
+# ── First start ───────────────────────────────────────────────────────────────
+# Password of admin@mxtac.local, used only while the users table is empty.
+# Empty = a random one is generated and written once to the backend log.
+INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+# true also creates demo accounts and invented sample data. Keep false.
+SEED_DEMO_DATA=false
 EOF
 
   chmod 600 "${ENV_FILE}"
@@ -281,35 +304,6 @@ services:
       retries: 12
       start_period: 60s
 
-  # ── Redpanda (Kafka-compatible, single broker) ────────────────────────────────
-  redpanda:
-    image: redpandadata/redpanda:v24.3.1
-    restart: unless-stopped
-    command:
-      - redpanda
-      - start
-      - --overprovisioned
-      - --smp=1
-      - --memory=512M
-      - --reserve-memory=0M
-      - --node-id=0
-      - --check=false
-      - --kafka-addr=INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092
-      - --advertise-kafka-addr=INTERNAL://redpanda:9092,EXTERNAL://127.0.0.1:19092
-    volumes:
-      - redpanda_data:/var/lib/redpanda/data
-    ports:
-      - "127.0.0.1:9092:9092"    # Kafka API — localhost only
-      - "127.0.0.1:19092:19092"  # External Kafka — localhost only
-      - "127.0.0.1:9644:9644"    # Admin HTTP — localhost only
-    networks: [mxtac_net]
-    healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy: true' || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-
   # ── FastAPI Backend ───────────────────────────────────────────────────────────
   backend:
     build:
@@ -323,6 +317,10 @@ services:
       - QUEUE_BACKEND=${QUEUE_BACKEND}
       - SECRET_KEY=${SECRET_KEY}
       - DEBUG=false
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+      - SEED_DEMO_DATA=${SEED_DEMO_DATA:-false}
+    # Apply database migrations, then start the API.
+    command: sh -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8080"
     ports:
       - "127.0.0.1:8080:8080"   # Only Nginx reaches this
     networks: [mxtac_net]
@@ -334,11 +332,11 @@ services:
       opensearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=4)"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 40s
 
   # ── React Frontend (Nginx serves static files) ────────────────────────────────
   frontend:
@@ -377,7 +375,6 @@ volumes:
   postgres_data:
   valkey_data:
   opensearch_data:
-  redpanda_data:
   nginx_logs:
 COMPOSE
 
@@ -420,8 +417,10 @@ http {
                text/xml application/xml text/javascript;
 
     # ── Rate limiting ─────────────────────────────────────────────────────────
-    limit_req_zone $binary_remote_addr zone=api:10m rate=30r/m;
-    limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+    # Outer limits per client address. The backend applies its own limits per
+    # route group (login, export, write, read).
+    limit_req_zone $binary_remote_addr zone=api:10m rate=600r/m;
+    limit_req_zone $binary_remote_addr zone=login:10m rate=10r/m;
 
     # ── Security headers ──────────────────────────────────────────────────────
     add_header X-Frame-Options "SAMEORIGIN" always;
@@ -461,37 +460,50 @@ http {
 
         # ── API proxy ─────────────────────────────────────────────────────────
         location /api/ {
-            limit_req zone=api burst=50 nodelay;
+            limit_req zone=api burst=100 nodelay;
             proxy_pass         http://backend:8080;
             proxy_http_version 1.1;
             proxy_set_header   Host              $host;
             proxy_set_header   X-Real-IP         $remote_addr;
-            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+            # Edge proxy: the client address replaces any X-Forwarded-For sent
+            # by the client. The backend uses the header for its rate limits.
+            proxy_set_header   X-Forwarded-For   $remote_addr;
             proxy_set_header   X-Forwarded-Proto $scheme;
             proxy_read_timeout 60s;
         }
 
         # ── WebSocket proxy ───────────────────────────────────────────────────
         location /api/v1/ws/ {
+            # The access token is in the query string: keep it out of the access log.
+            access_log off;
             proxy_pass         http://backend:8080;
             proxy_http_version 1.1;
-            proxy_set_header   Upgrade    $http_upgrade;
-            proxy_set_header   Connection "upgrade";
-            proxy_set_header   Host       $host;
+            proxy_set_header   Upgrade           $http_upgrade;
+            proxy_set_header   Connection        "upgrade";
+            proxy_set_header   Host              $host;
+            proxy_set_header   X-Real-IP         $remote_addr;
+            proxy_set_header   X-Forwarded-For   $remote_addr;
+            proxy_set_header   X-Forwarded-Proto $scheme;
             proxy_read_timeout 3600s;
         }
 
         # ── Auth rate limit ───────────────────────────────────────────────────
         location /api/v1/auth/login {
             limit_req zone=login burst=10 nodelay;
-            proxy_pass http://backend:8080;
+            proxy_pass         http://backend:8080;
+            proxy_http_version 1.1;
+            proxy_set_header   Host              $host;
+            proxy_set_header   X-Real-IP         $remote_addr;
+            proxy_set_header   X-Forwarded-For   $remote_addr;
+            proxy_set_header   X-Forwarded-Proto $scheme;
         }
 
         # ── Frontend SPA ──────────────────────────────────────────────────────
         location / {
             proxy_pass         http://frontend:80;
             proxy_set_header   Host $host;
-            # SPA fallback handled by frontend Nginx
+            # The frontend container falls back to index.html for client-side
+            # routes (frontend/nginx.conf)
         }
     }
 }
@@ -504,8 +516,8 @@ if [[ ! -f "${SSL_DIR}/server.crt" ]]; then
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "${SSL_DIR}/server.key" \
     -out    "${SSL_DIR}/server.crt" \
-    -subj "/C=KR/ST=Seoul/L=Seoul/O=MxTac/CN=115.90.24.199" \
-    -addext "subjectAltName=IP:115.90.24.199" \
+    -subj "/O=MxTac/CN=${MXTAC_HOST}" \
+    -addext "subjectAltName=${CERT_SAN}" \
     2>/dev/null
   chmod 600 "${SSL_DIR}/server.key"
   log "Self-signed certificate created. Replace with Let's Encrypt for production."
@@ -521,7 +533,7 @@ step "Step 7 — Docker Compose up"
 cd "${DEPLOY_DIR}"
 
 log "Pulling base images..."
-docker compose pull --quiet postgres valkey opensearch redpanda nginx 2>/dev/null || true
+docker compose pull --quiet postgres valkey opensearch nginx 2>/dev/null || true
 
 log "Building application images..."
 docker compose build --quiet
@@ -559,8 +571,7 @@ wait_healthy() {
 wait_healthy "postgres"    60
 wait_healthy "valkey"      30
 wait_healthy "opensearch"  180   # JVM startup takes time
-wait_healthy "redpanda"    90
-wait_healthy "backend"     60
+wait_healthy "backend"     120
 wait_healthy "frontend"    30
 
 # =============================================================================
@@ -568,11 +579,13 @@ wait_healthy "frontend"    30
 # =============================================================================
 step "Step 9 — Database migrations (Alembic)"
 
-log "Running Alembic migrations..."
+# The backend container runs "alembic upgrade head" before it starts the API
+# (see the backend service in docker-compose.yml). Show the resulting revision.
+log "Checking the migration state..."
 docker compose exec -T backend \
-  sh -c "cd /app && alembic upgrade head" \
-  && log "Migrations complete" \
-  || warn "Migration failed — check: docker compose logs backend"
+  sh -c "cd /app && alembic current" \
+  && log "Migrations are applied" \
+  || warn "Could not read the migration state — check: docker compose logs backend"
 
 # =============================================================================
 # STEP 10 — Health verification
@@ -600,12 +613,12 @@ check_url "Backend /health"      "http://localhost:8080/health"
 check_url "OpenSearch cluster"   "http://localhost:9200/_cluster/health"
 check_url "Nginx HTTP"           "http://localhost:80/"
 check_url "Nginx HTTPS"          "https://localhost:443/" --insecure 2>/dev/null || \
-  check_url "Nginx HTTPS"        "https://115.90.24.199/" --insecure 2>/dev/null
+  check_url "Nginx HTTPS"        "https://${MXTAC_HOST}/" --insecure 2>/dev/null
 
 # Port binding check — internal services must NOT be on 0.0.0.0
 echo ""
 echo -e "${BOLD}Port Security Check (internal services must bind to 127.0.0.1):${NC}"
-for port in 5432 6379 9200 9092; do
+for port in 5432 6379 9200; do
   binding=$(ss -tlnp "sport = :${port}" 2>/dev/null | awk 'NR>1{print $4}' | head -1)
   if [[ "$binding" == "127.0.0.1:${port}" ]]; then
     echo -e "  ${GREEN}[OK]${NC}   :${port} → 127.0.0.1 only"
@@ -624,9 +637,18 @@ echo -e "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━�
 echo -e "${BOLD}${GREEN}  MxTac deployed successfully!${NC}"
 echo -e "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "  ${BOLD}Dashboard:${NC}  https://115.90.24.199/"
-echo -e "  ${BOLD}API docs:${NC}   https://115.90.24.199/api/docs"
-echo -e "  ${BOLD}Health:${NC}     https://115.90.24.199/api/health"
+echo -e "  ${BOLD}Dashboard:${NC}  https://${MXTAC_HOST}/"
+echo -e "  ${BOLD}Health:${NC}     curl http://localhost:8080/health   (on this server)"
+echo -e "  ${BOLD}API docs:${NC}   http://localhost:8080/docs          (on this server; not proxied by Nginx)"
+echo ""
+echo -e "  ${BOLD}First login:${NC} admin@mxtac.local"
+if [[ -n "${INITIAL_ADMIN_PASSWORD:-}" ]]; then
+  echo -e "        Password: the INITIAL_ADMIN_PASSWORD value in ${ENV_FILE}"
+else
+  echo -e "        Password: generated on the first start and written once to the backend log:"
+  echo -e "        docker compose -f ${COMPOSE_FILE} logs backend | grep 'INITIAL ADMIN PASSWORD'"
+fi
+echo -e "        The UI asks for a new password at the first sign-in."
 echo ""
 echo -e "  ${BOLD}Secrets:${NC}    ${ENV_FILE}"
 echo -e "  ${BOLD}Logs:${NC}       docker compose -f ${COMPOSE_FILE} logs -f"

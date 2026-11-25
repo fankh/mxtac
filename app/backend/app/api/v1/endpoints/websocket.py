@@ -2,7 +2,10 @@
 WebSocket endpoint for real-time alert streaming.
 
 Protocol:
-  Client connects to: ws://host/api/v1/ws/alerts?token=<jwt>
+  Client connects to: ws://host/api/v1/ws/alerts?token=<access token>
+  The token is validated exactly like the HTTP ``Authorization`` header and
+  the user needs the ``detections:read`` permission.  Otherwise the server
+  closes the handshake with code 1008 (policy violation) without accepting.
   Server pushes JSON messages:
     {"type": "alert",    "data": {...}}
     {"type": "ping",     "ts": "..."}
@@ -26,12 +29,15 @@ from datetime import datetime, timezone
 from typing import Any
 
 import valkey.asyncio as aioredis
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 
 from ....core.config import settings
+from ....core.database import AsyncSessionLocal
 from ....core.logging import get_logger
 from ....core.metrics import websocket_connections
-from ....services.mock_data import DETECTIONS
+from ....core.rbac import PERMISSIONS
+from ....core.security import authenticate_access_token
+from ....core.valkey import SUBSCRIBER_OPTIONS
 
 logger = get_logger(__name__)
 
@@ -129,7 +135,7 @@ class DistributedConnectionManager:
         while True:
             try:
                 self._sub_client = aioredis.from_url(
-                    self._valkey_url, decode_responses=True
+                    self._valkey_url, **SUBSCRIBER_OPTIONS
                 )
                 pubsub = self._sub_client.pubsub()
                 await pubsub.subscribe(_CHANNEL)
@@ -205,13 +211,35 @@ manager = DistributedConnectionManager(valkey_url=settings.valkey_url)
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+_STREAM_PERMISSION = "detections:read"
+
+
+async def _is_authorized(token: str | None) -> bool:
+    """True when *token* is a valid access token of a user who may read detections.
+
+    Uses a short-lived session so no database connection is held for the
+    lifetime of the WebSocket.
+    """
+    if not token:
+        return False
+    try:
+        async with AsyncSessionLocal() as session:
+            user = await authenticate_access_token(token, session)
+    except HTTPException:
+        return False
+    return user["role"] in PERMISSIONS[_STREAM_PERMISSION]
+
+
 @router.websocket("/alerts")
 async def alerts_ws(ws: WebSocket):
     """
-    Real-time alert stream.
+    Real-time alert stream (requires ``?token=<access token>``).
     Sends a 'ping' every 30s and pushes new alerts from the queue.
-    In production: subscribe to mxtac.enriched queue and forward messages.
     """
+    if not await _is_authorized(ws.query_params.get("token")):
+        await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await manager.connect(ws)
 
     # Send initial handshake
@@ -252,28 +280,6 @@ async def _ping_loop(ws: WebSocket) -> None:
             await manager.send_to(ws, {
                 "type": "ping",
                 "ts": datetime.now(timezone.utc).isoformat(),
-            })
-        except Exception:
-            break
-
-
-async def _mock_replay(ws: WebSocket) -> None:
-    """In dev mode: stream mock detections one by one at 3s intervals."""
-    for det in DETECTIONS:
-        await asyncio.sleep(3)
-        try:
-            await manager.send_to(ws, {
-                "type": "alert",
-                "data": {
-                    "id":           det.id,
-                    "score":        det.score,
-                    "severity":     det.severity,
-                    "technique_id": det.technique_id,
-                    "name":         det.name,
-                    "host":         det.host,
-                    "status":       det.status,
-                    "time":         det.time.isoformat(),
-                },
             })
         except Exception:
             break

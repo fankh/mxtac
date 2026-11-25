@@ -35,30 +35,16 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .event_document import FILTER_FIELDS
+
 # ---------------------------------------------------------------------------
 # Field mapping
 # ---------------------------------------------------------------------------
 
-# Maps EventFilter.field names to the Lucene field paths used in queries.
-# Mirrors _OS_FIELD_MAP in opensearch_client.py so Lucene queries align with
-# the actual OpenSearch document field structure.
-_LUCENE_FIELD_MAP: dict[str, str] = {
-    "severity_id":           "severity_id",
-    "class_name":            "class_name",
-    "class_uid":             "class_uid",
-    "src_ip":                "src_endpoint.ip",
-    "dst_ip":                "dst_endpoint.ip",
-    "hostname":              "src_endpoint.hostname",
-    "username":              "actor_user.name",
-    "process_hash":          "process.hash_sha256",
-    "source":                "metadata_product",
-    # Nested-path aliases pass through unchanged
-    "src_endpoint.ip":       "src_endpoint.ip",
-    "dst_endpoint.ip":       "dst_endpoint.ip",
-    "dst_endpoint.hostname": "dst_endpoint.hostname",
-    "actor_user.name":       "actor_user.name",
-    "process.hash_sha256":   "process.hash_sha256",
-}
+# Maps EventFilter.field names to the Lucene fields used in queries: the flat
+# fields of the event document in the ``mxtac-events-v2-*`` indices, the same
+# ones the search endpoint filters on.
+_LUCENE_FIELD_MAP: dict[str, str] = dict(FILTER_FIELDS)
 
 # ---------------------------------------------------------------------------
 # Escaping helpers

@@ -61,7 +61,7 @@ describe('useKeyboardShortcuts', () => {
   // ── Chord navigation ─────────────────────────────────────────────────────────
 
   describe('chord navigation (g → …)', () => {
-    it('g then d navigates to Dashboard (/)', () => {
+    it('g then d navigates to Overview (/)', () => {
       renderHook(() => useKeyboardShortcuts(), { wrapper })
       fireKey('g')
       fireKey('d')
@@ -82,11 +82,11 @@ describe('useKeyboardShortcuts', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/rules')
     })
 
-    it('g then c navigates to Connectors (/integrations)', () => {
+    it('g then c navigates to ATT&CK coverage (/coverage)', () => {
       renderHook(() => useKeyboardShortcuts(), { wrapper })
       fireKey('g')
       fireKey('c')
-      expect(mockNavigate).toHaveBeenCalledWith('/integrations')
+      expect(mockNavigate).toHaveBeenCalledWith('/coverage')
     })
 
     it('g then i navigates to Incidents (/incidents)', () => {
@@ -146,6 +146,21 @@ describe('useKeyboardShortcuts', () => {
 
       document.removeEventListener('mxtac:focus-search', handler)
       expect(handler).toHaveBeenCalledOnce()
+    })
+
+    it('focuses the search field of the page without typing the slash into it', () => {
+      renderHook(() => useKeyboardShortcuts(), { wrapper })
+      const main = document.createElement('main')
+      main.innerHTML = '<input aria-label="Tactic filter" /><input aria-label="Search detections" data-shortcut-search="" />'
+      document.body.appendChild(main)
+      const search = main.querySelector<HTMLInputElement>('input[data-shortcut-search]')
+
+      const event = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })
+      act(() => { document.dispatchEvent(event) })
+
+      expect(document.activeElement).toBe(search)
+      expect(event.defaultPrevented).toBe(true)
+      main.remove()
     })
   })
 

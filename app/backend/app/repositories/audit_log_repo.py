@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.audit_log import AuditLog
@@ -48,46 +47,3 @@ class AuditLogRepo:
         session.add(entry)
         await session.flush()
         return entry
-
-    @staticmethod
-    async def list(
-        session: AsyncSession,
-        *,
-        skip: int = 0,
-        limit: int = 50,
-        actor: str | None = None,
-        action: str | None = None,
-        resource_type: str | None = None,
-        from_ts: datetime | None = None,
-        to_ts: datetime | None = None,
-    ) -> tuple[list[AuditLog], int]:
-        """Return (items, total) with optional filtering and offset/limit pagination.
-
-        Results are sorted newest-first.
-        """
-        q = select(AuditLog)
-
-        if actor is not None:
-            q = q.where(AuditLog.actor == actor)
-        if action is not None:
-            q = q.where(AuditLog.action == action)
-        if resource_type is not None:
-            q = q.where(AuditLog.resource_type == resource_type)
-        if from_ts is not None:
-            q = q.where(AuditLog.timestamp >= from_ts)
-        if to_ts is not None:
-            q = q.where(AuditLog.timestamp <= to_ts)
-
-        count_q = select(func.count()).select_from(q.subquery())
-        total = await session.scalar(count_q) or 0
-
-        q = q.order_by(AuditLog.timestamp.desc()).offset(skip).limit(limit)
-        result = await session.execute(q)
-        return list(result.scalars().all()), total
-
-    @staticmethod
-    async def get_by_id(session: AsyncSession, entry_id: str) -> AuditLog | None:
-        result = await session.execute(
-            select(AuditLog).where(AuditLog.id == entry_id)
-        )
-        return result.scalar_one_or_none()

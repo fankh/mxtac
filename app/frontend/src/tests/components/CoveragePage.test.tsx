@@ -1,416 +1,496 @@
 // vi.mock is hoisted before imports — declare all module mocks first.
 
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof ApiModule>()),
   overviewApi: {
-    heatmap:      vi.fn(),
+    heatmap: vi.fn(),
     tacticLabels: vi.fn(),
+  },
+  coverageApi: {
+    summary: vi.fn(),
+    byDatasource: vi.fn(),
+    gaps: vi.fn(),
+    navigator: vi.fn(),
+    trend: vi.fn(),
+    target: vi.fn(),
+    updateTarget: vi.fn(),
   },
 }))
 
 vi.mock('../../components/layout/TopBar', () => ({
-  TopBar: ({ crumb }: { crumb: string }) => (
-    <header data-testid="topbar">{crumb}</header>
+  TopBar: ({ crumb, actions }: { crumb: string; actions?: ReactNode }) => (
+    <header data-testid="topbar">
+      <h1>{crumb}</h1>
+      {actions}
+    </header>
   ),
 }))
 
-vi.mock('../../components/features/overview/AttackHeatmap', () => ({
-  AttackHeatmap: ({ rows, tacticLabels }: { rows: unknown[]; tacticLabels: string[] }) => (
-    <div data-testid="attack-heatmap" data-rows={rows.length} data-labels={tacticLabels.join(',')} />
-  ),
-}))
-
-import { render, screen, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { ReactNode } from 'react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { CoveragePage, buildGapTable } from '../../components/features/coverage/CoveragePage'
-import { overviewApi } from '../../lib/api'
-import type { HeatRow } from '../../types/api'
+import { http, HttpResponse } from 'msw'
+import { server } from '../mocks/server'
+import { CoveragePage } from '../../components/features/coverage/CoveragePage'
+import {
+  attackUrl, formatPct, groupTechniques, heatOpacity,
+} from '../../components/features/coverage/coverageUtils'
+import type * as ApiModule from '../../lib/api'
+import { coverageApi, overviewApi } from '../../lib/api'
+import { useAuthStore } from '../../stores/authStore'
+import { useUIStore } from '../../stores/uiStore'
+import type {
+  CoverageByDataSource, CoverageGaps, CoverageSummary, CoverageTarget, CoverageTrend, HeatRow,
+  NavigatorLayer, NavigatorTechnique,
+} from '../../types/api'
+
+const mockCoverage = vi.mocked(coverageApi)
+const mockOverview = vi.mocked(overviewApi)
 
 // ---------------------------------------------------------------------------
-// Typed reference to the mocked API
+// Fixtures (shapes follow app/backend/app/api/v1/endpoints/coverage.py)
 // ---------------------------------------------------------------------------
 
-const mockApi = overviewApi as {
-  heatmap:      ReturnType<typeof vi.fn>
-  tacticLabels: ReturnType<typeof vi.fn>
+const SUMMARY: CoverageSummary = { coverage_pct: 40, covered_count: 42, total_count: 105 }
+
+const GAPS: CoverageGaps = {
+  covered_count: 42,
+  total_count: 105,
+  gap_count: 63,
+  coverage_pct: 40,
+  uncovered_techniques: ['T1566.001', 'T1021.002'],
 }
 
-// ---------------------------------------------------------------------------
-// Mock data fixtures
-// ---------------------------------------------------------------------------
+const TARGET: CoverageTarget = {
+  target_pct: 80,
+  enabled: true,
+  label: 'Q1 goal',
+  current_pct: 40,
+  is_below_threshold: true,
+}
 
-/** 2-row heatmap with 3 tactics, known coverage percentages. */
-const mockHeatmapData: HeatRow[] = [
+const BY_SOURCE: CoverageByDataSource = {
+  sources: [
+    { source: 'wazuh', covered_count: 30, total_count: 105, coverage_pct: 28.6, rule_count: 55 },
+    { source: 'zeek', covered_count: 10, total_count: 105, coverage_pct: 9.5, rule_count: 1 },
+    { source: 'suricata', covered_count: 0, total_count: 105, coverage_pct: 0, rule_count: 0 },
+  ],
+  total_covered_count: 38,
+  total_count: 105,
+  total_coverage_pct: 36.2,
+}
+
+const TREND: CoverageTrend = {
+  days: 30,
+  points: [
+    { date: '2026-02-17', coverage_pct: 38.1, covered_count: 40, total_count: 105 },
+    { date: '2026-02-18', coverage_pct: 39, covered_count: 41, total_count: 105 },
+    { date: '2026-02-19', coverage_pct: 40, covered_count: 42, total_count: 105 },
+  ],
+}
+
+function technique(techniqueID: string, score: number): NavigatorTechnique {
+  return { techniqueID, score, comment: `${score} rules covering this technique`, enabled: true }
+}
+
+const LAYER: NavigatorLayer = {
+  name: 'MxTac Coverage',
+  domain: 'enterprise-attack',
+  description: 'ATT&CK coverage exported from MxTac',
+  versions: { attack: '14', navigator: '4.9', layer: '4.5' },
+  techniques: [technique('T1003.001', 4), technique('T1059.001', 2), technique('T1059.003', 1)],
+}
+
+const HEATMAP: HeatRow[] = [
   {
+    technique_id: 'T1059',
     row: 0,
     cells: [
-      { tactic: 'RECON', covered: 1, total: 9 },   // 11%
-      { tactic: 'EXEC',  covered: 9, total: 9 },   // 100%
-      { tactic: 'CRED',  covered: 3, total: 6 },   // 50%
+      { tactic: 'EXEC', covered: 12, total: 14, opacity: 0.74 },
+      { tactic: 'CRED', covered: 0, total: 17, opacity: 0.1 },
     ],
   },
   {
+    technique_id: 'T1003',
     row: 1,
     cells: [
-      { tactic: 'RECON', covered: 2, total: 9 },   // row1 contribution
-      { tactic: 'EXEC',  covered: 8, total: 9 },   // row1 contribution
-      { tactic: 'CRED',  covered: 2, total: 6 },   // row1 contribution
+      { tactic: 'EXEC', covered: 1, total: 14, opacity: 0.15 },
+      { tactic: 'CRED', covered: 8, total: 17, opacity: 0.45 },
     ],
   },
 ]
-// Aggregated totals:
-//  RECON: covered=3, total=18 → pct=17%
-//  EXEC:  covered=17, total=18 → pct=94%
-//  CRED:  covered=5, total=12 → pct=42%
-// Sorted ascending: RECON(17%) → CRED(42%) → EXEC(94%)
-
-const mockTacticLabels = ['RECON', 'EXEC', 'CRED']
 
 // ---------------------------------------------------------------------------
-// Render helper
+// Helpers
 // ---------------------------------------------------------------------------
 
 function renderPage() {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
-    <QueryClientProvider client={queryClient}>
-      <CoveragePage />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <CoveragePage />
+      </QueryClientProvider>
+    </MemoryRouter>,
   )
 }
+
+async function renderLoaded() {
+  const user = userEvent.setup()
+  renderPage()
+  await screen.findByTestId('coverage-pct')
+  await screen.findByTestId('covered-techniques')
+  return user
+}
+
+beforeAll(() => {
+  // Recharts' ResponsiveContainer needs ResizeObserver, which jsdom lacks.
+  vi.stubGlobal(
+    'ResizeObserver',
+    vi.fn().mockImplementation(() => ({ observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn() })),
+  )
+})
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  useAuthStore.setState({ user: { email: 'analyst@mxtac.local', role: 'analyst' } })
+  useUIStore.setState({ notifications: [] })
+
+  mockCoverage.summary.mockResolvedValue(SUMMARY)
+  mockCoverage.gaps.mockResolvedValue(GAPS)
+  mockCoverage.target.mockResolvedValue(TARGET)
+  mockCoverage.byDatasource.mockResolvedValue(BY_SOURCE)
+  mockCoverage.trend.mockResolvedValue(TREND)
+  mockCoverage.navigator.mockResolvedValue(LAYER)
+  mockOverview.heatmap.mockResolvedValue(HEATMAP)
+  mockOverview.tacticLabels.mockResolvedValue(['EXEC', 'CRED'])
+})
+
+afterEach(() => {
+  useAuthStore.setState({ user: null })
+})
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe('CoveragePage', () => {
-  beforeEach(() => {
-    // Default: both queries return a pending promise (loading state).
-    const pending = new Promise<never>(() => {})
-    mockApi.heatmap.mockReturnValue(pending)
-    mockApi.tacticLabels.mockReturnValue(pending)
-  })
-
-  // -------------------------------------------------------------------------
-  // Loading state
-  // -------------------------------------------------------------------------
-  describe('loading state', () => {
-    it('shows a loading indicator while queries are pending', () => {
+  describe('loading and errors', () => {
+    it('renders the page title while requests are pending', () => {
+      const pending = new Promise<never>(() => {})
+      mockCoverage.summary.mockReturnValue(pending)
+      mockCoverage.gaps.mockReturnValue(pending)
+      mockCoverage.target.mockReturnValue(pending)
       renderPage()
-      expect(screen.getByText('Loading…')).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'ATT&CK coverage' })).toBeInTheDocument()
+      expect(screen.queryByTestId('coverage-pct')).not.toBeInTheDocument()
     })
 
-    it('does not show the error message while loading', () => {
+    it('shows an error card and retries the failed request', async () => {
+      mockCoverage.summary.mockRejectedValueOnce(new Error('boom'))
+      const user = userEvent.setup()
       renderPage()
-      expect(screen.queryByText(/Failed to load coverage data/)).not.toBeInTheDocument()
+      const message = await screen.findByText('Could not load some coverage numbers.')
+      const card = message.closest('[role="alert"]') as HTMLElement
+      await user.click(within(card).getByRole('button', { name: 'Retry' }))
+      expect(await screen.findByTestId('coverage-pct')).toHaveTextContent('40%')
+      expect(mockCoverage.summary).toHaveBeenCalledTimes(2)
+      expect(screen.queryByText('Could not load some coverage numbers.')).not.toBeInTheDocument()
     })
 
-    it('does not render the heatmap while loading', () => {
+    it('shows a retry in the data source card when that request fails', async () => {
+      mockCoverage.byDatasource.mockRejectedValue(new Error('boom'))
       renderPage()
-      expect(screen.queryByTestId('attack-heatmap')).not.toBeInTheDocument()
-    })
-
-    it('does not render the gap table heading while loading', () => {
-      renderPage()
-      expect(screen.queryByText('Coverage Gaps')).not.toBeInTheDocument()
-    })
-
-    it('stays in loading state when only heatmap has resolved', () => {
-      mockApi.heatmap.mockResolvedValue(mockHeatmapData)
-      // tacticLabels still pending — keeps overall loading=true
-      mockApi.tacticLabels.mockReturnValue(new Promise<never>(() => {}))
-      renderPage()
-      expect(screen.getByText('Loading…')).toBeInTheDocument()
-    })
-
-    it('stays in loading state when only tacticLabels has resolved', () => {
-      mockApi.heatmap.mockReturnValue(new Promise<never>(() => {}))
-      mockApi.tacticLabels.mockResolvedValue(mockTacticLabels)
-      renderPage()
-      expect(screen.getByText('Loading…')).toBeInTheDocument()
+      expect(await screen.findByText('Could not load coverage by data source.')).toBeInTheDocument()
     })
   })
 
-  // -------------------------------------------------------------------------
-  // Error state
-  // -------------------------------------------------------------------------
-  describe('error state', () => {
-    it('shows the error message when the heatmap query fails', async () => {
-      mockApi.heatmap.mockRejectedValue(new Error('Network error'))
-      mockApi.tacticLabels.mockResolvedValue(mockTacticLabels)
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.getByText('Failed to load coverage data. Is the backend running?'),
-        ).toBeInTheDocument()
-      })
+  describe('headline numbers', () => {
+    it('shows the coverage percentage and technique counts from GET /coverage', async () => {
+      await renderLoaded()
+      expect(screen.getByTestId('coverage-pct')).toHaveTextContent('40%')
+      expect(screen.getByText('42 of 105 techniques have an enabled rule')).toBeInTheDocument()
+      expect(screen.getByRole('progressbar', { name: 'Technique coverage' })).toHaveAttribute('aria-valuenow', '40')
     })
 
-    it('shows the error message when the tacticLabels query fails', async () => {
-      mockApi.heatmap.mockResolvedValue(mockHeatmapData)
-      mockApi.tacticLabels.mockRejectedValue(new Error('Server error'))
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.getByText('Failed to load coverage data. Is the backend running?'),
-        ).toBeInTheDocument()
-      })
+    it('shows the target, its label and how far coverage is from it', async () => {
+      await renderLoaded()
+      expect(screen.getByTestId('target-pct')).toHaveTextContent('80%')
+      expect(screen.getByText('Below target')).toBeInTheDocument()
+      expect(screen.getByText('Q1 goal · 40 points below target')).toBeInTheDocument()
     })
 
-    it('does not show the loading indicator in error state', async () => {
-      mockApi.heatmap.mockRejectedValue(new Error('fail'))
-      mockApi.tacticLabels.mockResolvedValue(mockTacticLabels)
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
-      })
+    it('shows "On target" when coverage meets an enabled target', async () => {
+      mockCoverage.target.mockResolvedValue({ ...TARGET, target_pct: 30, is_below_threshold: false })
+      await renderLoaded()
+      expect(screen.getByText('On target')).toBeInTheDocument()
+      expect(screen.getByText('Q1 goal · 10 points above target')).toBeInTheDocument()
     })
 
-    it('does not render the heatmap in error state', async () => {
-      mockApi.heatmap.mockRejectedValue(new Error('fail'))
-      mockApi.tacticLabels.mockResolvedValue(mockTacticLabels)
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByTestId('attack-heatmap')).not.toBeInTheDocument()
-      })
+    it('shows "Not flagged" when the target is disabled', async () => {
+      mockCoverage.target.mockResolvedValue({ ...TARGET, enabled: false, is_below_threshold: false })
+      await renderLoaded()
+      expect(screen.getByText('Not flagged')).toBeInTheDocument()
     })
 
-    it('does not render the gap table in error state', async () => {
-      mockApi.heatmap.mockRejectedValue(new Error('fail'))
-      mockApi.tacticLabels.mockResolvedValue(mockTacticLabels)
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText('Coverage Gaps')).not.toBeInTheDocument()
-      })
+    it('shows the gap counts from GET /coverage/gaps', async () => {
+      await renderLoaded()
+      expect(screen.getByTestId('gap-count')).toHaveTextContent('63')
+      expect(screen.getByTestId('disabled-gap-count')).toHaveTextContent('2')
     })
   })
 
-  // -------------------------------------------------------------------------
-  // Success state
-  // -------------------------------------------------------------------------
-  describe('success state', () => {
-    beforeEach(() => {
-      mockApi.heatmap.mockResolvedValue(mockHeatmapData)
-      mockApi.tacticLabels.mockResolvedValue(mockTacticLabels)
+  describe('trend', () => {
+    it('requests 30 days of snapshots and renders the chart container', async () => {
+      await renderLoaded()
+      expect(mockCoverage.trend).toHaveBeenCalledWith(30)
+      expect(await screen.findByTestId('coverage-trend-chart')).toHaveAttribute('data-points', '3')
     })
 
-    it('renders the TopBar with the "ATT&CK Coverage" crumb', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByTestId('topbar')).toBeInTheDocument()
-      })
-    })
-
-    it('renders the AttackHeatmap component', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByTestId('attack-heatmap')).toBeInTheDocument()
-      })
-    })
-
-    it('does not show the loading indicator in success state', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
-      })
-    })
-
-    it('does not show the error message in success state', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText(/Failed to load coverage data/)).not.toBeInTheDocument()
-      })
-    })
-
-    it('renders the "Coverage Gaps" heading', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Coverage Gaps')).toBeInTheDocument()
-      })
-    })
-
-    it('renders the gap table subtitle', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.getByText('Tactics sorted by coverage (lowest first)'),
-        ).toBeInTheDocument()
-      })
-    })
-
-    it('renders column headers: Tactic, Covered, Total, Coverage %', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Tactic')).toBeInTheDocument()
-        expect(screen.getByText('Covered')).toBeInTheDocument()
-        expect(screen.getByText('Total')).toBeInTheDocument()
-        expect(screen.getByText('Coverage %')).toBeInTheDocument()
-      })
-    })
-
-    it('renders a row for each tactic in the gap table', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('RECON')).toBeInTheDocument()
-        expect(screen.getByText('EXEC')).toBeInTheDocument()
-        expect(screen.getByText('CRED')).toBeInTheDocument()
-      })
-    })
-
-    it('renders percentage labels for each tactic row', async () => {
-      renderPage()
-      // RECON: 3/18 = 17%, CRED: 5/12 = 42%, EXEC: 17/18 = 94%
-      await waitFor(() => {
-        expect(screen.getByText('17%')).toBeInTheDocument()
-        expect(screen.getByText('42%')).toBeInTheDocument()
-        expect(screen.getByText('94%')).toBeInTheDocument()
-      })
-    })
-
-    it('passes heatmap data to AttackHeatmap', async () => {
-      renderPage()
-      await waitFor(() => {
-        const heatmap = screen.getByTestId('attack-heatmap')
-        expect(heatmap).toHaveAttribute('data-rows', String(mockHeatmapData.length))
-      })
-    })
-
-    it('passes tactic labels to AttackHeatmap', async () => {
-      renderPage()
-      await waitFor(() => {
-        const heatmap = screen.getByTestId('attack-heatmap')
-        expect(heatmap).toHaveAttribute('data-labels', mockTacticLabels.join(','))
-      })
+    it('shows an empty state when there are no snapshots', async () => {
+      mockCoverage.trend.mockResolvedValue({ days: 30, points: [] })
+      await renderLoaded()
+      expect(await screen.findByText('No snapshots yet')).toBeInTheDocument()
     })
   })
 
-  // -------------------------------------------------------------------------
-  // Gap table — empty data
-  // -------------------------------------------------------------------------
-  describe('empty data', () => {
-    it('shows "No data" message when heatmap returns empty array', async () => {
-      mockApi.heatmap.mockResolvedValue([])
-      mockApi.tacticLabels.mockResolvedValue([])
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('No data')).toBeInTheDocument()
-      })
+  describe('by data source', () => {
+    it('lists each source with its technique and rule counts', async () => {
+      await renderLoaded()
+      const wazuh = await screen.findByTestId('source-wazuh')
+      expect(within(wazuh).getByText('Wazuh')).toBeInTheDocument()
+      expect(within(wazuh).getByText('30 of 105 · 28.6%')).toBeInTheDocument()
+      expect(within(wazuh).getByText('55 enabled rules')).toBeInTheDocument()
+      expect(within(screen.getByTestId('source-zeek')).getByText('1 enabled rule')).toBeInTheDocument()
+      expect(within(screen.getByTestId('source-suricata')).getByText('0 of 105 · 0%')).toBeInTheDocument()
+    })
+  })
+
+  describe('matrix', () => {
+    it('renders a row per technique family and a column per tactic', async () => {
+      await renderLoaded()
+      const matrix = await screen.findByTestId('coverage-matrix')
+      expect(within(matrix).getByRole('columnheader', { name: 'EXEC' })).toBeInTheDocument()
+      expect(within(matrix).getByRole('columnheader', { name: 'CRED' })).toBeInTheDocument()
+      expect(within(matrix).getByRole('rowheader', { name: 'T1059' })).toBeInTheDocument()
+      expect(within(matrix).getByRole('rowheader', { name: 'T1003' })).toBeInTheDocument()
+      expect(within(matrix).getByText('12/14')).toBeInTheDocument()
+      expect(within(matrix).getByTitle('T1003 · CRED: 8 of 17 techniques')).toBeInTheDocument()
     })
 
-    it('still renders the gap table heading with empty data', async () => {
-      mockApi.heatmap.mockResolvedValue([])
-      mockApi.tacticLabels.mockResolvedValue([])
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Coverage Gaps')).toBeInTheDocument()
-      })
+    it('falls back to the tactics in the rows when the label request fails', async () => {
+      mockOverview.tacticLabels.mockRejectedValue(new Error('boom'))
+      await renderLoaded()
+      const matrix = await screen.findByTestId('coverage-matrix')
+      expect(within(matrix).getByRole('columnheader', { name: 'EXEC' })).toBeInTheDocument()
+    })
+  })
+
+  describe('techniques', () => {
+    // Technique names come from GET /attack/techniques (MSW handler in tests/mocks/handlers.ts).
+    const POWERSHELL = 'T1059.001 Command and Scripting Interpreter: PowerShell: 2 enabled rules'
+    const LSASS = 'T1003.001 OS Credential Dumping: LSASS Memory: 4 enabled rules'
+
+    it('groups covered techniques under their parent with the rule count', async () => {
+      await renderLoaded()
+      const list = screen.getByTestId('covered-techniques')
+      expect(within(list).getByText('T1059')).toBeInTheDocument()
+      expect(within(list).getByText('T1003')).toBeInTheDocument()
+      const chip = await within(list).findByTitle(POWERSHELL)
+      expect(chip).toHaveAttribute('href', 'https://attack.mitre.org/techniques/T1059/001/')
+      // T1059.003 is not in the test table: the ID stands alone
+      expect(within(list).getByTitle('T1059.003: 1 enabled rule')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Covered (3)' })).toBeInTheDocument()
     })
 
-    it('still renders the heatmap with empty rows', async () => {
-      mockApi.heatmap.mockResolvedValue([])
-      mockApi.tacticLabels.mockResolvedValue([])
+    it('names the technique families and their sub-techniques', async () => {
+      await renderLoaded()
+      const list = screen.getByTestId('covered-techniques')
+      expect(await within(list).findByText('Command and Scripting Interpreter')).toBeInTheDocument()
+      expect(within(list).getByText('OS Credential Dumping')).toBeInTheDocument()
+      // Under the family heading a sub-technique shows only its own part of the name
+      expect(within(await within(list).findByTitle(POWERSHELL)).getByText('PowerShell')).toBeInTheDocument()
+      expect(within(within(list).getByTitle(LSASS)).getByText('LSASS Memory')).toBeInTheDocument()
+    })
+
+    it('shows the IDs alone when the technique table cannot be loaded', async () => {
+      server.use(http.get('/api/v1/attack/techniques', () => HttpResponse.json({ detail: 'down' }, { status: 503 })))
+      await renderLoaded()
+      const list = screen.getByTestId('covered-techniques')
+      expect(within(list).getByTitle('T1059.001: 2 enabled rules')).toBeInTheDocument()
+      expect(within(list).queryByText('Command and Scripting Interpreter')).not.toBeInTheDocument()
+    })
+
+    it('filters covered techniques by ID and clears the search with Escape', async () => {
+      const user = await renderLoaded()
+      await screen.findByTitle(POWERSHELL)
+      const input = screen.getByLabelText('Find a technique ID or name')
+      await user.type(input, 't1003')
+      expect(screen.queryByTitle(POWERSHELL)).not.toBeInTheDocument()
+      expect(screen.getByTitle(LSASS)).toBeInTheDocument()
+
+      await user.keyboard('{Escape}')
+      expect(input).toHaveValue('')
+      expect(screen.getByTitle(POWERSHELL)).toBeInTheDocument()
+    })
+
+    it('filters covered techniques by name', async () => {
+      const user = await renderLoaded()
+      await screen.findByTitle(POWERSHELL)
+      await user.type(screen.getByLabelText('Find a technique ID or name'), 'lsass')
+      expect(screen.queryByTitle(POWERSHELL)).not.toBeInTheDocument()
+      expect(screen.getByTitle(LSASS)).toBeInTheDocument()
+    })
+
+    it('shows the techniques that only disabled rules cover on the Gaps tab', async () => {
+      const user = await renderLoaded()
+      await user.click(screen.getByRole('tab', { name: 'Gaps (2)' }))
+      const list = screen.getByTestId('gap-techniques')
+      await within(list).findByText('Remote Services: SMB/Windows Admin Shares')
+      expect(within(list).getAllByRole('link').map((a) => a.textContent)).toEqual([
+        'T1021.002Remote Services: SMB/Windows Admin Shares',
+        'T1566.001',   // not in the test table
+      ])
+      expect(screen.getByText(/63 of 105 in-scope techniques have no enabled rule/)).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Open rules' })).toHaveAttribute('href', '/rules')
+    })
+
+    it('shows an empty state when no technique is covered', async () => {
+      mockCoverage.navigator.mockResolvedValue({ ...LAYER, techniques: [] })
       renderPage()
-      await waitFor(() => {
-        expect(screen.getByTestId('attack-heatmap')).toBeInTheDocument()
-      })
+      expect(await screen.findByText('No technique is covered yet')).toBeInTheDocument()
+    })
+  })
+
+  describe('target editing', () => {
+    it('hides the edit button for a role without detections:write', async () => {
+      useAuthStore.setState({ user: { email: 'viewer@mxtac.local', role: 'viewer' } })
+      await renderLoaded()
+      expect(screen.queryByRole('button', { name: 'Edit target' })).not.toBeInTheDocument()
+    })
+
+    it('saves a new target with PUT /coverage/target and shows it', async () => {
+      mockCoverage.updateTarget.mockResolvedValue({ ...TARGET, target_pct: 35, is_below_threshold: false })
+      const user = await renderLoaded()
+      await user.click(screen.getByRole('button', { name: 'Edit target' }))
+      const dialog = await screen.findByRole('dialog')
+      const pct = within(dialog).getByLabelText('Target (%)')
+      expect(pct).toHaveValue(80)
+      await user.clear(pct)
+      await user.type(pct, '35')
+      await user.click(within(dialog).getByRole('button', { name: 'Save target' }))
+
+      await waitFor(() =>
+        expect(mockCoverage.updateTarget).toHaveBeenCalledWith({ target_pct: 35, enabled: true, label: 'Q1 goal' }),
+      )
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(screen.getByTestId('target-pct')).toHaveTextContent('35%')
+      expect(screen.getByText('On target')).toBeInTheDocument()
+    })
+
+    it('does not submit a target outside 0 to 100', async () => {
+      const user = await renderLoaded()
+      await user.click(screen.getByRole('button', { name: 'Edit target' }))
+      const dialog = await screen.findByRole('dialog')
+      const pct = within(dialog).getByLabelText('Target (%)')
+      await user.clear(pct)
+      await user.type(pct, '140')
+      expect(within(dialog).getByText('Enter a number from 0 to 100.')).toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Save target' })).toBeDisabled()
+    })
+
+    it('reports a failed save as an error notification and keeps the dialog open', async () => {
+      mockCoverage.updateTarget.mockRejectedValue({ response: { data: { detail: 'Forbidden' } } })
+      const user = await renderLoaded()
+      await user.click(screen.getByRole('button', { name: 'Edit target' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('button', { name: 'Save target' }))
+      await waitFor(() =>
+        expect(useUIStore.getState().notifications).toEqual([
+          expect.objectContaining({ type: 'error', title: 'Could not save the coverage target', message: 'Forbidden' }),
+        ]),
+      )
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+  })
+
+  describe('Navigator layer download', () => {
+    it('fetches the layer and saves it as a JSON file', async () => {
+      const createObjectURL = vi.fn((_: Blob) => 'blob:mock')
+      const revokeObjectURL = vi.fn()
+      vi.stubGlobal('URL', Object.assign(URL, { createObjectURL, revokeObjectURL }))
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+      const user = await renderLoaded()
+      const callsBefore = mockCoverage.navigator.mock.calls.length
+      await user.click(screen.getByRole('button', { name: 'Download Navigator layer' }))
+      await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1))
+      expect(mockCoverage.navigator.mock.calls.length).toBe(callsBefore + 1)
+      const blob = createObjectURL.mock.calls[0][0]
+      expect(blob.type).toBe('application/json')
+      expect(click).toHaveBeenCalled()
+      click.mockRestore()
+    })
+
+    it('reports a failed download as an error notification', async () => {
+      const user = await renderLoaded()
+      mockCoverage.navigator.mockRejectedValue(new Error('Network Error'))
+      await user.click(screen.getByRole('button', { name: 'Download Navigator layer' }))
+      await waitFor(() =>
+        expect(useUIStore.getState().notifications).toEqual([
+          expect.objectContaining({ type: 'error', title: 'Could not download the Navigator layer' }),
+        ]),
+      )
     })
   })
 })
 
 // ---------------------------------------------------------------------------
-// Unit tests for buildGapTable helper
+// coverageUtils
 // ---------------------------------------------------------------------------
 
-describe('buildGapTable', () => {
-  it('returns an empty array for empty input', () => {
-    expect(buildGapTable([])).toEqual([])
+describe('groupTechniques', () => {
+  it('returns an empty array for no techniques', () => {
+    expect(groupTechniques([])).toEqual([])
   })
 
-  it('aggregates covered and total across all rows for the same tactic', () => {
-    const rows: HeatRow[] = [
-      { row: 0, cells: [{ tactic: 'EXEC', covered: 5, total: 9 }] },
-      { row: 1, cells: [{ tactic: 'EXEC', covered: 3, total: 9 }] },
-    ]
-    const result = buildGapTable(rows)
-    expect(result).toHaveLength(1)
-    expect(result[0]).toMatchObject({ tactic: 'EXEC', covered: 8, total: 18 })
+  it('groups sub-techniques under the parent ID and sorts groups and members', () => {
+    const groups = groupTechniques([
+      technique('T1059.003', 1), technique('T1003', 2), technique('T1059.001', 5),
+    ])
+    expect(groups.map((g) => g.parent)).toEqual(['T1003', 'T1059'])
+    expect(groups[1].techniques.map((t) => t.techniqueID)).toEqual(['T1059.001', 'T1059.003'])
+    expect(groups[1].ruleCount).toBe(6)
   })
 
-  it('calculates percentage as Math.round(covered/total * 100)', () => {
-    const rows: HeatRow[] = [
-      { row: 0, cells: [{ tactic: 'RECON', covered: 1, total: 3 }] },
-    ]
-    // 1/3 = 0.333... → 33%
-    const result = buildGapTable(rows)
-    expect(result[0].pct).toBe(33)
+  it('does not mutate its input', () => {
+    const input = [technique('T1059.003', 1), technique('T1059.001', 5)]
+    groupTechniques(input)
+    expect(input.map((t) => t.techniqueID)).toEqual(['T1059.003', 'T1059.001'])
+  })
+})
+
+describe('coverage helpers', () => {
+  it('builds MITRE ATT&CK links for techniques and sub-techniques', () => {
+    expect(attackUrl('T1059')).toBe('https://attack.mitre.org/techniques/T1059/')
+    expect(attackUrl('t1059.001')).toBe('https://attack.mitre.org/techniques/T1059/001/')
   })
 
-  it('returns pct=0 when total is 0', () => {
-    const rows: HeatRow[] = [
-      { row: 0, cells: [{ tactic: 'INIT', covered: 0, total: 0 }] },
-    ]
-    const result = buildGapTable(rows)
-    expect(result[0].pct).toBe(0)
+  it('formats whole and fractional percentages', () => {
+    expect(formatPct(40)).toBe('40%')
+    expect(formatPct(28.57)).toBe('28.6%')
   })
 
-  it('sorts results ascending by coverage percentage (lowest gaps first)', () => {
-    const rows: HeatRow[] = [
-      {
-        row: 0,
-        cells: [
-          { tactic: 'HIGH_COV', covered: 9, total: 9 },   // 100%
-          { tactic: 'LOW_COV',  covered: 1, total: 9 },   // 11%
-          { tactic: 'MID_COV',  covered: 5, total: 9 },   // 56%
-        ],
-      },
-    ]
-    const result = buildGapTable(rows)
-    expect(result.map((r) => r.tactic)).toEqual(['LOW_COV', 'MID_COV', 'HIGH_COV'])
-  })
-
-  it('handles multiple rows with different tactics correctly', () => {
-    const result = buildGapTable(mockHeatmapData)
-    // RECON: 3/18≈17%, CRED: 5/12≈42%, EXEC: 17/18≈94%
-    expect(result).toHaveLength(3)
-    expect(result[0].tactic).toBe('RECON')
-    expect(result[0].covered).toBe(3)
-    expect(result[0].total).toBe(18)
-    expect(result[1].tactic).toBe('CRED')
-    expect(result[2].tactic).toBe('EXEC')
-  })
-
-  it('returns pct=100 for fully covered tactics', () => {
-    const rows: HeatRow[] = [
-      { row: 0, cells: [{ tactic: 'FULL', covered: 10, total: 10 }] },
-    ]
-    const result = buildGapTable(rows)
-    expect(result[0].pct).toBe(100)
-  })
-
-  it('handles a single row with a single tactic', () => {
-    const rows: HeatRow[] = [
-      { row: 0, cells: [{ tactic: 'ONLY', covered: 3, total: 4 }] },
-    ]
-    const result = buildGapTable(rows)
-    expect(result).toHaveLength(1)
-    expect(result[0]).toMatchObject({ tactic: 'ONLY', covered: 3, total: 4, pct: 75 })
-  })
-
-  it('preserves all tactics present in cell data', () => {
-    const rows: HeatRow[] = [
-      {
-        row: 0,
-        cells: [
-          { tactic: 'A', covered: 1, total: 2 },
-          { tactic: 'B', covered: 2, total: 2 },
-          { tactic: 'C', covered: 0, total: 2 },
-        ],
-      },
-    ]
-    const result = buildGapTable(rows)
-    const tactics = result.map((r) => r.tactic).sort()
-    expect(tactics).toEqual(['A', 'B', 'C'])
+  it('scales heat opacity from 0.15 to 1 and returns 0 for no value', () => {
+    expect(heatOpacity(0, 10)).toBe(0)
+    expect(heatOpacity(5, 0)).toBe(0)
+    expect(heatOpacity(10, 10)).toBe(1)
+    expect(heatOpacity(20, 10)).toBe(1)
+    expect(heatOpacity(1, 100)).toBeCloseTo(0.16, 2)
   })
 })

@@ -10,7 +10,6 @@ tests/
 .coverage
 htmlcov/
 .mypy_cache/
-alembic/versions/
 .git/
 .gitignore
 *.md

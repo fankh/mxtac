@@ -1,195 +1,243 @@
-import { useState, useEffect } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { Detection, DetectionUpdate } from '../../../types/api'
-import { detectionsApi } from '../../../lib/api'
-import { ScoreCircle, SeverityPill } from '../../shared/SeverityBadge'
-import { StatusPill } from '../../shared/StatusPill'
+import { Link } from 'react-router-dom'
+import { Search } from 'lucide-react'
+import type { Detection, DetectionStatus, DetectionUpdate } from '@/types/api'
+import { apiErrorMessage, detectionsApi } from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
+import { useUIStore } from '@/stores/uiStore'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { ScoreCircle, SeverityPill } from '@/components/shared/SeverityBadge'
+import { StatusPill } from '@/components/shared/StatusPill'
+import { DETECTION_STATUS_LABELS, isUuid, techniqueLabel } from './utils'
+import { canWrite } from '@/lib/roles'
+import { useTechniqueNames } from '@/hooks/useTechniqueNames'
+import { HUNT_ROLES, eventLink } from '../hunt/huntUtils'
+import { formatDateTime } from '@/lib/format'
 
-interface Props {
+interface DetectionPanelProps {
+  /** Detection to show; the panel is closed while this is null. */
   detection: Detection | null
   onClose: () => void
+  /** Called with the server copy after a successful change. */
+  onUpdated?: (detection: Detection) => void
 }
 
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
+interface StatusAction {
+  status: DetectionStatus
+  label: string
+}
+
+/** Status changes offered for each current status; the first one is the primary button. */
+const STATUS_ACTIONS: Record<DetectionStatus, StatusAction[]> = {
+  active: [
+    { status: 'investigating', label: 'Investigate' },
+    { status: 'resolved', label: 'Resolve' },
+    { status: 'false_positive', label: 'False positive' },
+  ],
+  investigating: [
+    { status: 'resolved', label: 'Resolve' },
+    { status: 'false_positive', label: 'False positive' },
+    { status: 'active', label: 'Reopen' },
+  ],
+  resolved: [{ status: 'active', label: 'Reopen' }],
+  false_positive: [{ status: 'active', label: 'Reopen' }],
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[120px_1fr] gap-2 py-[5px] border-b border-section">
-      <span className="text-[10px] font-medium text-text-muted uppercase">{label}</span>
-      <span className="text-[11px] text-text-primary break-words">{value}</span>
+    <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 border-b border-border py-1.5 last:border-0">
+      <dt className="text-[11px] font-medium text-muted-foreground">{label}</dt>
+      <dd className="break-words text-[12px] text-foreground">{children}</dd>
     </div>
   )
 }
 
-export function DetectionPanel({ detection, onClose }: Props) {
-  const [assignMode, setAssignMode] = useState(false)
-  const [assignInput, setAssignInput] = useState('')
-
+function PanelBody({ detection, onUpdated }: { detection: Detection; onUpdated?: (d: Detection) => void }) {
   const queryClient = useQueryClient()
-
-  // Reset assign state when the selected detection changes
-  useEffect(() => {
-    setAssignMode(false)
-    setAssignInput('')
-  }, [detection?.id])
+  const addNotification = useUIStore((s) => s.addNotification)
+  const role = useAuthStore((s) => s.user?.role)
+  const writable = canWrite(role)
+  // The pipeline stores the ID of the event that matched the rule. Older rows and demo data
+  // hold other values there (or nothing), which cannot be opened.
+  const eventId = isUuid(detection.event_id) ? detection.event_id : null
+  // Hunt and GET /events/{id} need the events:search permission.
+  const canOpenEvent = role !== undefined && HUNT_ROLES.includes(role)
+  const techniqueName = useTechniqueNames()
+  const [assignee, setAssignee] = useState(detection.assigned_to ?? '')
 
   const mutation = useMutation({
-    mutationFn: (body: DetectionUpdate) => detectionsApi.update(detection!.id, body),
-    onSuccess: () => {
+    mutationFn: (body: DetectionUpdate) => detectionsApi.update(detection.id, body),
+    onSuccess: (updated, body) => {
+      addNotification({
+        type: 'success',
+        title: body.status
+          ? `Detection set to ${DETECTION_STATUS_LABELS[body.status].toLowerCase()}`
+          : `Detection assigned to ${body.assigned_to}`,
+      })
       queryClient.invalidateQueries({ queryKey: ['detections'] })
-      onClose()
+      onUpdated?.(updated)
+    },
+    onError: (error: unknown) => {
+      addNotification({
+        type: 'error',
+        title: 'Could not update the detection',
+        message: apiErrorMessage(error),
+      })
     },
   })
 
-  if (!detection) return null
+  const trimmedAssignee = assignee.trim()
+  const assigneeChanged = trimmedAssignee !== '' && trimmedAssignee !== (detection.assigned_to ?? '')
 
-  const isUpdating = mutation.isPending
-
-  function handleAssignConfirm() {
-    if (assignInput.trim()) {
-      mutation.mutate({ assigned_to: assignInput.trim() })
-    }
+  function handleAssign(event: FormEvent) {
+    event.preventDefault()
+    if (assigneeChanged && !mutation.isPending) mutation.mutate({ assigned_to: trimmedAssignee })
   }
+
+  const related = detection.related_technique_ids ?? []
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 z-30 bg-transparent"
-        onClick={onClose}
-      />
-
-      {/* Panel */}
-      <div className="fixed top-[46px] right-0 bottom-0 w-[436px] bg-surface shadow-panel z-40 flex flex-col overflow-hidden border-l border-border">
-        {/* Header */}
-        <div className="flex items-start justify-between px-4 py-3 border-b border-border">
-          <div className="flex items-start gap-3 min-w-0">
-            <ScoreCircle score={detection.score} severity={detection.severity} />
-            <div className="min-w-0">
-              <h2 className="text-[13px] font-semibold text-text-primary leading-snug">{detection.name}</h2>
-              <p className="text-[11px] text-text-muted mt-[2px]">{detection.technique_id} · {detection.tactic}</p>
-            </div>
+      <SheetHeader className="space-y-2 border-b border-border p-4 pr-10">
+        <div className="flex items-start gap-3">
+          <ScoreCircle score={detection.score} severity={detection.severity} />
+          <div className="min-w-0 space-y-1">
+            <SheetTitle className="text-[13px] leading-snug">{detection.name}</SheetTitle>
+            <SheetDescription>
+              {detection.technique_id} · {detection.tactic}
+            </SheetDescription>
           </div>
-          <button
-            className="text-text-muted hover:text-text-primary ml-2 text-lg leading-none"
-            onClick={onClose}
-            title="Close"
-          >
-            ×
-          </button>
         </div>
-
-        {/* Score badges row */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-section">
+        <div className="flex flex-wrap items-center gap-2">
           <SeverityPill severity={detection.severity} />
           <StatusPill status={detection.status} />
-          {detection.confidence !== undefined && (
-            <span className="text-[10px] text-text-muted">Confidence: {detection.confidence}%</span>
+          {detection.confidence != null && (
+            <span className="text-[11px] text-muted-foreground">Confidence {detection.confidence}%</span>
           )}
-          {detection.cvss_v3 !== undefined && (
-            <span className="text-[10px] text-text-muted">CVSS: {detection.cvss_v3}</span>
+          {detection.cvss_v3 != null && (
+            <span className="text-[11px] text-muted-foreground">CVSS {detection.cvss_v3}</span>
           )}
         </div>
+      </SheetHeader>
 
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-4 py-2">
-          {detection.description && (
-            <p className="text-[11px] text-text-secondary mb-3 leading-relaxed">{detection.description}</p>
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        {detection.description && (
+          <p className="text-[12px] leading-relaxed text-foreground">{detection.description}</p>
+        )}
+
+        <dl>
+          <Row label="Technique">
+            <span className="font-mono">{detection.technique_id}</span> {techniqueLabel(detection)}
+          </Row>
+          <Row label="Tactic">
+            {detection.tactic}
+            {detection.tactic_id && <span className="text-muted-foreground"> ({detection.tactic_id})</span>}
+          </Row>
+          <Row label="Host">{detection.host}</Row>
+          {detection.user && <Row label="User">{detection.user}</Row>}
+          {detection.process && (
+            <Row label="Process">
+              <code className="break-all rounded bg-muted px-1 font-mono text-[11px]">{detection.process}</code>
+            </Row>
           )}
+          {detection.log_source && <Row label="Log source">{detection.log_source}</Row>}
+          {detection.event_id && (
+            <Row label="Event ID">
+              <span className="font-mono">{detection.event_id}</span>
+              {eventId && canOpenEvent && (
+                <Button asChild variant="outline" size="sm" className="mt-1.5 flex h-7 w-fit text-[12px]">
+                  <Link to={eventLink(eventId)} title="Open the event that caused this detection in Hunt">
+                    <Search className="mr-1 h-3.5 w-3.5" />
+                    Open event in Hunt
+                  </Link>
+                </Button>
+              )}
+            </Row>
+          )}
+          {detection.rule_name && (
+            isUuid(detection.rule_name)
+              ? <Row label="Rule ID"><span className="font-mono">{detection.rule_name}</span></Row>
+              : <Row label="Rule">{detection.rule_name}</Row>
+          )}
+          {detection.occurrence_count != null && (
+            <Row label="Occurrences">{detection.occurrence_count.toLocaleString('en-US')}</Row>
+          )}
+          {detection.priority && <Row label="Priority">{detection.priority}</Row>}
+          <Row label="Assigned to">
+            {detection.assigned_to || <span className="text-muted-foreground">Unassigned</span>}
+          </Row>
+          <Row label="Time">{formatDateTime(detection.time)}</Row>
+          <Row label="Detection ID">
+            <span className="font-mono">{detection.id}</span>
+          </Row>
+        </dl>
 
-          <div className="mb-2">
-            <Row label="Technique" value={`${detection.technique_id} – ${detection.technique_name}`} />
-            <Row label="Tactic" value={detection.tactic} />
-            <Row label="Host" value={detection.host} />
-            {detection.user && <Row label="User" value={detection.user} />}
-            {detection.process && <Row label="Process" value={<code className="text-[10px] bg-page px-1 rounded">{detection.process}</code>} />}
-            {detection.log_source && <Row label="Log Source" value={detection.log_source} />}
-            {detection.event_id && <Row label="Event ID" value={detection.event_id} />}
-            {detection.rule_name && <Row label="Sigma Rule" value={detection.rule_name} />}
-            {detection.occurrence_count !== undefined && (
-              <Row label="Occurrences" value={detection.occurrence_count.toLocaleString()} />
-            )}
-            {detection.assigned_to && <Row label="Assigned To" value={detection.assigned_to} />}
-            <Row label="Time" value={new Date(detection.time).toLocaleString()} />
-          </div>
-
-          {detection.related_technique_ids && detection.related_technique_ids.length > 0 && (
-            <div className="mt-3">
-              <p className="text-[10px] font-medium text-text-muted uppercase mb-1">Related Techniques</p>
-              <div className="flex flex-wrap gap-1">
-                {detection.related_technique_ids.map((t) => (
-                  <span key={t} className="text-[10px] bg-page border border-border rounded px-2 py-[2px] text-text-secondary">{t}</span>
-                ))}
-              </div>
+        {related.length > 0 && (
+          <div className="space-y-1.5">
+            <h3 className="text-[12px] font-semibold">Related techniques</h3>
+            <div className="flex flex-wrap gap-1">
+              {related.map((technique) => (
+                <span
+                  key={technique}
+                  title={techniqueName(technique)}
+                  className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground"
+                >
+                  {technique}
+                </span>
+              ))}
             </div>
-          )}
-
-          {mutation.isError && (
-            <p className="mt-3 text-[11px] text-crit-text">Update failed. Please try again.</p>
-          )}
-        </div>
-
-        {/* Assign input row (shown when assign mode is active) */}
-        {assignMode && (
-          <div className="border-t border-section px-4 py-2 flex items-center gap-2">
-            <input
-              autoFocus
-              type="text"
-              placeholder="Assign to (email or username)"
-              value={assignInput}
-              onChange={(e) => setAssignInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && assignInput.trim()) handleAssignConfirm()
-                if (e.key === 'Escape') { setAssignMode(false); setAssignInput('') }
-              }}
-              className="flex-1 h-[28px] px-2 text-[11px] border border-border rounded-md bg-page text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
-            />
-            <button
-              onClick={handleAssignConfirm}
-              disabled={!assignInput.trim() || isUpdating}
-              className="h-[28px] px-3 text-[11px] bg-blue text-white rounded-md hover:opacity-90 disabled:opacity-50"
-            >
-              Confirm
-            </button>
-            <button
-              onClick={() => { setAssignMode(false); setAssignInput('') }}
-              className="text-[11px] text-text-muted hover:text-text-primary"
-            >
-              Cancel
-            </button>
           </div>
         )}
 
-        {/* Action footer */}
-        <div className="border-t border-border px-4 py-3 flex items-center gap-2">
-          <button
-            onClick={() => mutation.mutate({ status: 'investigating' })}
-            disabled={isUpdating}
-            className="flex-1 h-[30px] bg-blue text-white text-[12px] font-medium rounded-md hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            Investigate
-          </button>
-          <button
-            onClick={() => setAssignMode((v) => !v)}
-            disabled={isUpdating}
-            className="h-[30px] px-3 border border-border text-[12px] text-text-secondary rounded-md hover:bg-page transition-colors disabled:opacity-50"
-          >
-            Assign
-          </button>
-          <button
-            onClick={() => mutation.mutate({ status: 'resolved' })}
-            disabled={isUpdating}
-            className="h-[30px] px-3 border border-border text-[12px] text-text-secondary rounded-md hover:bg-page transition-colors disabled:opacity-50"
-          >
-            Resolve
-          </button>
-          <button
-            onClick={() => mutation.mutate({ status: 'false_positive' })}
-            disabled={isUpdating}
-            className="h-[30px] px-3 border border-border text-[12px] text-text-muted rounded-md hover:bg-page transition-colors disabled:opacity-50"
-          >
-            FP
-          </button>
-        </div>
+        {writable && (
+          <form onSubmit={handleAssign} className="space-y-1">
+            <Label htmlFor="detection-assignee" className="text-[12px] font-medium">Assign to</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="detection-assignee"
+                maxLength={255}
+                value={assignee}
+                onChange={(e) => setAssignee(e.target.value)}
+                placeholder="Email or username"
+                className="h-8"
+              />
+              <Button type="submit" variant="outline" className="h-8" disabled={!assigneeChanged || mutation.isPending}>
+                Assign
+              </Button>
+            </div>
+          </form>
+        )}
       </div>
+
+      {writable && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-border p-4">
+          {(STATUS_ACTIONS[detection.status] ?? []).map((action, index) => (
+            <Button
+              key={action.status}
+              variant={index === 0 ? 'default' : 'outline'}
+              disabled={mutation.isPending}
+              onClick={() => mutation.mutate({ status: action.status })}
+            >
+              {action.label}
+            </Button>
+          ))}
+        </div>
+      )}
     </>
+  )
+}
+
+/** Right-side detail panel for one detection, with status and assignee changes. */
+export function DetectionPanel({ detection, onClose, onUpdated }: DetectionPanelProps) {
+  return (
+    <Sheet open={detection !== null} onOpenChange={(next) => { if (!next) onClose() }}>
+      <SheetContent side="right" className="flex w-full flex-col gap-0 bg-card p-0 sm:max-w-md">
+        {detection && <PanelBody key={detection.id} detection={detection} onUpdated={onUpdated} />}
+      </SheetContent>
+    </Sheet>
   )
 }

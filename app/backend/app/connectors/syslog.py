@@ -50,6 +50,8 @@ logger = get_logger(__name__)
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 514
 DEFAULT_MAX_MESSAGE_SIZE = 65535
+# How often the event and error totals are written to the database.
+COUNTER_FLUSH_SECONDS = 5.0
 
 # ── Facility / Severity lookup tables ────────────────────────────────────────
 
@@ -220,9 +222,20 @@ class SyslogUDPConnector(BaseConnector):
     # ── Poll loop override ────────────────────────────────────────────────────
 
     async def _poll_loop(self) -> None:
-        """Event-driven connector: idle until the stop signal is received."""
+        """Event-driven connector: idle until the stop signal is received.
+
+        Wakes up every ``COUNTER_FLUSH_SECONDS`` to persist the event and error
+        totals counted by the datagram handler.
+        """
         try:
-            await self._stop_event.wait()
+            while not self._stop_event.is_set():
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(self._stop_event.wait()),
+                        timeout=COUNTER_FLUSH_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    await self._flush_counters()
         except asyncio.CancelledError:
             pass
 

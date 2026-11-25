@@ -1,752 +1,381 @@
 // vi.mock is hoisted before imports — declare all module mocks first.
 
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof ApiModule>()),
+  authApi: {},
   incidentsApi: {
-    get:     vi.fn(),
-    update:  vi.fn(),
+    get: vi.fn(),
+    update: vi.fn(),
     addNote: vi.fn(),
   },
 }))
 
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { IncidentPanel } from '../../components/features/incidents/IncidentPanel'
+import type * as ApiModule from '../../lib/api'
 import { incidentsApi } from '../../lib/api'
-import type { Incident, Detection } from '../../types/api'
+import { useAuthStore } from '../../stores/authStore'
+import { useUIStore } from '../../stores/uiStore'
+import type { Detection, Incident, IncidentDetail, IncidentNote } from '../../types/api'
+import { chooseOption, openSelect } from '../mocks/radixSelect'
 
-// ---------------------------------------------------------------------------
-// Typed mock references
-// ---------------------------------------------------------------------------
+const getMock = vi.mocked(incidentsApi.get)
+const updateMock = vi.mocked(incidentsApi.update)
+const addNoteMock = vi.mocked(incidentsApi.addNote)
 
-const mockApi = incidentsApi as {
-  get:     ReturnType<typeof vi.fn>
-  update:  ReturnType<typeof vi.fn>
-  addNote: ReturnType<typeof vi.fn>
+function makeIncident(overrides: Partial<Incident> = {}): Incident {
+  return {
+    id: 101,
+    title: 'Credential theft on the domain controller',
+    description: 'LSASS dump followed by lateral movement.',
+    severity: 'high',
+    status: 'investigating',
+    priority: 2,
+    assigned_to: 'kim@mxtac.local',
+    created_by: 'analyst@mxtac.local',
+    detection_ids: ['det-001', 'det-002', 'det-gone'],
+    technique_ids: ['T1003.001', 'T1021.002'],
+    tactic_ids: ['TA0006'],
+    hosts: ['WIN-DC01', 'WS-114'],
+    ttd_seconds: 120,
+    ttr_seconds: null,
+    closed_at: null,
+    created_at: '2026-02-19T09:00:00Z',
+    updated_at: '2026-02-19T09:30:00Z',
+    ...overrides,
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
+function makeDetection(overrides: Partial<Detection> = {}): Detection {
+  return {
+    id: 'det-001',
+    score: 9.2,
+    severity: 'critical',
+    technique_id: 'T1003.001',
+    technique_name: 'LSASS Memory',
+    name: 'Suspicious LSASS access',
+    host: 'WIN-DC01',
+    tactic: 'Credential Access',
+    status: 'active',
+    time: '2026-02-19T08:30:00Z',
+    related_technique_ids: [],
+    ...overrides,
+  }
+}
 
-const makeIncident = (overrides: Partial<Incident> = {}): Incident => ({
-  id: 42,
-  title: 'Lateral Movement via Pass-the-Hash',
-  description: null,
-  severity: 'high',
-  status: 'new',
-  priority: 2,
-  assigned_to: null,
-  created_by: 'analyst@mxtac.local',
-  detection_ids: [],
-  technique_ids: ['T1550.002'],
-  tactic_ids: ['lateral_movement'],
-  hosts: ['WIN-DC01'],
-  ttd_seconds: null,
-  ttr_seconds: null,
-  closed_at: null,
-  created_at: '2026-02-19T08:30:00Z',
-  updated_at: '2026-02-19T09:00:00Z',
-  ...overrides,
-})
-
-const makeDetection = (overrides: Partial<Detection> = {}): Detection => ({
-  id: 'det-001',
-  score: 8.5,
-  severity: 'high',
-  technique_id: 'T1550.002',
-  technique_name: 'Pass-the-Hash',
-  tactic: 'Lateral Movement',
-  name: 'Suspicious NTLM Authentication',
-  host: 'WIN-DC01',
-  status: 'active',
-  time: '2026-02-19T08:00:00Z',
-  related_technique_ids: [],
-  ...overrides,
-})
-
-const makeDetail = (
-  incidentOverrides: Partial<Incident> = {},
-  detections: Detection[] = [],
-  notes: object[] = [],
-) => ({
-  ...makeIncident(incidentOverrides),
-  detections,
-  notes,
-  duration_seconds: 1800,
-})
-
-// ---------------------------------------------------------------------------
-// Render helper
-// ---------------------------------------------------------------------------
-
-function renderPanel(
-  incident: Incident | null,
+const NOTES: IncidentNote[] = [
   {
-    onClose = vi.fn(),
-    onDetectionClick,
-  }: {
-    onClose?: () => void
-    onDetectionClick?: (d: Detection) => void
-  } = {},
-) {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries:   { retry: false },
-      mutations: { retry: false },
-    },
-  })
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <IncidentPanel
-        incident={incident}
-        onClose={onClose}
-        onDetectionClick={onDetectionClick}
-      />
+    id: 'note-2',
+    author: 'kim@mxtac.local',
+    content: 'Memory image collected from WIN-DC01.',
+    note_type: 'evidence',
+    created_at: '2026-02-19T10:00:00+00:00',
+  },
+  {
+    id: 'note-1',
+    author: 'analyst@mxtac.local',
+    content: 'Status changed from new to investigating by analyst@mxtac.local',
+    note_type: 'status_change',
+    created_at: '2026-02-19T09:10:00+00:00',
+  },
+]
+
+function makeDetail(overrides: Partial<IncidentDetail> = {}): IncidentDetail {
+  return {
+    ...makeIncident(),
+    detections: [
+      makeDetection(),
+      makeDetection({ id: 'det-002', name: 'SMB admin share access', host: 'WS-114', status: 'investigating' }),
+    ],
+    notes: NOTES,
+    duration_seconds: 5400,
+    ...overrides,
+  }
+}
+
+function renderPanel(incident: Incident | null = makeIncident(), onClose: () => void = vi.fn()) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const invalidate = vi.spyOn(client, 'invalidateQueries')
+  const view = render(
+    <QueryClientProvider client={client}>
+      <IncidentPanel incident={incident} onClose={onClose} />
     </QueryClientProvider>,
   )
+  return { ...view, invalidate, onClose }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+/** Renders the panel and waits until the detail request has filled the tabs. */
+async function renderLoaded(incident: Incident = makeIncident()) {
+  const view = renderPanel(incident)
+  await screen.findByRole('tab', { name: 'Timeline (2)' })
+  return view
+}
+
+function notifications() {
+  return useUIStore.getState().notifications
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  getMock.mockResolvedValue(makeDetail())
+  useAuthStore.setState({ user: { email: 'analyst@mxtac.local', role: 'analyst' } })
+  useUIStore.setState({ notifications: [] })
+})
 
 describe('IncidentPanel', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockApi.get.mockResolvedValue(makeDetail())
-    mockApi.update.mockResolvedValue(makeIncident())
-    mockApi.addNote.mockResolvedValue({
-      id: 'note-1', content: 'test', author: 'analyst',
-      note_type: 'comment', created_at: '2026-02-19T09:00:00Z',
+  describe('content', () => {
+    it('renders nothing while no incident is selected', () => {
+      renderPanel(null)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(getMock).not.toHaveBeenCalled()
+    })
+
+    it('names the techniques of the incident next to their IDs', async () => {
+      await renderLoaded()
+      const dialog = screen.getByRole('dialog')
+      // From GET /attack/techniques (MSW handler in tests/mocks/handlers.ts)
+      expect(await within(dialog).findByText('OS Credential Dumping: LSASS Memory')).toBeInTheDocument()
+      expect(within(dialog).getByText('Remote Services: SMB/Windows Admin Shares')).toBeInTheDocument()
+      expect(within(dialog).getByText('T1021.002')).toBeInTheDocument()
+    })
+
+    it('shows the incident as a labelled side panel and loads its detail', async () => {
+      await renderLoaded()
+      const dialog = screen.getByRole('dialog', { name: 'Credential theft on the domain controller' })
+      expect(dialog).toHaveTextContent('INC-101')
+      expect(dialog).toHaveTextContent('Opened by analyst@mxtac.local')
+      expect(getMock).toHaveBeenCalledWith(101)
+    })
+
+    it('lists the detail fields', async () => {
+      await renderLoaded()
+      const panel = screen.getByRole('tabpanel')
+      expect(panel).toHaveTextContent('LSASS dump followed by lateral movement.')
+      expect(panel).toHaveTextContent('kim@mxtac.local')
+      expect(panel).toHaveTextContent('P2')
+      expect(within(panel).getByText('WIN-DC01')).toBeInTheDocument()
+      expect(within(panel).getByText('T1021.002')).toBeInTheDocument()
+      // The tactic is shown by name; the ID stays available as a tooltip.
+      expect(within(panel).getByText('Credential Access')).toHaveAttribute('title', 'TA0006')
+      expect(within(panel).queryByText('TA0006')).not.toBeInTheDocument()
+      expect(within(panel).getByText('Open for').nextElementSibling).toHaveTextContent('1.5 h')
+      expect(within(panel).getByText('Time to detect').nextElementSibling).toHaveTextContent('2 min')
+      expect(within(panel).getByText('Time to resolve').nextElementSibling).toHaveTextContent('—')
+    })
+
+    it('calls onClose from the close button', async () => {
+      const { onClose } = await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+      expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows an error with a retry when the detail request fails', async () => {
+      getMock.mockRejectedValueOnce(new Error('Incident 101 not found'))
+      renderPanel()
+      fireEvent.click(screen.getByRole('tab', { name: 'Timeline' }))
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('Could not load the incident detail')
+      expect(alert).toHaveTextContent('Incident 101 not found')
+
+      fireEvent.click(within(alert).getByRole('button', { name: /retry/i }))
+      expect(await screen.findByText('Memory image collected from WIN-DC01.')).toBeInTheDocument()
     })
   })
 
-  // =========================================================================
-  // Null incident
-  // =========================================================================
-  describe('when incident is null', () => {
-    it('renders nothing', () => {
-      const { container } = renderPanel(null)
-      expect(container).toBeEmptyDOMElement()
-    })
-  })
-
-  // =========================================================================
-  // Header
-  // =========================================================================
-  describe('header', () => {
-    it('renders the panel with incident title', () => {
-      renderPanel(makeIncident())
-      expect(screen.getByText('Lateral Movement via Pass-the-Hash')).toBeInTheDocument()
+  describe('status and severity', () => {
+    it('offers only the current status and later ones', async () => {
+      await renderLoaded()
+      expect(await openSelect('Incident status')).toEqual(['Investigating', 'Contained', 'Resolved', 'Closed'])
     })
 
-    it('renders INC-{id} in the header badge', () => {
-      renderPanel(makeIncident({ id: 42 }))
-      // INC-42 appears in both header badge and Details tab ID row — check it exists at least once
-      expect(screen.getAllByText('INC-42').length).toBeGreaterThan(0)
-    })
+    it('moves the incident forward and refreshes the lists', async () => {
+      updateMock.mockResolvedValue(makeIncident({ status: 'contained' }))
+      const { invalidate } = await renderLoaded()
+      await chooseOption('Incident status', 'Contained')
 
-    it('shows "Unassigned" when assigned_to is null', () => {
-      renderPanel(makeIncident({ assigned_to: null }))
-      // Appears in header and in AssignedToField in Details tab
-      expect(screen.getAllByText('Unassigned').length).toBeGreaterThan(0)
-    })
-
-    it('shows the assigned_to value when set', () => {
-      renderPanel(makeIncident({ assigned_to: 'soc@mxtac.local' }))
-      // Appears in header paragraph and AssignedToField in Details tab
-      expect(screen.getAllByText('soc@mxtac.local').length).toBeGreaterThan(0)
-    })
-
-    it('shows "Assigned:" prefix label in header when assigned_to is set', () => {
-      renderPanel(makeIncident({ assigned_to: 'soc@mxtac.local' }))
-      // The header paragraph contains "Assigned: soc@mxtac.local"
-      expect(screen.getByText(/^Assigned:/)).toBeInTheDocument()
-    })
-
-    it('renders the close button with title "Close"', () => {
-      renderPanel(makeIncident())
-      expect(screen.getByTitle('Close')).toBeInTheDocument()
-    })
-
-    it('calls onClose when the × button is clicked', () => {
-      const onClose = vi.fn()
-      renderPanel(makeIncident(), { onClose })
-      fireEvent.click(screen.getByTitle('Close'))
-      expect(onClose).toHaveBeenCalledOnce()
-    })
-
-    it('calls onClose when the backdrop is clicked', () => {
-      const onClose = vi.fn()
-      const { container } = renderPanel(makeIncident(), { onClose })
-      const backdrop = container.querySelector('.fixed.inset-0')
-      expect(backdrop).not.toBeNull()
-      fireEvent.click(backdrop!)
-      expect(onClose).toHaveBeenCalledOnce()
-    })
-  })
-
-  // =========================================================================
-  // Quick action bar — next-status button
-  // =========================================================================
-  describe('next status button', () => {
-    it('shows the next status button for non-closed incidents', () => {
-      renderPanel(makeIncident({ status: 'new' }))
-      expect(screen.getByText('→ Investigating')).toBeInTheDocument()
-    })
-
-    it('shows "→ Contained" when status is investigating', () => {
-      renderPanel(makeIncident({ status: 'investigating' }))
-      expect(screen.getByText('→ Contained')).toBeInTheDocument()
-    })
-
-    it('does not show next-status button when status is closed', () => {
-      renderPanel(makeIncident({ status: 'closed' }))
-      expect(screen.queryByText(/^→ /)).not.toBeInTheDocument()
-    })
-
-    it('calls update with next status when next-status button is clicked', async () => {
-      renderPanel(makeIncident({ status: 'new' }))
-      fireEvent.click(screen.getByText('→ Investigating'))
+      await waitFor(() => expect(updateMock).toHaveBeenCalledWith(101, { status: 'contained' }))
       await waitFor(() =>
-        expect(mockApi.update).toHaveBeenCalledWith(42, { status: 'investigating' }),
+        expect(notifications()).toEqual([
+          expect.objectContaining({ type: 'success', title: 'Incident INC-101 updated' }),
+        ]),
+      )
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['incidents'] })
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['incident-metrics'] })
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['incident-detail', 101] })
+    })
+
+    it('does not send an update when the same status is chosen', async () => {
+      await renderLoaded()
+      await chooseOption('Incident status', 'Investigating')
+      expect(updateMock).not.toHaveBeenCalled()
+    })
+
+    it('locks the status of a closed incident', async () => {
+      getMock.mockResolvedValue(makeDetail({ status: 'closed' }))
+      await renderLoaded(makeIncident({ status: 'closed' }))
+      expect(screen.getByRole('combobox', { name: 'Incident status' })).toBeDisabled()
+    })
+
+    it('changes the severity', async () => {
+      updateMock.mockResolvedValue(makeIncident({ severity: 'critical' }))
+      await renderLoaded()
+      await chooseOption('Incident severity', 'Critical')
+      await waitFor(() => expect(updateMock).toHaveBeenCalledWith(101, { severity: 'critical' }))
+    })
+
+    it('reports a rejected update', async () => {
+      updateMock.mockRejectedValue(new Error('Invalid status transition'))
+      await renderLoaded()
+      await chooseOption('Incident status', 'Resolved')
+      await waitFor(() =>
+        expect(notifications()).toEqual([
+          expect.objectContaining({
+            type: 'error',
+            title: 'Could not update the incident',
+            message: 'Invalid status transition',
+          }),
+        ]),
       )
     })
   })
 
-  // =========================================================================
-  // Status change dropdown
-  // =========================================================================
-  describe('Set Status dropdown', () => {
-    it('renders the "Set Status ▾" button', () => {
-      renderPanel(makeIncident())
-      expect(screen.getByText('Set Status ▾')).toBeInTheDocument()
+  describe('assignee', () => {
+    it('assigns the incident to a new email address', async () => {
+      updateMock.mockResolvedValue(makeIncident({ assigned_to: 'lee@mxtac.local' }))
+      await renderLoaded()
+      const input = screen.getByLabelText('Assignee email')
+      const assign = screen.getByRole('button', { name: 'Assign' })
+      expect(input).toHaveValue('kim@mxtac.local')
+      expect(assign).toBeDisabled()
+
+      fireEvent.change(input, { target: { value: 'lee@mxtac.local' } })
+      fireEvent.click(assign)
+      await waitFor(() => expect(updateMock).toHaveBeenCalledWith(101, { assigned_to: 'lee@mxtac.local' }))
     })
 
-    it('does not show status options by default', () => {
-      renderPanel(makeIncident({ status: 'new' }))
-      // Dropdown is closed — no duplicate status options visible
-      expect(screen.queryByText('Contained')).not.toBeInTheDocument()
+    it('rejects a value that is not an email address', async () => {
+      await renderLoaded()
+      fireEvent.change(screen.getByLabelText('Assignee email'), { target: { value: 'lee' } })
+      expect(screen.getByRole('button', { name: 'Assign' })).toBeDisabled()
+      expect(screen.getByText('Enter a valid email address.')).toBeInTheDocument()
     })
 
-    it('shows all status options when "Set Status ▾" is clicked', () => {
-      renderPanel(makeIncident({ status: 'new' }))
-      fireEvent.click(screen.getByText('Set Status ▾'))
-      // Multiple Investigating badges: one in header, one in dropdown
-      expect(screen.getAllByText('Investigating').length).toBeGreaterThan(0)
-      expect(screen.getByText('Contained')).toBeInTheDocument()
-      expect(screen.getByText('Resolved')).toBeInTheDocument()
+    it('unassigns by sending null', async () => {
+      updateMock.mockResolvedValue(makeIncident({ assigned_to: null }))
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Unassign' }))
+      await waitFor(() => expect(updateMock).toHaveBeenCalledWith(101, { assigned_to: null }))
+      await waitFor(() => expect(screen.getByLabelText('Assignee email')).toHaveValue(''))
     })
 
-    it('shows a confirmation bar when a status is selected from dropdown', () => {
-      renderPanel(makeIncident({ status: 'new' }))
-      fireEvent.click(screen.getByText('Set Status ▾'))
-      // Click "Contained" in the dropdown (not in header)
-      const buttons = screen.getAllByText('Contained')
-      fireEvent.click(buttons[0])
-      expect(screen.getByTestId('status-confirm-bar')).toBeInTheDocument()
-    })
-
-    it('shows Confirm and Cancel buttons in the confirmation bar', () => {
-      renderPanel(makeIncident({ status: 'new' }))
-      fireEvent.click(screen.getByText('Set Status ▾'))
-      const contained = screen.getAllByText('Contained')
-      fireEvent.click(contained[0])
-      const bar = screen.getByTestId('status-confirm-bar')
-      expect(within(bar).getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
-      expect(within(bar).getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
-    })
-
-    it('shows "Change to" text in the confirmation bar', () => {
-      renderPanel(makeIncident({ status: 'new' }))
-      fireEvent.click(screen.getByText('Set Status ▾'))
-      fireEvent.click(screen.getAllByText('Contained')[0])
-      const bar = screen.getByTestId('status-confirm-bar')
-      expect(bar).toHaveTextContent(/Change to/)
-    })
-
-    it('calls update mutation when Confirm is clicked', async () => {
-      renderPanel(makeIncident({ status: 'new' }))
-      fireEvent.click(screen.getByText('Set Status ▾'))
-      fireEvent.click(screen.getAllByText('Contained')[0])
-      const bar = screen.getByTestId('status-confirm-bar')
-      fireEvent.click(within(bar).getByRole('button', { name: 'Confirm' }))
-      await waitFor(() =>
-        expect(mockApi.update).toHaveBeenCalledWith(42, { status: 'contained' }),
-      )
-    })
-
-    it('hides the confirmation bar when Cancel is clicked', () => {
-      renderPanel(makeIncident({ status: 'new' }))
-      fireEvent.click(screen.getByText('Set Status ▾'))
-      fireEvent.click(screen.getAllByText('Contained')[0])
-      expect(screen.getByTestId('status-confirm-bar')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-      expect(screen.queryByTestId('status-confirm-bar')).not.toBeInTheDocument()
-    })
-
-    it('does not call update when Cancel is clicked', async () => {
-      renderPanel(makeIncident({ status: 'new' }))
-      fireEvent.click(screen.getByText('Set Status ▾'))
-      fireEvent.click(screen.getAllByText('Contained')[0])
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-      await new Promise(r => setTimeout(r, 50))
-      expect(mockApi.update).not.toHaveBeenCalled()
+    it('has no Unassign button when nobody is assigned', async () => {
+      getMock.mockResolvedValue(makeDetail({ assigned_to: null }))
+      await renderLoaded(makeIncident({ assigned_to: null }))
+      expect(screen.queryByRole('button', { name: 'Unassign' })).not.toBeInTheDocument()
     })
   })
 
-  // =========================================================================
-  // Metrics strip
-  // =========================================================================
-  describe('metrics strip', () => {
-    function getMetrics() {
-      return screen.getByTestId('metrics-strip')
+  describe('timeline', () => {
+    async function openTimeline() {
+      const view = await renderLoaded()
+      fireEvent.click(screen.getByRole('tab', { name: 'Timeline (2)' }))
+      return view
     }
 
-    it('renders the TTD label in the metrics strip', () => {
-      renderPanel(makeIncident())
-      expect(within(getMetrics()).getByText('TTD')).toBeInTheDocument()
+    it('lists the notes oldest first with author and type', async () => {
+      await openTimeline()
+      const items = within(screen.getByRole('tabpanel')).getAllByRole('listitem')
+      expect(items).toHaveLength(2)
+      expect(items[0]).toHaveTextContent('Status changed from new to investigating')
+      expect(items[0]).toHaveTextContent('Status change')
+      expect(items[1]).toHaveTextContent('Memory image collected from WIN-DC01.')
+      expect(items[1]).toHaveTextContent('kim@mxtac.local')
+      expect(items[1]).toHaveTextContent('Evidence')
     })
 
-    it('renders the TTR label in the metrics strip', () => {
-      renderPanel(makeIncident())
-      expect(within(getMetrics()).getByText('TTR')).toBeInTheDocument()
-    })
-
-    it('renders the Time Open label', () => {
-      renderPanel(makeIncident())
-      expect(within(getMetrics()).getByText('Time Open')).toBeInTheDocument()
-    })
-
-    it('shows "—" for TTD in the metrics strip when ttd_seconds is null', () => {
-      renderPanel(makeIncident({ ttd_seconds: null }))
-      const ttdLabel = within(getMetrics()).getByText('TTD')
-      expect(ttdLabel.nextElementSibling?.textContent).toBe('—')
-    })
-
-    it('shows formatted TTD in the metrics strip when ttd_seconds is set', () => {
-      renderPanel(makeIncident({ ttd_seconds: 3600 }))
-      expect(within(getMetrics()).getByText('1.0h')).toBeInTheDocument()
-    })
-
-    it('shows "Open" for TTR in the metrics strip when ttr_seconds is null', () => {
-      renderPanel(makeIncident({ ttr_seconds: null }))
-      const ttrLabel = within(getMetrics()).getByText('TTR')
-      expect(ttrLabel.nextElementSibling?.textContent).toBe('Open')
-    })
-
-    it('shows formatted TTR in the metrics strip when ttr_seconds is set', () => {
-      renderPanel(makeIncident({ ttr_seconds: 7200 }))
-      expect(within(getMetrics()).getByText('2.0h')).toBeInTheDocument()
-    })
-
-    it('shows "—" for Time Open when detail is not yet loaded', () => {
-      mockApi.get.mockReturnValue(new Promise(() => {}))
-      renderPanel(makeIncident())
-      const timeOpenLabel = within(getMetrics()).getByText('Time Open')
-      expect(timeOpenLabel.nextElementSibling?.textContent).toBe('—')
-    })
-  })
-
-  // =========================================================================
-  // Tabs
-  // =========================================================================
-  describe('tab navigation', () => {
-    it('renders the Details tab', () => {
-      renderPanel(makeIncident())
-      expect(screen.getByRole('button', { name: 'Details' })).toBeInTheDocument()
-    })
-
-    it('renders the Timeline tab', () => {
-      renderPanel(makeIncident())
-      expect(screen.getByRole('button', { name: /Timeline/ })).toBeInTheDocument()
-    })
-
-    it('renders the Detections tab', () => {
-      renderPanel(makeIncident())
-      expect(screen.getByRole('button', { name: /Detections/ })).toBeInTheDocument()
-    })
-
-    it('Details tab is active by default', () => {
-      renderPanel(makeIncident())
-      expect(screen.getByRole('button', { name: 'Details' })).toHaveClass('border-blue')
-    })
-
-    it('switches to Timeline tab when clicked', () => {
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      expect(screen.getByRole('button', { name: /Timeline/ })).toHaveClass('border-blue')
-    })
-
-    it('switches to Detections tab when clicked', () => {
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Detections/ }))
-      expect(screen.getByRole('button', { name: /Detections/ })).toHaveClass('border-blue')
-    })
-  })
-
-  // =========================================================================
-  // Details tab
-  // =========================================================================
-  describe('details tab', () => {
-    it('renders the Priority row', () => {
-      renderPanel(makeIncident({ priority: 2 }))
-      expect(screen.getByText('Priority')).toBeInTheDocument()
-    })
-
-    it('renders the Created By row', () => {
-      renderPanel(makeIncident({ created_by: 'analyst@mxtac.local' }))
-      expect(screen.getByText('Created By')).toBeInTheDocument()
-    })
-
-    it('renders technique IDs as tags', () => {
-      renderPanel(makeIncident({ technique_ids: ['T1550.002', 'T1003.001'] }))
-      expect(screen.getAllByText('T1550.002').length).toBeGreaterThan(0)
-      expect(screen.getByText('T1003.001')).toBeInTheDocument()
-    })
-
-    it('renders host tags', () => {
-      renderPanel(makeIncident({ hosts: ['WIN-DC01', 'WIN-WS02'] }))
-      expect(screen.getAllByText('WIN-DC01').length).toBeGreaterThan(0)
-      expect(screen.getByText('WIN-WS02')).toBeInTheDocument()
-    })
-
-    it('renders the description when set', () => {
-      renderPanel(makeIncident({ description: 'Attacker used PtH to move laterally.' }))
-      expect(screen.getByText('Attacker used PtH to move laterally.')).toBeInTheDocument()
-    })
-
-    it('renders the closed_at row label when incident is closed and has closed_at', () => {
-      renderPanel(makeIncident({
-        status: 'closed',
-        closed_at: '2026-02-20T10:00:00Z',
-      }))
-      // "Closed" appears in StatusBadge (header) and in the row label — use getAllByText
-      const closedElements = screen.getAllByText('Closed')
-      expect(closedElements.length).toBeGreaterThan(0)
-    })
-
-    it('does not render the closed_at row when closed_at is null', () => {
-      renderPanel(makeIncident({ status: 'new', closed_at: null }))
-      // Only StatusBadge might show "New" - but "Closed" should not appear at all
-      expect(screen.queryByText('Closed')).not.toBeInTheDocument()
-    })
-  })
-
-  // =========================================================================
-  // Timeline tab
-  // =========================================================================
-  describe('timeline tab', () => {
-    it('shows loading state while detail is loading', () => {
-      mockApi.get.mockReturnValue(new Promise(() => {}))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      expect(screen.getByText('Loading…')).toBeInTheDocument()
-    })
-
-    it('shows empty state when there are no notes', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [], []))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      await waitFor(() => {
-        expect(screen.getByText('No timeline events yet.')).toBeInTheDocument()
+    it('adds a comment and clears the draft', async () => {
+      addNoteMock.mockResolvedValue({
+        id: 'note-3',
+        author: 'analyst@mxtac.local',
+        content: 'Password reset requested.',
+        note_type: 'comment',
+        created_at: '2026-02-19T11:00:00+00:00',
       })
+      const { invalidate } = await openTimeline()
+      const draft = screen.getByRole('textbox', { name: 'New note' })
+      const add = screen.getByRole('button', { name: 'Add note' })
+      expect(add).toBeDisabled()
+
+      fireEvent.change(draft, { target: { value: '  Password reset requested. ' } })
+      fireEvent.click(add)
+
+      await waitFor(() => expect(addNoteMock).toHaveBeenCalledWith(101, 'Password reset requested.', 'comment'))
+      await waitFor(() => expect(draft).toHaveValue(''))
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['incident-detail', 101] })
     })
 
-    it('renders note content in the timeline', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [], [
-        {
-          id: 'note-1',
-          author: 'analyst@mxtac.local',
-          content: 'Initial triage completed.',
-          note_type: 'comment',
-          created_at: '2026-02-19T08:35:00Z',
-        },
-      ]))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      await waitFor(() => {
-        expect(screen.getByText('Initial triage completed.')).toBeInTheDocument()
-      })
+    it('adds a note marked as evidence', async () => {
+      addNoteMock.mockResolvedValue({ ...NOTES[0], id: 'note-4' })
+      await openTimeline()
+      fireEvent.change(screen.getByRole('textbox', { name: 'New note' }), { target: { value: 'pcap attached' } })
+      await chooseOption('Note type', 'Evidence')
+      fireEvent.click(screen.getByRole('button', { name: 'Add note' }))
+      await waitFor(() => expect(addNoteMock).toHaveBeenCalledWith(101, 'pcap attached', 'evidence'))
     })
 
-    it('renders note author', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [], [
-        {
-          id: 'note-1',
-          author: 'timeline-author@mxtac.local',
-          content: 'Triage done.',
-          note_type: 'comment',
-          created_at: '2026-02-19T08:35:00Z',
-        },
-      ]))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      await waitFor(() => {
-        expect(screen.getByText('timeline-author@mxtac.local')).toBeInTheDocument()
-      })
-    })
+    it('reports a failed note and keeps the draft', async () => {
+      addNoteMock.mockRejectedValue(new Error('Server error'))
+      await openTimeline()
+      const draft = screen.getByRole('textbox', { name: 'New note' })
+      fireEvent.change(draft, { target: { value: 'Keep me' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add note' }))
 
-    it('shows "Status Change" badge for status_change notes', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [], [
-        {
-          id: 'note-1',
-          author: 'analyst@mxtac.local',
-          content: 'Status changed to Investigating.',
-          note_type: 'status_change',
-          created_at: '2026-02-19T08:35:00Z',
-        },
-      ]))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      await waitFor(() => {
-        expect(screen.getByText('Status Change')).toBeInTheDocument()
-      })
-    })
-
-    it('shows "Evidence" badge for evidence notes', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [], [
-        {
-          id: 'note-1',
-          author: 'analyst@mxtac.local',
-          content: 'Packet capture attached.',
-          note_type: 'evidence',
-          created_at: '2026-02-19T08:35:00Z',
-        },
-      ]))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      await waitFor(() => {
-        expect(screen.getByText('Evidence')).toBeInTheDocument()
-      })
-    })
-
-    it('does not show type badge for regular comment notes', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [], [
-        {
-          id: 'note-1',
-          author: 'analyst@mxtac.local',
-          content: 'Regular comment.',
-          note_type: 'comment',
-          created_at: '2026-02-19T08:35:00Z',
-        },
-      ]))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      await waitFor(() => {
-        expect(screen.queryByText('Status Change')).not.toBeInTheDocument()
-        expect(screen.queryByText('Evidence')).not.toBeInTheDocument()
-      })
-    })
-
-    it('shows the Timeline tab note count when notes are loaded', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [], [
-        { id: 'n1', author: 'a', content: 'c1', note_type: 'comment', created_at: '2026-02-19T08:35:00Z' },
-        { id: 'n2', author: 'b', content: 'c2', note_type: 'comment', created_at: '2026-02-19T08:36:00Z' },
-      ]))
-      renderPanel(makeIncident())
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Timeline \(2\)/ })).toBeInTheDocument()
-      })
-    })
-  })
-
-  // =========================================================================
-  // Add note form
-  // =========================================================================
-  describe('add note form', () => {
-    it('renders the note textarea in the Timeline tab', () => {
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      expect(screen.getByPlaceholderText('Add a comment or observation…')).toBeInTheDocument()
-    })
-
-    it('renders the Add Note button', () => {
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      expect(screen.getByRole('button', { name: 'Add Note' })).toBeInTheDocument()
-    })
-
-    it('Add Note button is disabled when textarea is empty', () => {
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      expect(screen.getByRole('button', { name: 'Add Note' })).toBeDisabled()
-    })
-
-    it('Add Note button is enabled when textarea has text', () => {
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      fireEvent.change(
-        screen.getByPlaceholderText('Add a comment or observation…'),
-        { target: { value: 'New observation' } },
-      )
-      expect(screen.getByRole('button', { name: 'Add Note' })).not.toBeDisabled()
-    })
-
-    it('calls addNote with the textarea content', async () => {
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      fireEvent.change(
-        screen.getByPlaceholderText('Add a comment or observation…'),
-        { target: { value: 'Checked firewall logs.' } },
-      )
-      fireEvent.click(screen.getByRole('button', { name: 'Add Note' }))
       await waitFor(() =>
-        expect(mockApi.addNote).toHaveBeenCalledWith(42, 'Checked firewall logs.'),
+        expect(notifications()).toEqual([
+          expect.objectContaining({ type: 'error', title: 'Could not add the note', message: 'Server error' }),
+        ]),
       )
+      expect(draft).toHaveValue('Keep me')
     })
 
-    it('clears the textarea after successful note addition', async () => {
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Timeline/ }))
-      const textarea = screen.getByPlaceholderText('Add a comment or observation…')
-      fireEvent.change(textarea, { target: { value: 'Done.' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Add Note' }))
-      await waitFor(() => {
-        expect((textarea as HTMLTextAreaElement).value).toBe('')
-      })
+    it('shows an empty state when there are no notes', async () => {
+      getMock.mockResolvedValue(makeDetail({ notes: [] }))
+      renderPanel()
+      fireEvent.click(await screen.findByRole('tab', { name: 'Timeline (0)' }))
+      expect(screen.getByText('No notes yet')).toBeInTheDocument()
     })
   })
 
-  // =========================================================================
-  // Detections tab
-  // =========================================================================
-  describe('detections tab', () => {
-    it('shows loading state while detail is loading', () => {
-      mockApi.get.mockReturnValue(new Promise(() => {}))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Detections/ }))
-      expect(screen.getByText('Loading…')).toBeInTheDocument()
+  describe('linked detections', () => {
+    it('lists the linked detections and counts deleted ones', async () => {
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('tab', { name: 'Detections (2)' }))
+      const panel = screen.getByRole('tabpanel')
+      expect(within(panel).getByText('Suspicious LSASS access')).toBeInTheDocument()
+      expect(within(panel).getByText('SMB admin share access')).toBeInTheDocument()
+      expect(panel).toHaveTextContent('1 linked detection has been deleted.')
     })
 
-    it('shows empty state when there are no linked detections', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, []))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Detections/ }))
-      await waitFor(() => {
-        expect(screen.getByText('No linked detections.')).toBeInTheDocument()
-      })
-    })
-
-    it('renders linked detection names', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [
-        makeDetection({ name: 'Suspicious NTLM Authentication' }),
-      ]))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Detections/ }))
-      await waitFor(() => {
-        expect(screen.getByText('Suspicious NTLM Authentication')).toBeInTheDocument()
-      })
-    })
-
-    it('renders detection technique_id when detections tab is active', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [
-        makeDetection({ technique_id: 'T1550.002' }),
-      ]))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Detections/ }))
-      // When Detections tab is active, Details tab is hidden so T1550.002 only appears here
-      await waitFor(() => {
-        expect(screen.getAllByText('T1550.002').length).toBeGreaterThan(0)
-      })
-    })
-
-    it('shows the Detections tab count when loaded', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [
-        makeDetection(),
-        makeDetection({ id: 'det-002', name: 'Second Detection' }),
-      ]))
-      renderPanel(makeIncident())
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Detections \(2\)/ })).toBeInTheDocument()
-      })
-    })
-
-    it('expands inline detection detail when clicked (no onDetectionClick)', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [makeDetection()]))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Detections/ }))
-      await waitFor(() => {
-        expect(screen.getByText('Suspicious NTLM Authentication')).toBeInTheDocument()
-      })
-      fireEvent.click(screen.getByText('Suspicious NTLM Authentication'))
-      // Expanded: shows the "Technique" and "Tactic" row labels
-      expect(screen.getByText('Technique')).toBeInTheDocument()
-      expect(screen.getByText('Tactic')).toBeInTheDocument()
-      // The technique value contains the full string "T1550.002 – Pass-the-Hash"
-      expect(screen.getByText('T1550.002 – Pass-the-Hash')).toBeInTheDocument()
-    })
-
-    it('collapses expanded detection when clicked again', async () => {
-      mockApi.get.mockResolvedValue(makeDetail({}, [makeDetection()]))
-      renderPanel(makeIncident())
-      fireEvent.click(screen.getByRole('button', { name: /Detections/ }))
-      await waitFor(() => expect(screen.getByText('Suspicious NTLM Authentication')).toBeInTheDocument())
-      fireEvent.click(screen.getByText('Suspicious NTLM Authentication')) // expand
-      expect(screen.getByText('Technique')).toBeInTheDocument()
-      fireEvent.click(screen.getByText('Suspicious NTLM Authentication')) // collapse
-      expect(screen.queryByText('Technique')).not.toBeInTheDocument()
-    })
-
-    it('calls onDetectionClick when provided and detection row is clicked', async () => {
-      const onDetectionClick = vi.fn()
-      const det = makeDetection()
-      mockApi.get.mockResolvedValue(makeDetail({}, [det]))
-      renderPanel(makeIncident(), { onDetectionClick })
-      fireEvent.click(screen.getByRole('button', { name: /Detections/ }))
-      await waitFor(() => expect(screen.getByText('Suspicious NTLM Authentication')).toBeInTheDocument())
-      fireEvent.click(screen.getByText('Suspicious NTLM Authentication'))
-      expect(onDetectionClick).toHaveBeenCalledWith(det)
-    })
-
-    it('does not inline-expand when onDetectionClick is provided', async () => {
-      const onDetectionClick = vi.fn()
-      mockApi.get.mockResolvedValue(makeDetail({}, [makeDetection()]))
-      renderPanel(makeIncident(), { onDetectionClick })
-      fireEvent.click(screen.getByRole('button', { name: /Detections/ }))
-      await waitFor(() => expect(screen.getByText('Suspicious NTLM Authentication')).toBeInTheDocument())
-      fireEvent.click(screen.getByText('Suspicious NTLM Authentication'))
-      // Inline detail should NOT appear when onDetectionClick is provided
-      expect(screen.queryByText(/T1550\.002 – Pass-the-Hash/)).not.toBeInTheDocument()
+    it('shows an empty state when nothing is linked', async () => {
+      getMock.mockResolvedValue(makeDetail({ detection_ids: [], detections: [] }))
+      await renderLoaded(makeIncident({ detection_ids: [] }))
+      fireEvent.click(screen.getByRole('tab', { name: 'Detections (0)' }))
+      expect(screen.getByText('No linked detections')).toBeInTheDocument()
     })
   })
 
-  // =========================================================================
-  // AssignedTo inline editor in Details tab
-  // =========================================================================
-  describe('assigned-to inline editor', () => {
-    it('renders the Assigned To row label in Details tab', () => {
-      renderPanel(makeIncident())
-      expect(screen.getByText('Assigned To')).toBeInTheDocument()
+  describe('read-only roles', () => {
+    it('hides every control that changes the incident for a viewer', async () => {
+      useAuthStore.setState({ user: { email: 'viewer@mxtac.local', role: 'viewer' } })
+      await renderLoaded()
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Assign' })).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Timeline (2)' }))
+      expect(screen.getByText('Memory image collected from WIN-DC01.')).toBeInTheDocument()
+      expect(screen.queryByRole('textbox', { name: 'New note' })).not.toBeInTheDocument()
     })
-
-    it('shows edit input when the assigned-to value is clicked', () => {
-      renderPanel(makeIncident({ assigned_to: 'analyst@mxtac.local' }))
-      // Find the clickable span with title="Click to edit"
-      const editableSpan = screen.getByTitle('Click to edit')
-      expect(editableSpan).toBeInTheDocument()
-      fireEvent.click(editableSpan)
-      expect(screen.getByPlaceholderText('analyst@org.com')).toBeInTheDocument()
-    })
-  })
-
-  // =========================================================================
-  // Different severity/status rendering
-  // =========================================================================
-  describe('severity and status variants', () => {
-    it.each(['critical', 'high', 'medium', 'low'] as const)(
-      'renders without error for severity=%s',
-      (severity) => {
-        expect(() => renderPanel(makeIncident({ severity }))).not.toThrow()
-      },
-    )
-
-    it.each(['new', 'investigating', 'contained', 'resolved', 'closed'] as const)(
-      'renders without error for status=%s',
-      (status) => {
-        expect(() => renderPanel(makeIncident({ status }))).not.toThrow()
-      },
-    )
   })
 })

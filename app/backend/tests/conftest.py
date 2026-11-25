@@ -18,14 +18,18 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import app.core.rate_limit as _rl_module
+import app.core.security as _security_module
 from app.core.database import get_db
 from app.core.security import create_access_token
 from app.main import app
 from app.models import Base
+from app.models.user import User
 
 # ---------------------------------------------------------------------------
 # Rate limiter reset — clear in-memory counters and force in-memory fallback
@@ -47,6 +51,53 @@ def _reset_rate_limiter() -> None:
         "app.core.rate_limit.get_valkey_client",
         side_effect=Exception("Valkey disabled in tests"),
     ):
+        yield
+
+
+# ---------------------------------------------------------------------------
+# Runtime state — a test that runs the application startup (or sets a queue)
+# leaves ``app.state.queue`` behind in this process.  POST /connectors starts
+# a connector whenever a queue is set, so a later test would get a running
+# connector it did not ask for.  Every test starts without a runtime.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _no_leftover_runtime() -> None:
+    app.state.queue = None
+    app.state.connectors = {}
+
+
+# ---------------------------------------------------------------------------
+# Token-only principals — most tests authenticate with a JWT minted for a user
+# that has no row in the test database.  Production rejects such a token (the
+# role and active flag are read from the users table on every request); here
+# the token's role claim is accepted *only* when the user does not exist.  A
+# user that does exist is always checked for real.  tests/core/
+# test_current_account.py overrides this fixture to test production behaviour.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _token_only_principals():
+    real_current_role = _security_module.current_role
+
+    async def _current_role(db, payload: dict) -> str:
+        try:
+            return await real_current_role(db, payload)
+        except HTTPException:
+            if isinstance(db, AsyncSession):
+                exists = await db.scalar(
+                    select(User.id).where(User.email == payload["sub"])
+                )
+                if exists is not None:
+                    raise
+            return payload.get("role", "viewer")
+        except Exception:
+            # No usable database (dependency called directly in a unit test).
+            return payload.get("role", "viewer")
+
+    with patch.object(_security_module, "current_role", _current_role):
         yield
 
 

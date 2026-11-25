@@ -448,15 +448,14 @@ async def test_import_response_schema(client: AsyncClient, engineer_headers: dic
 
 
 @pytest.mark.asyncio
-async def test_import_duplicate_rule_id_returns_422(
+async def test_import_duplicate_rule_id_is_skipped_with_a_reason(
     client: AsyncClient, engineer_headers: dict
 ) -> None:
-    """POST /rules/import of a rule with an already-existing ID → 422.
+    """POST /rules/import of a rule whose ID exists: the rule is skipped and the reason listed.
 
-    The second import attempts to insert a duplicate primary key into the DB,
-    which raises an IntegrityError caught by the endpoint as a 422.
+    It used to reach the database, fail on the primary key and turn the whole
+    import into a 422, also for the other rules of the same request.
     """
-    # First import succeeds
     r1 = await client.post(
         f"{BASE_URL}/import",
         headers=engineer_headers,
@@ -465,10 +464,12 @@ async def test_import_duplicate_rule_id_returns_422(
     assert r1.status_code == 200
     assert r1.json()["imported"] == 1
 
-    # Second import of same rule ID → DB constraint violation
     r2 = await client.post(
         f"{BASE_URL}/import",
         headers=engineer_headers,
         json={"yaml_content": _RULE_A},
     )
-    assert r2.status_code == 422
+    assert r2.status_code == 200
+    assert r2.json()["imported"] == 0
+    assert len(r2.json()["errors"]) == 1
+    assert "already exists" in r2.json()["errors"][0]

@@ -156,6 +156,7 @@ class WazuhConnector(BaseConnector):
                 self._backoff_delay = BACKOFF_BASE
                 # Feature 6.6: persist active status to DB after a successful cycle
                 await self._update_db_status(ConnectorStatus.ACTIVE.value)
+                await self._flush_counters()
             except asyncio.CancelledError:
                 break
             except Exception as exc:
@@ -169,6 +170,7 @@ class WazuhConnector(BaseConnector):
                 )
                 # Feature 6.6: persist error status and message to DB
                 await self._update_db_status(ConnectorStatus.ERROR.value, str(exc))
+                await self._flush_counters()
                 # Sleep for the current backoff delay before retrying
                 try:
                     await asyncio.wait_for(

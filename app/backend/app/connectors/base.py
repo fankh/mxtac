@@ -65,6 +65,10 @@ class BaseConnector(ABC):
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
         self._status_callback = status_callback
+        # Set by the registry: persists event and error totals to the database.
+        self.counters_callback: Callable[[int, int], Awaitable[None]] | None = None
+        self._flushed_events = 0
+        self._flushed_errors = 0
 
     # ── Abstract interface ───────────────────────────────────────────────────
 
@@ -81,7 +85,7 @@ class BaseConnector(ABC):
     @property
     @abstractmethod
     def topic(self) -> str:
-        """Kafka/queue topic to publish raw events to."""
+        """Queue topic to publish raw events to."""
         ...
 
     # ── DB status helper (Feature 6.6) ────────────────────────────────────────
@@ -105,6 +109,31 @@ class BaseConnector(ABC):
                 self.config.name,
                 exc,
             )
+
+    async def _flush_counters(self) -> None:
+        """Persist the events and errors counted since the last flush.
+
+        ``health`` counts in memory only.  Without this the stored totals,
+        which the Sources page shows, would stay at zero.  Errors in the
+        callback are swallowed; the counts are then sent with the next flush.
+        """
+        if self.counters_callback is None:
+            return
+        events = max(self.health.events_total - self._flushed_events, 0)
+        errors = max(self.health.errors_total - self._flushed_errors, 0)
+        if events == 0 and errors == 0:
+            return
+        try:
+            await self.counters_callback(events, errors)
+        except Exception as exc:
+            logger.warning(
+                "Connector counters_callback failed name=%s err=%s",
+                self.config.name,
+                exc,
+            )
+            return
+        self._flushed_events += events
+        self._flushed_errors += errors
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -132,6 +161,7 @@ class BaseConnector(ABC):
         if self._task:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
+        await self._flush_counters()
         self.health.status = ConnectorStatus.INACTIVE
         # Feature 6.6: persist inactive status to DB on stop
         await self._update_db_status(ConnectorStatus.INACTIVE.value)
@@ -172,6 +202,8 @@ class BaseConnector(ABC):
                 )
                 # Feature 6.6: persist error status and message to DB
                 await self._update_db_status(ConnectorStatus.ERROR.value, str(exc))
+
+            await self._flush_counters()
 
             try:
                 await asyncio.wait_for(

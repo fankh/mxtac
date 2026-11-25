@@ -40,22 +40,8 @@ PERMISSIONS: dict[str, set[str]] = {
     "users:read":       {"admin"},
     "users:write":      {"admin"},
     "events:search":    {"hunter", "engineer", "admin"},
-    "threat_intel:read":  {"hunter", "engineer", "admin"},
-    "threat_intel:write": {"engineer", "admin"},
-    "assets:read":        {"analyst", "hunter", "engineer", "admin"},
-    "assets:write":       {"engineer", "admin"},
-    "audit_logs:read":    {"admin"},
-    "agents:read":        {"engineer", "admin"},
-    "agents:write":       {"engineer", "admin"},
     "hunt_queries:read":  {"hunter", "engineer", "admin"},
     "hunt_queries:write": {"hunter", "engineer", "admin"},
-    "reports:read":       {"analyst", "hunter", "engineer", "admin"},
-    "reports:write":      {"analyst", "hunter", "engineer", "admin"},
-    "reports:delete":     {"analyst", "hunter", "engineer", "admin"},
-    "notifications:read":  {"engineer", "admin"},
-    "notifications:write": {"engineer", "admin"},
-    "suppression_rules:read":  {"analyst", "hunter", "engineer", "admin"},
-    "suppression_rules:write": {"engineer", "admin"},
 }
 
 # ── Role → permissions (inverse map) ──────────────────────────────────────────

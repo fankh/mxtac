@@ -1,71 +1,107 @@
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { AlertCircle } from 'lucide-react'
 import { overviewApi } from '../../../lib/api'
-import { TopBar } from '../../layout/TopBar'
+import { Page } from '@/components/layout/Page'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { KpiCards } from './KpiCards'
 import { DetectionTimeline } from './DetectionTimeline'
 import { TacticsTable } from './TacticsTable'
 import { AttackHeatmap } from './AttackHeatmap'
-import { IntegrationStatusRow } from './IntegrationStatusRow'
+import { SourceStatusCard } from './SourceStatusCard'
 import { RecentDetectionsTable } from './RecentDetectionsTable'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useDetectionStore } from '@/stores/detectionStore'
+
+/** Quiet time after the last live alert before the page reloads its data. */
+const LIVE_REFRESH_DELAY_MS = 1000
+
+const RANGES = [
+  { value: '24h', label: 'Last 24 hours', phrase: 'last 24 hours' },
+  { value: '7d', label: 'Last 7 days', phrase: 'last 7 days' },
+  { value: '30d', label: 'Last 30 days', phrase: 'last 30 days' },
+  { value: '90d', label: 'Last 90 days', phrase: 'last 90 days' },
+]
 
 export function OverviewPage() {
-  const hasToken = !!localStorage.getItem('access_token')
-  const queryOpts = { enabled: hasToken, retry: 2, staleTime: 30_000 }
-  const kpis        = useQuery({ queryKey: ['kpis'],         queryFn: overviewApi.kpis, ...queryOpts })
-  const timeline    = useQuery({ queryKey: ['timeline'],     queryFn: overviewApi.timeline, ...queryOpts })
-  const tactics     = useQuery({ queryKey: ['tactics'],      queryFn: overviewApi.tactics, ...queryOpts })
-  const heatmap     = useQuery({ queryKey: ['heatmap'],      queryFn: overviewApi.heatmap, ...queryOpts })
-  const tacticLbls  = useQuery({ queryKey: ['tacticLabels'], queryFn: overviewApi.tacticLabels, ...queryOpts })
-  const integrations = useQuery({ queryKey: ['integrations'], queryFn: overviewApi.integrations, ...queryOpts })
-  const recent      = useQuery({ queryKey: ['recent'],       queryFn: overviewApi.recentDetections, ...queryOpts })
+  const [range, setRange] = useState('7d')
+  const rangeLabel = RANGES.find((r) => r.value === range)?.phrase ?? ''
 
-  // Only require KPIs to render — other sections degrade gracefully
-  const loading = kpis.isLoading
-  const error   = kpis.isError
+  // A detection that arrives over the WebSocket reloads the page data, so the numbers and
+  // the recent list follow without waiting for the next 60-second refresh.
+  const queryClient = useQueryClient()
+  const newestLiveId = useDebouncedValue(useDetectionStore((s) => s.liveAlerts[0]?.id), LIVE_REFRESH_DELAY_MS)
+  const shownLiveId = useRef(newestLiveId)
+  useEffect(() => {
+    if (newestLiveId === shownLiveId.current) return
+    shownLiveId.current = newestLiveId
+    void queryClient.invalidateQueries({ queryKey: ['overview'] })
+  }, [newestLiveId, queryClient])
+  const opts = { staleTime: 30_000, refetchInterval: 60_000 }
+
+  const kpis = useQuery({ queryKey: ['overview', 'kpis', range], queryFn: () => overviewApi.kpis(range), ...opts })
+  const timeline = useQuery({ queryKey: ['overview', 'timeline', range], queryFn: () => overviewApi.timeline(range), ...opts })
+  const tactics = useQuery({ queryKey: ['overview', 'tactics', range], queryFn: () => overviewApi.tactics(range), ...opts })
+  const heatmap = useQuery({ queryKey: ['overview', 'heatmap'], queryFn: () => overviewApi.heatmap(), ...opts })
+  const tacticLabels = useQuery({ queryKey: ['overview', 'tacticLabels'], queryFn: () => overviewApi.tacticLabels(), staleTime: Infinity })
+  const sources = useQuery({ queryKey: ['overview', 'integrations'], queryFn: () => overviewApi.integrations(), ...opts })
+  const recent = useQuery({ queryKey: ['overview', 'recent'], queryFn: () => overviewApi.recentDetections(8), ...opts })
+
+  const rangeSelect = (
+    <Select value={range} onValueChange={setRange}>
+      <SelectTrigger className="h-8 w-[150px] text-[12px]" aria-label="Time range">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {RANGES.map((r) => (
+          <SelectItem key={r.value} value={r.value} className="text-[12px]">{r.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
 
   return (
-    <>
-      <TopBar crumb="Overview" updatedAt="just now" />
-      <div className="pt-[46px]">
-        {loading && (
-          <div className="flex items-center justify-center h-64 text-text-muted text-sm">Loading…</div>
-        )}
-        {error && (
-          <div className="flex items-center justify-center h-64 text-crit-text text-sm">
-            Failed to load data. Is the backend running?
+    <Page title="Overview" description="Detections, coverage and source health" actions={rangeSelect}>
+      {kpis.isLoading && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6" aria-label="Loading">
+          {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-[92px] rounded-lg" />)}
+        </div>
+      )}
+
+      {kpis.isError && (
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
+            <p className="flex-1 text-[12px]">Could not load the overview. Check that the API is running.</p>
+            <Button size="sm" variant="outline" onClick={() => void kpis.refetch()}>Retry</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {kpis.data && (
+        <>
+          <KpiCards data={kpis.data} />
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <div className="min-w-0 xl:col-span-2">
+              <DetectionTimeline data={timeline.data ?? []} rangeLabel={rangeLabel} />
+            </div>
+            <TacticsTable data={tactics.data ?? []} rangeLabel={rangeLabel} />
           </div>
-        )}
-        {!loading && !error && kpis.data && (
-          <>
-            {/* KPI row */}
-            <KpiCards data={kpis.data} />
 
-            {/* Middle row: timeline + tactics */}
-            <div className="grid grid-cols-[1fr_340px] gap-3 px-5 pt-3">
-              <DetectionTimeline data={timeline.data ?? []} />
-              <TacticsTable     data={tactics.data ?? []} />
-            </div>
-
-            {/* Heatmap */}
-            <div className="px-5 pt-3">
-              <AttackHeatmap
-                rows={heatmap.data ?? []}
-                tacticLabels={tacticLbls.data ?? []}
-              />
-            </div>
-
-            {/* Recent detections */}
-            <div className="px-5 pt-3">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <div className="min-w-0 xl:col-span-2">
               <RecentDetectionsTable data={recent.data ?? []} />
             </div>
+            <SourceStatusCard data={sources.data ?? []} />
+          </div>
 
-            {/* Integration status */}
-            <div className="px-5 pt-3 pb-6">
-              <IntegrationStatusRow data={integrations.data ?? []} />
-            </div>
-          </>
-        )}
-      </div>
-    </>
+          <AttackHeatmap rows={heatmap.data ?? []} tacticLabels={tacticLabels.data ?? []} />
+        </>
+      )}
+    </Page>
   )
 }

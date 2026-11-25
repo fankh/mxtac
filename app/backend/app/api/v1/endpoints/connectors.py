@@ -20,12 +20,11 @@ from ....repositories.connector_repo import ConnectorRepo
 router = APIRouter(prefix="/connectors", tags=["connectors"])
 
 CONNECTOR_TYPES = [
-    "mxwatch", "mxguard",                           # built-in agents
-    "zeek", "suricata",                              # NDR
-    "wazuh", "velociraptor",                         # EDR
-    "elastic", "opensearch",                         # SIEM
-    "prowler", "cloudtrail",                         # Cloud
-    "opencti", "syslog", "osquery", "generic",       # misc
+    "wazuh",      # host alerts (Wazuh manager API)
+    "zeek",       # network logs
+    "suricata",   # IDS alerts (EVE JSON)
+    "syslog",     # syslog listener
+    "generic",    # webhook ingest (POST /ingest)
 ]
 
 
@@ -75,6 +74,15 @@ class ConnectorHealthResponse(BaseModel):
     error_message: str | None
 
 
+def _idle_status(connector_type: str, enabled: bool) -> str:
+    """Status of a connector that has no running task.
+
+    A generic webhook source has nothing to start: it receives events as soon
+    as it is enabled, so it is ``active`` while enabled.
+    """
+    return "active" if connector_type == "generic" and enabled else "inactive"
+
+
 def _conn_to_response(c) -> dict:
     return {
         "id": c.id,
@@ -117,12 +125,18 @@ async def create_connector(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(require_permission("connectors:write")),
 ):
+    if await ConnectorRepo.get_by_name(db, body.name) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A source named {body.name!r} already exists. Choose another name.",
+        )
     conn = await ConnectorRepo.create(
         db,
         name=body.name,
         connector_type=body.connector_type,
         config_json=json.dumps(body.config),
         enabled=body.enabled,
+        status=_idle_status(body.connector_type, body.enabled),
     )
 
     # Auto-start connector if enabled and runtime queue is available
@@ -132,9 +146,13 @@ async def create_connector(
         if queue is not None and conn.id not in running:
             connector = build_connector(conn, queue)
             if connector is not None:
+                # Commit first: the connector reports "active" or "error" through
+                # its own session, which must find the row and must not be
+                # overwritten by this request's later commit.
+                await ConnectorRepo.update_status(db, conn.id, "connecting")
+                await db.commit()
                 asyncio.create_task(connector.start(), name=f"connector-start-{conn.name}")
                 running[conn.id] = connector
-                await ConnectorRepo.update_status(db, conn.id, "connecting")
                 conn = await ConnectorRepo.get_by_id(db, conn.id)
 
     return _conn_to_response(conn)
@@ -148,10 +166,12 @@ async def update_connector(
     _: dict = Depends(require_permission("connectors:write")),
 ):
     updates = {}
+    conn = await ConnectorRepo.get_by_id(db, connector_id)
     if body.enabled is not None:
         updates["enabled"] = body.enabled
+        if conn and conn.connector_type == "generic":
+            updates["status"] = _idle_status("generic", body.enabled)
     if body.config is not None:
-        conn = await ConnectorRepo.get_by_id(db, connector_id)
         if conn:
             existing = json.loads(conn.config_json) if conn.config_json else {}
             existing.update(body.config)
@@ -219,145 +239,10 @@ async def _test_suricata_connection(config: dict) -> tuple[bool, str]:
     return False, f"Suricata EVE file not found: {eve_file}"
 
 
-async def _test_prowler_connection(config: dict) -> tuple[bool, str]:
-    """Verify Prowler API connectivity by probing the health endpoint."""
-    api_url = config.get("api_url", "").rstrip("/")
-    api_key = config.get("api_key", "")
-    verify_ssl = config.get("verify_ssl", True)
-
-    if not api_url:
-        return False, "Missing required config key: api_url"
-    if not api_key:
-        return False, "Missing required config key: api_key"
-
-    try:
-        async with httpx.AsyncClient(
-            verify=verify_ssl,
-            timeout=10,
-            follow_redirects=True,
-        ) as client:
-            resp = await client.get(
-                f"{api_url}/api/v1/health",
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-        if resp.status_code == 200:
-            return True, "Prowler API reachable and credentials valid"
-        if resp.status_code == 401:
-            return False, "Prowler API reachable but API key is invalid"
-        return False, f"Prowler API returned unexpected status {resp.status_code}"
-    except httpx.ConnectError as exc:
-        return False, f"Cannot connect to Prowler API: {exc}"
-    except Exception as exc:
-        return False, f"Connection test failed: {exc}"
-
-
-async def _test_opencti_connection(config: dict) -> tuple[bool, str]:
-    """Verify OpenCTI API connectivity by probing the GraphQL health endpoint."""
-    api_url = config.get("api_url", "").rstrip("/")
-    api_token = config.get("api_token", "")
-    verify_ssl = config.get("verify_ssl", True)
-
-    if not api_url:
-        return False, "Missing required config key: api_url"
-    if not api_token:
-        return False, "Missing required config key: api_token"
-
-    try:
-        async with httpx.AsyncClient(
-            verify=verify_ssl,
-            timeout=10,
-            follow_redirects=True,
-        ) as client:
-            resp = await client.post(
-                f"{api_url}/graphql",
-                json={"query": "{ about { version } }"},
-                headers={
-                    "Authorization": f"Bearer {api_token}",
-                    "Content-Type": "application/json",
-                },
-            )
-        if resp.status_code == 200:
-            data = resp.json()
-            if "errors" in data:
-                return False, f"OpenCTI GraphQL error: {data['errors']}"
-            version = data.get("data", {}).get("about", {}).get("version", "unknown")
-            return True, f"OpenCTI API reachable (version: {version})"
-        if resp.status_code == 401:
-            return False, "OpenCTI API reachable but API token is invalid"
-        return False, f"OpenCTI API returned unexpected status {resp.status_code}"
-    except httpx.ConnectError as exc:
-        return False, f"Cannot connect to OpenCTI API: {exc}"
-    except Exception as exc:
-        return False, f"Connection test failed: {exc}"
-
-
-async def _test_velociraptor_connection(config: dict) -> tuple[bool, str]:
-    """Verify Velociraptor API connectivity by running a trivial VQL health probe."""
-    import json as _json
-
-    api_url = config.get("api_url", "").rstrip("/")
-    api_key = config.get("api_key", "")
-    verify_ssl = config.get("verify_ssl", True)
-    org_id = config.get("org_id", "")
-
-    if not api_url:
-        return False, "Missing required config key: api_url"
-    if not api_key:
-        return False, "Missing required config key: api_key"
-
-    headers = {
-        "Grpc-Metadata-Api-Token": api_key,
-        "Content-Type": "application/json",
-    }
-    if org_id:
-        headers["Grpc-Metadata-Velociraptor-Org-Id"] = org_id
-
-    try:
-        version = "unknown"
-        body = {"query": [{"name": "health", "vql": "SELECT version() AS version FROM scope()"}]}
-        async with httpx.AsyncClient(
-            verify=verify_ssl,
-            timeout=10,
-            follow_redirects=True,
-            headers=headers,
-        ) as client:
-            async with client.stream("POST", f"{api_url}/api/v1/query", json=body) as resp:
-                if resp.status_code == 401:
-                    return False, "Velociraptor API reachable but API key is invalid"
-                if resp.status_code != 200:
-                    return False, f"Velociraptor API returned unexpected status {resp.status_code}"
-                async for line in resp.aiter_lines():
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        packet = _json.loads(line)
-                    except _json.JSONDecodeError:
-                        continue
-                    raw = packet.get("Response", "")
-                    if not raw:
-                        continue
-                    try:
-                        rows = _json.loads(raw)
-                        if rows and isinstance(rows[0], dict):
-                            version = rows[0].get("version", "unknown")
-                    except (_json.JSONDecodeError, IndexError):
-                        pass
-                    break  # one packet is enough for connectivity check
-        return True, f"Velociraptor API reachable (version: {version})"
-    except httpx.ConnectError as exc:
-        return False, f"Cannot connect to Velociraptor API: {exc}"
-    except Exception as exc:
-        return False, f"Connection test failed: {exc}"
-
-
 _CONNECTION_TESTERS: dict[str, Any] = {
     "wazuh":         _test_wazuh_connection,
     "zeek":          _test_zeek_connection,
     "suricata":      _test_suricata_connection,
-    "prowler":       _test_prowler_connection,
-    "opencti":       _test_opencti_connection,
-    "velociraptor":  _test_velociraptor_connection,
 }
 
 

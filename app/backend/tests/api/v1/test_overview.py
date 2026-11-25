@@ -1,7 +1,13 @@
 """Tests for GET /api/v1/overview/* endpoints."""
 
+from datetime import date, datetime, timedelta, timezone
+
 import pytest
 from httpx import AsyncClient
+
+from app.models.coverage_snapshot import CoverageSnapshot
+from app.models.incident import Incident
+from app.models.rule import Rule
 
 
 @pytest.mark.asyncio
@@ -38,8 +44,13 @@ _KPI_INT_FIELDS = [
 _KPI_FLOAT_FIELDS = [
     "total_detections_delta_pct",
     "attack_coverage_pct",
+]
+
+# Nullable: None until incident time-to-detect / time-to-resolve data exists
+_KPI_NULLABLE_FLOAT_FIELDS = [
     "mttd_minutes",
     "mttd_delta_minutes",
+    "mttr_minutes",
 ]
 
 
@@ -50,7 +61,7 @@ async def test_kpis_shape_all_fields_present(client: AsyncClient, auth_headers: 
     assert resp.status_code == 200
     data = resp.json()
 
-    expected_fields = set(_KPI_INT_FIELDS) | set(_KPI_FLOAT_FIELDS) | {"mttr_minutes"}
+    expected_fields = set(_KPI_INT_FIELDS) | set(_KPI_FLOAT_FIELDS) | set(_KPI_NULLABLE_FLOAT_FIELDS)
     missing = expected_fields - set(data.keys())
     assert not missing, f"KPI response missing fields: {missing}"
 
@@ -109,10 +120,9 @@ async def test_kpis_shape_value_constraints(client: AsyncClient, auth_headers: d
         f"integrations_active={data['integrations_active']} > integrations_total={data['integrations_total']}"
     )
 
-    # MTTD must be non-negative
-    assert data["mttd_minutes"] >= 0, (
-        f"mttd_minutes={data['mttd_minutes']} must be >= 0"
-    )
+    # MTTD is unknown (null) without incident time-to-detect data
+    assert data["mttd_minutes"] is None
+    assert data["mttd_delta_minutes"] is None
 
     # Critical alerts cannot exceed total detections
     assert data["critical_alerts"] <= data["total_detections"], (
@@ -173,12 +183,8 @@ async def test_timeline(client: AsyncClient, auth_headers: dict) -> None:
 async def test_tactics(client: AsyncClient, auth_headers: dict) -> None:
     resp = await client.get("/api/v1/overview/tactics", headers=auth_headers)
     assert resp.status_code == 200
-    items = resp.json()
-    assert isinstance(items, list)
-    assert len(items) > 0
-    assert "tactic" in items[0]
-    assert "count" in items[0]
-    assert "trend_pct" in items[0]
+    # Empty DB: no detections, so no tactic bars (never mock data)
+    assert resp.json() == []
 
 
 @pytest.mark.asyncio
@@ -211,28 +217,37 @@ async def test_heatmap(client: AsyncClient, auth_headers: dict) -> None:
 
 
 @pytest.mark.asyncio
+async def test_heatmap_empty_db_is_zero_grid(client: AsyncClient, auth_headers: dict) -> None:
+    """Empty DB: full 4 x 9 grid with covered == 0 in every cell (never mock data)."""
+    resp = await client.get("/api/v1/overview/coverage/heatmap", headers=auth_headers)
+    assert resp.status_code == 200
+    rows = resp.json()
+
+    assert [r["technique_id"] for r in rows] == ["T1059", "T1003", "T1021", "T1078"]
+    assert [r["row"] for r in rows] == [0, 1, 2, 3]
+    expected_totals = {
+        "RECON": 9, "RES": 6, "INIT": 9, "EXEC": 14,
+        "PERS": 12, "PRIV": 11, "DEF-E": 17, "CRED": 14, "DISC": 13,
+    }
+    for row in rows:
+        assert {c["tactic"]: c["total"] for c in row["cells"]} == expected_totals
+        assert all(c["covered"] == 0 for c in row["cells"])
+
+
+@pytest.mark.asyncio
 async def test_tactic_labels(client: AsyncClient, auth_headers: dict) -> None:
     resp = await client.get("/api/v1/overview/coverage/tactic-labels", headers=auth_headers)
     assert resp.status_code == 200
     labels = resp.json()
-    assert isinstance(labels, list)
-    assert len(labels) > 0
-    assert all(isinstance(label, str) for label in labels)
+    assert labels == ["RECON", "RES", "INIT", "EXEC", "PERS", "PRIV", "DEF-E", "CRED", "DISC"]
 
 
 @pytest.mark.asyncio
 async def test_integrations(client: AsyncClient, auth_headers: dict) -> None:
-    """Empty DB falls back to mock data (>0 items with required fields)."""
+    """Empty DB: no connectors, so an empty list (never mock integrations)."""
     resp = await client.get("/api/v1/overview/integrations", headers=auth_headers)
     assert resp.status_code == 200
-    items = resp.json()
-    assert isinstance(items, list)
-    assert len(items) > 0
-    assert "id" in items[0]
-    assert "name" in items[0]
-    assert "status" in items[0]
-    assert "metric" in items[0]
-    assert items[0]["status"] in ("connected", "warning", "disabled")
+    assert resp.json() == []
 
 
 @pytest.mark.asyncio
@@ -258,8 +273,8 @@ async def test_integrations_from_db(
         error_message="Token expired",
     )
     disabled = Connector(
-        name="OpenCTI",
-        connector_type="opencti",
+        name="Syslog",
+        connector_type="syslog",
         status="inactive",
         enabled=False,
         events_total=0,
@@ -281,25 +296,15 @@ async def test_integrations_from_db(
     assert by_name["Splunk"]["status"] == "warning"
     assert by_name["Splunk"]["detail"] == "Token expired"
 
-    assert by_name["OpenCTI"]["status"] == "disabled"
+    assert by_name["Syslog"]["status"] == "disabled"
 
 
 @pytest.mark.asyncio
 async def test_recent_detections(client: AsyncClient, auth_headers: dict) -> None:
-    """Empty DB falls back to mock data — only critical/high, at most 6 items."""
+    """Empty DB: no detections, so an empty list (never mock detections)."""
     resp = await client.get("/api/v1/overview/recent-detections", headers=auth_headers)
     assert resp.status_code == 200
-    items = resp.json()
-    assert isinstance(items, list)
-    assert len(items) <= 6
-    for item in items:
-        assert item["severity"] in ("critical", "high")
-        assert "id" in item
-        assert "name" in item
-        assert "host" in item
-        assert "tactic" in item
-        assert "time" in item
-        assert "score" in item
+    assert resp.json() == []
 
 
 @pytest.mark.asyncio
@@ -585,3 +590,128 @@ async def test_recent_detections_from_db(
     severities = {i["severity"] for i in items}
     assert severities <= {"critical", "high"}
     assert "medium" not in severities
+
+
+# ---------------------------------------------------------------------------
+# Empty-state and real-data KPI behaviour (no mock fallbacks)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_kpis_empty_db_returns_real_zeros(client: AsyncClient, auth_headers: dict) -> None:
+    """Empty DB: every KPI is a real zero / null — nothing is invented."""
+    resp = await client.get("/api/v1/overview/kpis", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "total_detections": 0,
+        "total_detections_delta_pct": 0.0,
+        "critical_alerts": 0,
+        "critical_alerts_new_today": 0,
+        "attack_coverage_pct": 0.0,
+        "attack_covered": 0,
+        "attack_total": 105,
+        "attack_coverage_delta": 0,
+        "mttd_minutes": None,
+        "mttd_delta_minutes": None,
+        "integrations_active": 0,
+        "integrations_total": 0,
+        "sigma_rules_active": 0,
+        "sigma_rules_critical": 0,
+        "sigma_rules_high": 0,
+        "sigma_rules_deployed_this_week": 0,
+        "open_incidents_count": 0,
+        "mttr_minutes": None,
+    }
+
+
+def _rule(title: str, technique_ids: str) -> Rule:
+    return Rule(
+        title=title,
+        content="detection: ...",
+        level="high",
+        enabled=True,
+        technique_ids=technique_ids,
+    )
+
+
+@pytest.mark.asyncio
+async def test_kpis_coverage_matches_coverage_endpoint(
+    client: AsyncClient, db_session, auth_headers: dict
+) -> None:
+    """KPI ATT&CK coverage uses the same scope and logic as GET /coverage."""
+    db_session.add_all([
+        _rule("Rule A", '["T1059.001", "T1003.006"]'),
+        _rule("Rule B", '["T1059.001", "T1021.001"]'),
+    ])
+    await db_session.flush()
+
+    kpis = (await client.get("/api/v1/overview/kpis", headers=auth_headers)).json()
+    coverage = (await client.get("/api/v1/coverage", headers=auth_headers)).json()
+
+    assert coverage == {"coverage_pct": 2.9, "covered_count": 3, "total_count": 105}
+    assert kpis["attack_coverage_pct"] == coverage["coverage_pct"]
+    assert kpis["attack_covered"] == coverage["covered_count"]
+    assert kpis["attack_total"] == coverage["total_count"]
+    # No snapshot before the period, so there is no baseline to compare with
+    assert kpis["attack_coverage_delta"] == 0
+
+
+@pytest.mark.asyncio
+async def test_kpis_coverage_delta_from_snapshot(
+    client: AsyncClient, db_session, auth_headers: dict
+) -> None:
+    """attack_coverage_delta = covered now minus the last snapshot before the period."""
+    db_session.add_all([
+        _rule("Rule A", '["T1059.001", "T1003.006", "T1021.001"]'),
+        CoverageSnapshot(
+            snapshot_date=date.today() - timedelta(days=10),
+            coverage_pct=1.0,
+            covered_count=1,
+            total_count=105,
+        ),
+    ])
+    await db_session.flush()
+
+    resp = await client.get("/api/v1/overview/kpis?range=7d", headers=auth_headers)
+    assert resp.json()["attack_coverage_delta"] == 2
+
+
+def _incident(created_at: datetime, ttd_seconds: int) -> Incident:
+    return Incident(
+        title="Incident",
+        severity="high",
+        created_by="tester",
+        created_at=created_at,
+        ttd_seconds=ttd_seconds,
+    )
+
+
+@pytest.mark.asyncio
+async def test_kpis_mttd_from_incidents(
+    client: AsyncClient, db_session, auth_headers: dict
+) -> None:
+    """MTTD comes from incidents; the delta stays null without a previous period."""
+    now = datetime.now(timezone.utc)
+    db_session.add(_incident(now - timedelta(days=1), ttd_seconds=600))
+    await db_session.flush()
+
+    data = (await client.get("/api/v1/overview/kpis?range=7d", headers=auth_headers)).json()
+    assert data["mttd_minutes"] == 10.0
+    assert data["mttd_delta_minutes"] is None
+
+
+@pytest.mark.asyncio
+async def test_kpis_mttd_delta_vs_previous_period(
+    client: AsyncClient, db_session, auth_headers: dict
+) -> None:
+    """mttd_delta_minutes = current-period MTTD minus previous-period MTTD."""
+    now = datetime.now(timezone.utc)
+    db_session.add_all([
+        _incident(now - timedelta(days=1), ttd_seconds=600),    # current: 10 min
+        _incident(now - timedelta(days=10), ttd_seconds=900),   # previous: 15 min
+    ])
+    await db_session.flush()
+
+    data = (await client.get("/api/v1/overview/kpis?range=7d", headers=auth_headers)).json()
+    assert data["mttd_minutes"] == 10.0
+    assert data["mttd_delta_minutes"] == -5.0

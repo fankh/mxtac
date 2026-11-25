@@ -4,10 +4,7 @@ Verifies that the engineer role:
   - Inherits all hunter capabilities (event search, saved hunts, detections, incidents)
   - Can read AND write Sigma rules (full CRUD + import + reload + test)
   - Can read AND write connectors (full CRUD + test + health + start/stop)
-  - Can write threat intelligence (threat_intel:write)
-  - Can manage assets (assets:write)
-  - Can manage agents (agents:read + agents:write)
-  - Is denied access to user management and audit logs (admin-only)
+  - Is denied access to user management (admin-only)
 
 Also verifies that hunter cannot access engineer-exclusive write operations (403).
 """
@@ -777,48 +774,12 @@ class TestEngineerConnectorAccess:
 
 
 # ---------------------------------------------------------------------------
-# 6. Engineer can view ATT&CK hunt suggestions (inherits from hunter)
-# ---------------------------------------------------------------------------
-
-
-class TestEngineerHuntSuggestions:
-    """Engineer can access ATT&CK-guided hunt suggestions."""
-
-    @pytest.mark.asyncio
-    async def test_engineer_can_access_suggestions(
-        self, client: AsyncClient, engineer_headers: dict
-    ) -> None:
-        resp = await client.get(
-            "/api/v1/hunting/suggestions", headers=engineer_headers
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "suggestions" in data
-        assert "generated_at" in data
-        assert "window_hours" in data
-
-    @pytest.mark.asyncio
-    async def test_engineer_suggestions_with_custom_params(
-        self, client: AsyncClient, engineer_headers: dict
-    ) -> None:
-        resp = await client.get(
-            "/api/v1/hunting/suggestions",
-            headers=engineer_headers,
-            params={"hours": 72, "limit": 5},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["window_hours"] == 72
-        assert len(data["suggestions"]) <= 5
-
-
-# ---------------------------------------------------------------------------
 # 7. Engineer is denied admin-exclusive endpoints
 # ---------------------------------------------------------------------------
 
 
 class TestEngineerAccessDenied:
-    """Engineer cannot access user management or audit logs (admin-only)."""
+    """Engineer cannot access user management (admin-only)."""
 
     @pytest.mark.asyncio
     async def test_engineer_cannot_list_users(

@@ -1,326 +1,231 @@
-// vi.mock is hoisted before imports — declare all module mocks first.
-
-vi.mock('../../lib/api', () => ({
+// vi.mock is hoisted before imports
+vi.mock('../../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/api')>()),
   overviewApi: {
-    kpis:             vi.fn(),
-    timeline:         vi.fn(),
-    tactics:          vi.fn(),
-    heatmap:          vi.fn(),
-    tacticLabels:     vi.fn(),
-    integrations:     vi.fn(),
+    kpis: vi.fn(),
+    timeline: vi.fn(),
+    tactics: vi.fn(),
+    heatmap: vi.fn(),
+    tacticLabels: vi.fn(),
+    integrations: vi.fn(),
     recentDetections: vi.fn(),
   },
 }))
 
-vi.mock('../../components/layout/TopBar', () => ({
-  TopBar: ({ crumb }: { crumb: string }) => (
-    <header data-testid="topbar">{crumb}</header>
-  ),
+vi.mock('../../hooks/useAlertStream', () => ({ useAlertStream: () => 'connected' }))
+
+// Recharts does not lay out in jsdom (ResponsiveContainer has zero size)
+vi.mock('recharts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('recharts')>()),
+  ResponsiveContainer: () => <div data-testid="chart" />,
 }))
 
-vi.mock('../../components/features/overview/KpiCards', () => ({
-  KpiCards: () => <div data-testid="kpi-cards" />,
-}))
-
-vi.mock('../../components/features/overview/DetectionTimeline', () => ({
-  DetectionTimeline: () => <div data-testid="detection-timeline" />,
-}))
-
-vi.mock('../../components/features/overview/TacticsTable', () => ({
-  TacticsTable: () => <div data-testid="tactics-table" />,
-}))
-
-vi.mock('../../components/features/overview/AttackHeatmap', () => ({
-  AttackHeatmap: () => <div data-testid="attack-heatmap" />,
-}))
-
-vi.mock('../../components/features/overview/IntegrationStatusRow', () => ({
-  IntegrationStatusRow: () => <div data-testid="integration-status-row" />,
-}))
-
-vi.mock('../../components/features/overview/RecentDetectionsTable', () => ({
-  RecentDetectionsTable: () => <div data-testid="recent-detections-table" />,
-}))
-
-import { render, screen, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { OverviewPage } from '../../components/features/overview/OverviewPage'
 import { overviewApi } from '../../lib/api'
+import { useDetectionStore } from '../../stores/detectionStore'
+import type { Detection, HeatRow, IntegrationStatus, KpiMetrics, TacticBar, TimelinePoint } from '../../types/api'
 
-// ---------------------------------------------------------------------------
-// Typed reference to the mocked API
-// ---------------------------------------------------------------------------
+const api = vi.mocked(overviewApi)
 
-const mockApi = overviewApi as {
-  kpis:             ReturnType<typeof vi.fn>
-  timeline:         ReturnType<typeof vi.fn>
-  tactics:          ReturnType<typeof vi.fn>
-  heatmap:          ReturnType<typeof vi.fn>
-  tacticLabels:     ReturnType<typeof vi.fn>
-  integrations:     ReturnType<typeof vi.fn>
-  recentDetections: ReturnType<typeof vi.fn>
+const kpi: KpiMetrics = {
+  total_detections: 4821,
+  total_detections_delta_pct: 12,
+  critical_alerts: 23,
+  critical_alerts_new_today: 5,
+  attack_coverage_pct: 25,
+  attack_covered: 185,
+  attack_total: 740,
+  attack_coverage_delta: 4,
+  mttd_minutes: 8,
+  mttd_delta_minutes: -2,
+  integrations_active: 6,
+  integrations_total: 8,
+  sigma_rules_active: 1247,
+  sigma_rules_critical: 89,
+  sigma_rules_high: 312,
+  sigma_rules_deployed_this_week: 14,
+  open_incidents_count: 3,
+  mttr_minutes: 210,
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const timeline: TimelinePoint[] = [{ date: 'Mon', critical: 5, high: 12, medium: 20, total: 40 }]
+const tactics: TacticBar[] = [{ tactic: 'Execution', count: 1200, trend_pct: 18 }]
+const heatmap: HeatRow[] = [
+  { technique_id: 'T1059', row: 0, cells: [{ tactic: 'Exec', covered: 7, total: 14, opacity: 0.5 }] },
+]
+const sources: IntegrationStatus[] = [{ id: 'wazuh', name: 'Wazuh', status: 'connected', metric: '1,204 events/min' }]
+const recent: Detection[] = [
+  {
+    id: 'det-001',
+    score: 9.2,
+    severity: 'critical',
+    technique_id: 'T1003.001',
+    technique_name: 'LSASS Memory Dump',
+    name: 'Suspicious LSASS Memory Access',
+    host: 'WIN-DC01',
+    tactic: 'Credential Access',
+    status: 'active',
+    time: '2026-02-19T08:30:00Z',
+  },
+]
 
 function renderPage() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
-      <OverviewPage />
+      <MemoryRouter>
+        <OverviewPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }
 
-/** A resolved KpiMetrics object with all required fields. */
-const mockKpi = {
-  total_detections:               4821,
-  total_detections_delta_pct:     12,
-  critical_alerts:                23,
-  critical_alerts_new_today:      5,
-  attack_coverage_pct:            25,
-  attack_covered:                 187,
-  attack_total:                   740,
-  attack_coverage_delta:          4,
-  mttd_minutes:                   8,
-  mttd_delta_minutes:             -2,
-  integrations_active:            6,
-  integrations_total:             8,
-  sigma_rules_active:             1247,
-  sigma_rules_critical:           89,
-  sigma_rules_high:               312,
-  sigma_rules_deployed_this_week: 14,
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe('OverviewPage', () => {
+  beforeAll(() => {
+    // Radix Select relies on pointer capture and scrollIntoView, which jsdom lacks
+    Element.prototype.hasPointerCapture = () => false
+    Element.prototype.setPointerCapture = () => {}
+    Element.prototype.releasePointerCapture = () => {}
+    Element.prototype.scrollIntoView = () => {}
+  })
+
   beforeEach(() => {
-    // Default: all queries return a pending promise (loading state).
-    const pending = new Promise<never>(() => {})
-    mockApi.kpis.mockReturnValue(pending)
-    mockApi.timeline.mockReturnValue(pending)
-    mockApi.tactics.mockReturnValue(pending)
-    mockApi.heatmap.mockReturnValue(pending)
-    mockApi.tacticLabels.mockReturnValue(pending)
-    mockApi.integrations.mockReturnValue(pending)
-    mockApi.recentDetections.mockReturnValue(pending)
+    vi.clearAllMocks()
+    api.kpis.mockResolvedValue(kpi)
+    api.timeline.mockResolvedValue(timeline)
+    api.tactics.mockResolvedValue(tactics)
+    api.heatmap.mockResolvedValue(heatmap)
+    api.tacticLabels.mockResolvedValue(['Exec'])
+    api.integrations.mockResolvedValue(sources)
+    api.recentDetections.mockResolvedValue(recent)
   })
 
-  // -------------------------------------------------------------------------
-  // Loading state
-  // -------------------------------------------------------------------------
-  describe('loading state', () => {
-    it('shows a loading indicator while queries are pending', () => {
-      renderPage()
-      expect(screen.getByText('Loading…')).toBeInTheDocument()
-    })
+  it('reloads its data when a detection arrives over the alert stream', async () => {
+    useDetectionStore.setState({ liveAlerts: [] })
+    renderPage()
+    expect(await screen.findByText('Suspicious LSASS Memory Access')).toBeInTheDocument()
+    expect(api.kpis).toHaveBeenCalledTimes(1)
 
-    it('does not show the error message while loading', () => {
-      renderPage()
-      expect(screen.queryByText(/Failed to load data/)).not.toBeInTheDocument()
-    })
+    const arrived: Detection = { ...recent[0], id: 'det-live', name: 'Reverse Shell Command Line' }
+    api.kpis.mockResolvedValue({ ...kpi, total_detections: 4822 })
+    api.recentDetections.mockResolvedValue([arrived, ...recent])
+    act(() => useDetectionStore.getState().addLiveAlert(arrived))
 
-    it('does not render KPI cards while loading', () => {
-      renderPage()
-      expect(screen.queryByTestId('kpi-cards')).not.toBeInTheDocument()
-    })
-
-    it('does not render any sub-component while loading', () => {
-      renderPage()
-      const testIds = [
-        'kpi-cards',
-        'detection-timeline',
-        'tactics-table',
-        'attack-heatmap',
-        'recent-detections-table',
-        'integration-status-row',
-      ]
-      for (const id of testIds) {
-        expect(screen.queryByTestId(id)).not.toBeInTheDocument()
-      }
-    })
+    expect(await screen.findByText('Reverse Shell Command Line', undefined, { timeout: 4000 })).toBeInTheDocument()
+    expect(screen.getByText('4,822')).toBeInTheDocument()
+    expect(api.kpis).toHaveBeenCalledTimes(2)
+    useDetectionStore.setState({ liveAlerts: [] })
   })
 
-  // -------------------------------------------------------------------------
-  // Error state
-  // -------------------------------------------------------------------------
-  describe('error state', () => {
-    beforeEach(() => {
-      // Resolve all secondary queries; kpis will be overridden per-test.
-      mockApi.timeline.mockResolvedValue([])
-      mockApi.tactics.mockResolvedValue([])
-      mockApi.heatmap.mockResolvedValue([])
-      mockApi.tacticLabels.mockResolvedValue([])
-      mockApi.integrations.mockResolvedValue([])
-      mockApi.recentDetections.mockResolvedValue([])
-    })
-
-    it('shows the error message when the kpis query fails', async () => {
-      mockApi.kpis.mockRejectedValue(new Error('Network error'))
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.getByText('Failed to load data. Is the backend running?'),
-        ).toBeInTheDocument()
-      })
-    })
-
-    it('does not show the loading indicator in error state', async () => {
-      mockApi.kpis.mockRejectedValue(new Error('Server error'))
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
-      })
-    })
-
-    it('does not render KPI cards in error state', async () => {
-      mockApi.kpis.mockRejectedValue(new Error('fail'))
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByTestId('kpi-cards')).not.toBeInTheDocument()
-      })
-    })
-
-    it('shows error when any non-kpis query fails', async () => {
-      mockApi.kpis.mockResolvedValue(mockKpi)
-      mockApi.timeline.mockRejectedValue(new Error('timeline error'))
-      renderPage()
-      await waitFor(() => {
-        expect(
-          screen.getByText('Failed to load data. Is the backend running?'),
-        ).toBeInTheDocument()
-      })
-    })
+  it('shows the page header with the time range set to the last 7 days', async () => {
+    renderPage()
+    expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument()
+    expect(screen.getByText('Detections, coverage and source health')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Time range' })).toHaveTextContent('Last 7 days')
+    await screen.findByText('4,821')
   })
 
-  // -------------------------------------------------------------------------
-  // Success state
-  // -------------------------------------------------------------------------
-  describe('success state', () => {
-    beforeEach(() => {
-      mockApi.kpis.mockResolvedValue(mockKpi)
-      mockApi.timeline.mockResolvedValue([])
-      mockApi.tactics.mockResolvedValue([])
-      mockApi.heatmap.mockResolvedValue([])
-      mockApi.tacticLabels.mockResolvedValue([])
-      mockApi.integrations.mockResolvedValue([])
-      mockApi.recentDetections.mockResolvedValue([])
-    })
-
-    it('renders KPI cards when all queries succeed', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByTestId('kpi-cards')).toBeInTheDocument()
-      })
-    })
-
-    it('renders the detection timeline when all queries succeed', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByTestId('detection-timeline')).toBeInTheDocument()
-      })
-    })
-
-    it('renders the tactics table when all queries succeed', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByTestId('tactics-table')).toBeInTheDocument()
-      })
-    })
-
-    it('renders the attack heatmap when all queries succeed', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByTestId('attack-heatmap')).toBeInTheDocument()
-      })
-    })
-
-    it('renders the recent detections table when all queries succeed', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByTestId('recent-detections-table')).toBeInTheDocument()
-      })
-    })
-
-    it('renders the integration status row when all queries succeed', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByTestId('integration-status-row')).toBeInTheDocument()
-      })
-    })
-
-    it('does not show the loading indicator in success state', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
-      })
-    })
-
-    it('does not show the error message in success state', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText(/Failed to load data/)).not.toBeInTheDocument()
-      })
-    })
-
-    it('renders the TopBar with the "Overview" crumb', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByTestId('topbar')).toHaveTextContent('Overview')
-      })
-    })
-
-    it('renders all 6 sub-components together', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByTestId('kpi-cards')).toBeInTheDocument()
-        expect(screen.getByTestId('detection-timeline')).toBeInTheDocument()
-        expect(screen.getByTestId('tactics-table')).toBeInTheDocument()
-        expect(screen.getByTestId('attack-heatmap')).toBeInTheDocument()
-        expect(screen.getByTestId('recent-detections-table')).toBeInTheDocument()
-        expect(screen.getByTestId('integration-status-row')).toBeInTheDocument()
-      })
-    })
+  it('shows a loading placeholder and no sections while the KPIs load', () => {
+    api.kpis.mockReturnValue(new Promise(() => {}))
+    renderPage()
+    expect(screen.getByLabelText('Loading')).toBeInTheDocument()
+    expect(screen.queryByText('Critical alerts')).not.toBeInTheDocument()
+    expect(screen.queryByText('Data sources')).not.toBeInTheDocument()
   })
 
-  // -------------------------------------------------------------------------
-  // Partial loading — stays in loading state until ALL queries complete
-  // -------------------------------------------------------------------------
-  describe('partial loading', () => {
-    it('stays in loading state when only kpis has resolved', () => {
-      mockApi.kpis.mockResolvedValue(mockKpi)
-      // timeline still pending — keeps overall loading=true
-      mockApi.timeline.mockReturnValue(new Promise<never>(() => {}))
-      mockApi.tactics.mockResolvedValue([])
-      mockApi.heatmap.mockResolvedValue([])
-      mockApi.tacticLabels.mockResolvedValue([])
-      mockApi.integrations.mockResolvedValue([])
-      mockApi.recentDetections.mockResolvedValue([])
+  it('shows every section with its data once loaded', async () => {
+    renderPage()
 
-      renderPage()
-      // Dashboard content must not appear while any query is still loading
-      expect(screen.queryByTestId('kpi-cards')).not.toBeInTheDocument()
-    })
+    expect(await screen.findByText('4,821')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Loading')).not.toBeInTheDocument()
 
-    it('shows loading indicator when the heatmap query is still pending', () => {
-      mockApi.kpis.mockResolvedValue(mockKpi)
-      mockApi.timeline.mockResolvedValue([])
-      mockApi.tactics.mockResolvedValue([])
-      mockApi.heatmap.mockReturnValue(new Promise<never>(() => {}))
-      mockApi.tacticLabels.mockResolvedValue([])
-      mockApi.integrations.mockResolvedValue([])
-      mockApi.recentDetections.mockResolvedValue([])
+    expect(screen.getByRole('heading', { name: 'Detections over time' })).toBeInTheDocument()
+    expect(screen.getByText('Per day, by severity, last 7 days')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Top ATT&CK tactics' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Recent critical and high detections' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Data sources' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'ATT&CK coverage heatmap' })).toBeInTheDocument()
 
-      renderPage()
-      expect(screen.getByText('Loading…')).toBeInTheDocument()
-    })
+    expect(await screen.findByTestId('chart')).toBeInTheDocument()
+    expect(await screen.findByText('Execution')).toBeInTheDocument()
+    expect(await screen.findByText('Suspicious LSASS Memory Access')).toBeInTheDocument()
+    expect(await screen.findByText('Wazuh')).toBeInTheDocument()
+    expect(await screen.findByTitle('T1059 · Exec: 7 of 14')).toBeInTheDocument()
+  })
+
+  it('requests the default range, and the eight most recent detections', async () => {
+    renderPage()
+    await screen.findByText('4,821')
+    expect(api.kpis).toHaveBeenCalledWith('7d')
+    expect(api.timeline).toHaveBeenCalledWith('7d')
+    expect(api.tactics).toHaveBeenCalledWith('7d')
+    expect(api.recentDetections).toHaveBeenCalledWith(8)
+  })
+
+  it('shows empty states when the sections have no data', async () => {
+    api.timeline.mockResolvedValue([])
+    api.tactics.mockResolvedValue([])
+    api.integrations.mockResolvedValue([])
+    api.recentDetections.mockResolvedValue([])
+    api.heatmap.mockResolvedValue([])
+    renderPage()
+
+    expect(await screen.findByText('No detections in this period')).toBeInTheDocument()
+    expect(screen.getByText('No tactics observed yet')).toBeInTheDocument()
+    expect(screen.getByText('No critical or high detections')).toBeInTheDocument()
+    expect(screen.getByText('No data sources connected')).toBeInTheDocument()
+  })
+
+  it('shows a dash when there is no time-to-detect data yet', async () => {
+    api.kpis.mockResolvedValue({ ...kpi, mttd_minutes: null, mttr_minutes: null })
+    renderPage()
+    expect(await screen.findByText('No incident data yet')).toBeInTheDocument()
+    expect(screen.getByText('–')).toBeInTheDocument()
+    expect(screen.getByText('Mean time to resolve: –')).toBeInTheDocument()
+  })
+
+  it('still shows the KPIs when a secondary request fails', async () => {
+    api.timeline.mockRejectedValue(new Error('boom'))
+    api.integrations.mockRejectedValue(new Error('boom'))
+    renderPage()
+    expect(await screen.findByText('4,821')).toBeInTheDocument()
+    expect(await screen.findByText('No data sources connected')).toBeInTheDocument()
+  })
+
+  it('shows an error with a retry button when the KPIs fail, and recovers on retry', async () => {
+    api.kpis.mockRejectedValueOnce(new Error('Network error'))
+    const user = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText(/Could not load the overview/)).toBeInTheDocument()
+    expect(screen.queryByText('Critical alerts')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(await screen.findByText('4,821')).toBeInTheDocument()
+    expect(screen.queryByText(/Could not load the overview/)).not.toBeInTheDocument()
+  })
+
+  it('reloads the range-dependent data when another time range is chosen', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('4,821')
+
+    await user.click(screen.getByRole('combobox', { name: 'Time range' }))
+    await user.click(await screen.findByRole('option', { name: 'Last 30 days' }))
+
+    await waitFor(() => expect(api.kpis).toHaveBeenCalledWith('30d'))
+    expect(api.timeline).toHaveBeenCalledWith('30d')
+    expect(api.tactics).toHaveBeenCalledWith('30d')
+    expect(await screen.findByText('Per day, by severity, last 30 days')).toBeInTheDocument()
+    expect(screen.getByText('Detections by tactic, last 30 days')).toBeInTheDocument()
+    // Range-independent data is not requested again
+    expect(api.heatmap).toHaveBeenCalledTimes(1)
+    expect(api.recentDetections).toHaveBeenCalledTimes(1)
   })
 })

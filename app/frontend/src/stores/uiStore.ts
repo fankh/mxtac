@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type Theme = 'light' | 'dark' | 'matrix'
+export type Theme = 'light' | 'dark'
 
 interface Notification {
   id: string
@@ -14,7 +14,6 @@ interface UIState {
   theme: Theme
   sidebarCollapsed: boolean
   notifications: Notification[]
-  globalError: string | null
   showShortcutsModal: boolean
 
   setTheme: (t: Theme) => void
@@ -22,7 +21,6 @@ interface UIState {
   toggleSidebar: () => void
   addNotification: (n: Omit<Notification, 'id'>) => void
   removeNotification: (id: string) => void
-  setGlobalError: (msg: string | null) => void
   openShortcutsModal: () => void
   closeShortcutsModal: () => void
 }
@@ -31,6 +29,7 @@ let _notifId = 0
 
 function applyTheme(theme: Theme) {
   document.documentElement.setAttribute('data-theme', theme)
+  document.documentElement.classList.toggle('dark', theme !== 'light')
 }
 
 function getSystemTheme(): 'light' | 'dark' {
@@ -46,7 +45,6 @@ export const useUIStore = create<UIState>()(
       theme: getSystemTheme(),
       sidebarCollapsed: false,
       notifications: [],
-      globalError: null,
       showShortcutsModal: false,
 
       setTheme: (theme) => {
@@ -76,14 +74,17 @@ export const useUIStore = create<UIState>()(
       removeNotification: (id) =>
         set((s) => ({ notifications: s.notifications.filter((x) => x.id !== id) })),
 
-      setGlobalError: (msg) => set({ globalError: msg }),
-
       openShortcutsModal: () => set({ showShortcutsModal: true }),
       closeShortcutsModal: () => set({ showShortcutsModal: false }),
     }),
     {
       name: 'mxtac-ui',
       partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed, theme: s.theme }),
+      // A theme stored by an older version (for example 'matrix') falls back to dark
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<UIState>
+        return { ...current, ...saved, theme: saved.theme === 'light' ? 'light' : saved.theme ? 'dark' : current.theme }
+      },
       onRehydrateStorage: () => (state) => {
         if (state?.theme) applyTheme(state.theme)
       },

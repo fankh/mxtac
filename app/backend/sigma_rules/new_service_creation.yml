@@ -18,3 +18,5 @@ tags:
   - attack.TA0003
 references:
   - https://attack.mitre.org/techniques/T1543/003/
+falsepositives:
+  - Software installers and administrators creating services

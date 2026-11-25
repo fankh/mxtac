@@ -1,3 +1,22 @@
+# MxTac: single-host production stack.
+#
+#   backend, frontend (static build), PostgreSQL, Valkey, OpenSearch, and an
+#   Nginx reverse proxy that terminates TLS. Only Nginx publishes ports.
+#
+# Before the first start:
+#   1. Create app/.env (or export the variables) with at least:
+#        SECRET_KEY=<output of: openssl rand -hex 32>
+#        POSTGRES_PASSWORD=<letters and digits; it is placed in a URL>
+#        DOMAIN=mxtac.example.com
+#   2. Put the TLS certificate and key in app/nginx/ssl/ as server.crt and
+#      server.key (the names app/setup.sh and app/enable-https.sh use).
+#
+# Start:        docker compose -f docker-compose.prod.yml up -d --build
+# First login:  see README.md, "First login".
+#
+# Optional variables: INITIAL_ADMIN_PASSWORD, SEED_DEMO_DATA, HTTP_PORT (80),
+# HTTPS_PORT (443), BACKEND_IMAGE, FRONTEND_IMAGE.
+
 services:
   # ─── Backend API ─────────────────────────────────────────────────────────────
   backend:
@@ -7,22 +26,35 @@ services:
       dockerfile: Dockerfile
     environment:
       - DEBUG=false
-      - SECRET_KEY=${SECRET_KEY}
-      - DATABASE_URL=postgresql+asyncpg://mxtac:${POSTGRES_PASSWORD}@postgres:5432/mxtac
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY, for example with openssl rand -hex 32}
+      - DATABASE_URL=postgresql+asyncpg://mxtac:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/mxtac
       - VALKEY_URL=redis://redis:6379/0
       - QUEUE_BACKEND=redis
-      - CORS_ORIGINS=["https://${DOMAIN}"]
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - CORS_ORIGINS=["https://${DOMAIN:?Set DOMAIN to the public host name}"]
+      # First start only. Empty = a random password for admin@mxtac.local is
+      # generated and written once to the backend log.
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+      # true also creates demo accounts and invented sample data. Keep false.
+      - SEED_DEMO_DATA=${SEED_DEMO_DATA:-false}
+    # Apply database migrations, then start the API. This stack runs exactly
+    # one backend container, so the migration cannot race with another one.
+    command: sh -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8080"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ready', timeout=4)"]
       interval: 15s
       timeout: 5s
       retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -32,15 +64,18 @@ services:
           cpus: "0.5"
           memory: 256M
 
-  # ─── Frontend (pre-built static files served by nginx) ───────────────────────
+  # ─── Frontend (static build served by Nginx, with fallback to index.html) ────
   frontend:
     image: ${FRONTEND_IMAGE:-mxtac-frontend:latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
-      args:
-        - VITE_API_BASE_URL=https://${DOMAIN}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1/index.html"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     deploy:
       resources:
         limits:
@@ -50,19 +85,20 @@ services:
           cpus: "0.1"
           memory: 64M
 
-  # ─── Nginx reverse proxy ─────────────────────────────────────────────────────
+  # ─── Nginx reverse proxy (TLS, the only published service) ───────────────────
   nginx:
     image: nginx:1.27-alpine
     ports:
-      - "80:80"
-      - "443:443"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      - frontend_static:/usr/share/nginx/html:ro
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
     restart: unless-stopped
     deploy:
       resources:
@@ -78,7 +114,7 @@ services:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=mxtac
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
       - POSTGRES_DB=mxtac
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -104,6 +140,11 @@ services:
       - redis_data:/data
     restart: unless-stopped
     command: valkey-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     deploy:
       resources:
         limits:
@@ -113,7 +154,46 @@ services:
           cpus: "0.1"
           memory: 64M
 
+  # ─── OpenSearch (single node, reachable inside this network only) ────────────
+  # The security plugin is off and no port is published. To use a secured
+  # cluster instead, set OPENSEARCH_USERNAME, OPENSEARCH_PASSWORD and
+  # OPENSEARCH_USE_SSL on the backend.
+  opensearch:
+    image: opensearchproject/opensearch:2.17.0
+    environment:
+      - cluster.name=mxtac-cluster
+      - node.name=mxtac-node-1
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.25"
+          memory: 768M
+
 volumes:
   postgres_data:
   redis_data:
-  frontend_static:
+  opensearch_data:

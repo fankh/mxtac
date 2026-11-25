@@ -3,7 +3,6 @@ import glob as _glob
 import os
 import re
 import time
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,8 +23,10 @@ from .core.database import AsyncSessionLocal
 from .core.exceptions import register_exception_handlers
 from .core.logging import configure_logging, get_logger
 from .db.seed import seed_database
+from .engine.sigma_engine import SigmaEngine
 from .pipeline.queue import get_queue, Topic
-from .services.duckdb_store import get_duckdb
+from .services.bundled_rules import import_bundled_rules
+from .services.event_persister import reindex_legacy_events
 from .services.opensearch_client import get_opensearch
 
 configure_logging()
@@ -154,6 +155,20 @@ class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+# Background tasks started at startup.  The event loop only keeps a weak
+# reference to a task: one that waits on a socket without a timeout (a pub/sub
+# subscriber) is garbage-collected mid-run unless something else refers to it.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro, *, name: str) -> asyncio.Task:
+    """Start *coro* as a background task and keep a reference until it is done."""
+    task = asyncio.create_task(coro, name=name)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
+
 async def _rule_reload_subscriber() -> None:
     """Subscribe to the Valkey rule-reload channel and hot-reload the SigmaEngine.
 
@@ -165,11 +180,11 @@ async def _rule_reload_subscriber() -> None:
 
     Exits silently when Valkey is unavailable.
     """
-    from .core.valkey import RULE_RELOAD_CHANNEL
+    from .core.valkey import RULE_RELOAD_CHANNEL, SUBSCRIBER_OPTIONS
     from .core.database import AsyncSessionLocal
     import valkey.asyncio as aioredis
 
-    sub_client = aioredis.from_url(settings.valkey_url, decode_responses=True)
+    sub_client = aioredis.from_url(settings.valkey_url, **SUBSCRIBER_OPTIONS)
     try:
         pubsub = sub_client.pubsub()
         await pubsub.subscribe(RULE_RELOAD_CHANNEL)
@@ -195,6 +210,16 @@ async def _rule_reload_subscriber() -> None:
             await sub_client.aclose()
         except Exception:
             pass
+
+
+async def _reindex_legacy_events() -> None:
+    """Background task: re-index events from PostgreSQL after an upgrade."""
+    try:
+        await reindex_legacy_events(get_opensearch())
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Event re-indexing failed — it is retried at the next start")
 
 
 async def _daily_snapshot_task() -> None:
@@ -326,7 +351,7 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key", "X-Agent-ID", "X-MxTac-Source", "X-MxTac-Token"],
+    allow_headers=["Authorization", "Content-Type", "X-MxTac-Source", "X-MxTac-Token"],
 )
 
 # Security headers — applied after CORS so headers are present on all responses
@@ -347,11 +372,6 @@ async def on_startup() -> None:
     # Pre-initialise state so the shutdown handler always has valid references
     app.state.connectors = {}
     app.state.alert_mgr = None
-    app.state.alert_file_writer = None
-    app.state.alert_webhook_sender = None
-    app.state.alert_email_sender = None
-    app.state.duckdb_store = None
-    app.state.notification_dispatcher = None
     app.state.syslog_receiver = None
 
     # 0. Auto-migrate when running in SQLite single-binary mode (feature 20.8)
@@ -359,10 +379,11 @@ async def on_startup() -> None:
         from .db.migrate import auto_migrate
         await auto_migrate()
 
-    # 1. Seed database (idempotent)
+    # 1. Seed the bootstrap admin account (idempotent); demo accounts and rows
+    #    only when SEED_DEMO_DATA=true
     try:
         async with AsyncSessionLocal() as session:
-            await seed_database(session)
+            await seed_database(session, demo_data=settings.seed_demo_data)
     except Exception:
         logger.exception("Database seed failed — tables may not exist yet, run alembic upgrade")
 
@@ -378,40 +399,25 @@ async def on_startup() -> None:
     await os_client.ensure_indices()
     app.state.os_client = os_client
 
+    # 3.1. After an upgrade from the old event index shape: copy the events
+    #      from PostgreSQL into the current indices (no-op otherwise)
+    _spawn(_reindex_legacy_events(), name="reindex-legacy-events")
+
     # 3.2. Start storage metrics collection — updates Prometheus gauges every 5 minutes
-    asyncio.create_task(_storage_metrics_collector(), name="storage-metrics-collector")
+    _spawn(_storage_metrics_collector(), name="storage-metrics-collector")
 
-    # 3.1. Connect DuckDB embedded event store (feature 20.9)
-    if settings.duckdb_enabled:
-        duckdb_store = get_duckdb()
-        await duckdb_store.connect()
-        app.state.duckdb_store = duckdb_store
-        logger.info(
-            "DuckDB event store enabled path=%r available=%s",
-            settings.duckdb_path,
-            duckdb_store.is_available,
-        )
-    else:
-        logger.info("DuckDB event store disabled (set DUCKDB_ENABLED=true to enable)")
-
-    # 4. Load Sigma rules
+    # 4. Load Sigma rules.  The rules table is the single source of truth:
+    #    bundled rule files are imported into it first (new ones only), then
+    #    the engine is loaded from the table.
+    engine = SigmaEngine()
+    app.state.sigma_engine = engine
     try:
-        from .engine.sigma_engine import SigmaEngine
-        engine = SigmaEngine()
-        rules_dir = Path(__file__).parent.parent / "sigma_rules"
-        if rules_dir.exists():
-            n = await engine.load_rules_from_dir(rules_dir)
-            logger.info("Loaded %d Sigma rules from disk", n)
-        else:
-            logger.info("No sigma_rules/ directory found, skipping disk rule loading")
-        # Load persisted rules from DB (overrides disk rules with same ID)
         async with AsyncSessionLocal() as session:
+            n_bundled = await import_bundled_rules(session)
             n_db = await engine.load_rules_from_db(session)
-            logger.info("Loaded %d Sigma rules from DB", n_db)
-        app.state.sigma_engine = engine
+        logger.info("Loaded %d Sigma rules from DB (%d bundled rules imported)", n_db, n_bundled)
     except Exception:
-        logger.exception("Sigma engine init failed")
-        app.state.sigma_engine = None
+        logger.exception("Sigma rule load failed — the engine starts without rules")
 
     # 5. Wire normalizer pipeline — subscribes to raw topics, publishes to mxtac.normalized
     try:
@@ -430,14 +436,10 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("DLQ consumer start failed")
 
-    # 5.1. Wire event persister — triple-write to PostgreSQL + DuckDB + OpenSearch
+    # 5.1. Wire event persister — writes to PostgreSQL + OpenSearch
     try:
         from .services.event_persister import event_persister
-        await event_persister(
-            queue,
-            app.state.os_client,
-            duckdb_store=getattr(app.state, "duckdb_store", None),
-        )
+        await event_persister(queue, app.state.os_client)
         logger.info("Event persister started")
     except Exception:
         logger.exception("Event persister start failed")
@@ -450,20 +452,10 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("Sigma consumer start failed")
 
-    # 7. Wire notification dispatcher — sends enriched alerts to configured channels
-    try:
-        from .services.notification_dispatcher import NotificationDispatcher
-        notification_dispatcher = NotificationDispatcher()
-        app.state.notification_dispatcher = notification_dispatcher
-        logger.info("Notification dispatcher started")
-    except Exception:
-        logger.exception("Notification dispatcher start failed")
-        notification_dispatcher = None
-
-    # 7.1. Wire alert manager — subscribes to mxtac.alerts, deduplicates, scores, enriches
+    # 7. Wire alert manager — subscribes to mxtac.alerts, deduplicates, scores, enriches
     try:
         from .services.alert_manager import AlertManager
-        alert_mgr = AlertManager(queue, dispatcher=notification_dispatcher)
+        alert_mgr = AlertManager(queue)
         await queue.subscribe(Topic.ALERTS, "alert-manager", alert_mgr.process)
         app.state.alert_mgr = alert_mgr
         logger.info("Alert manager consumer started")
@@ -478,200 +470,27 @@ async def on_startup() -> None:
     except Exception:
         logger.exception("WebSocket broadcaster start failed")
 
-    # 8.5. Wire alert file writer — appends enriched alerts as JSON Lines to file
-    if settings.alert_file_output_enabled:
-        try:
-            from .services.alert_file_writer import alert_file_writer
-            afw = await alert_file_writer(
-                queue,
-                path=settings.alert_file_output_path,
-                max_bytes=settings.alert_file_max_bytes,
-                backup_count=settings.alert_file_backup_count,
-            )
-            app.state.alert_file_writer = afw
-            logger.info("Alert file writer started → %s", settings.alert_file_output_path)
-        except Exception:
-            logger.exception("Alert file writer start failed")
-
-    # 8.6. Wire alert webhook output — POST enriched alerts to configured URLs
-    if settings.alert_webhook_output_enabled and settings.alert_webhook_urls:
-        try:
-            from .services.webhook_output import alert_webhook_output
-            aws = await alert_webhook_output(
-                queue,
-                urls=settings.alert_webhook_urls,
-                timeout=settings.alert_webhook_timeout,
-                retry_count=settings.alert_webhook_retry_count,
-            )
-            app.state.alert_webhook_sender = aws
-            logger.info(
-                "Alert webhook output started → %d URL(s)", len(settings.alert_webhook_urls)
-            )
-        except Exception:
-            logger.exception("Alert webhook output start failed")
-
-    # 8.7. Wire alert syslog output — emit enriched alerts to a syslog destination
-    if settings.alert_syslog_output_enabled:
-        try:
-            from .services.alert_syslog_output import alert_syslog_output
-            ash = await alert_syslog_output(
-                queue,
-                host=settings.alert_syslog_host,
-                port=settings.alert_syslog_port,
-                protocol=settings.alert_syslog_protocol,
-                facility=settings.alert_syslog_facility,
-                tag=settings.alert_syslog_tag,
-            )
-            app.state.alert_syslog_handler = ash
-            logger.info(
-                "Alert syslog output started → %s:%d (%s) facility=%s",
-                settings.alert_syslog_host,
-                settings.alert_syslog_port,
-                settings.alert_syslog_protocol,
-                settings.alert_syslog_facility,
-            )
-        except Exception:
-            logger.exception("Alert syslog output start failed")
-
-    # 8.8. Wire alert email output — send high-severity alerts via SMTP
-    if settings.alert_email_output_enabled and settings.alert_email_to:
-        try:
-            from .services.alert_email_output import alert_email_output
-            aem = await alert_email_output(
-                queue,
-                smtp_host=settings.alert_email_smtp_host,
-                smtp_port=settings.alert_email_smtp_port,
-                username=settings.alert_email_smtp_username,
-                password=settings.alert_email_smtp_password,
-                use_tls=settings.alert_email_smtp_use_tls,
-                use_starttls=settings.alert_email_smtp_use_starttls,
-                from_addr=settings.alert_email_from,
-                to_addrs=settings.alert_email_to,
-                min_level=settings.alert_email_min_level,
-            )
-            app.state.alert_email_sender = aem
-            logger.info(
-                "Alert email output started → smtp://%s:%d to=%s min_level=%s",
-                settings.alert_email_smtp_host,
-                settings.alert_email_smtp_port,
-                settings.alert_email_to,
-                settings.alert_email_min_level,
-            )
-        except Exception:
-            logger.exception("Alert email output start failed")
-
     # 9. Start connectors from DB — publish raw events into the pipeline
     try:
         from .connectors.registry import start_connectors_from_db
         async with AsyncSessionLocal() as session:
             connectors = await start_connectors_from_db(session, queue)
         for conn in connectors.values():
-            asyncio.create_task(conn.start(), name=f"connector-start-{conn.config.name}")
+            _spawn(conn.start(), name=f"connector-start-{conn.config.name}")
         app.state.connectors = connectors
         logger.info("Started %d connectors", len(connectors))
     except Exception:
         logger.exception("Connector start failed")
 
     # 10. Subscribe to peer rule-change notifications — keep SigmaEngine in sync across replicas
-    asyncio.create_task(_rule_reload_subscriber(), name="rule-reload-subscriber")
+    _spawn(_rule_reload_subscriber(), name="rule-reload-subscriber")
     logger.info("Rule reload subscriber started")
 
-    # 11. Start agent status monitor — auto-degrade agents that stop heartbeating
-    try:
-        from .services.agent_monitor import agent_status_monitor
-        asyncio.create_task(agent_status_monitor(), name="agent-status-monitor")
-        logger.info("Agent status monitor started")
-    except Exception:
-        logger.exception("Agent status monitor start failed")
-
-    # 12. Start STIX/TAXII feed pollers — poll configured threat intel feeds (feature 29.5)
-    if settings.threat_intel_feeds:
-        try:
-            from .services.stix_feed import stix_feed_poller
-            asyncio.create_task(
-                stix_feed_poller(settings.threat_intel_feeds),
-                name="stix-feed-poller",
-            )
-            logger.info(
-                "STIX feed poller started: %d feed(s)", len(settings.threat_intel_feeds)
-            )
-        except Exception:
-            logger.exception("STIX feed poller start failed")
-    else:
-        logger.info(
-            "STIX feed poller: no feeds configured (set THREAT_INTEL_FEEDS to enable)"
-        )
-
-    # 13. Start IOC expiry task — deactivate expired and stale IOCs hourly (feature 29.8)
-    try:
-        from .services.ioc_expiry import ioc_expiry_task
-        asyncio.create_task(ioc_expiry_task(), name="ioc-expiry-task")
-        logger.info("IOC expiry task started")
-    except Exception:
-        logger.exception("IOC expiry task start failed")
-
-    # 14. Start daily OpenSearch snapshot task — snapshot + retention pruning (feature 38.3)
-    asyncio.create_task(_daily_snapshot_task(), name="daily-snapshot-task")
+    # 11. Start daily OpenSearch snapshot task — snapshot + retention pruning (feature 38.3)
+    _spawn(_daily_snapshot_task(), name="daily-snapshot-task")
     logger.info("Daily OpenSearch snapshot task started (fires at next UTC midnight)")
 
-    # 15. Start data retention cleanup task — hard-deletes aged PostgreSQL records (feature 38.4)
-    try:
-        from .services.retention import data_retention_task
-        asyncio.create_task(data_retention_task(), name="data-retention-task")
-        logger.info("Data retention task started (fires daily at 02:00 UTC)")
-    except Exception:
-        logger.exception("Data retention task start failed")
-
-    # 16. Start inactive account lock task — locks accounts idle for 90+ days (feature 1.7)
-    try:
-        from .services.inactive_account import inactive_account_lock_task
-        asyncio.create_task(inactive_account_lock_task(), name="inactive-account-lock-task")
-        logger.info(
-            "Inactive account lock task started (fires daily at 03:00 UTC, inactivity_days=%d)",
-            settings.account_inactivity_days,
-        )
-    except Exception:
-        logger.exception("Inactive account lock task start failed")
-
-    # 17. Start escalation task — escalate unacknowledged critical/high alerts (feature 27.7)
-    try:
-        from .services.escalation import escalation_task
-        asyncio.create_task(
-            escalation_task(dispatcher=notification_dispatcher),
-            name="escalation-task",
-        )
-        logger.info(
-            "Escalation task started (timeout_min=%d channel_id=%s)",
-            settings.escalation_timeout_minutes,
-            settings.escalation_channel_id,
-        )
-    except Exception:
-        logger.exception("Escalation task start failed")
-
-    # 18. Start scheduled report task — cron-based automated report generation (feature 31.4)
-    try:
-        from .services.report_scheduler import report_scheduler_task
-        asyncio.create_task(
-            report_scheduler_task(dispatcher=notification_dispatcher),
-            name="report-scheduler-task",
-        )
-        logger.info("Report scheduler task started (check_interval=60s)")
-    except Exception:
-        logger.exception("Report scheduler task start failed")
-
-    # 19. Start alert auto-closer task — close detections with no recurrence in N hours (feature 9.12)
-    try:
-        from .services.alert_auto_closer import alert_auto_closer_task
-        asyncio.create_task(alert_auto_closer_task(), name="alert-auto-closer-task")
-        logger.info(
-            "Alert auto-closer task started (enabled=%s, window=%dh)",
-            settings.alert_auto_close_enabled,
-            settings.alert_auto_close_no_recurrence_hours,
-        )
-    except Exception:
-        logger.exception("Alert auto-closer task start failed")
-
-    # 20. Start syslog receiver — inbound UDP/TCP listener on port 1514 (feature 35.4)
+    # 12. Start syslog receiver — inbound UDP/TCP listener on port 1514 (feature 35.4)
     if settings.syslog_enabled:
         try:
             from .connectors.syslog_receiver import SyslogReceiver
@@ -698,48 +517,12 @@ async def on_startup() -> None:
             settings.syslog_port,
         )
 
-    # Wire NDR detection consumer — subscribes to mxtac.normalized for network events
-    try:
-        from .services.ndr_consumer import ndr_consumer
-        await ndr_consumer(queue)
-        logger.info("NDR detection consumer started")
-    except Exception:
-        logger.exception("NDR detection consumer start failed")
-
-    # Start scheduled detection engine (per-target aggregation + dedup)
-    try:
-        from .services.detection_engine import DetectionEngine
-        os_client = getattr(app.state, "os_client", None)
-        detection_repo = getattr(app.state, "detection_repo", None)
-        rule_repo = getattr(app.state, "rule_repo", None)
-        if os_client:
-            detection_engine = DetectionEngine(
-                os_client=os_client,
-                detection_repo=detection_repo,
-                rule_repo=rule_repo,
-            )
-            await detection_engine.start()
-            app.state.detection_engine = detection_engine
-            logger.info("Detection engine started (per-target aggregation)")
-        else:
-            logger.info("Detection engine skipped (OpenSearch not available)")
-    except Exception:
-        logger.exception("Detection engine start failed")
-
     logger.info("MxTac API startup complete")
 
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
     logger.info("MxTac API shutting down")
-
-    # Stop detection engine
-    detection_engine = getattr(app.state, "detection_engine", None)
-    if detection_engine:
-        try:
-            await detection_engine.stop()
-        except Exception:
-            pass
 
     # Stop connectors (cancels each connector's poll loop)
     for conn in getattr(app.state, "connectors", {}).values():
@@ -764,6 +547,20 @@ async def on_shutdown() -> None:
     except Exception:
         logger.exception("Queue stop failed")
 
+    # The runtime is gone: nothing may be started on the stopped queue
+    # (POST /connectors starts a connector when ``app.state.queue`` is set).
+    app.state.queue = None
+    app.state.connectors = {}
+
+    # Cancel the background tasks started at startup.  A task of another
+    # (closed) event loop can neither be cancelled nor finish; it is dropped.
+    loop = asyncio.get_running_loop()
+    tasks = [task for task in _background_tasks if task.get_loop() is loop]
+    _background_tasks.clear()
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+
     # Close AlertManager (releases Valkey connection)
     try:
         alert_mgr = getattr(app.state, "alert_mgr", None)
@@ -772,46 +569,6 @@ async def on_shutdown() -> None:
     except Exception:
         logger.exception("AlertManager close failed")
 
-    # Close alert file writer (flush + close file handle)
-    try:
-        afw = getattr(app.state, "alert_file_writer", None)
-        if afw is not None:
-            await afw.close()
-    except Exception:
-        logger.exception("AlertFileWriter close failed")
-
-    # Close alert webhook sender (release HTTP connection pool)
-    try:
-        aws = getattr(app.state, "alert_webhook_sender", None)
-        if aws is not None:
-            await aws.close()
-    except Exception:
-        logger.exception("AlertWebhookSender close failed")
-
-    # Close alert syslog handler (release syslog socket)
-    try:
-        ash = getattr(app.state, "alert_syslog_handler", None)
-        if ash is not None:
-            await ash.close()
-    except Exception:
-        logger.exception("AlertSyslogHandler close failed")
-
-    # Close alert email sender (no-op, present for interface symmetry)
-    try:
-        aem = getattr(app.state, "alert_email_sender", None)
-        if aem is not None:
-            await aem.close()
-    except Exception:
-        logger.exception("AlertEmailSender close failed")
-
-    # Close notification dispatcher (release HTTP connection pool)
-    try:
-        nd = getattr(app.state, "notification_dispatcher", None)
-        if nd is not None:
-            await nd.close()
-    except Exception:
-        logger.exception("NotificationDispatcher close failed")
-
     # Close OpenSearch client
     try:
         os_client = getattr(app.state, "os_client", None)
@@ -819,14 +576,6 @@ async def on_shutdown() -> None:
             await os_client.close()
     except Exception:
         logger.exception("OpenSearch close failed")
-
-    # Close DuckDB event store
-    try:
-        duckdb_store = getattr(app.state, "duckdb_store", None)
-        if duckdb_store is not None:
-            await duckdb_store.close()
-    except Exception:
-        logger.exception("DuckDB close failed")
 
     # Close syslog receiver (feature 35.4)
     try:
@@ -899,6 +648,7 @@ async def readiness() -> JSONResponse:
         from opensearchpy import AsyncOpenSearch
         os_client = AsyncOpenSearch(
             hosts=[settings.opensearch_url],
+            http_auth=settings.opensearch_http_auth,
             http_compress=True,
             use_ssl=settings.opensearch_use_ssl,
             verify_certs=False,

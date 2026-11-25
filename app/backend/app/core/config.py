@@ -1,8 +1,10 @@
 import logging
 import re
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
+
+from .validators import validate_password_policy
 
 logger = logging.getLogger(__name__)
 
@@ -18,16 +20,6 @@ _DSN_PASSWORD_RE = re.compile(r"(://[^:@]*:)([^@]+)(@)")
 def redact_dsn(dsn: str) -> str:
     """Replace the password portion of a DSN URL with '***'."""
     return _DSN_PASSWORD_RE.sub(r"\1***\3", dsn)
-
-
-class ThreatIntelFeedConfig(BaseModel):
-    """Configuration for a single STIX/TAXII 2.1 threat intelligence feed."""
-
-    name: str
-    taxii_url: str
-    collection_id: str
-    api_key: str = Field(default="", repr=False)
-    poll_interval: int = 21600  # seconds; default: 6 hours
 
 
 class Settings(BaseSettings):
@@ -48,6 +40,11 @@ class Settings(BaseSettings):
     jwt_key_version: int = 1
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
+    # The refresh token is only ever sent as an HttpOnly, SameSite=Strict
+    # cookie.  It also carries the Secure attribute unless this is set to
+    # False, which is only meant for a deployment served over plain HTTP on a
+    # host other than localhost (browsers accept Secure cookies on localhost).
+    refresh_cookie_secure: bool = True
 
     # Database — excluded from repr to prevent password leakage in logs
     database_url: str = Field(
@@ -65,14 +62,21 @@ class Settings(BaseSettings):
     # DATABASE_URL has not been explicitly set to a sqlite:// URL).
     sqlite_path: str = "./mxtac.db"
 
-    # DuckDB embedded event store — no OpenSearch required (feature 20.9)
-    # When True, normalised events are mirrored to a local DuckDB file and
-    # analytics queries (search, aggregate) prefer DuckDB over raw PostgreSQL
-    # scans when OpenSearch is unavailable.  Both sqlite_mode and duckdb_enabled
-    # may be active simultaneously since DuckDB uses a separate file.
-    duckdb_enabled: bool = False
-    # Path for the DuckDB analytics database file.
-    duckdb_path: str = "./mxtac-events.duckdb"
+    # Opt-in demo content: when True, the first-run seeder also inserts sample
+    # (invented) detections, connectors, rules and incidents.  Never enable on
+    # a real deployment — the rows are indistinguishable from real findings.
+    seed_demo_data: bool = False
+
+    # Bootstrap password for the first account (admin@mxtac.local), used only
+    # when the users table is empty at startup.  Leave unset to have a random
+    # one generated and written once to the startup log.  Either way the
+    # account must change it at first sign-in.  Must satisfy the password
+    # policy; a weak value stops the application from starting.
+    initial_admin_password: str | None = Field(
+        default=None,
+        repr=False,
+        json_schema_extra={"x-sensitive": True, "format": "password"},
+    )
 
     # Valkey (Redis-compatible)
     valkey_url: str = Field(
@@ -82,9 +86,7 @@ class Settings(BaseSettings):
     )
 
     # Queue
-    queue_backend: str = "memory"  # "memory" | "redis" | "kafka"
-    kafka_bootstrap_servers: str = "localhost:9092"
-    kafka_consumer_group: str = "mxtac"
+    queue_backend: str = "memory"  # "memory" | "redis"
 
     # OpenSearch
     opensearch_host: str = "localhost"
@@ -97,18 +99,6 @@ class Settings(BaseSettings):
     )
     opensearch_use_ssl: bool = False
 
-    # Alert file output (JSON Lines)
-    alert_file_output_enabled: bool = False
-    alert_file_output_path: str = "/var/log/mxtac/alerts.jsonl"
-    alert_file_max_bytes: int = 100 * 1024 * 1024  # 100 MB per file
-    alert_file_backup_count: int = 5  # keep up to 5 rotated files
-
-    # Alert webhook output — POST JSON to one or more URLs
-    alert_webhook_output_enabled: bool = False
-    alert_webhook_urls: list[str] = []  # e.g. ["https://hooks.example.com/mxtac"]
-    alert_webhook_timeout: int = 5  # seconds per request
-    alert_webhook_retry_count: int = 3  # retries on timeout / 5xx
-
     # Syslog receiver — inbound UDP/TCP listener (feature 35.4)
     # Listens on a non-privileged port (default 1514); map 514→1514 in Docker.
     syslog_enabled: bool = False
@@ -116,63 +106,6 @@ class Settings(BaseSettings):
     syslog_port: int = 1514
     syslog_protocol: str = "udp"  # "udp" | "tcp" | "both"
     syslog_max_message_size: int = 65535
-
-    # Alert syslog output — emit enriched alerts to a syslog destination
-    alert_syslog_output_enabled: bool = False
-    alert_syslog_host: str = "localhost"  # hostname, IP, or /dev/log for Unix socket
-    alert_syslog_port: int = 514  # standard syslog port (ignored for Unix socket)
-    alert_syslog_protocol: str = "udp"  # "udp" | "tcp"
-    alert_syslog_facility: str = "local0"  # syslog facility (local0–local7 recommended)
-    alert_syslog_tag: str = "mxtac-alert"  # syslog application tag (ident)
-
-    # Alert email output — send enriched alerts via SMTP (high-severity only)
-    alert_email_output_enabled: bool = False
-    alert_email_smtp_host: str = "localhost"
-    alert_email_smtp_port: int = 587
-    alert_email_smtp_username: str = ""
-    alert_email_smtp_password: str = Field(
-        default="",
-        repr=False,
-        json_schema_extra={"x-sensitive": True, "format": "password"},
-    )
-    alert_email_smtp_use_tls: bool = False       # implicit TLS (SMTP_SSL, port 465)
-    alert_email_smtp_use_starttls: bool = True   # STARTTLS upgrade (port 587)
-    alert_email_from: str = "mxtac-alerts@localhost"
-    alert_email_to: list[str] = []               # recipient list
-    alert_email_min_level: str = "high"          # minimum severity to email
-
-    # Notification dispatcher SMTP defaults — used by DB-backed email channels
-    # when a channel's config_json omits individual SMTP fields.
-    smtp_host: str = "localhost"
-    smtp_port: int = 587
-    smtp_username: str = ""
-    smtp_password: str = Field(
-        default="",
-        repr=False,
-        json_schema_extra={"x-sensitive": True, "format": "password"},
-    )
-    smtp_from_address: str = "mxtac-alerts@localhost"
-
-    # Threat intelligence feeds — STIX/TAXII 2.1 (feature 29.5)
-    # Set via THREAT_INTEL_FEEDS env var as a JSON array, e.g.:
-    #   [{"name":"AlienVault","taxii_url":"https://...","collection_id":"...","api_key":"..."}]
-    threat_intel_feeds: list[ThreatIntelFeedConfig] = []
-
-    # OpenCTI enrichment — feature 29.6
-    # Global defaults used by ioc_matcher for on-demand observable lookups.
-    # These mirror the per-connector settings but allow enrichment without
-    # a running polling connector.  Leave empty to disable enrichment lookups.
-    opencti_url: str = ""
-    opencti_token: str = Field(
-        default="",
-        repr=False,
-        json_schema_extra={"x-sensitive": True, "format": "password"},
-    )
-
-    # IOC expiry — feature 29.8
-    # Number of days without a hit before an IOC is auto-deactivated.
-    # Set to 0 to disable stale-hit expiry (only expires_at-based expiry runs).
-    ioc_no_hit_expiry_days: int = 90
 
     # Database backup status — feature 38.1
     # Directory where backup-db.sh writes .sql.gz files.  The /ready endpoint
@@ -196,18 +129,9 @@ class Settings(BaseSettings):
     # Number of days to retain snapshots; older ones are auto-deleted by the daily task.
     opensearch_snapshot_retention_days: int = 30
 
-    # PostgreSQL data retention — feature 38.4
-    # Controls how long records are kept in PostgreSQL before hard deletion.
-    # OpenSearch ILM (feature 38.2) handles event/alert index cleanup independently.
-    retention_events_days: int = 90      # informational — OpenSearch ILM controls events
-    retention_alerts_days: int = 365     # detections deleted after this many days
-    retention_incidents_days: int = 730  # resolved/closed incidents deleted after 2 years
-    retention_audit_days: int = 1095     # informational — OpenSearch ISM controls audit (3 years)
-    retention_iocs_days: int = 180       # expired IOCs hard-deleted after 180 days
-
     # Inactive account lock — feature 1.7
-    # Accounts that have not logged in for this many days are auto-locked.
-    # Set to 0 to disable login-time inactivity checking (background task still respects this).
+    # Accounts that have not logged in for this many days are locked at the next login attempt.
+    # Set to 0 to disable the inactivity check.
     account_inactivity_days: int = 90
 
     # Password expiry — feature 2.3
@@ -231,38 +155,9 @@ class Settings(BaseSettings):
     auto_create_incident_min_severity: str = "high"  # "low" | "medium" | "high" | "critical"
     correlation_window_seconds: int = 3600  # 1-hour window
 
-    # Alert escalation — feature 27.7
-    # Background task (every 5 min) escalates active critical/high detections
-    # that have not been acknowledged after escalation_timeout_minutes.
-    # Set escalation_channel_id to the NotificationChannel.id that should
-    # receive escalation messages.  Leave None to disable escalation.
-    escalation_timeout_minutes: int = 30
-    escalation_channel_id: int | None = None
-
-    # Asset auto-discovery — feature 30.5
-    # When True, the normalizer pipeline automatically creates or updates
-    # CMDB asset records from ingested events (Wazuh agents, Zeek conn.log,
-    # Suricata, MxGuard heartbeats).  Only internal IPs (RFC 1918 by default)
-    # are registered.  Rate-limited to one upsert per hostname per 5 minutes
-    # using Valkey to avoid thundering-herd writes.
-    asset_auto_discovery: bool = True
-    # CIDRs that count as "internal" — only IPs within these ranges are
-    # registered in the CMDB.  Set via the ASSET_INTERNAL_NETWORKS env var
-    # as a JSON array, e.g. '["10.0.0.0/8","172.16.0.0/12"]'.
-    asset_internal_networks: list[str] = [
-        "10.0.0.0/8",
-        "172.16.0.0/12",
-        "192.168.0.0/16",
-    ]
-
-    # Alert auto-close — feature 9.12
-    # Auto-close active detections when no new detection with the same
-    # (rule_name, host) has been observed for this many hours.
-    # Set to 0 to disable time-based auto-close.
-    alert_auto_close_enabled: bool = True
-    alert_auto_close_no_recurrence_hours: int = 24
-
-    # Rate limiting
+    # Rate limiting — requests per minute per client IP for read (GET / HEAD)
+    # requests.  Login, export and write requests have fixed, lower limits
+    # (see core/rate_limit.py).
     rate_limit_per_minute: int = 300
 
     # CORS
@@ -294,6 +189,20 @@ class Settings(BaseSettings):
                     "Set a unique SECRET_KEY before deploying to production."
                 )
 
+        # A blank INITIAL_ADMIN_PASSWORD means "not set"; a weak one is fatal so
+        # that a guessable bootstrap password is never silently accepted.
+        if not self.initial_admin_password:
+            self.initial_admin_password = None
+        else:
+            try:
+                validate_password_policy(self.initial_admin_password)
+            except ValueError as exc:
+                raise ValueError(
+                    f"FATAL: INITIAL_ADMIN_PASSWORD does not meet the password policy: {exc}. "
+                    "Set a stronger value, or unset it to have a random password "
+                    "generated and written to the startup log."
+                ) from None
+
         # Auto-configure SQLite URL when sqlite_mode is enabled.
         if self.sqlite_mode and not self.database_url.startswith("sqlite"):
             self.database_url = f"sqlite+aiosqlite:///{self.sqlite_path}"
@@ -305,8 +214,18 @@ class Settings(BaseSettings):
         scheme = "https" if self.opensearch_use_ssl else "http"
         return f"{scheme}://{self.opensearch_host}:{self.opensearch_port}"
 
+    @property
+    def opensearch_http_auth(self) -> tuple[str, str] | None:
+        """Basic-auth credentials for OpenSearch, or None when no username is set."""
+        if not self.opensearch_username:
+            return None
+        return (self.opensearch_username, self.opensearch_password)
+
     class Config:
         env_file = ".env"
+        # Validation errors must not echo the offending input: it can hold
+        # secrets (SECRET_KEY, DSNs, a rejected INITIAL_ADMIN_PASSWORD).
+        hide_input_in_errors = True
 
 
 settings = Settings()

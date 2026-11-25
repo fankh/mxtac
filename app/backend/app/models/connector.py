@@ -10,7 +10,7 @@ class Connector(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     connector_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    # wazuh | zeek | suricata | prowler | opencti | velociraptor | osquery | generic
+    # wazuh | zeek | suricata | syslog | generic
 
     # Configuration stored as JSON string (encrypted in production)
     config_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")

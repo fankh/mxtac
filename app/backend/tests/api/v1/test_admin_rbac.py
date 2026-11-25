@@ -393,9 +393,10 @@ class TestAdminCanDeleteUsers:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_admin_deleted_user_absent_from_list(
+    async def test_admin_deleted_user_is_listed_as_inactive(
         self, client: AsyncClient, admin_headers: dict
     ) -> None:
+        """A deactivated account stays in the list, so the Users tab can reactivate it."""
         with patch(_MOCK_HASH, return_value=_HASHED_PW):
             create_resp = await client.post(
                 BASE_URL, headers=admin_headers, json=_VALID_PAYLOAD
@@ -403,8 +404,8 @@ class TestAdminCanDeleteUsers:
         user_id = create_resp.json()["id"]
         await client.delete(f"{BASE_URL}/{user_id}", headers=admin_headers)
         list_resp = await client.get(BASE_URL, headers=admin_headers)
-        ids = [u["id"] for u in list_resp.json()]
-        assert user_id not in ids
+        active_by_id = {u["id"]: u["is_active"] for u in list_resp.json()}
+        assert active_by_id[user_id] is False
 
     @pytest.mark.asyncio
     async def test_admin_deleted_user_get_returns_404(

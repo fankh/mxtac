@@ -7,9 +7,7 @@ Verifies that the hunter role:
   - Can build Lucene DSL queries (POST /events/query-dsl)
   - Can create, list, update, and delete saved hunt queries
   - Can read Sigma rules (but NOT write them)
-  - Can read threat intelligence (but NOT write)
-  - Can view ATT&CK-guided hunt suggestions
-  - Is denied access to connectors, user management, agent management, and audit logs
+  - Is denied access to connectors and user management
 
 Also verifies that analyst cannot access hunter-exclusive endpoints (403).
 """
@@ -658,46 +656,12 @@ class TestHunterRulesAccess:
 
 
 # ---------------------------------------------------------------------------
-# 6. Hunter can view ATT&CK-guided hunt suggestions
-# ---------------------------------------------------------------------------
-
-
-class TestHunterHuntSuggestions:
-    """Hunter can access the ATT&CK-guided hunt suggestions endpoint."""
-
-    @pytest.mark.asyncio
-    async def test_hunter_can_access_suggestions(
-        self, client: AsyncClient, hunter_headers: dict
-    ) -> None:
-        resp = await client.get("/api/v1/hunting/suggestions", headers=hunter_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "suggestions" in data
-        assert "generated_at" in data
-        assert "window_hours" in data
-
-    @pytest.mark.asyncio
-    async def test_hunter_suggestions_with_custom_params(
-        self, client: AsyncClient, hunter_headers: dict
-    ) -> None:
-        resp = await client.get(
-            "/api/v1/hunting/suggestions",
-            headers=hunter_headers,
-            params={"hours": 48, "limit": 5},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["window_hours"] == 48
-        assert len(data["suggestions"]) <= 5
-
-
-# ---------------------------------------------------------------------------
 # 7. Hunter access denied — privileged operations
 # ---------------------------------------------------------------------------
 
 
 class TestHunterAccessDenied:
-    """Hunter cannot access connectors, user management, or agent management."""
+    """Hunter cannot access connectors or user management."""
 
     @pytest.mark.asyncio
     async def test_hunter_cannot_list_connectors(
@@ -722,13 +686,6 @@ class TestHunterAccessDenied:
         self, client: AsyncClient, hunter_headers: dict
     ) -> None:
         resp = await client.get("/api/v1/users", headers=hunter_headers)
-        assert resp.status_code == 403
-
-    @pytest.mark.asyncio
-    async def test_hunter_cannot_list_agents(
-        self, client: AsyncClient, hunter_headers: dict
-    ) -> None:
-        resp = await client.get("/api/v1/agents", headers=hunter_headers)
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
@@ -964,12 +921,3 @@ class TestEngineerAdminInheritHunterPerms:
         )
         assert resp.status_code == 201
         assert resp.json()["created_by"] == "admin@mxtac.local"
-
-    @pytest.mark.asyncio
-    async def test_engineer_can_access_hunt_suggestions(
-        self, client: AsyncClient, engineer_headers: dict
-    ) -> None:
-        resp = await client.get(
-            "/api/v1/hunting/suggestions", headers=engineer_headers
-        )
-        assert resp.status_code == 200

@@ -92,6 +92,15 @@ SEVERITY_ID_TO_NAME = {v: k for k, v in SEVERITY_MAP.items()}
 
 # ── Main OCSF event model ────────────────────────────────────────────────────
 
+# Key under which a message on ``mxtac.normalized`` carries the platform's own
+# ID of the event.  The normalizer pipeline assigns it before publishing, so
+# that every consumer of the message knows the ID up front: the event persister
+# stores the event under it (PostgreSQL primary key and OpenSearch document
+# ID), and a detection raised from the event records it as ``event_id``.  It is
+# not an OCSF field and is not stored inside the event payload.
+EVENT_ID_KEY = "mxtac_event_id"
+
+
 class OCSFEvent(BaseModel):
     """
     Normalized OCSF event. A common envelope used throughout the MxTac pipeline.

@@ -1,37 +1,60 @@
 """
-Sigma Detection Engine — pySigma-based rule evaluation.
+Sigma Detection Engine — evaluates a subset of the Sigma specification.
 
 Pipeline:
-  1. Load Sigma YAML rules from disk (or DB)
+  1. Load Sigma YAML rules (from the ``rules`` database table)
   2. Compile each rule to a callable matcher
   3. For each incoming OCSF event:
      a. Look up applicable rules by logsource
      b. Evaluate each rule against the event
-     c. Yield Detection objects for matches
+     c. Yield SigmaAlert objects for matches
+
+Supported detection syntax:
+  - selections: map of fields (AND), list of maps (OR), list of keywords (OR)
+  - value modifiers: contains, startswith, endswith, all, re, cidr, base64
+  - wildcards ``*`` and ``?`` in plain string values, case-insensitive matching
+  - conditions: and / or / not / parentheses, ``1 of``, ``<n> of``, ``all of``
+    with ``them`` or a wildcard selection pattern
+
+A rule that uses anything else (aggregations, ``timeframe``, correlation
+rules, unknown modifiers) is rejected with :class:`SigmaRuleError` instead of
+being loaded and silently never matching.
 
 Usage:
     engine = SigmaEngine()
-    await engine.load_rules_from_dir("/opt/mxtac/rules")
+    await engine.load_rules_from_db(session)
     async for alert in engine.evaluate(ocsf_event):
         await queue.publish(Topic.ALERTS, alert.dict())
 """
 
 from __future__ import annotations
 
+import base64
+import ipaddress
 import re
-import yaml
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any, AsyncGenerator
 from uuid import uuid4
 
+import yaml
+
 from ..core.logging import get_logger
 from ..core.metrics import rule_matches as _rule_matches_counter
-from ..services.normalizers.ocsf import OCSFEvent
+from ..repositories.rule_repo import RuleRepo
+from ..services.normalizers.ocsf import OCSFClass, OCSFEvent
 from .field_mapper import ocsf_to_sigma_flat
 
 logger = get_logger(__name__)
+
+Matcher = Callable[[dict[str, Any]], bool]
+
+
+class SigmaRuleError(ValueError):
+    """The rule is not valid Sigma or uses syntax this engine does not support."""
 
 
 # ── Rule data structures ─────────────────────────────────────────────────────
@@ -79,453 +102,506 @@ class SigmaAlert:
     host: str = ""
     time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     event_snapshot: dict[str, Any] = field(default_factory=dict)
+    # ID of the stored event that matched (assigned by the normalizer pipeline;
+    # filled in by the Sigma consumer, None for an event without one).
+    event_id: str | None = None
 
 
-# ── Condition evaluator ──────────────────────────────────────────────────────
+# ── ATT&CK tags ──────────────────────────────────────────────────────────────
+
+_TECHNIQUE_TAG_RE = re.compile(r"^attack\.(t\d{4}(?:\.\d{3})?)$", re.IGNORECASE)
+_TACTIC_ID_TAG_RE = re.compile(r"^attack\.(ta\d{4})$", re.IGNORECASE)
+
+# Tactic names as written in Sigma tags (``attack.credential-access`` or
+# ``attack.credential_access``), normalised to underscores.
+TACTIC_NAME_TO_ID: dict[str, str] = {
+    "reconnaissance":       "TA0043",
+    "resource_development": "TA0042",
+    "initial_access":       "TA0001",
+    "execution":            "TA0002",
+    "persistence":          "TA0003",
+    "privilege_escalation": "TA0004",
+    "defense_evasion":      "TA0005",
+    "credential_access":    "TA0006",
+    "discovery":            "TA0007",
+    "lateral_movement":     "TA0008",
+    "collection":           "TA0009",
+    "exfiltration":         "TA0010",
+    "command_and_control":  "TA0011",
+    "impact":               "TA0040",
+}
 
 
-def _nested_get(event: dict, parts: list[str]) -> Any:
-    """Fast dot-notation field lookup (e.g. ['process', 'cmd_line'])."""
+# Tactic names as shown in the UI and stored in ``Detection.tactic``.
+TACTIC_ID_TO_NAME: dict[str, str] = {
+    "TA0043": "Reconnaissance",
+    "TA0042": "Resource Development",
+    "TA0001": "Initial Access",
+    "TA0002": "Execution",
+    "TA0003": "Persistence",
+    "TA0004": "Privilege Escalation",
+    "TA0005": "Defense Evasion",
+    "TA0006": "Credential Access",
+    "TA0007": "Discovery",
+    "TA0008": "Lateral Movement",
+    "TA0009": "Collection",
+    "TA0010": "Exfiltration",
+    "TA0011": "Command and Control",
+    "TA0040": "Impact",
+}
+
+
+def tactic_name(tactic: str | None) -> str | None:
+    """Return the tactic name for a tactic ID (``TA0006`` → ``Credential Access``).
+
+    ``Detection.tactic`` holds the name.  Rows written before the pipeline
+    stored names hold the ID instead, so readers pass the column through this
+    function.  Any other value (a name, ``unknown``, ``None``) is returned
+    unchanged.
+    """
+    if tactic is None:
+        return None
+    return TACTIC_ID_TO_NAME.get(tactic.strip().upper(), tactic)
+
+
+def parse_attack_tags(tags: list[str]) -> tuple[list[str], list[str]]:
+    """Return ``(technique_ids, tactic_ids)`` from Sigma ``attack.*`` tags."""
+    techniques: list[str] = []
+    tactics: list[str] = []
+    for tag in tags:
+        tag = str(tag).strip()
+        if m := _TACTIC_ID_TAG_RE.match(tag):
+            tactic = m.group(1).upper()
+        elif m := _TECHNIQUE_TAG_RE.match(tag):
+            technique = m.group(1).upper()
+            if technique not in techniques:
+                techniques.append(technique)
+            continue
+        elif tag.lower().startswith("attack."):
+            name = tag[len("attack."):].lower().replace("-", "_")
+            tactic = TACTIC_NAME_TO_ID.get(name)
+        else:
+            tactic = None
+        if tactic and tactic not in tactics:
+            tactics.append(tactic)
+    return techniques, tactics
+
+
+# ── Field lookup ─────────────────────────────────────────────────────────────
+
+def _get_field(event: dict[str, Any], key: str) -> Any:
+    """Look up *key* as a literal key first, then as a dot-separated path."""
+    if key in event:
+        return event[key]
     val: Any = event
-    for part in parts:
+    for part in key.split("."):
         if not isinstance(val, dict):
             return None
         val = val.get(part)
     return val
 
 
-class _Condition:
-    """
-    Evaluates a single Sigma detection block against a flat event dict.
-    Supports: keywords, field modifiers (contains, startswith, endswith, re, base64, cidr)
+def _flatten_values(value: Any, depth: int = 0) -> list[Any]:
+    """All scalar values of a nested dict / list (used by keyword selections)."""
+    if depth > 5:
+        return []
+    if isinstance(value, dict):
+        value = list(value.values())
+    if isinstance(value, list):
+        return [leaf for item in value for leaf in _flatten_values(item, depth + 1)]
+    return [value]
 
-    Detection criteria are pre-compiled at construction time into fast
-    callables so that repeated ``matches()`` calls incur no parsing overhead.
+
+# ── Value matchers ───────────────────────────────────────────────────────────
+# A value matcher takes one scalar field value and returns True on a match.
+
+ValueMatcher = Callable[[Any], bool]
+
+_SUPPORTED_MODIFIERS = frozenset(
+    {"contains", "startswith", "endswith", "all", "re", "cidr", "base64"}
+)
+_STRING_MODES = ("contains", "startswith", "endswith")
+_WILDCARD_TOKEN_RE = re.compile(r"\\([*?\\])|([*?])")
+
+
+def _parse_wildcards(value: str) -> tuple[str, re.Pattern | None]:
+    """Split a Sigma string into ``(literal, regex)``.
+
+    ``*`` and ``?`` are wildcards unless escaped with a backslash; ``\\\\`` is
+    a literal backslash.  *regex* is ``None`` when the value has no wildcards,
+    in which case *literal* is the unescaped, lower-cased string.
+    """
+    literal: list[str] = []
+    pattern: list[str] = []
+    has_wildcard = False
+    pos = 0
+    for m in _WILDCARD_TOKEN_RE.finditer(value):
+        chunk = value[pos:m.start()]
+        literal.append(chunk)
+        pattern.append(re.escape(chunk))
+        if m.group(1):                       # escaped character
+            literal.append(m.group(1))
+            pattern.append(re.escape(m.group(1)))
+        else:
+            has_wildcard = True
+            pattern.append(".*" if m.group(2) == "*" else ".")
+        pos = m.end()
+    literal.append(value[pos:])
+    pattern.append(re.escape(value[pos:]))
+    if not has_wildcard:
+        return "".join(literal).lower(), None
+    return "", re.compile("".join(pattern), re.IGNORECASE | re.DOTALL)
+
+
+def _string_matcher(value: Any, mode: str | None) -> ValueMatcher:
+    """Case-insensitive string comparison with ``*`` / ``?`` wildcard support."""
+    literal, regex = _parse_wildcards(str(value))
+
+    if regex is not None:
+        prefix = "" if mode in (None, "startswith") else ".*"
+        suffix = "" if mode in (None, "endswith") else ".*"
+        full = re.compile(f"{prefix}(?:{regex.pattern}){suffix}", regex.flags)
+        return lambda fv: full.fullmatch(str(fv)) is not None
+
+    if mode == "contains":
+        return lambda fv: literal in str(fv).lower()
+    if mode == "startswith":
+        return lambda fv: str(fv).lower().startswith(literal)
+    if mode == "endswith":
+        return lambda fv: str(fv).lower().endswith(literal)
+    return lambda fv: str(fv).lower() == literal
+
+
+def _base64_matcher(value: Any, mode: str | None) -> ValueMatcher:
+    """Compare against the base64 encoding of *value* (case-sensitive)."""
+    encoded = base64.b64encode(str(value).encode("utf-8")).decode("ascii")
+    if mode == "contains":
+        return lambda fv: encoded in str(fv)
+    if mode == "startswith":
+        return lambda fv: str(fv).startswith(encoded)
+    if mode == "endswith":
+        return lambda fv: str(fv).endswith(encoded)
+    return lambda fv: str(fv) == encoded
+
+
+def _regex_matcher(value: Any, field_expr: str) -> ValueMatcher:
+    try:
+        pattern = re.compile(str(value), re.IGNORECASE)
+    except re.error as exc:
+        raise SigmaRuleError(
+            f"invalid regular expression in '{field_expr}': {exc}"
+        ) from exc
+    return lambda fv: pattern.search(str(fv)) is not None
+
+
+def _cidr_matcher(value: Any, field_expr: str) -> ValueMatcher:
+    try:
+        network = ipaddress.ip_network(str(value), strict=False)
+    except ValueError as exc:
+        raise SigmaRuleError(f"invalid CIDR network in '{field_expr}': {value}") from exc
+
+    def _match(fv: Any) -> bool:
+        try:
+            return ipaddress.ip_address(str(fv)) in network
+        except ValueError:
+            return False
+
+    return _match
+
+
+def _compile_field(field_expr: str, values: Any) -> Matcher:
+    """Compile one ``field|modifier: value(s)`` entry of a selection."""
+    key, *modifiers = str(field_expr).split("|")
+    unknown = [m for m in modifiers if m not in _SUPPORTED_MODIFIERS]
+    if unknown:
+        raise SigmaRuleError(
+            f"unsupported modifier '{unknown[0]}' in '{field_expr}' "
+            f"(supported: {', '.join(sorted(_SUPPORTED_MODIFIERS))})"
+        )
+    mode = next((m for m in _STRING_MODES if m in modifiers), None)
+    value_list = values if isinstance(values, list) else [values]
+    if not value_list:
+        raise SigmaRuleError(f"'{field_expr}' has an empty value list")
+
+    matchers: list[ValueMatcher] = []
+    for value in value_list:
+        if isinstance(value, (dict, list)):
+            raise SigmaRuleError(f"'{field_expr}' has a nested value; expected a scalar or a list of scalars")
+        if value is None:
+            matchers.append(lambda fv: fv is None)
+        elif "re" in modifiers:
+            matchers.append(_regex_matcher(value, field_expr))
+        elif "cidr" in modifiers:
+            matchers.append(_cidr_matcher(value, field_expr))
+        elif "base64" in modifiers:
+            matchers.append(_base64_matcher(value, mode))
+        else:
+            matchers.append(_string_matcher(value, mode))
+
+    matches_null = any(value is None for value in value_list)
+    combine = all if "all" in modifiers else any
+
+    def _match(event: dict[str, Any]) -> bool:
+        fv = _get_field(event, key)
+        if fv is None:
+            return matches_null
+        candidates = fv if isinstance(fv, (list, tuple)) else (fv,)
+        return combine(any(m(c) for c in candidates) for m in matchers)
+
+    return _match
+
+
+def _compile_keywords(keywords: list[Any]) -> Matcher:
+    """Keyword search: any keyword matches any value of the event."""
+    matchers = [_string_matcher(kw, "contains") for kw in keywords]
+
+    def _match(event: dict[str, Any]) -> bool:
+        values = [v for v in _flatten_values(event) if v is not None]
+        return any(m(v) for m in matchers for v in values)
+
+    return _match
+
+
+def _compile_map(selection: dict[str, Any]) -> Matcher:
+    """A map of fields: every field must match."""
+    if not selection:
+        raise SigmaRuleError("empty selection")
+    field_matchers = [_compile_field(fe, vals) for fe, vals in selection.items()]
+    if len(field_matchers) == 1:
+        return field_matchers[0]
+    return lambda event: all(m(event) for m in field_matchers)
+
+
+def _compile_selection(name: str, selection: Any) -> Matcher:
+    try:
+        if isinstance(selection, dict):
+            return _compile_map(selection)
+        if isinstance(selection, list):
+            if not selection:
+                raise SigmaRuleError("empty selection")
+            if all(isinstance(item, dict) for item in selection):
+                alternatives = [_compile_map(item) for item in selection]
+                return lambda event: any(m(event) for m in alternatives)
+            if any(isinstance(item, (dict, list)) for item in selection):
+                raise SigmaRuleError("a list selection must contain only maps or only keywords")
+            return _compile_keywords(selection)
+        if selection is None:
+            raise SigmaRuleError("empty selection")
+        return _compile_keywords([selection])
+    except SigmaRuleError as exc:
+        raise SigmaRuleError(f"selection '{name}': {exc}") from exc
+
+
+# ── Condition parser ─────────────────────────────────────────────────────────
+#
+#   expr     := and_expr ( "or" and_expr )*
+#   and_expr := not_expr ( "and" not_expr )*
+#   not_expr := "not" not_expr | primary
+#   primary  := "(" expr ")" | quantifier "of" target | selection_name
+#   quantifier := "all" | <integer>
+#   target   := "them" | selection_name_pattern (may contain "*")
+
+_CONDITION_TOKEN_RE = re.compile(r"\s*(\(|\)|[^\s()]+)")
+
+
+class _ConditionParser:
+    def __init__(self, condition: str, selections: dict[str, Matcher]) -> None:
+        if "|" in condition:
+            raise SigmaRuleError(
+                "aggregation expressions ('| count() ...', '| near ...') are not supported"
+            )
+        self._condition = condition
+        self._selections = selections
+        self._tokens = _CONDITION_TOKEN_RE.findall(condition)
+        self._pos = 0
+
+    def parse(self) -> Matcher:
+        if not self._tokens:
+            raise SigmaRuleError("empty condition")
+        matcher = self._parse_or()
+        if self._peek() is not None:
+            raise self._error(f"unexpected '{self._peek()}'")
+        return matcher
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    def _error(self, message: str) -> SigmaRuleError:
+        return SigmaRuleError(f"condition '{self._condition}': {message}")
+
+    def _peek(self, offset: int = 0) -> str | None:
+        index = self._pos + offset
+        return self._tokens[index] if index < len(self._tokens) else None
+
+    def _peek_keyword(self, offset: int = 0) -> str | None:
+        token = self._peek(offset)
+        return token.lower() if token is not None else None
+
+    def _next(self) -> str:
+        token = self._peek()
+        if token is None:
+            raise self._error("unexpected end of condition")
+        self._pos += 1
+        return token
+
+    # ── grammar ──────────────────────────────────────────────────────────────
+
+    def _parse_or(self) -> Matcher:
+        operands = [self._parse_and()]
+        while self._peek_keyword() == "or":
+            self._next()
+            operands.append(self._parse_and())
+        if len(operands) == 1:
+            return operands[0]
+        return lambda event: any(m(event) for m in operands)
+
+    def _parse_and(self) -> Matcher:
+        operands = [self._parse_not()]
+        while self._peek_keyword() == "and":
+            self._next()
+            operands.append(self._parse_not())
+        if len(operands) == 1:
+            return operands[0]
+        return lambda event: all(m(event) for m in operands)
+
+    def _parse_not(self) -> Matcher:
+        if self._peek_keyword() == "not":
+            self._next()
+            operand = self._parse_not()
+            return lambda event: not operand(event)
+        return self._parse_primary()
+
+    def _parse_primary(self) -> Matcher:
+        token = self._next()
+        if token == "(":
+            matcher = self._parse_or()
+            if self._peek() != ")":
+                raise self._error("missing ')'")
+            self._next()
+            return matcher
+        if token == ")":
+            raise self._error("unexpected ')'")
+        if self._peek_keyword() == "of" and (token.lower() == "all" or token.isdigit()):
+            self._next()
+            return self._parse_quantifier(token.lower())
+        if token.lower() in ("and", "or", "of"):
+            raise self._error(f"unexpected '{token}'")
+        if token not in self._selections:
+            raise self._error(f"unknown selection '{token}'")
+        return self._selections[token]
+
+    def _parse_quantifier(self, quantifier: str) -> Matcher:
+        target = self._next()
+        if target in ("(", ")"):
+            raise self._error(f"expected 'them' or a selection pattern after '{quantifier} of'")
+        pattern = "*" if target.lower() == "them" else target.lower()
+        matched = [
+            m for name, m in self._selections.items() if fnmatchcase(name.lower(), pattern)
+        ]
+        if not matched:
+            raise self._error(f"'{target}' does not match any selection")
+        if quantifier == "all":
+            return lambda event: all(m(event) for m in matched)
+        minimum = int(quantifier)
+        if minimum == 1:
+            return lambda event: any(m(event) for m in matched)
+        return lambda event: sum(1 for m in matched if m(event)) >= minimum
+
+
+class _Condition:
+    """Compiled ``detection`` block of a Sigma rule.
+
+    Selections and the condition expression are compiled once at construction
+    time; :meth:`matches` only runs the resulting closures.  Raises
+    :class:`SigmaRuleError` for invalid or unsupported syntax.
     """
 
     def __init__(self, detection: dict[str, Any]) -> None:
-        self._detection = detection
-        self._condition = detection.get("condition", "selection")
-        # Pre-compile each named selection into a fast callable (event → bool)
-        self._compiled: dict[str, Any] = {
-            name: self._precompile_criterion(criterion)
-            for name, criterion in detection.items()
+        if not isinstance(detection, dict):
+            raise SigmaRuleError("'detection' must be a mapping")
+        if "timeframe" in detection:
+            raise SigmaRuleError("'timeframe' (time-based aggregation) is not supported")
+
+        selections = {
+            str(name): _compile_selection(str(name), selection)
+            for name, selection in detection.items()
             if name != "condition"
         }
-
-    def matches(self, event: dict[str, Any]) -> bool:
-        """Return True if the detection condition matches the event."""
-        compiled = self._compiled
-        condition = self._condition
-
-        # Fast path: single selection whose name equals the condition string.
-        # Avoids dict allocation and _eval_condition overhead for the common case.
-        if condition in compiled and len(compiled) == 1:
-            return compiled[condition](event)
-
-        named_results: dict[str, bool] = {
-            name: fn(event) for name, fn in compiled.items()
-        }
-        return self._eval_condition(condition, named_results)
-
-    # ── Pre-compilation ───────────────────────────────────────────────────────
-
-    def _precompile_criterion(self, criterion: Any):
-        """Return a fast callable (event dict → bool) for a detection criterion."""
-        if isinstance(criterion, list):
-            keywords = [str(kw).lower() for kw in criterion]
-            flat = self._flatten_values
-
-            def _kw_fn(evt: dict, _kws=keywords, _flat=flat) -> bool:
-                return any(kw in str(v).lower() for v in _flat(evt) for kw in _kws)
-
-            return _kw_fn
-
-        if isinstance(criterion, dict):
-            field_fns = [
-                self._precompile_field(fe, vals)
-                for fe, vals in criterion.items()
-            ]
-            if len(field_fns) == 1:
-                return field_fns[0]
-
-            def _all_fields(evt: dict, _fns=field_fns) -> bool:
-                return all(fn(evt) for fn in _fns)
-
-            return _all_fields
-
-        kw = str(criterion).lower()
-        flat = self._flatten_values
-
-        def _scalar_fn(evt: dict, _kw=kw, _flat=flat) -> bool:
-            return any(_kw in str(v).lower() for v in _flat(evt))
-
-        return _scalar_fn
-
-    def _precompile_field(self, field_expr: str, values: Any):  # noqa: C901
-        """Return a fast callable for a single field|modifier expression."""
-        parts = field_expr.split("|")
-        field_key = parts[0]
-        field_parts = field_key.split(".")
-        modifiers = parts[1:]
-        all_mod = "all" in modifiers
-        value_list: list = values if isinstance(values, list) else [values]
-
-        # ── Special modifiers that require original (non-lowercased) values ──
-
-        if "re" in modifiers:
-            compiled_pats = []
-            for v in value_list:
-                try:
-                    compiled_pats.append(re.compile(str(v), re.IGNORECASE))
-                except re.error:
-                    compiled_pats.append(None)
-
-            def _re_fn(evt: dict, _fp=field_parts, _pats=compiled_pats, _all=all_mod) -> bool:
-                fv = _nested_get(evt, _fp)
-                if fv is None:
-                    return False
-                fs = str(fv).lower()
-                if _all:
-                    return all(p is not None and bool(p.search(fs)) for p in _pats)
-                return any(p is not None and bool(p.search(fs)) for p in _pats)
-
-            return _re_fn
-
-        if "base64" in modifiers:
-            import base64 as _b64
-            # Encode each plaintext rule value to base64; comparison is case-sensitive
-            # because base64 character case is semantically meaningful.
-            encoded: list[str] = []
-            for v in value_list:
-                try:
-                    encoded.append(_b64.b64encode(str(v).encode("utf-8")).decode("ascii"))
-                except Exception:
-                    encoded.append("")
-
-            if "contains" in modifiers:
-                def _b64c_fn(evt: dict, _fp=field_parts, _evs=encoded, _all=all_mod) -> bool:
-                    fv = _nested_get(evt, _fp)
-                    if fv is None:
-                        return False
-                    fs = str(fv)
-                    if _all:
-                        return all(ev in fs for ev in _evs)
-                    return any(ev in fs for ev in _evs)
-                return _b64c_fn
-
-            if "startswith" in modifiers:
-                def _b64sw_fn(evt: dict, _fp=field_parts, _evs=encoded, _all=all_mod) -> bool:
-                    fv = _nested_get(evt, _fp)
-                    if fv is None:
-                        return False
-                    fs = str(fv)
-                    if _all:
-                        return all(fs.startswith(ev) for ev in _evs)
-                    return any(fs.startswith(ev) for ev in _evs)
-                return _b64sw_fn
-
-            if "endswith" in modifiers:
-                def _b64ew_fn(evt: dict, _fp=field_parts, _evs=encoded, _all=all_mod) -> bool:
-                    fv = _nested_get(evt, _fp)
-                    if fv is None:
-                        return False
-                    fs = str(fv)
-                    if _all:
-                        return all(fs.endswith(ev) for ev in _evs)
-                    return any(fs.endswith(ev) for ev in _evs)
-                return _b64ew_fn
-
-            # Default: exact match (case-sensitive for base64)
-            def _b64_fn(evt: dict, _fp=field_parts, _evs=encoded, _all=all_mod) -> bool:
-                fv = _nested_get(evt, _fp)
-                if fv is None:
-                    return False
-                fs = str(fv)
-                if _all:
-                    return all(fs == ev for ev in _evs)
-                return any(fs == ev for ev in _evs)
-            return _b64_fn
-
-        if "cidr" in modifiers:
-            import ipaddress
-            networks: list = []
-            for v in value_list:
-                try:
-                    networks.append(ipaddress.ip_network(str(v), strict=False))
-                except Exception:
-                    networks.append(None)
-
-            def _cidr_fn(evt: dict, _fp=field_parts, _nets=networks, _all=all_mod) -> bool:
-                fv = _nested_get(evt, _fp)
-                if fv is None:
-                    return False
-                try:
-                    import ipaddress as _ip
-                    ip = _ip.ip_address(str(fv))
-                    if _all:
-                        return all(n is not None and ip in n for n in _nets)
-                    return any(n is not None and ip in n for n in _nets)
-                except Exception:
-                    return False
-
-            return _cidr_fn
-
-        # ── Standard modifiers: pre-lowercase values once ────────────────────
-
-        prep = [str(v).lower() for v in value_list]
-
-        # Specialise for the most common pattern: single-key field, single value
-        single_key = len(field_parts) == 1
-        single_val = not all_mod and len(prep) == 1
-
-        if "contains" in modifiers:
-            if single_key and single_val:
-                k, v0 = field_parts[0], prep[0]
-
-                def _c1(evt: dict, _k=k, _v=v0) -> bool:
-                    fv = evt.get(_k)
-                    if fv is None:
-                        return False
-                    return _v in str(fv).lower()
-
-                return _c1
-            if all_mod:
-                def _ca(evt: dict, _fp=field_parts, _pvs=prep) -> bool:
-                    fv = _nested_get(evt, _fp)
-                    if fv is None:
-                        return False
-                    fs = str(fv).lower()
-                    return all(vs in fs for vs in _pvs)
-
-                return _ca
-
-            def _co(evt: dict, _fp=field_parts, _pvs=prep) -> bool:
-                fv = _nested_get(evt, _fp)
-                if fv is None:
-                    return False
-                fs = str(fv).lower()
-                return any(vs in fs for vs in _pvs)
-
-            return _co
-
-        if "startswith" in modifiers:
-            if single_key and single_val:
-                k, v0 = field_parts[0], prep[0]
-
-                def _sw1(evt: dict, _k=k, _v=v0) -> bool:
-                    fv = evt.get(_k)
-                    if fv is None:
-                        return False
-                    return str(fv).lower().startswith(_v)
-
-                return _sw1
-
-            def _sw(evt: dict, _fp=field_parts, _pvs=prep, _all=all_mod) -> bool:
-                fv = _nested_get(evt, _fp)
-                if fv is None:
-                    return False
-                fs = str(fv).lower()
-                if _all:
-                    return all(fs.startswith(vs) for vs in _pvs)
-                return any(fs.startswith(vs) for vs in _pvs)
-
-            return _sw
-
-        if "endswith" in modifiers:
-            if single_key and single_val:
-                k, v0 = field_parts[0], prep[0]
-
-                def _ew1(evt: dict, _k=k, _v=v0) -> bool:
-                    fv = evt.get(_k)
-                    if fv is None:
-                        return False
-                    return str(fv).lower().endswith(_v)
-
-                return _ew1
-
-            def _ew(evt: dict, _fp=field_parts, _pvs=prep, _all=all_mod) -> bool:
-                fv = _nested_get(evt, _fp)
-                if fv is None:
-                    return False
-                fs = str(fv).lower()
-                if _all:
-                    return all(fs.endswith(vs) for vs in _pvs)
-                return any(fs.endswith(vs) for vs in _pvs)
-
-            return _ew
-
-        # Default: exact match
-        if single_key and single_val:
-            k, v0 = field_parts[0], prep[0]
-
-            def _ex1(evt: dict, _k=k, _v=v0) -> bool:
-                fv = evt.get(_k)
-                if fv is None:
-                    return False
-                return str(fv).lower() == _v
-
-            return _ex1
-
-        def _ex(evt: dict, _fp=field_parts, _pvs=prep, _all=all_mod) -> bool:
-            fv = _nested_get(evt, _fp)
-            if fv is None:
-                return False
-            fs = str(fv).lower()
-            if _all:
-                return all(fs == vs for vs in _pvs)
-            return any(fs == vs for vs in _pvs)
-
-        return _ex
-
-    def _eval_selection(self, criterion: Any, event: dict[str, Any]) -> bool:
-        """Evaluate one named selection block."""
-        if isinstance(criterion, list):
-            # OR of keyword strings
-            return any(self._value_in_event(kw, event) for kw in criterion)
-        if isinstance(criterion, dict):
-            # AND of field matchers
-            return all(
-                self._field_matches(field_expr, values, event)
-                for field_expr, values in criterion.items()
-            )
-        # Simple scalar keyword
-        return self._value_in_event(str(criterion), event)
-
-    def _field_matches(self, field_expr: str, values: Any, event: dict[str, Any]) -> bool:
-        """Match field|modifier(s) against values."""
-        parts     = field_expr.split("|")
-        field_key = parts[0]
-        modifiers = parts[1:] if len(parts) > 1 else []
-
-        field_val = self._get_field(field_key, event)
-        if field_val is None:
-            return False
-
-        field_str = str(field_val).lower()
-        value_list = values if isinstance(values, list) else [values]
-
-        def _check_one(v: Any) -> bool:
-            vs = str(v).lower()
-            if "contains" in modifiers:  return vs in field_str
-            if "startswith" in modifiers: return field_str.startswith(vs)
-            if "endswith" in modifiers:   return field_str.endswith(vs)
-            if "re" in modifiers:
-                try:
-                    return bool(re.search(v, field_str, re.IGNORECASE))
-                except re.error:
-                    return False
-            if "base64" in modifiers:
-                import base64 as _b64
-                try:
-                    ev = _b64.b64encode(str(v).encode("utf-8")).decode("ascii")
-                except Exception:
-                    return False
-                # Use the original-case field value; base64 is case-sensitive.
-                fv_raw = str(field_val)
-                if "contains" in modifiers:
-                    return ev in fv_raw
-                if "startswith" in modifiers:
-                    return fv_raw.startswith(ev)
-                if "endswith" in modifiers:
-                    return fv_raw.endswith(ev)
-                return fv_raw == ev
-            if "cidr" in modifiers:
-                return self._cidr_match(field_str, vs)
-            # Default: exact match
-            return vs == field_str
-
-        # all/any modifier
-        if "all" in modifiers:
-            return all(_check_one(v) for v in value_list)
-        return any(_check_one(v) for v in value_list)
-
-    def _get_field(self, field_key: str, event: dict[str, Any]) -> Any:
-        """Support dot-notation lookup (e.g. process.cmd_line)."""
-        parts = field_key.split(".")
-        val   = event
-        for part in parts:
-            if isinstance(val, dict):
-                val = val.get(part)
-            else:
-                return None
-        return val
-
-    def _value_in_event(self, keyword: str, event: dict[str, Any]) -> bool:
-        """Check if keyword appears in any event value."""
-        kw = keyword.lower()
-        return any(kw in str(v).lower() for v in self._flatten_values(event))
-
-    def _flatten_values(self, d: Any, depth: int = 0) -> list[Any]:
-        if depth > 5:
-            return []
-        if isinstance(d, dict):
-            result = []
-            for v in d.values():
-                result.extend(self._flatten_values(v, depth + 1))
-            return result
-        if isinstance(d, list):
-            result = []
-            for v in d:
-                result.extend(self._flatten_values(v, depth + 1))
-            return result
-        return [d]
-
-    def _eval_condition(self, condition: str, results: dict[str, bool]) -> bool:
-        """Parse simple Sigma condition expressions: 'selection', 'not filter', 'A and B', etc."""
-        condition = condition.strip()
-
-        # Single name
-        if condition in results:
-            return results[condition]
-
-        # NOT
-        if condition.startswith("not "):
-            return not self._eval_condition(condition[4:], results)
-
-        # AND / OR with precedence (AND binds tighter)
-        if " or " in condition:
-            return any(
-                self._eval_condition(part.strip(), results)
-                for part in condition.split(" or ")
-            )
-        if " and " in condition:
-            return all(
-                self._eval_condition(part.strip(), results)
-                for part in condition.split(" and ")
-            )
-
-        # Parentheses (simple)
-        if condition.startswith("(") and condition.endswith(")"):
-            return self._eval_condition(condition[1:-1], results)
-
-        # Count-based (1 of them / all of them / 1 of pattern*)
-        # "them" is a Sigma keyword meaning all named selections (equivalent to *)
-        if condition.startswith("1 of "):
-            pattern = condition[5:].strip()
-            if pattern == "them":
-                pattern = "*"
-            regex = re.compile(pattern.replace("*", ".*"), re.IGNORECASE)
-            return any(v for k, v in results.items() if regex.match(k))
-        if condition.startswith("all of "):
-            pattern = condition[7:].strip()
-            if pattern == "them":
-                pattern = "*"
-            regex = re.compile(pattern.replace("*", ".*"), re.IGNORECASE)
-            matched_keys = [k for k in results if regex.match(k)]
-            if not matched_keys:
-                return False
-            return all(results.get(k, False) for k in matched_keys)
-
-        return False
-
-    def _cidr_match(self, ip: str, cidr: str) -> bool:
-        """Simple CIDR check without external deps."""
-        try:
-            import ipaddress
-            return ipaddress.ip_address(ip) in ipaddress.ip_network(cidr, strict=False)
-        except Exception:
-            return False
+        if not selections:
+            raise SigmaRuleError("'detection' has no selections")
+
+        condition = detection.get("condition", "selection")
+        conditions = condition if isinstance(condition, list) else [condition]
+        if not conditions or not all(isinstance(c, str) for c in conditions):
+            raise SigmaRuleError("'condition' must be a string or a list of strings")
+        alternatives = [_ConditionParser(c, selections).parse() for c in conditions]
+
+        if len(alternatives) == 1:
+            self.matches: Matcher = alternatives[0]
+        else:
+            self.matches = lambda event: any(m(event) for m in alternatives)
+
+
+# ── Logsource matching ───────────────────────────────────────────────────────
+
+# OCSF class → Sigma logsource categories the event can satisfy.
+_CLASS_CATEGORIES: dict[int, frozenset[str]] = {
+    OCSFClass.PROCESS_ACTIVITY: frozenset({"process_creation"}),
+    OCSFClass.NETWORK_ACTIVITY: frozenset({"network_connection", "firewall"}),
+    OCSFClass.DNS_ACTIVITY:     frozenset({"dns_query", "dns"}),
+    OCSFClass.AUTHENTICATION:   frozenset({"authentication"}),
+    OCSFClass.HTTP_ACTIVITY:    frozenset({"webserver", "proxy"}),
+    OCSFClass.FILE_ACTIVITY:    frozenset(
+        {"file_event", "file_access", "file_change", "file_delete"}
+    ),
+}
+
+# Sources that describe network traffic, not a host: they never satisfy an
+# operating-system product such as ``windows`` or ``linux``.
+_NETWORK_PRODUCTS = frozenset({"zeek", "suricata"})
+_OS_PRODUCTS = frozenset({"windows", "linux", "macos"})
+_OS_NAME_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("windows", ("windows",)),
+    ("macos", ("macos", "mac os", "darwin")),
+    ("linux", (
+        "linux", "ubuntu", "debian", "centos", "red hat", "rhel", "fedora",
+        "suse", "amazon", "alpine", "arch", "rocky", "alma", "oracle",
+    )),
+)
+
+
+def _os_product(event: OCSFEvent) -> str | None:
+    """Operating-system product of the event's host, when the event names it."""
+    os_name = (event.dst_endpoint.os_name or event.src_endpoint.os_name or "").lower()
+    if not os_name:
+        return None
+    for product, hints in _OS_NAME_HINTS:
+        if any(hint in os_name for hint in hints):
+            return product
+    return None
+
+
+def _event_products(event: OCSFEvent) -> frozenset[str]:
+    """Sigma ``logsource.product`` values this event satisfies.
+
+    Always the source itself (``wazuh``, ``zeek``, ``syslog`` …).  Host-based
+    sources also satisfy the operating system of the host; when the event does
+    not say which one, any OS product is accepted and the rule's field
+    conditions decide.
+    """
+    source = event.metadata_product.lower()
+    if source in _NETWORK_PRODUCTS or source in _OS_PRODUCTS:
+        return frozenset({source})
+    os_product = _os_product(event)
+    return frozenset({source, os_product}) if os_product else _OS_PRODUCTS | {source}
+
+
+def _event_services(event: OCSFEvent) -> frozenset[str]:
+    """Sigma ``logsource.service`` values named by the normalizer (may be empty)."""
+    hint = event.unmapped.get("service")
+    if not hint:
+        return frozenset()
+    hints = hint if isinstance(hint, list) else [hint]
+    return frozenset(str(h).lower() for h in hints)
 
 
 # ── Engine ───────────────────────────────────────────────────────────────────
@@ -544,36 +620,50 @@ class SigmaEngine:
 
     # ── Loading ──────────────────────────────────────────────────────────────
 
-    def load_rule_yaml(self, yaml_text: str) -> SigmaRule | None:
-        """Parse a single Sigma YAML string into a SigmaRule."""
+    def parse_rule_yaml(self, yaml_text: str) -> SigmaRule:
+        """Parse and compile a single Sigma YAML document.
+
+        Raises :class:`SigmaRuleError` with a message suitable for the user
+        when the rule is invalid or uses unsupported syntax.
+        """
         try:
             doc = yaml.safe_load(yaml_text)
-            if not isinstance(doc, dict):
-                return None
+        except yaml.YAMLError as exc:
+            raise SigmaRuleError(f"YAML parse error: {exc}") from exc
+        if not isinstance(doc, dict):
+            raise SigmaRuleError("rule must be a YAML mapping")
+        if "correlation" in doc:
+            raise SigmaRuleError("correlation rules are not supported")
 
-            rule = SigmaRule(
-                id=str(doc.get("id", str(uuid4()))),
-                title=doc.get("title", "Untitled"),
-                description=doc.get("description", ""),
-                status=doc.get("status", "experimental"),
-                level=doc.get("level", "medium"),
-                logsource=doc.get("logsource", {}),
-                detection=doc.get("detection", {}),
-                tags=doc.get("tags", []),
-                references=doc.get("references", []),
-            )
+        logsource = doc.get("logsource") or {}
+        if not isinstance(logsource, dict):
+            raise SigmaRuleError("'logsource' must be a mapping")
+        tags = doc.get("tags") or []
+        if not isinstance(tags, list):
+            raise SigmaRuleError("'tags' must be a list")
 
-            # Extract ATT&CK tags  (attack.tXXXX techniques, attack.taXXXX tactics)
-            # Check tactic prefix first — "attack.ta" is a subset of "attack.t"
-            for tag in rule.tags:
-                tl = tag.lower()
-                if tl.startswith("attack.ta"):
-                    rule.tactic_ids.append(tag.split(".", 1)[1].upper())
-                elif tl.startswith("attack.t"):
-                    rule.technique_ids.append(tag.split(".", 1)[1].upper())
+        rule = SigmaRule(
+            id=str(doc.get("id", str(uuid4()))),
+            title=doc.get("title", "Untitled"),
+            description=doc.get("description", ""),
+            status=doc.get("status", "experimental"),
+            level=doc.get("level", "medium"),
+            logsource=logsource,
+            detection=doc.get("detection", {}),
+            tags=tags,
+            references=doc.get("references", []),
+        )
+        rule.technique_ids, rule.tactic_ids = parse_attack_tags(tags)
+        rule._matcher = _Condition(rule.detection)
+        return rule
 
-            rule._matcher = _Condition(rule.detection)
-            return rule
+    def load_rule_yaml(self, yaml_text: str) -> SigmaRule | None:
+        """Like :meth:`parse_rule_yaml` but returns ``None`` for a bad rule."""
+        try:
+            return self.parse_rule_yaml(yaml_text)
+        except SigmaRuleError as exc:
+            logger.warning("Sigma rule rejected: %s", exc)
+            return None
         except Exception:
             logger.exception("Failed to parse Sigma rule yaml")
             return None
@@ -583,7 +673,7 @@ class SigmaEngine:
         loaded = 0
         for path in Path(directory).rglob("*.y*ml"):
             try:
-                rule = self.load_rule_yaml(path.read_text())
+                rule = self.load_rule_yaml(path.read_text(encoding="utf-8"))
                 if rule:
                     self.add_rule(rule)
                     loaded += 1
@@ -616,10 +706,10 @@ class SigmaEngine:
     async def load_rules_from_db(self, session: Any) -> int:
         """Load all rules from the database into the engine.
 
-        Uses upsert_rule so DB state overrides any disk-loaded rules with the
-        same ID. The rule's enabled flag is taken from the DB record.
+        The ``rules`` table is the single source of truth: bundled rule files
+        are imported into it at startup (see ``services/bundled_rules.py``).
+        The rule's enabled flag is taken from the DB record.
         """
-        from ..repositories.rule_repo import RuleRepo
         db_rules = await RuleRepo.list(session)
         loaded = 0
         for db_rule in db_rules:
@@ -627,6 +717,9 @@ class SigmaEngine:
                 continue
             sigma_rule = self.load_rule_yaml(db_rule.content)
             if sigma_rule:
+                # The table's primary key identifies the rule everywhere else
+                # (API, hit counters), also when the YAML carries no id.
+                sigma_rule.id = db_rule.id
                 sigma_rule.enabled = db_rule.enabled
                 self.upsert_rule(sigma_rule)
                 loaded += 1
@@ -674,34 +767,45 @@ class SigmaEngine:
                 logger.debug("Rule eval error rule_id=%s", rule.id)
 
     def _get_candidates(self, event: OCSFEvent) -> list[SigmaRule]:
-        """Return rules applicable to this event based on logsource."""
-        product = event.metadata_product.lower()
-        results: list[SigmaRule] = []
+        """Return the rules whose logsource applies to this event.
 
-        # Product-level rules
-        results.extend(self._index.get(f"product:{product}", []))
+        ``product``, ``category`` and ``service`` are each optional in a rule;
+        every one that is present must be satisfied by the event:
 
-        # Category-based rules (e.g. process_creation, network_connection)
-        if event.class_uid == 1007:   # Process Activity
-            results.extend(self._index.get("category:process_creation", []))
-        elif event.class_uid == 4001: # Network Activity
-            results.extend(self._index.get("category:network_connection", []))
-        elif event.class_uid == 4003: # DNS
-            results.extend(self._index.get("category:dns_query", []))
-        elif event.class_uid == 3002: # Authentication
-            results.extend(self._index.get("category:authentication", []))
+        - product  — the source (``wazuh``, ``zeek``, ``suricata``, ``syslog`` …)
+          or the host operating system (see :func:`_event_products`)
+        - category — derived from the OCSF class (see ``_CLASS_CATEGORIES``)
+        - service  — one of the services the normalizer names in
+          ``unmapped["service"]``; ignored when the event names none
+        """
+        products = _event_products(event)
+        categories = _CLASS_CATEGORIES.get(event.class_uid, frozenset())
+        services = _event_services(event)
 
-        # Global rules (no logsource filter)
-        results.extend(self._index.get("*", []))
+        keys = ["*"]
+        keys += [f"product:{p}" for p in products]
+        keys += [f"category:{c}" for c in categories]
+        keys += [f"service:{s}" for s in services]
 
-        # Deduplicate
-        seen = set()
-        unique = []
-        for r in results:
-            if r.id not in seen:
-                seen.add(r.id)
-                unique.append(r)
-        return unique
+        seen: set[str] = set()
+        candidates: list[SigmaRule] = []
+        for key in keys:
+            for rule in self._index.get(key, ()):
+                if rule.id in seen:
+                    continue
+                seen.add(rule.id)
+                logsource = rule.logsource
+                product = str(logsource.get("product") or "").lower()
+                category = str(logsource.get("category") or "").lower()
+                service = str(logsource.get("service") or "").lower()
+                if product and product not in products:
+                    continue
+                if category and category not in categories:
+                    continue
+                if service and services and service not in services:
+                    continue
+                candidates.append(rule)
+        return candidates
 
     def _logsource_keys(self, logsource: dict) -> list[str]:
         keys = []

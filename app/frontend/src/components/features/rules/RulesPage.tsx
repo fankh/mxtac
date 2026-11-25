@@ -1,615 +1,418 @@
-import { useState, useRef, useCallback } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import Editor, { type OnMount } from '@monaco-editor/react'
-import { load as yamlLoad, dump as yamlDump, YAMLException } from 'js-yaml'
-import { TopBar } from '../../layout/TopBar'
-import { apiClient } from '../../../lib/api'
-import { useUIStore, type Theme } from '../../../stores/uiStore'
+import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  ChevronLeft, ChevronRight, FileCode2, FlaskConical, Pencil, Plus, RefreshCw, RotateCw, Search, ThumbsDown, Trash2,
+  Upload, X,
+} from 'lucide-react'
+import { Page } from '@/components/layout/Page'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { apiErrorMessage, rulesApi } from '@/lib/api'
+import { cn, fmtNum } from '@/lib/utils'
+import { useAuthStore } from '@/stores/authStore'
+import { useUIStore } from '@/stores/uiStore'
+import type { Rule } from '@/types/api'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { RoleNotice } from '@/components/shared/RoleNotice'
+import { canReadRules } from '@/lib/roles'
+import { useTechniqueNames } from '@/hooks/useTechniqueNames'
+import { RuleEditorDialog } from './RuleEditorDialog'
+import { RuleImportDialog } from './RuleImportDialog'
+import { RuleTestDialog } from './RuleTestDialog'
 
-interface Rule {
-  id: string
-  title: string
-  level: string
-  status: string
-  enabled: boolean
-  technique_ids: string[]
-  tactic_ids: string[]
-  hit_count: number
-  fp_count: number
+const PAGE_SIZE = 50
+const LEVELS = ['critical', 'high', 'medium', 'low', 'informational'] as const
+const LEVEL_CLASS: Record<string, string> = {
+  critical: 'sev-critical',
+  high: 'sev-high',
+  medium: 'sev-medium',
+  low: 'sev-low',
+  informational: 'sev-info',
+}
+/** Roles with the rules:write permission (see backend core/rbac.py). */
+const WRITE_ROLES = new Set(['engineer', 'admin'])
+
+type EditorState = { ruleId: string | null } | null
+
+function logsourceText(rule: Rule): string {
+  const { product, category, service } = rule.logsource ?? {}
+  return [product, category, service].filter(Boolean).join(' / ') || '–'
 }
 
-interface RuleDetail extends Rule {
-  content: string
-}
+const TITLE = 'Sigma rules'
+const DESCRIPTION = 'Detection rules evaluated against incoming events'
 
-interface TestResult {
-  matched: boolean
-  errors: string[]
-}
-
-type IStandaloneCodeEditor = Parameters<OnMount>[0]
-type Monaco = Parameters<OnMount>[1]
-
-const LEVEL_COLOR: Record<string, string> = {
-  critical: 'text-crit-text bg-crit-bg',
-  high:     'text-high-text bg-high-bg',
-  medium:   'text-warn-text bg-warn-bg',
-  low:      'text-text-muted bg-page',
-  informational: 'text-text-muted bg-page',
-}
-
-const REQUIRED_SIGMA_FIELDS = ['title', 'detection', 'logsource'] as const
-
-async function fetchRules(): Promise<Rule[]> {
-  const resp = await apiClient.get('/rules')
-  return resp.data
-}
-
-// ── YAML helpers ─────────────────────────────────────────────────────────────
-
-/**
- * Lightweight YAML validation for Sigma rules.
- * Checks that the three mandatory top-level keys (title, detection, logsource)
- * are present.  We parse with a simple regex-based approach rather than pulling
- * in a full YAML library to keep the bundle lean.  A real YAML parse error on
- * the backend will still be caught by the API call.
- */
-function validateSigmaYaml(yaml: string): string[] {
-  const errors: string[] = []
-  const trimmed = yaml.trim()
-
-  if (!trimmed) {
-    errors.push('YAML content is empty')
-    return errors
-  }
-
-  // Parse top-level keys (lines that start at column 0 and contain a colon)
-  const topLevelKeys = new Set<string>()
-  for (const line of trimmed.split('\n')) {
-    // Skip comments and blank lines
-    if (/^\s*#/.test(line) || /^\s*$/.test(line)) continue
-    const match = line.match(/^([a-zA-Z_][\w-]*)\s*:/)
-    if (match) {
-      topLevelKeys.add(match[1])
-    }
-  }
-
-  for (const field of REQUIRED_SIGMA_FIELDS) {
-    if (!topLevelKeys.has(field)) {
-      errors.push(`Missing required field: "${field}"`)
-    }
-  }
-
-  return errors
-}
-
-/** Map app theme to Monaco theme name. 'matrix' uses a custom theme registered via beforeMount. */
-function getMonacoTheme(theme: Theme): string {
-  if (theme === 'light') return 'vs'
-  if (theme === 'matrix') return 'matrix'
-  return 'vs-dark'
-}
-
-/** Re-serialize YAML through js-yaml for consistent formatting. Returns original on parse error. */
-function formatYaml(yaml: string): string {
-  try {
-    const parsed = yamlLoad(yaml)
-    return yamlDump(parsed, { indent: 2, lineWidth: -1, noRefs: true })
-  } catch {
-    return yaml
-  }
-}
-
+/** Rule management. The backend limits reading rules to hunter, engineer and admin. */
 export function RulesPage() {
-  const queryClient = useQueryClient()
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const editorRef = useRef<IStandaloneCodeEditor | null>(null)
-  const monacoRef = useRef<Monaco | null>(null)
+  const role = useAuthStore((s) => s.user?.role)
 
-  const theme = useUIStore((s) => s.theme)
-
-  const [levelFilter, setLevelFilter] = useState<string | null>(null)
-  const [enabledFilter, setEnabledFilter] = useState<boolean | null>(null)
-  const [search, setSearch] = useState('')
-  const [showEditor, setShowEditor] = useState(false)
-  const [editorYaml, setEditorYaml] = useState(EXAMPLE_SIGMA)
-  const [validationErrors, setValidationErrors] = useState<string[]>([])
-  const [saveError, setSaveError] = useState<string | null>(null)
-  const [testResult, setTestResult] = useState<TestResult | null>(null)
-  // null = create mode, non-null = edit mode (holds the rule id being edited)
-  const [editingRuleId, setEditingRuleId] = useState<string | null>(null)
-  // tracks which row is loading so we can show a spinner on the row
-  const [loadingRuleId, setLoadingRuleId] = useState<string | null>(null)
-
-  const { data = [], isLoading } = useQuery({
-    queryKey: ['rules'],
-    queryFn: fetchRules,
-  })
-
-  // ── Save mutation ─────────────────────────────────────────────────────────
-
-  const saveMutation = useMutation({
-    mutationFn: async (yamlContent: string) => {
-      if (editingRuleId) {
-        // Edit mode: PATCH existing rule content
-        const resp = await apiClient.patch(`/rules/${editingRuleId}`, { content: yamlContent })
-        return resp.data
-      }
-      // Create mode: POST new rule
-      const titleMatch = yamlContent.match(/^title:[ \t]*(.+)$/m)
-      const title = titleMatch ? titleMatch[1].trim() : 'Untitled Rule'
-      const resp = await apiClient.post('/rules', {
-        title,
-        content: yamlContent,
-        enabled: true,
-      })
-      return resp.data
-    },
-    onSuccess: () => {
-      setShowEditor(false)
-      setEditingRuleId(null)
-      setEditorYaml(EXAMPLE_SIGMA)
-      setValidationErrors([])
-      setSaveError(null)
-      setTestResult(null)
-      queryClient.invalidateQueries({ queryKey: ['rules'] })
-    },
-    onError: (err: unknown) => {
-      const msg =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? 'Failed to save rule'
-      setSaveError(msg)
-    },
-  })
-
-  // ── Test mutation ──────────────────────────────────────────────────────────
-
-  const testMutation = useMutation({
-    mutationFn: async (yamlContent: string) => {
-      const resp = await apiClient.post('/rules/test', {
-        content: yamlContent,
-        sample_event: {},
-      })
-      return resp.data as TestResult
-    },
-    onSuccess: (result) => {
-      setTestResult(result)
-    },
-    onError: (err: unknown) => {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? 'Test failed'
-      setTestResult({ matched: false, errors: [detail] })
-    },
-  })
-
-  // ── Handlers ──────────────────────────────────────────────────────────────
-
-  // Register custom Monaco themes before the editor mounts so they can be referenced by name.
-  const handleBeforeMount = useCallback((monaco: Monaco) => {
-    monaco.editor.defineTheme('matrix', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { token: '',         foreground: '00FF41' },
-        { token: 'comment',  foreground: '005515' },
-        { token: 'string',   foreground: '33FF57' },
-        { token: 'keyword',  foreground: '00FF41', fontStyle: 'bold' },
-        { token: 'number',   foreground: '00CC33' },
-        { token: 'operator', foreground: '00BB30' },
-      ],
-      colors: {
-        'editor.background':                '#0A0A0A',
-        'editor.foreground':                '#00FF41',
-        'editorLineNumber.foreground':      '#005515',
-        'editorLineNumber.activeForeground':'#00FF41',
-        'editor.selectionBackground':       '#003311',
-        'editor.lineHighlightBackground':   '#0D1A0D',
-        'editorCursor.foreground':          '#00FF41',
-        'editor.inactiveSelectionBackground':'#002208',
-        'editorBracketMatch.background':    '#003311',
-        'editorBracketMatch.border':        '#00FF41',
-      },
-    })
-  }, [])
-
-  const handleEditorMount: OnMount = useCallback((editor, monaco) => {
-    editorRef.current = editor
-    monacoRef.current = monaco
-  }, [])
-
-  const handleEditorChange = (value: string | undefined) => {
-    const yaml = value ?? ''
-    setEditorYaml(yaml)
-    if (validationErrors.length > 0) setValidationErrors([])
-    if (saveError) setSaveError(null)
-    if (testResult) setTestResult(null)
-
-    // Update YAML error markers in the Monaco gutter
-    const monaco = monacoRef.current
-    const editorInst = editorRef.current
-    if (monaco && editorInst) {
-      const model = editorInst.getModel()
-      if (model) {
-        try {
-          yamlLoad(yaml)
-          monaco.editor.setModelMarkers(model, 'yaml', [])
-        } catch (e) {
-          if (e instanceof YAMLException && e.mark) {
-            const { line, column } = e.mark
-            monaco.editor.setModelMarkers(model, 'yaml', [
-              {
-                startLineNumber: line + 1,
-                endLineNumber: line + 1,
-                startColumn: column + 1,
-                endColumn: column + 2,
-                message: e.message,
-                severity: monaco.MarkerSeverity.Error,
-              },
-            ])
-          }
-        }
-      }
-    }
+  if (role && !canReadRules(role)) {
+    return (
+      <Page title={TITLE} description={DESCRIPTION}>
+        <RoleNotice
+          title="Sigma rules need the hunter role"
+          description="Hunter accounts can view and test rules. Engineer and admin accounts can also change them."
+        />
+      </Page>
+    )
   }
+  return <RulesWorkspace />
+}
 
-  const handleSave = useCallback(() => {
-    setSaveError(null)
-    const errors = validateSigmaYaml(editorYaml)
-    setValidationErrors(errors)
-    if (errors.length > 0) return
-    saveMutation.mutate(editorYaml)
-  }, [editorYaml, saveMutation])
+function RulesWorkspace() {
+  const queryClient = useQueryClient()
+  const addNotification = useUIStore((s) => s.addNotification)
+  const role = useAuthStore((s) => s.user?.role)
+  const canWrite = role !== undefined && WRITE_ROLES.has(role)
 
-  const handleTest = useCallback(() => {
-    setTestResult(null)
-    const errors = validateSigmaYaml(editorYaml)
-    setValidationErrors(errors)
-    if (errors.length > 0) return
-    testMutation.mutate(editorYaml)
-  }, [editorYaml, testMutation])
+  const [search, setSearch] = useState('')
+  const [level, setLevel] = useState('all')
+  const [state, setState] = useState('all')
+  const [page, setPage] = useState(1)
+  const [editor, setEditor] = useState<EditorState>(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [testTarget, setTestTarget] = useState<Rule | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Rule | null>(null)
+  const [fpTarget, setFpTarget] = useState<Rule | null>(null)
 
-  const handleFormat = useCallback(() => {
-    const formatted = formatYaml(editorYaml)
-    setEditorYaml(formatted)
-  }, [editorYaml])
+  const rulesQuery = useQuery({ queryKey: ['rules'], queryFn: () => rulesApi.list() })
+  const statsQuery = useQuery({ queryKey: ['rules-stats'], queryFn: rulesApi.stats })
+  const rules = useMemo(() => rulesQuery.data ?? [], [rulesQuery.data])
 
-  const handleFileImport = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['rules'] })
+    queryClient.invalidateQueries({ queryKey: ['rules-stats'] })
+  }
+  const fail = (title: string, fallback: string) => (err: unknown) =>
+    addNotification({ type: 'error', title, message: apiErrorMessage(err, fallback) })
 
-  const handleFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (!file) return
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        const content = ev.target?.result
-        if (typeof content === 'string') {
-          setEditorYaml(content)
-          setValidationErrors([])
-          setSaveError(null)
-          setTestResult(null)
-          setShowEditor(true)
-        }
-      }
-      reader.readAsText(file)
-      // Reset so the same file can be re-imported
-      e.target.value = ''
-    },
-    [],
-  )
-
-  const handleRuleClick = useCallback(async (rule: Rule) => {
-    setLoadingRuleId(rule.id)
-    setValidationErrors([])
-    setSaveError(null)
-    setTestResult(null)
-    try {
-      const resp = await apiClient.get<RuleDetail>(`/rules/${rule.id}`)
-      setEditorYaml(resp.data.content)
-      setEditingRuleId(rule.id)
-      setShowEditor(true)
-    } catch {
-      // leave loadingRuleId cleared so the row is re-clickable
-    } finally {
-      setLoadingRuleId(null)
-    }
-  }, [])
-
-  const handleEditorClose = useCallback(() => {
-    setShowEditor(false)
-    setEditingRuleId(null)
-    setValidationErrors([])
-    setSaveError(null)
-    setTestResult(null)
-  }, [])
-
-  const visible = data.filter((r) => {
-    if (levelFilter && r.level !== levelFilter) return false
-    if (enabledFilter !== null && r.enabled !== enabledFilter) return false
-    if (search && !r.title.toLowerCase().includes(search.toLowerCase())) return false
-    return true
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => rulesApi.update(id, { enabled }),
+    onSuccess: refresh,
+    onError: fail('Update failed', 'Could not change the rule state'),
   })
+
+  const deleteMutation = useMutation({
+    mutationFn: (rule: Rule) => rulesApi.delete(rule.id),
+    onSuccess: (_, rule) => {
+      refresh()
+      setDeleteTarget(null)
+      addNotification({ type: 'success', title: 'Rule deleted', message: rule.title })
+    },
+    onError: fail('Delete failed', 'Could not delete the rule'),
+  })
+
+  const fpMutation = useMutation({
+    mutationFn: (rule: Rule) => rulesApi.markFalsePositive(rule.id),
+    onSuccess: (_, rule) => {
+      refresh()
+      setFpTarget(null)
+      addNotification({ type: 'success', title: 'False positive recorded', message: rule.title })
+    },
+    onError: fail('Could not record the false positive', 'The request failed'),
+  })
+
+  const reloadMutation = useMutation({
+    mutationFn: rulesApi.reload,
+    onSuccess: (result) => {
+      refresh()
+      addNotification({
+        type: 'success',
+        title: 'Detection engine reloaded',
+        message: `${result.reloaded} of ${result.total_rules} rules loaded`,
+      })
+    },
+    onError: fail('Reload failed', 'Could not reload the detection engine'),
+  })
+
+  const techniqueName = useTechniqueNames()
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return rules.filter((r) => {
+      if (level !== 'all' && r.level !== level) return false
+      if (state === 'enabled' && !r.enabled) return false
+      if (state === 'disabled' && r.enabled) return false
+      if (!q) return true
+      return r.title.toLowerCase().includes(q)
+        || r.id.toLowerCase().includes(q)
+        || r.technique_ids.some((t) => t.toLowerCase().includes(q) || (techniqueName(t) ?? '').toLowerCase().includes(q))
+    })
+  }, [rules, search, level, state, techniqueName])
+
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
+  useEffect(() => { setPage(1) }, [search, level, state])
+  useEffect(() => { if (page > pageCount) setPage(pageCount) }, [page, pageCount])
+  const pageRows = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const stats = statsQuery.data
+  const statCards = [
+    { label: 'Rules', value: stats?.total },
+    { label: 'Enabled', value: stats?.enabled },
+    { label: 'Critical', value: stats ? stats.by_level.critical ?? 0 : undefined },
+    { label: 'High', value: stats ? stats.by_level.high ?? 0 : undefined },
+  ]
+  const { isLoading, isError } = rulesQuery
 
   return (
-    <>
-      <TopBar crumb="Sigma Rules" />
-      <div className="pt-[46px] px-5 pb-6">
-
-        {/* Hidden file input for YAML import */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".yml,.yaml"
-          className="hidden"
-          onChange={handleFileChange}
-        />
-
-        {/* Toolbar */}
-        <div className="flex items-center gap-2 py-3 flex-wrap">
-          {['critical', 'high', 'medium', 'low'].map((l) => (
-            <button
-              key={l}
-              onClick={() => setLevelFilter(levelFilter === l ? null : l)}
-              className={`px-3 h-[26px] rounded-[5px] text-[11px] font-medium border capitalize transition-colors ${
-                levelFilter === l ? 'bg-blue text-white border-blue' : 'bg-surface border-border text-text-secondary hover:border-blue'
-              }`}
-            >
-              {l}
-            </button>
-          ))}
-          <div className="w-px h-[20px] bg-border mx-1" />
-          <button
-            onClick={() => setEnabledFilter(enabledFilter === true ? null : true)}
-            className={`px-3 h-[26px] rounded-[5px] text-[11px] border transition-colors ${
-              enabledFilter === true ? 'bg-blue text-white border-blue' : 'bg-surface border-border text-text-secondary'
-            }`}
+    <Page
+      title={TITLE}
+      description={DESCRIPTION}
+      actions={canWrite && (
+        <>
+          <Button
+            variant="outline" className="gap-1.5"
+            title="Reload all rules from the database into the detection engine"
+            disabled={reloadMutation.isPending}
+            onClick={() => reloadMutation.mutate()}
           >
-            Enabled only
-          </button>
-          <input
-            className="ml-auto h-[28px] px-3 text-[11px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue w-[220px]"
-            placeholder="Search rules..."
+            <RotateCw className={cn('h-3.5 w-3.5', reloadMutation.isPending && 'animate-spin')} />
+            Reload engine
+          </Button>
+          <Button variant="outline" className="gap-1.5" onClick={() => setImportOpen(true)}>
+            <Upload className="h-3.5 w-3.5" />
+            Import
+          </Button>
+          <Button className="gap-1.5" onClick={() => setEditor({ ruleId: null })}>
+            <Plus className="h-3.5 w-3.5" />
+            New rule
+          </Button>
+        </>
+      )}
+    >
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {statCards.map((s) => (
+          <Card key={s.label}>
+            <CardContent className="p-4">
+              <p className="text-[11px] text-muted-foreground">{s.label}</p>
+              {statsQuery.isLoading
+                ? <Skeleton className="mt-1 h-6 w-16" />
+                : <p className="text-lg font-bold text-foreground">{s.value === undefined ? '–' : fmtNum(s.value)}</p>}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="h-8 pl-8 pr-8"
+            placeholder="Search by title, ID or technique"
+            aria-label="Search rules"
+            data-shortcut-search=""
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setSearch('') }}
           />
-          <button
-            onClick={handleFileImport}
-            className="h-[28px] px-4 border border-border text-[12px] text-text-secondary rounded-md hover:border-blue transition-colors"
-          >
-            Import YAML
-          </button>
-          <button
-            onClick={() => { setEditingRuleId(null); setEditorYaml(EXAMPLE_SIGMA); setShowEditor(true); setValidationErrors([]); setSaveError(null); setTestResult(null) }}
-            className="h-[28px] px-4 bg-blue text-white text-[12px] rounded-md hover:opacity-90"
-          >
-            + New Rule
-          </button>
-        </div>
-
-        {/* Stats */}
-        <div className="text-[11px] text-text-muted mb-2">
-          {visible.length} of {data.length} rules
-        </div>
-
-        {/* Table */}
-        <div className="bg-surface rounded-md shadow-card overflow-hidden">
-          <div className="grid grid-cols-[1fr_70px_100px_80px_80px_80px_60px] gap-2 px-3 py-2 border-b border-border">
-            {['Rule Title', 'Level', 'Techniques', 'Status', 'Hits', 'FP', 'Active'].map((h) => (
-              <span key={h} className="text-[10px] font-medium text-text-muted uppercase">{h}</span>
-            ))}
-          </div>
-
-          {isLoading && (
-            <div className="flex items-center justify-center h-32 text-text-muted text-sm">Loading rules...</div>
-          )}
-
-          {!isLoading && visible.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-32 gap-2 text-text-muted text-sm">
-              <div>No rules loaded</div>
-              <button onClick={() => setShowEditor(true)} className="text-blue text-[11px] hover:underline">
-                Create your first rule
-              </button>
-            </div>
-          )}
-
-          {visible.map((rule) => (
-            <div
-              key={rule.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => void handleRuleClick(rule)}
-              onKeyDown={(e) => e.key === 'Enter' && void handleRuleClick(rule)}
-              className="grid grid-cols-[1fr_70px_100px_80px_80px_80px_60px] gap-2 px-3 py-[6px] border-b border-section items-center hover:bg-page cursor-pointer"
+          {search && (
+            <Button
+              variant="ghost" size="icon" title="Clear search"
+              className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2"
+              onClick={() => setSearch('')}
             >
-              <div className="min-w-0">
-                <div className="text-[11px] text-text-primary truncate font-medium">{rule.title}</div>
-                <div className="text-[10px] text-text-muted">{rule.id}</div>
-              </div>
-              <span className={`text-[10px] font-medium px-2 py-[2px] rounded capitalize w-fit ${LEVEL_COLOR[rule.level] ?? 'text-text-muted'}`}>
-                {rule.level}
-              </span>
-              <div className="flex flex-wrap gap-1">
-                {rule.technique_ids.slice(0, 2).map((t) => (
-                  <span key={t} className="text-[9px] text-text-secondary bg-page border border-border rounded px-1">{t}</span>
-                ))}
-                {rule.technique_ids.length > 2 && (
-                  <span className="text-[9px] text-text-muted">+{rule.technique_ids.length - 2}</span>
-                )}
-              </div>
-              <span className="text-[10px] text-text-muted capitalize">{rule.status}</span>
-              <span className="text-[11px] text-text-primary">{rule.hit_count.toLocaleString()}</span>
-              <span className="text-[11px] text-text-muted">{rule.fp_count}</span>
-              <div className="flex items-center">
-                {loadingRuleId === rule.id
-                  ? <div className="w-[6px] h-[6px] rounded-full bg-blue animate-pulse" />
-                  : <div className={`w-[6px] h-[6px] rounded-full ${rule.enabled ? 'bg-status-ok' : 'bg-border'}`} />
-                }
-              </div>
-            </div>
-          ))}
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
-
-        {/* Editor modal */}
-        {showEditor && (
-          <div className="fixed inset-0 bg-overlay z-50 flex items-center justify-center">
-            <div className="bg-surface rounded-lg shadow-panel w-[800px] max-h-[85vh] flex flex-col">
-              <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-                <h2 className="text-[13px] font-semibold text-text-primary">
-                  {editingRuleId ? 'Edit Rule' : 'New Sigma Rule'}
-                </h2>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleFileImport}
-                    className="text-[11px] text-blue hover:underline"
-                  >
-                    Import file
-                  </button>
-                  <button onClick={handleEditorClose} className="text-text-muted text-lg leading-none">&times;</button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-auto p-4">
-                {/* Monaco YAML editor */}
-                <div className="border border-border rounded-md overflow-hidden">
-                  <Editor
-                    height="400px"
-                    defaultLanguage="yaml"
-                    value={editorYaml}
-                    onChange={handleEditorChange}
-                    beforeMount={handleBeforeMount}
-                    onMount={handleEditorMount}
-                    theme={getMonacoTheme(theme)}
-                    loading={
-                      <div className="flex items-center justify-center h-[400px] bg-page text-text-muted text-[11px]">
-                        Loading editor...
-                      </div>
-                    }
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 11,
-                      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                      lineNumbers: 'on',
-                      scrollBeyondLastLine: false,
-                      wordWrap: 'on',
-                      automaticLayout: true,
-                      padding: { top: 8, bottom: 8 },
-                    }}
-                  />
-                </div>
-
-                {/* Test result */}
-                {testResult && (
-                  <div className={`mt-2 px-3 py-2 rounded text-[11px] flex items-start gap-2 ${
-                    testResult.matched
-                      ? 'bg-resolved-bg text-resolved-text'
-                      : testResult.errors.length > 0
-                        ? 'bg-crit-bg text-crit-text'
-                        : 'bg-warn-bg text-warn-text'
-                  }`}>
-                    <span className="font-medium flex-shrink-0">
-                      {testResult.matched
-                        ? '✓ Matched'
-                        : testResult.errors.length > 0
-                          ? '⚠ Error'
-                          : '✗ No match'}
-                    </span>
-                    {testResult.errors.length > 0 && (
-                      <span>{testResult.errors.join('; ')}</span>
-                    )}
-                  </div>
-                )}
-
-                {/* Validation errors */}
-                {validationErrors.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {validationErrors.map((err, i) => (
-                      <div key={i} className="text-[11px] text-crit-text flex items-center gap-1">
-                        <span className="inline-block w-[14px] h-[14px] rounded-full bg-crit-bg text-crit-text text-center text-[9px] leading-[14px] font-bold flex-shrink-0">!</span>
-                        {err}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* API error */}
-                {saveError && (
-                  <div className="mt-2 text-[11px] text-crit-text bg-crit-bg rounded px-3 py-2">
-                    {saveError}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 px-5 py-3 border-t border-border">
-                {/* Left: utility actions */}
-                <button
-                  className="h-[28px] px-3 border border-border text-[11px] text-text-secondary rounded-md hover:border-blue transition-colors"
-                  onClick={handleFormat}
-                  title="Auto-format YAML"
-                >
-                  Format
-                </button>
-                <button
-                  className="h-[28px] px-3 border border-border text-[11px] text-text-secondary rounded-md hover:border-blue transition-colors disabled:opacity-50"
-                  onClick={handleTest}
-                  disabled={testMutation.isPending}
-                  title="Test rule against a sample event"
-                >
-                  {testMutation.isPending ? 'Testing...' : 'Test Rule'}
-                </button>
-                <div className="flex-1" />
-                {/* Right: primary actions */}
-                <button
-                  className="h-[30px] px-4 border border-border text-[12px] text-text-secondary rounded-md"
-                  onClick={handleEditorClose}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="h-[30px] px-4 bg-blue text-white text-[12px] rounded-md hover:opacity-90 disabled:opacity-50"
-                  onClick={handleSave}
-                  disabled={saveMutation.isPending}
-                >
-                  {saveMutation.isPending ? 'Saving...' : 'Save Rule'}
-                </button>
-              </div>
-            </div>
-          </div>
+        <Select value={level} onValueChange={setLevel}>
+          <SelectTrigger className="h-8 w-40" aria-label="Level"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All levels</SelectItem>
+            {LEVELS.map((l) => <SelectItem key={l} value={l} className="capitalize">{l}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={state} onValueChange={setState}>
+          <SelectTrigger className="h-8 w-36" aria-label="State"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All states</SelectItem>
+            <SelectItem value="enabled">Enabled</SelectItem>
+            <SelectItem value="disabled">Disabled</SelectItem>
+          </SelectContent>
+        </Select>
+        {!isLoading && !isError && (
+          <span className="ml-auto text-[11px] text-muted-foreground">
+            {fmtNum(visible.length)} of {fmtNum(rules.length)} rules
+          </span>
         )}
       </div>
-    </>
+
+      <Card>
+        <CardContent className="p-0">
+          {isLoading && (
+            <div className="space-y-2 p-4" aria-label="Loading rules">
+              {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-8 w-full" />)}
+            </div>
+          )}
+
+          {isError && (
+            <div className="flex flex-col items-center gap-3 p-8 text-center">
+              <p className="text-[12px] text-destructive">Could not load rules.</p>
+              <Button variant="outline" className="gap-1.5" onClick={() => rulesQuery.refetch()}>
+                <RefreshCw className="h-3.5 w-3.5" />
+                Retry
+              </Button>
+            </div>
+          )}
+
+          {!isLoading && !isError && rules.length === 0 && (
+            <EmptyState
+              icon={FileCode2}
+              title="No rules yet"
+              description={canWrite ? 'Create a rule or import Sigma YAML to start detecting.' : 'No Sigma rules have been added.'}
+              action={canWrite ? <Button onClick={() => setEditor({ ruleId: null })}>New rule</Button> : undefined}
+            />
+          )}
+
+          {!isLoading && !isError && rules.length > 0 && visible.length === 0 && (
+            <EmptyState icon={Search} title="No rules match" description="Change the search text or the filters." />
+          )}
+
+          {!isLoading && !isError && pageRows.length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Rule</TableHead>
+                  <TableHead>Level</TableHead>
+                  <TableHead>Techniques</TableHead>
+                  <TableHead>Log source</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Hits</TableHead>
+                  <TableHead className="text-right">False positives</TableHead>
+                  <TableHead>Enabled</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pageRows.map((rule) => (
+                  <TableRow key={rule.id}>
+                    <TableCell className="max-w-[320px] text-[12px]">
+                      <Button
+                        variant="link"
+                        className="block h-auto max-w-full truncate p-0 text-left text-[12px] font-medium text-foreground"
+                        title={rule.title}
+                        onClick={() => setEditor({ ruleId: rule.id })}
+                      >
+                        {rule.title}
+                      </Button>
+                      <p className="truncate font-mono text-[11px] text-muted-foreground">{rule.id}</p>
+                    </TableCell>
+                    <TableCell className="text-[12px]">
+                      <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize', LEVEL_CLASS[rule.level] ?? 'sev-info')}>
+                        {rule.level}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-[12px]">
+                      <div className="flex flex-wrap gap-1">
+                        {rule.technique_ids.slice(0, 2).map((t) => (
+                          <span key={t} title={techniqueName(t)} className="rounded border border-border bg-muted px-1.5 font-mono text-[10px] text-foreground">{t}</span>
+                        ))}
+                        {rule.technique_ids.length > 2 && (
+                          <span
+                            className="text-[11px] text-muted-foreground"
+                            title={rule.technique_ids.slice(2).map((t) => [t, techniqueName(t)].filter(Boolean).join(' ')).join(', ')}
+                          >
+                            +{rule.technique_ids.length - 2}
+                          </span>
+                        )}
+                        {rule.technique_ids.length === 0 && <span className="text-muted-foreground">–</span>}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-[12px] text-muted-foreground">{logsourceText(rule)}</TableCell>
+                    <TableCell className="text-[12px] capitalize text-muted-foreground">{rule.status}</TableCell>
+                    <TableCell className="text-right text-[12px] tabular-nums">{fmtNum(rule.hit_count)}</TableCell>
+                    <TableCell className="text-right text-[12px] tabular-nums">{fmtNum(rule.fp_count)}</TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={rule.enabled}
+                        aria-label={`${rule.enabled ? 'Disable' : 'Enable'} ${rule.title}`}
+                        disabled={!canWrite || toggleMutation.isPending}
+                        onCheckedChange={(enabled) => toggleMutation.mutate({ id: rule.id, enabled })}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <Button variant="ghost" size="icon" title={`Test ${rule.title}`} onClick={() => setTestTarget(rule)}>
+                          <FlaskConical className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" title={`Mark a false positive for ${rule.title}`}
+                          onClick={() => setFpTarget(rule)}
+                        >
+                          <ThumbsDown className="h-3.5 w-3.5" />
+                        </Button>
+                        {canWrite && (
+                          <>
+                            <Button
+                              variant="ghost" size="icon" title={`Edit ${rule.title}`}
+                              onClick={() => setEditor({ ruleId: rule.id })}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost" size="icon" title={`Delete ${rule.title}`}
+                              className="hover:text-destructive"
+                              onClick={() => setDeleteTarget(rule)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+
+          {!isLoading && !isError && pageCount > 1 && (
+            <div className="flex items-center justify-between border-t border-border px-4 py-2">
+              <span className="text-[11px] text-muted-foreground">Page {page} of {pageCount}</span>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" title="Previous page" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="outline" size="icon" title="Next page" disabled={page >= pageCount} onClick={() => setPage(page + 1)}>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {editor && <RuleEditorDialog ruleId={editor.ruleId} canWrite={canWrite} onClose={() => setEditor(null)} />}
+      {importOpen && <RuleImportDialog onClose={() => setImportOpen(false)} />}
+      {testTarget && <RuleTestDialog rule={testTarget} onClose={() => setTestTarget(null)} />}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete rule"
+        description={`${deleteTarget?.title ?? 'This rule'} will be removed from the database and the detection engine.`}
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        pending={deleteMutation.isPending}
+        onConfirm={() => { if (deleteTarget) deleteMutation.mutate(deleteTarget) }}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={fpTarget !== null}
+        title="Mark false positive"
+        description={`This adds one to the false positive count of ${fpTarget?.title ?? 'this rule'}. It cannot be undone.`}
+        confirmLabel="Mark false positive"
+        pendingLabel="Saving…"
+        pending={fpMutation.isPending}
+        destructive={false}
+        onConfirm={() => { if (fpTarget) fpMutation.mutate(fpTarget) }}
+        onCancel={() => setFpTarget(null)}
+      />
+    </Page>
   )
 }
-
-const EXAMPLE_SIGMA = `title: Suspicious LSASS Memory Access
-id:
-status: experimental
-description: Detects attempts to dump credentials from LSASS process memory
-references:
-  - https://attack.mitre.org/techniques/T1003/001/
-author: MxTac
-date: 2026/02/19
-tags:
-  - attack.credential_access
-  - attack.t1003.001
-logsource:
-  category: process_access
-  product: windows
-detection:
-  selection:
-    TargetImage|endswith: '\\\\lsass.exe'
-    GrantedAccess|contains:
-      - '0x1010'
-      - '0x1410'
-      - '0x147a'
-      - '0x1fffff'
-  condition: selection
-fields:
-  - SourceImage
-  - TargetImage
-  - GrantedAccess
-falsepositives:
-  - Some AV products
-level: high
-`

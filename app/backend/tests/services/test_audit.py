@@ -16,23 +16,11 @@ Coverage:
   - close() is a no-op when no client has been initialised
   - get_audit_logger() returns the same singleton instance
   - get_audit_logger() always returns an AuditLogger instance
-  - search() actor filter adds a term clause to bool query
-  - search() action filter adds a term clause to bool query
-  - search() resource_type filter adds a term clause to bool query
-  - search() with no optional filters → only timestamp range clause
-  - search() always includes a timestamp range regardless of other filters
-  - search() returns parsed 'total' and 'items' from OS response
-  - search() OS exception → empty result, non-fatal
-  - search() query body is sorted by timestamp descending
-  - search() default time_from is 'now-7d'
-  - search() default size is 50
 
-Not duplicated here (already covered by test_audit_ilm.py or test_audit_logs.py):
+Not duplicated here (already covered by test_audit_ilm.py):
   - Monthly index format / UTC month / frozen-time tests
   - refresh='true' on OS index call
   - Not targeting events/alerts indices
-  - DB integration write (test_audit_logs.py)
-  - AuditLogRepo direct tests (test_audit_logs.py)
 """
 
 from __future__ import annotations
@@ -41,8 +29,10 @@ import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import select
 
 from app.services.audit import AuditLogger, get_audit_logger
+from app.models.audit_log import AuditLog
 from app.repositories.audit_log_repo import AuditLogRepo
 
 
@@ -345,7 +335,7 @@ async def test_log_os_failure_returns_db_doc_id(db_session) -> None:
     assert result is not None
     # Verify the returned ID actually exists in the DB
     await db_session.commit()
-    entry = await AuditLogRepo.get_by_id(db_session, result)
+    entry = await db_session.get(AuditLog, result)
     assert entry is not None
 
 
@@ -478,168 +468,55 @@ def test_get_audit_logger_returns_audit_logger_instance() -> None:
 
 
 # ---------------------------------------------------------------------------
-# search() — query body construction
+# DB write integration (audit_logs table)
 # ---------------------------------------------------------------------------
 
 
-def _search_client() -> MagicMock:
-    """Build an OS client mock for search() tests."""
-    client = MagicMock()
-    client.search = AsyncMock(return_value={"hits": {"total": {"value": 0}, "hits": []}})
-    return client
-
-
 @pytest.mark.asyncio
-async def test_search_actor_filter_appends_term_clause() -> None:
-    """search(actor=...) adds a {'term': {'actor': ...}} clause to bool must."""
+async def test_log_with_session_persists_entry_to_db(db_session) -> None:
+    """log() with a session persists an entry with the given fields."""
     audit = AuditLogger()
-    audit._client = _search_client()
+    audit._client = _make_os_client()
 
-    await audit.search(actor="alice@mxtac.local")
-
-    must = audit._client.search.call_args.kwargs["body"]["query"]["bool"]["must"]
-    assert {"term": {"actor": "alice@mxtac.local"}} in must
-
-
-@pytest.mark.asyncio
-async def test_search_action_filter_appends_term_clause() -> None:
-    """search(action=...) adds a {'term': {'action': ...}} clause to bool must."""
-    audit = AuditLogger()
-    audit._client = _search_client()
-
-    await audit.search(action="delete")
-
-    must = audit._client.search.call_args.kwargs["body"]["query"]["bool"]["must"]
-    assert {"term": {"action": "delete"}} in must
-
-
-@pytest.mark.asyncio
-async def test_search_resource_type_filter_appends_term_clause() -> None:
-    """search(resource_type=...) adds a {'term': {'resource_type': ...}} clause."""
-    audit = AuditLogger()
-    audit._client = _search_client()
-
-    await audit.search(resource_type="connector")
-
-    must = audit._client.search.call_args.kwargs["body"]["query"]["bool"]["must"]
-    assert {"term": {"resource_type": "connector"}} in must
-
-
-@pytest.mark.asyncio
-async def test_search_no_optional_filters_has_only_timestamp_range() -> None:
-    """search() with no optional filters has exactly one must clause (time range)."""
-    audit = AuditLogger()
-    audit._client = _search_client()
-
-    await audit.search()
-
-    must = audit._client.search.call_args.kwargs["body"]["query"]["bool"]["must"]
-    assert len(must) == 1
-    assert "range" in must[0]
-    assert "timestamp" in must[0]["range"]
-
-
-@pytest.mark.asyncio
-async def test_search_always_includes_timestamp_range_with_filters() -> None:
-    """search() includes a timestamp range clause even when other filters are provided."""
-    audit = AuditLogger()
-    audit._client = _search_client()
-
-    await audit.search(actor="u@u.com", action="create", resource_type="rule")
-
-    must = audit._client.search.call_args.kwargs["body"]["query"]["bool"]["must"]
-    has_range = any("range" in clause for clause in must)
-    assert has_range, "Expected a 'range' timestamp clause in the must array"
-
-
-@pytest.mark.asyncio
-async def test_search_returns_parsed_total_and_items() -> None:
-    """search() returns {'total': int, 'items': [...]} extracted from OS hits."""
-    audit = AuditLogger()
-    audit._client = MagicMock()
-    audit._client.search = AsyncMock(return_value={
-        "hits": {
-            "total": {"value": 2},
-            "hits": [
-                {"_source": {"actor": "a@b.com", "action": "create"}},
-                {"_source": {"actor": "c@d.com", "action": "delete"}},
-            ],
-        }
-    })
-
-    result = await audit.search()
-
-    assert result["total"] == 2
-    assert len(result["items"]) == 2
-    assert result["items"][0]["actor"] == "a@b.com"
-    assert result["items"][1]["action"] == "delete"
-
-
-@pytest.mark.asyncio
-async def test_search_exception_returns_empty_result() -> None:
-    """search() returns {'total': 0, 'items': []} when OS raises an exception."""
-    audit = AuditLogger()
-    audit._client = MagicMock()
-    audit._client.search = AsyncMock(side_effect=Exception("index_not_found"))
-
-    result = await audit.search()
-
-    assert result == {"total": 0, "items": []}
-
-
-@pytest.mark.asyncio
-async def test_search_exception_is_non_fatal_and_logged(caplog) -> None:
-    """search() catches OS exceptions without re-raising and logs at ERROR level."""
-    import logging
-
-    audit = AuditLogger()
-    audit._client = MagicMock()
-    audit._client.search = AsyncMock(side_effect=Exception("OS search failed"))
-
-    with caplog.at_level(logging.ERROR, logger="app.services.audit"):
-        result = await audit.search()
-
-    assert result == {"total": 0, "items": []}
-    assert "OS search failed" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_search_query_body_sorted_by_timestamp_descending() -> None:
-    """search() query body includes a sort by timestamp in descending order."""
-    audit = AuditLogger()
-    audit._client = _search_client()
-
-    await audit.search()
-
-    body = audit._client.search.call_args.kwargs["body"]
-    sort = body.get("sort", [])
-    has_ts_desc = any(
-        isinstance(clause, dict) and clause.get("timestamp", {}).get("order") == "desc"
-        for clause in sort
+    returned_id = await audit.log(
+        actor="test@mxtac.local",
+        action="create",
+        resource_type="rule",
+        resource_id="rule-abc",
+        details={"name": "My Rule"},
+        session=db_session,
     )
-    assert has_ts_desc, f"Expected timestamp desc sort clause, got: {sort!r}"
+    assert returned_id is not None
+    await db_session.commit()
+
+    entry = (await db_session.execute(select(AuditLog))).scalars().one()
+    assert entry.actor == "test@mxtac.local"
+    assert entry.action == "create"
+    assert entry.resource_type == "rule"
+    assert entry.resource_id == "rule-abc"
+    assert entry.details == {"name": "My Rule"}
 
 
 @pytest.mark.asyncio
-async def test_search_default_time_from_is_now_minus_7d() -> None:
-    """search() default lower time bound is 'now-7d'."""
-    audit = AuditLogger()
-    audit._client = _search_client()
+async def test_repo_create_persists_request_metadata(db_session) -> None:
+    """AuditLogRepo.create() stores the request metadata columns."""
+    entry = await AuditLogRepo.create(
+        db_session,
+        actor="alice@mxtac.local",
+        action="delete",
+        resource_type="connector",
+        resource_id="conn-42",
+        details={"reason": "decommissioned"},
+        request_ip="192.168.1.1",
+        request_method="DELETE",
+        request_path="/api/v1/connectors/conn-42",
+        user_agent="curl/7.68.0",
+    )
+    await db_session.commit()
 
-    await audit.search()
-
-    must = audit._client.search.call_args.kwargs["body"]["query"]["bool"]["must"]
-    range_clause = next(c for c in must if "range" in c)
-    assert range_clause["range"]["timestamp"]["gte"] == "now-7d"
-
-
-@pytest.mark.asyncio
-async def test_search_default_size_is_50() -> None:
-    """search() sends size=50 by default."""
-    audit = AuditLogger()
-    audit._client = _search_client()
-
-    await audit.search()
-
-    body = audit._client.search.call_args.kwargs["body"]
-    assert body["size"] == 50
+    stored = await db_session.get(AuditLog, entry.id)
+    assert stored is not None
+    assert stored.request_ip == "192.168.1.1"
+    assert stored.request_method == "DELETE"
+    assert stored.request_path == "/api/v1/connectors/conn-42"
+    assert stored.user_agent == "curl/7.68.0"

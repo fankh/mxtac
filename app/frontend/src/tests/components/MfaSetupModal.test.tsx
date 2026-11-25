@@ -1,495 +1,390 @@
-// vi.mock is hoisted — declare all module mocks before imports.
+// vi.mock is hoisted before imports — declare all module mocks first.
 
-vi.mock('../../lib/api', () => ({
-  authApi: {
-    me:              vi.fn(),
-    mfaSetup:        vi.fn(),
-    mfaVerifySetup:  vi.fn(),
-  },
-}))
+vi.mock('../../lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof ApiModule>()
+  return {
+    ...actual,
+    authApi: { ...actual.authApi, me: vi.fn(), mfaSetup: vi.fn(), mfaVerifySetup: vi.fn() },
+  }
+})
 
-vi.mock('qrcode', () => ({
-  default: {
-    toDataURL: vi.fn(),
-  },
-}))
+vi.mock('qrcode', () => ({ default: { toDataURL: vi.fn() } }))
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+vi.mock('../../lib/download', () => ({ downloadBlob: vi.fn() }))
+
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MfaSetupModal } from '../../components/features/auth/MfaSetupModal'
-import { authApi } from '../../lib/api'
 import QRCode from 'qrcode'
+import { MfaSetupModal } from '../../components/shared/MfaSetupModal'
+import type * as ApiModule from '../../lib/api'
+import { authApi } from '../../lib/api'
+import { downloadBlob } from '../../lib/download'
 
-// ---------------------------------------------------------------------------
-// Typed mock references
-// ---------------------------------------------------------------------------
-
-const mockMe              = authApi.me              as ReturnType<typeof vi.fn>
-const mockMfaSetup        = authApi.mfaSetup        as ReturnType<typeof vi.fn>
-const mockMfaVerifySetup  = authApi.mfaVerifySetup  as ReturnType<typeof vi.fn>
-const mockQrToDataURL     = (QRCode as unknown as { toDataURL: ReturnType<typeof vi.fn> }).toDataURL
-
-// ---------------------------------------------------------------------------
-// Fixture data
-// ---------------------------------------------------------------------------
+const meMock = vi.mocked(authApi.me)
+const setupMock = vi.mocked(authApi.mfaSetup)
+const verifyMock = vi.mocked(authApi.mfaVerifySetup)
+const downloadMock = vi.mocked(downloadBlob)
+// The component uses the promise form of toDataURL; the overloads make vi.mocked pick the callback form.
+const qrMock = QRCode.toDataURL as unknown as ReturnType<typeof vi.fn<(text: string) => Promise<string>>>
 
 const SETUP_DATA = {
-  secret:       'JBSWY3DPEBLW64TMMQ',
-  qr_code_uri:  'otpauth://totp/user@mxtac.local?secret=JBSWY3DPEBLW64TMMQ',
+  secret: 'JBSWY3DPEBLW64TMMQ',
+  qr_code_uri: 'otpauth://totp/user@mxtac.local?secret=JBSWY3DPEBLW64TMMQ',
   backup_codes: ['AB12CD34', 'EF56GH78', 'IJ90KL12', 'MN34OP56', 'QR78ST90', 'UV12WX34', 'YZ56AB78', 'CD90EF12'],
 }
 
-// ---------------------------------------------------------------------------
-// Render helper
-// ---------------------------------------------------------------------------
+function profile(mfaEnabled: boolean) {
+  return { email: 'u@mxtac.local', role: 'analyst', full_name: null, mfa_enabled: mfaEnabled }
+}
 
-function renderModal(onClose = vi.fn()) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-  })
-  return render(
+function setup() {
+  const onClose = vi.fn()
+  const user = userEvent.setup()
+  const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
     <QueryClientProvider client={queryClient}>
       <MfaSetupModal onClose={onClose} />
     </QueryClientProvider>,
   )
+  return { onClose, user, writeText }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+/** jsdom's Blob has no text(); FileReader reads it instead. */
+function readText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(blob)
+  })
+}
+
+/** Opens the dialog and moves to the step with the QR code and the code field. */
+async function openSetupStep() {
+  const view = setup()
+  await view.user.click(await screen.findByRole('button', { name: 'Enable MFA' }))
+  await screen.findByLabelText('Verification code')
+  return view
+}
+
+/** Completes enrolment so the backup codes are shown. */
+async function openBackupCodesStep() {
+  const view = await openSetupStep()
+  await view.user.type(screen.getByLabelText('Verification code'), '123456')
+  await view.user.click(screen.getByRole('button', { name: 'Verify & Enable' }))
+  await screen.findByRole('list', { name: 'Backup codes' })
+  return view
+}
 
 describe('MfaSetupModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Default: QR code generation resolves with a data URL
-    mockQrToDataURL.mockResolvedValue('data:image/png;base64,MOCK_QR')
+    meMock.mockResolvedValue(profile(false))
+    setupMock.mockResolvedValue(SETUP_DATA)
+    verifyMock.mockResolvedValue({ message: 'MFA enabled' })
+    qrMock.mockResolvedValue('data:image/png;base64,MOCK_QR')
   })
 
-  // =========================================================================
-  // Header — always visible
-  // =========================================================================
-  describe('header', () => {
-    beforeEach(() => {
-      mockMe.mockReturnValue(new Promise<never>(() => {}))
+  describe('dialog', () => {
+    it('is a dialog named by its title and described by its subtitle', async () => {
+      setup()
+      const dialog = await screen.findByRole('dialog', { name: 'Security Settings' })
+      expect(dialog).toHaveAccessibleDescription('Multi-Factor Authentication')
     })
 
-    it('renders the "Security Settings" heading', () => {
-      renderModal()
-      expect(screen.getByText('Security Settings')).toBeInTheDocument()
+    it('shows a loading status until the MFA state is known', () => {
+      meMock.mockReturnValue(new Promise<never>(() => {}))
+      setup()
+      expect(screen.getByRole('status')).toHaveTextContent('Loading…')
+      expect(screen.queryByRole('button', { name: 'Enable MFA' })).not.toBeInTheDocument()
     })
 
-    it('renders the "Multi-Factor Authentication" subtitle', () => {
-      renderModal()
-      expect(screen.getByText('Multi-Factor Authentication')).toBeInTheDocument()
+    it('closes on Escape', async () => {
+      const { onClose, user } = setup()
+      await screen.findByRole('button', { name: 'Enable MFA' })
+      await user.keyboard('{Escape}')
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
-    it('renders a close button (×)', () => {
-      renderModal()
-      expect(screen.getByRole('button', { name: '×' })).toBeInTheDocument()
+    it('closes on a click outside the dialog', async () => {
+      const { onClose, user } = setup()
+      const dialog = await screen.findByRole('dialog')
+      await screen.findByRole('button', { name: 'Enable MFA' })
+      // A click outside lands on the dimmed layer behind the dialog.
+      const backdrop = dialog.previousElementSibling
+      if (!backdrop) throw new Error('The dialog has no backdrop')
+      await user.click(backdrop)
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
-    it('calls onClose when the × button is clicked', () => {
-      const onClose = vi.fn()
-      renderModal(onClose)
-      fireEvent.click(screen.getByRole('button', { name: '×' }))
-      expect(onClose).toHaveBeenCalled()
+    it('does not close on a click inside the dialog', async () => {
+      const { onClose, user } = setup()
+      await screen.findByRole('button', { name: 'Enable MFA' })
+      await user.click(screen.getByText('MFA not configured'))
+      expect(onClose).not.toHaveBeenCalled()
     })
 
-    it('calls onClose when the overlay backdrop is clicked', () => {
-      const onClose = vi.fn()
-      const { container } = renderModal(onClose)
-      // The outer overlay div is the first child of the container
-      const overlay = container.firstChild as HTMLElement
-      fireEvent.click(overlay)
-      expect(onClose).toHaveBeenCalled()
-    })
-  })
-
-  // =========================================================================
-  // Status step — loading
-  // =========================================================================
-  describe('status step — loading', () => {
-    it('shows loading indicator while fetching MFA status', () => {
-      mockMe.mockReturnValue(new Promise<never>(() => {}))
-      renderModal()
-      expect(screen.getByText('Loading…')).toBeInTheDocument()
-    })
-  })
-
-  // =========================================================================
-  // Status step — MFA enabled
-  // =========================================================================
-  describe('status step — MFA already enabled', () => {
-    beforeEach(() => {
-      mockMe.mockResolvedValue({ email: 'u@mxtac.local', role: 'analyst', full_name: null, mfa_enabled: true })
+    it('closes from the corner close button', async () => {
+      const { onClose, user } = setup()
+      await screen.findByRole('button', { name: 'Enable MFA' })
+      await user.click(screen.getByRole('button', { name: 'Close' }))
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
-    it('shows the "MFA is active" message', async () => {
-      renderModal()
-      await waitFor(() => expect(screen.getByText('MFA is active')).toBeInTheDocument())
-    })
-
-    it('shows a description about the account being protected', async () => {
-      renderModal()
-      await waitFor(() =>
-        expect(screen.getByText(/Your account is protected with an authenticator app/)).toBeInTheDocument(),
-      )
-    })
-
-    it('shows a note to contact admin to disable', async () => {
-      renderModal()
-      await waitFor(() =>
-        expect(screen.getByText(/To disable MFA, contact an administrator/)).toBeInTheDocument(),
-      )
-    })
-
-    it('renders a Close button', async () => {
-      renderModal()
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument())
-    })
-
-    it('does not render the "Enable MFA" button when MFA is already active', async () => {
-      renderModal()
-      await waitFor(() =>
-        expect(screen.queryByRole('button', { name: 'Enable MFA' })).not.toBeInTheDocument(),
-      )
-    })
-
-    it('calls onClose when the Close button is clicked', async () => {
-      const onClose = vi.fn()
-      renderModal(onClose)
-      const btn = await screen.findByRole('button', { name: 'Close' })
-      fireEvent.click(btn)
-      expect(onClose).toHaveBeenCalled()
-    })
-  })
-
-  // =========================================================================
-  // Status step — MFA not configured
-  // =========================================================================
-  describe('status step — MFA not configured', () => {
-    beforeEach(() => {
-      mockMe.mockResolvedValue({ email: 'u@mxtac.local', role: 'analyst', full_name: null, mfa_enabled: false })
-    })
-
-    it('shows the "MFA not configured" message', async () => {
-      renderModal()
-      await waitFor(() => expect(screen.getByText('MFA not configured')).toBeInTheDocument())
-    })
-
-    it('shows an explanation about adding extra security', async () => {
-      renderModal()
-      await waitFor(() =>
-        expect(screen.getByText(/Add an extra layer of security to your account/)).toBeInTheDocument(),
-      )
-    })
-
-    it('renders the "Enable MFA" button', async () => {
-      renderModal()
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Enable MFA' })).toBeInTheDocument())
-    })
-
-    it('renders the Cancel button', async () => {
-      renderModal()
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument())
-    })
-
-    it('calls onClose when Cancel is clicked', async () => {
-      const onClose = vi.fn()
-      renderModal(onClose)
-      const btn = await screen.findByRole('button', { name: 'Cancel' })
-      fireEvent.click(btn)
-      expect(onClose).toHaveBeenCalled()
-    })
-  })
-
-  // =========================================================================
-  // Setup step — initiated by "Enable MFA"
-  // =========================================================================
-  describe('setup step', () => {
-    beforeEach(() => {
-      mockMe.mockResolvedValue({ email: 'u@mxtac.local', role: 'analyst', full_name: null, mfa_enabled: false })
-      mockMfaSetup.mockResolvedValue(SETUP_DATA)
-    })
-
-    async function reachSetupStep() {
-      renderModal()
-      const btn = await screen.findByRole('button', { name: 'Enable MFA' })
-      fireEvent.click(btn)
-      await waitFor(() => expect(screen.getByText(/Scan this QR code/)).toBeInTheDocument())
-    }
-
-    it('calls authApi.mfaSetup when "Enable MFA" is clicked', async () => {
-      await reachSetupStep()
-      expect(mockMfaSetup).toHaveBeenCalledTimes(1)
-    })
-
-    it('shows the setup instructions', async () => {
-      await reachSetupStep()
-      expect(screen.getByText(/Scan this QR code with your authenticator app/)).toBeInTheDocument()
-    })
-
-    it('renders a QR code image once generated', async () => {
-      await reachSetupStep()
-      await waitFor(() => {
-        const img = screen.getByRole('img', { name: 'MFA QR code' })
-        expect(img).toBeInTheDocument()
-        expect(img).toHaveAttribute('src', 'data:image/png;base64,MOCK_QR')
-      })
-    })
-
-    it('shows the manual entry secret', async () => {
-      await reachSetupStep()
-      expect(screen.getByText(SETUP_DATA.secret)).toBeInTheDocument()
-    })
-
-    it('renders the "Manual entry key" label', async () => {
-      await reachSetupStep()
-      expect(screen.getByText('Manual entry key')).toBeInTheDocument()
-    })
-
-    it('renders a Copy button for the secret', async () => {
-      await reachSetupStep()
-      expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
-    })
-
-    it('renders the verification code input', async () => {
-      await reachSetupStep()
-      expect(screen.getByPlaceholderText('000000')).toBeInTheDocument()
-    })
-
-    it('renders the "Verification code" label', async () => {
-      await reachSetupStep()
-      expect(screen.getByText('Verification code')).toBeInTheDocument()
-    })
-
-    it('renders the "Verify & Enable" button', async () => {
-      await reachSetupStep()
-      expect(screen.getByRole('button', { name: 'Verify & Enable' })).toBeInTheDocument()
-    })
-
-    it('"Verify & Enable" is disabled until 6 digits are entered', async () => {
-      await reachSetupStep()
-      const btn = screen.getByRole('button', { name: 'Verify & Enable' })
-      expect(btn).toBeDisabled()
-    })
-
-    it('"Verify & Enable" becomes enabled when 6 digits are entered', async () => {
-      await reachSetupStep()
-      fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '123456' } })
-      expect(screen.getByRole('button', { name: 'Verify & Enable' })).not.toBeDisabled()
-    })
-
-    it('strips non-numeric characters from the code input', async () => {
-      await reachSetupStep()
-      const input = screen.getByPlaceholderText('000000') as HTMLInputElement
-      fireEvent.change(input, { target: { value: '12abc34' } })
-      // Only digits should remain
-      expect(input.value).toBe('1234')
-    })
-
-    it('renders the Back button', async () => {
-      await reachSetupStep()
-      expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument()
-    })
-
-    it('clicking Back returns to the status step', async () => {
-      await reachSetupStep()
-      fireEvent.click(screen.getByRole('button', { name: 'Back' }))
-      await waitFor(() => expect(screen.queryByText(/Scan this QR code/)).not.toBeInTheDocument())
-    })
-
-    it('shows "Generating…" on the Enable MFA button while setup is loading', async () => {
-      // slow down mfaSetup so we can catch the pending state
-      let settle!: () => void
-      mockMfaSetup.mockImplementationOnce(
-        () => new Promise<typeof SETUP_DATA>((resolve) => { settle = () => resolve(SETUP_DATA) }),
-      )
-      renderModal()
-      const btn = await screen.findByRole('button', { name: 'Enable MFA' })
-      fireEvent.click(btn)
-      // Wait for react-query to update isPending and re-render the component
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Generating…' })).toBeInTheDocument(),
-      )
-      settle()
-    })
-  })
-
-  // =========================================================================
-  // Setup step — verification submission
-  // =========================================================================
-  describe('setup step — verify submission', () => {
-    beforeEach(() => {
-      mockMe.mockResolvedValue({ email: 'u@mxtac.local', role: 'analyst', full_name: null, mfa_enabled: false })
-      mockMfaSetup.mockResolvedValue(SETUP_DATA)
-    })
-
-    async function reachSetupStepWithCode(code = '123456') {
-      renderModal()
-      const enableBtn = await screen.findByRole('button', { name: 'Enable MFA' })
-      fireEvent.click(enableBtn)
-      await waitFor(() => expect(screen.getByPlaceholderText('000000')).toBeInTheDocument())
-      fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: code } })
-    }
-
-    it('calls authApi.mfaVerifySetup with the entered code on form submit', async () => {
-      mockMfaVerifySetup.mockResolvedValue({ message: 'MFA enabled' })
-      await reachSetupStepWithCode('654321')
-
-      const form = screen.getByRole('button', { name: 'Verify & Enable' }).closest('form')!
-      fireEvent.submit(form)
-
-      await waitFor(() => expect(mockMfaVerifySetup).toHaveBeenCalledWith('654321'))
-    })
-
-    it('advances to backup-codes step on successful verification', async () => {
-      mockMfaVerifySetup.mockResolvedValue({ message: 'MFA enabled' })
-      await reachSetupStepWithCode()
-
-      const form = screen.getByRole('button', { name: 'Verify & Enable' }).closest('form')!
-      fireEvent.submit(form)
-
-      await waitFor(() =>
-        expect(screen.getByText('MFA enabled successfully')).toBeInTheDocument(),
-      )
-    })
-
-    it('shows an error message when verification fails', async () => {
-      mockMfaVerifySetup.mockRejectedValue({
-        response: { data: { detail: 'Invalid TOTP code' } },
-      })
-      await reachSetupStepWithCode()
-
-      const form = screen.getByRole('button', { name: 'Verify & Enable' }).closest('form')!
-      fireEvent.submit(form)
-
-      await waitFor(() => expect(screen.getByText('Invalid TOTP code')).toBeInTheDocument())
-    })
-
-    it('shows "Invalid code" fallback when error has no detail', async () => {
-      mockMfaVerifySetup.mockRejectedValue(new Error('Network error'))
-      await reachSetupStepWithCode()
-
-      const form = screen.getByRole('button', { name: 'Verify & Enable' }).closest('form')!
-      fireEvent.submit(form)
-
-      await waitFor(() => expect(screen.getByText('Invalid code')).toBeInTheDocument())
-    })
-  })
-
-  // =========================================================================
-  // Backup codes step
-  // =========================================================================
-  describe('backup codes step', () => {
-    beforeEach(() => {
-      mockMe.mockResolvedValue({ email: 'u@mxtac.local', role: 'analyst', full_name: null, mfa_enabled: false })
-      mockMfaSetup.mockResolvedValue(SETUP_DATA)
-      mockMfaVerifySetup.mockResolvedValue({ message: 'MFA enabled' })
-    })
-
-    async function reachBackupStep() {
-      renderModal()
-      const enableBtn = await screen.findByRole('button', { name: 'Enable MFA' })
-      fireEvent.click(enableBtn)
-      await waitFor(() => expect(screen.getByPlaceholderText('000000')).toBeInTheDocument())
-      fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '123456' } })
-      const form = screen.getByRole('button', { name: 'Verify & Enable' }).closest('form')!
-      fireEvent.submit(form)
-      await waitFor(() => expect(screen.getByText('MFA enabled successfully')).toBeInTheDocument())
-    }
-
-    it('shows the success banner', async () => {
-      await reachBackupStep()
-      expect(screen.getByText('MFA enabled successfully')).toBeInTheDocument()
-    })
-
-    it('renders "Save your backup codes" heading', async () => {
-      await reachBackupStep()
-      expect(screen.getByText('Save your backup codes')).toBeInTheDocument()
-    })
-
-    it('renders all 8 backup codes', async () => {
-      await reachBackupStep()
-      for (const code of SETUP_DATA.backup_codes) {
-        expect(screen.getByText(code)).toBeInTheDocument()
+    it('keeps keyboard focus inside the dialog', async () => {
+      const { user } = setup()
+      const dialog = await screen.findByRole('dialog')
+      await screen.findByRole('button', { name: 'Enable MFA' })
+      for (let i = 0; i < 6; i++) {
+        await user.tab()
+        expect(dialog).toContainElement(document.activeElement as HTMLElement)
       }
     })
+  })
 
-    it('renders the "Copy all" button', async () => {
-      await reachBackupStep()
-      expect(screen.getByRole('button', { name: 'Copy all' })).toBeInTheDocument()
+  describe('when MFA is already enabled', () => {
+    beforeEach(() => {
+      meMock.mockResolvedValue(profile(true))
     })
 
-    it('renders the "Download .txt" button', async () => {
-      await reachBackupStep()
-      expect(screen.getByRole('button', { name: 'Download .txt' })).toBeInTheDocument()
+    it('says so and offers no enrolment', async () => {
+      setup()
+      expect(await screen.findByText('MFA is active')).toBeInTheDocument()
+      expect(screen.getByText(/Your account is protected with an authenticator app/)).toBeInTheDocument()
+      expect(screen.getByText(/To disable MFA, contact an administrator/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Enable MFA' })).not.toBeInTheDocument()
     })
 
-    it('renders the "Done" button', async () => {
-      await reachBackupStep()
-      expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument()
-    })
-
-    it('calls onClose when Done is clicked', async () => {
-      const onClose = vi.fn()
-      mockMe.mockResolvedValue({ email: 'u@mxtac.local', role: 'analyst', full_name: null, mfa_enabled: false })
-      mockMfaSetup.mockResolvedValue(SETUP_DATA)
-      mockMfaVerifySetup.mockResolvedValue({ message: 'MFA enabled' })
-
-      const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-      })
-      render(
-        <QueryClientProvider client={queryClient}>
-          <MfaSetupModal onClose={onClose} />
-        </QueryClientProvider>,
-      )
-
-      const enableBtn = await screen.findByRole('button', { name: 'Enable MFA' })
-      fireEvent.click(enableBtn)
-      await waitFor(() => expect(screen.getByPlaceholderText('000000')).toBeInTheDocument())
-      fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '123456' } })
-      const form = screen.getByRole('button', { name: 'Verify & Enable' }).closest('form')!
-      fireEvent.submit(form)
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument())
-
-      fireEvent.click(screen.getByRole('button', { name: 'Done' }))
-      expect(onClose).toHaveBeenCalled()
+    it('closes from either Close button', async () => {
+      const { onClose, user } = setup()
+      await screen.findByText('MFA is active')
+      const closeButtons = screen.getAllByRole('button', { name: 'Close' })
+      expect(closeButtons).toHaveLength(2)
+      for (const button of closeButtons) await user.click(button)
+      expect(onClose).toHaveBeenCalledTimes(2)
     })
   })
 
-  // =========================================================================
-  // Setup mutation error (step 1)
-  // =========================================================================
-  describe('setup mutation error', () => {
-    beforeEach(() => {
-      mockMe.mockResolvedValue({ email: 'u@mxtac.local', role: 'analyst', full_name: null, mfa_enabled: false })
+  describe('when MFA is not configured', () => {
+    it('explains MFA and offers to enable it', async () => {
+      setup()
+      expect(await screen.findByText('MFA not configured')).toBeInTheDocument()
+      expect(screen.getByText(/Add an extra layer of security to your account/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Enable MFA' })).toBeEnabled()
+      expect(setupMock).not.toHaveBeenCalled()
     })
 
-    it('shows an error banner when mfaSetup fails', async () => {
-      mockMfaSetup.mockRejectedValue({
-        response: { data: { detail: 'Setup failed: server error' } },
-      })
-
-      renderModal()
-      const btn = await screen.findByRole('button', { name: 'Enable MFA' })
-      fireEvent.click(btn)
-
-      await waitFor(() =>
-        expect(screen.getByText('Setup failed: server error')).toBeInTheDocument(),
-      )
+    it('closes on Cancel', async () => {
+      const { onClose, user } = setup()
+      await user.click(await screen.findByRole('button', { name: 'Cancel' }))
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
 
-    it('shows "Setup failed" fallback when no detail in error', async () => {
-      mockMfaSetup.mockRejectedValue(new Error('Network error'))
+    it('disables the button and shows progress while the secret is generated', async () => {
+      let finish: (data: typeof SETUP_DATA) => void = () => {}
+      setupMock.mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+      const { user } = setup()
+      await user.click(await screen.findByRole('button', { name: 'Enable MFA' }))
 
-      renderModal()
-      const btn = await screen.findByRole('button', { name: 'Enable MFA' })
-      fireEvent.click(btn)
+      expect(await screen.findByRole('button', { name: 'Generating…' })).toBeDisabled()
 
-      await waitFor(() => expect(screen.getByText('Setup failed')).toBeInTheDocument())
+      finish(SETUP_DATA)
+      expect(await screen.findByLabelText('Verification code')).toBeInTheDocument()
+    })
+
+    it('shows the server message as an alert when setup fails', async () => {
+      setupMock.mockRejectedValue({ response: { data: { detail: 'Setup failed: server error' } } })
+      const { user } = setup()
+      await user.click(await screen.findByRole('button', { name: 'Enable MFA' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Setup failed: server error')
+      expect(screen.getByRole('button', { name: 'Enable MFA' })).toBeEnabled()
+    })
+
+    it('shows "Setup failed" when the failure has no server message', async () => {
+      setupMock.mockRejectedValue(new Error('Network error'))
+      const { user } = setup()
+      await user.click(await screen.findByRole('button', { name: 'Enable MFA' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Setup failed')
+    })
+  })
+
+  describe('setup step', () => {
+    it('requests a secret once and draws its QR code', async () => {
+      await openSetupStep()
+
+      expect(setupMock).toHaveBeenCalledTimes(1)
+      expect(screen.getByText(/Scan this QR code with your authenticator app/)).toBeInTheDocument()
+      const qr = await screen.findByRole('img', { name: 'MFA QR code' })
+      expect(qr).toHaveAttribute('src', 'data:image/png;base64,MOCK_QR')
+      expect(qrMock).toHaveBeenCalledWith(SETUP_DATA.qr_code_uri, expect.anything())
+    })
+
+    it('shows a placeholder while the QR code is drawn', async () => {
+      qrMock.mockReturnValue(new Promise<never>(() => {}))
+      await openSetupStep()
+
+      expect(screen.getByRole('status')).toHaveTextContent('Loading QR…')
+      expect(screen.queryByRole('img', { name: 'MFA QR code' })).not.toBeInTheDocument()
+    })
+
+    it('keeps the manual key usable when the QR code cannot be drawn', async () => {
+      qrMock.mockRejectedValue(new Error('canvas unavailable'))
+      await openSetupStep()
+
+      expect(within(screen.getByRole('group', { name: 'Manual entry key' })).getByText(SETUP_DATA.secret)).toBeInTheDocument()
+      expect(screen.queryByRole('img', { name: 'MFA QR code' })).not.toBeInTheDocument()
+    })
+
+    it('copies the manual key and confirms it on the button', async () => {
+      const { user, writeText } = await openSetupStep()
+      const group = screen.getByRole('group', { name: 'Manual entry key' })
+      expect(within(group).getByText(SETUP_DATA.secret)).toBeInTheDocument()
+
+      await user.click(within(group).getByRole('button', { name: 'Copy' }))
+
+      expect(writeText).toHaveBeenCalledWith(SETUP_DATA.secret)
+      expect(within(group).getByRole('button', { name: 'Copied!' })).toBeInTheDocument()
+    })
+
+    it('puts the focus in the code field', async () => {
+      await openSetupStep()
+      expect(screen.getByLabelText('Verification code')).toHaveFocus()
+    })
+
+    it('accepts digits only, at most six', async () => {
+      const { user } = await openSetupStep()
+      const input = screen.getByLabelText('Verification code')
+
+      await user.type(input, '12ab-34')
+      expect(input).toHaveValue('1234')
+
+      await user.type(input, '56789')
+      expect(input).toHaveValue('123456')
+    })
+
+    it('enables verification only once six digits are entered', async () => {
+      const { user } = await openSetupStep()
+      const verify = screen.getByRole('button', { name: 'Verify & Enable' })
+      expect(verify).toBeDisabled()
+
+      await user.type(screen.getByLabelText('Verification code'), '12345')
+      expect(verify).toBeDisabled()
+
+      await user.type(screen.getByLabelText('Verification code'), '6')
+      expect(verify).toBeEnabled()
+    })
+
+    it('goes back to the start and forgets the secret', async () => {
+      const { user } = await openSetupStep()
+      await user.click(screen.getByRole('button', { name: 'Back' }))
+
+      expect(await screen.findByRole('button', { name: 'Enable MFA' })).toBeInTheDocument()
+      expect(screen.queryByText(SETUP_DATA.secret)).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Verification code')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('verification', () => {
+    it('sends the code when the button is clicked', async () => {
+      const { user } = await openSetupStep()
+      await user.type(screen.getByLabelText('Verification code'), '654321')
+      await user.click(screen.getByRole('button', { name: 'Verify & Enable' }))
+
+      await waitFor(() => expect(verifyMock).toHaveBeenCalledWith('654321'))
+    })
+
+    it('sends the code when Enter is pressed in the field', async () => {
+      const { user } = await openSetupStep()
+      await user.type(screen.getByLabelText('Verification code'), '654321{Enter}')
+
+      await waitFor(() => expect(verifyMock).toHaveBeenCalledWith('654321'))
+    })
+
+    it('does not send an incomplete code on Enter', async () => {
+      const { user } = await openSetupStep()
+      await user.type(screen.getByLabelText('Verification code'), '123{Enter}')
+
+      expect(verifyMock).not.toHaveBeenCalled()
+    })
+
+    it('shows the server message on the field when the code is rejected', async () => {
+      verifyMock.mockRejectedValue({ response: { data: { detail: 'Invalid TOTP code' } } })
+      const { user } = await openSetupStep()
+      const input = screen.getByLabelText('Verification code')
+      await user.type(input, '123456{Enter}')
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Invalid TOTP code')
+      expect(input).toBeInvalid()
+      expect(input).toHaveAccessibleDescription('Invalid TOTP code')
+      expect(screen.queryByRole('list', { name: 'Backup codes' })).not.toBeInTheDocument()
+    })
+
+    it('shows "Invalid code" when the failure has no server message', async () => {
+      verifyMock.mockRejectedValue(new Error('Network error'))
+      const { user } = await openSetupStep()
+      await user.type(screen.getByLabelText('Verification code'), '123456{Enter}')
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Invalid code')
+    })
+
+    it('clears the error when the code is edited', async () => {
+      verifyMock.mockRejectedValue(new Error('Network error'))
+      const { user } = await openSetupStep()
+      const input = screen.getByLabelText('Verification code')
+      await user.type(input, '123456{Enter}')
+      await screen.findByRole('alert')
+
+      await user.type(input, '{Backspace}')
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(input).toBeValid()
+    })
+
+    it('refreshes the profile after a successful verification', async () => {
+      await openBackupCodesStep()
+      await waitFor(() => expect(meMock).toHaveBeenCalledTimes(2))
+    })
+  })
+
+  describe('backup codes step', () => {
+    it('confirms that MFA is on and lists every backup code', async () => {
+      await openBackupCodesStep()
+
+      expect(screen.getByRole('status')).toHaveTextContent('MFA enabled successfully')
+      expect(screen.getByRole('heading', { name: 'Save your backup codes' })).toBeInTheDocument()
+      const codes = within(screen.getByRole('list', { name: 'Backup codes' })).getAllByRole('listitem')
+      expect(codes.map((item) => item.textContent)).toEqual(SETUP_DATA.backup_codes)
+    })
+
+    it('copies all codes, one per line, and confirms it on the button', async () => {
+      const { user, writeText } = await openBackupCodesStep()
+      await user.click(screen.getByRole('button', { name: 'Copy all' }))
+
+      expect(writeText).toHaveBeenCalledWith(SETUP_DATA.backup_codes.join('\n'))
+      expect(screen.getByRole('button', { name: 'Copied!' })).toBeInTheDocument()
+    })
+
+    it('downloads the codes as a text file', async () => {
+      const { user } = await openBackupCodesStep()
+      await user.click(screen.getByRole('button', { name: 'Download .txt' }))
+
+      expect(downloadMock).toHaveBeenCalledTimes(1)
+      const [blob, filename] = downloadMock.mock.calls[0]
+      expect(filename).toBe('mxtac-backup-codes.txt')
+      expect(blob.type).toBe('text/plain')
+      const text = await readText(blob)
+      for (const code of SETUP_DATA.backup_codes) expect(text).toContain(code)
+    })
+
+    it('closes on Done', async () => {
+      const { onClose, user } = await openBackupCodesStep()
+      await user.click(screen.getByRole('button', { name: 'Done' }))
+      expect(onClose).toHaveBeenCalledTimes(1)
     })
   })
 })

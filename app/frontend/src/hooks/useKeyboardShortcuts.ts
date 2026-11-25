@@ -18,14 +18,16 @@ function isTyping(): boolean {
  * Global keyboard shortcut handler for power users.
  *
  * Chord shortcuts (g then …):
- *   g d → Dashboard (/)
+ *   g d → Overview (/)
  *   g e → Detections (/detections)
  *   g r → Rules (/rules)
- *   g c → Connectors (/integrations)
+ *   g h → Hunt (/hunt)
+ *   g c → ATT&CK coverage (/coverage)
+ *   g s → Sources (/sources)
  *   g i → Incidents (/incidents)
  *
  * Single-key shortcuts:
- *   /   → Focus search bar (dispatches mxtac:focus-search)
+ *   /   → Focus the search field of the page (input[data-shortcut-search]); also dispatches mxtac:focus-search
  *   ?   → Open keyboard shortcuts modal
  *   Esc → Close shortcuts modal + dispatch mxtac:close-panel
  *
@@ -64,7 +66,9 @@ export function useKeyboardShortcuts(): void {
           case 'd': navigate('/'); break
           case 'e': navigate('/detections'); break
           case 'r': navigate('/rules'); break
-          case 'c': navigate('/integrations'); break
+          case 'h': navigate('/hunt'); break
+          case 'c': navigate('/coverage'); break
+          case 's': navigate('/sources'); break
           case 'i': navigate('/incidents'); break
           default: break
         }
@@ -81,6 +85,8 @@ export function useKeyboardShortcuts(): void {
         case '/':
           e.preventDefault()
           document.dispatchEvent(new CustomEvent('mxtac:focus-search'))
+          // The main search field of a page is marked with data-shortcut-search.
+          document.querySelector<HTMLInputElement>('main input[data-shortcut-search]')?.focus()
           break
 
         case '?':

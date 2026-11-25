@@ -170,13 +170,13 @@ class RuleRepo:
         }
 
     @staticmethod
-    async def get_coverage_summary(session: AsyncSession) -> dict | None:
+    async def get_coverage_summary(session: AsyncSession) -> dict:
         """Return ATT&CK coverage based on active enabled rules.
 
         Parses ``technique_ids`` JSON arrays from all enabled rules and returns
         the count of distinct techniques covered vs. the total in scope (105).
-        Returns None when no enabled rules with technique mappings exist
-        (caller falls back to mock data).
+        Returns a zero summary (0 covered, 0.0 %) when no enabled rules with
+        technique mappings exist.
         """
         result = await session.execute(
             select(Rule.technique_ids)
@@ -184,9 +184,6 @@ class RuleRepo:
             .where(Rule.technique_ids.is_not(None))
         )
         rows = result.scalars().all()
-
-        if not rows:
-            return None
 
         covered: set[str] = set()
         for technique_ids_json in rows:
@@ -197,9 +194,6 @@ class RuleRepo:
                         covered.add(tid.strip())
             except (ValueError, TypeError):
                 continue
-
-        if not covered:
-            return None
 
         covered_count = min(len(covered), _RULE_COVERAGE_TOTAL)
         coverage_pct = round(covered_count / _RULE_COVERAGE_TOTAL * 100, 1)
@@ -301,33 +295,6 @@ class RuleRepo:
             "total_count": _RULE_COVERAGE_TOTAL,
             "total_coverage_pct": round(total_covered / _RULE_COVERAGE_TOTAL * 100, 1),
         }
-
-    @staticmethod
-    async def get_enabled_rule_counts_by_technique(session: AsyncSession) -> dict[str, int]:
-        """Return count of enabled rules per ATT&CK technique ID.
-
-        Used by the hunt suggestions engine to annotate each suggestion with
-        how many active Sigma rules already cover the technique, helping
-        analysts gauge their existing detection posture.
-
-        Returns an empty dict when no enabled rules with technique mappings exist.
-        """
-        result = await session.execute(
-            select(Rule.technique_ids)
-            .where(Rule.enabled == True)  # noqa: E712
-            .where(Rule.technique_ids.is_not(None))
-        )
-        counts: dict[str, int] = {}
-        for technique_ids_json in result.scalars().all():
-            try:
-                ids = json.loads(technique_ids_json)
-                for tid in ids:
-                    if isinstance(tid, str) and tid.strip():
-                        key = tid.strip()
-                        counts[key] = counts.get(key, 0) + 1
-            except (ValueError, TypeError):
-                continue
-        return counts
 
     @staticmethod
     async def get_coverage_gaps(session: AsyncSession) -> dict:

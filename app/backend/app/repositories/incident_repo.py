@@ -2,14 +2,42 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import ColumnElement, String, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from ..core.validators import escape_like
 from ..models.incident import Incident
+
+
+def time_to_detect_seconds(first_event_time: datetime | None, now: datetime | None = None) -> int | None:
+    """Seconds from the earliest linked event to the creation of the incident.
+
+    ``None`` without an event time.  A naive datetime is read as UTC, and an
+    event time in the future counts as 0.
+    """
+    if first_event_time is None:
+        return None
+    if first_event_time.tzinfo is None:
+        first_event_time = first_event_time.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    return max(0, int((now - first_event_time).total_seconds()))
+
+
+def _json_array_contains(column: InstrumentedAttribute, value: str) -> ColumnElement[bool]:
+    """Filter: the JSON array stored in *column* contains the string *value*.
+
+    The array is compared as text (``["web01", "db02"]`` contains ``"web01"``),
+    which works on PostgreSQL and SQLite alike.  ``column.contains([value])``
+    renders ``LIKE`` on the ``json`` column itself: PostgreSQL rejects that
+    and SQLite only matches one-element arrays.
+    """
+    needle = escape_like(json.dumps(value))
+    return cast(column, String).like(f"%{needle}%", escape="\\")
 
 # Severity order: critical first (1) → low last (4)
 _SEVERITY_ORDER = case(
@@ -75,7 +103,8 @@ class IncidentRepo:
             order_clause = _STATUS_ORDER.asc()
         else:
             order_clause = Incident.created_at.desc()
-        q = q.order_by(order_clause).offset(skip).limit(limit)
+        # Newest first within one severity or status, and a fixed order across pages.
+        q = q.order_by(order_clause, Incident.created_at.desc(), Incident.id.desc()).offset(skip).limit(limit)
 
         result = await session.execute(q)
         return list(result.scalars().all()), total
@@ -135,8 +164,8 @@ class IncidentRepo:
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
         result = await session.execute(
             select(Incident)
-            .where(Incident.hosts.contains([host]))
-            .where(Incident.tactic_ids.contains([tactic]))
+            .where(_json_array_contains(Incident.hosts, host))
+            .where(_json_array_contains(Incident.tactic_ids, tactic))
             .where(Incident.status.not_in(["resolved", "closed"]))
             .where(Incident.created_at >= cutoff)
             .order_by(Incident.created_at.desc())
@@ -149,7 +178,7 @@ class IncidentRepo:
         """Return all incidents that reference the given detection_id in their detection_ids JSON array."""
         result = await session.execute(
             select(Incident)
-            .where(Incident.detection_ids.contains([detection_id]))
+            .where(_json_array_contains(Incident.detection_ids, detection_id))
             .order_by(Incident.created_at.desc())
         )
         return list(result.scalars().all())

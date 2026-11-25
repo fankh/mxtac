@@ -52,6 +52,12 @@ services:
       VALKEY_URL: "redis://redis:6379/0"
       QUEUE_BACKEND: "redis"
       CORS_ORIGINS: '["https://${DOMAIN}"]'
+      # First start only (empty users table): password of admin@mxtac.local.
+      # Empty = a random one is generated and written once to the log of the
+      # replica that created the account (docker service logs mxtac_backend).
+      INITIAL_ADMIN_PASSWORD: "${INITIAL_ADMIN_PASSWORD:-}"
+      # "true" also creates demo accounts and invented sample data.
+      SEED_DEMO_DATA: "${SEED_DEMO_DATA:-false}"
       # Secret files (read by docker-entrypoint.sh → exported as env vars)
       SECRET_KEY_FILE: /run/secrets/mxtac_secret_key
       POSTGRES_PASSWORD_FILE: /run/secrets/mxtac_postgres_password
@@ -61,7 +67,7 @@ services:
     networks:
       - mxtac_net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ready', timeout=4)"]
       interval: 15s
       timeout: 5s
       retries: 5

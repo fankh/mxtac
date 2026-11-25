@@ -1,7 +1,0 @@
-target/
-.git/
-*.md
-tests/
-benches/
-.env
-*.env.local

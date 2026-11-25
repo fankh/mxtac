@@ -1,24 +1,31 @@
-/**
- * Tests for KeyboardShortcutsModal
- *
- * Covers:
- *  - Renders dialog with heading
- *  - Displays all shortcut groups (Navigation, Actions)
- *  - Displays all expected shortcut descriptions
- *  - Displays key labels as <kbd> elements
- *  - Close button calls closeShortcutsModal
- *  - Backdrop click calls closeShortcutsModal
- *  - Escape key closes the modal
- *  - aria attributes for accessibility
- */
-
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { KeyboardShortcutsModal } from '../../components/shared/KeyboardShortcutsModal'
 import { useUIStore } from '../../stores/uiStore'
 
-function renderModal() {
-  return render(<KeyboardShortcutsModal />)
+function setup() {
+  const user = userEvent.setup()
+  render(<KeyboardShortcutsModal />)
+  return { user, dialog: screen.getByRole('dialog', { name: 'Keyboard Shortcuts' }) }
+}
+
+/** Key labels shown next to a shortcut description, in order. */
+function keysFor(description: string): string[] {
+  const definition = screen.getByText(description).nextElementSibling
+  if (!(definition instanceof HTMLElement)) throw new Error(`No keys listed for "${description}"`)
+  return within(definition).getAllByText(/\S/, { selector: 'kbd' }).map((key) => key.textContent ?? '')
+}
+
+/** The dimmed layer behind the dialog, which is what a click outside lands on. */
+function backdropOf(dialog: HTMLElement): Element {
+  const backdrop = dialog.previousElementSibling
+  if (!backdrop) throw new Error('The dialog has no backdrop')
+  return backdrop
+}
+
+function isOpen() {
+  return useUIStore.getState().showShortcutsModal
 }
 
 describe('KeyboardShortcutsModal', () => {
@@ -26,131 +33,83 @@ describe('KeyboardShortcutsModal', () => {
     useUIStore.setState({ showShortcutsModal: true })
   })
 
-  // ── Heading & role ───────────────────────────────────────────────────────────
-
-  it('renders a dialog element with aria-label "Keyboard Shortcuts"', () => {
-    renderModal()
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByRole('dialog')).toHaveAttribute('aria-label', 'Keyboard Shortcuts')
+  it('is a dialog named by its title, with a description', () => {
+    const { dialog } = setup()
+    expect(screen.getByRole('heading', { name: 'Keyboard Shortcuts' })).toBeInTheDocument()
+    expect(dialog).toHaveAccessibleDescription('Keys for moving between pages and for common actions.')
   })
 
-  it('displays the "Keyboard Shortcuts" heading text', () => {
-    renderModal()
-    expect(screen.getByText('Keyboard Shortcuts')).toBeInTheDocument()
+  it('groups the shortcuts under Navigation and Actions', () => {
+    setup()
+    const navigation = screen.getByRole('region', { name: 'Navigation' })
+    const actions = screen.getByRole('region', { name: 'Actions' })
+
+    expect(within(navigation).getAllByRole('term').map((term) => term.textContent)).toEqual([
+      'Go to Overview',
+      'Go to Detections',
+      'Go to Rules',
+      'Go to Hunt',
+      'Go to ATT&CK coverage',
+      'Go to Sources',
+      'Go to Incidents',
+    ])
+    expect(within(actions).getAllByRole('term').map((term) => term.textContent)).toEqual([
+      'Focus search bar',
+      'Show keyboard shortcuts',
+      'Close panel / modal',
+    ])
   })
 
-  // ── Shortcut groups ──────────────────────────────────────────────────────────
-
-  it('renders the Navigation group heading', () => {
-    renderModal()
-    expect(screen.getByText('Navigation')).toBeInTheDocument()
+  it.each([
+    ['Go to Overview', ['g', 'd']],
+    ['Go to Detections', ['g', 'e']],
+    ['Go to Rules', ['g', 'r']],
+    ['Go to Hunt', ['g', 'h']],
+    ['Go to ATT&CK coverage', ['g', 'c']],
+    ['Go to Sources', ['g', 's']],
+    ['Go to Incidents', ['g', 'i']],
+    ['Focus search bar', ['/']],
+    ['Show keyboard shortcuts', ['?']],
+    ['Close panel / modal', ['Esc']],
+  ])('lists the keys for "%s"', (description, keys) => {
+    setup()
+    expect(keysFor(description)).toEqual(keys)
   })
 
-  it('renders the Actions group heading', () => {
-    renderModal()
-    expect(screen.getByText('Actions')).toBeInTheDocument()
+  it('reads two-key shortcuts as a sequence', () => {
+    setup()
+    expect(screen.getByText('Go to Overview').nextElementSibling).toHaveTextContent('gthend')
   })
 
-  // ── Navigation shortcuts ─────────────────────────────────────────────────────
-
-  it('shows "Go to Dashboard" shortcut', () => {
-    renderModal()
-    expect(screen.getByText('Go to Dashboard')).toBeInTheDocument()
+  it('closes from the close button', async () => {
+    const { user } = setup()
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    expect(isOpen()).toBe(false)
   })
 
-  it('shows "Go to Detections" shortcut', () => {
-    renderModal()
-    expect(screen.getByText('Go to Detections')).toBeInTheDocument()
+  it('closes on Escape', async () => {
+    const { user } = setup()
+    await user.keyboard('{Escape}')
+    expect(isOpen()).toBe(false)
   })
 
-  it('shows "Go to Rules" shortcut', () => {
-    renderModal()
-    expect(screen.getByText('Go to Rules')).toBeInTheDocument()
+  it('closes on a click outside the dialog', async () => {
+    const { user, dialog } = setup()
+    await user.click(backdropOf(dialog))
+    expect(isOpen()).toBe(false)
   })
 
-  it('shows "Go to Connectors" shortcut', () => {
-    renderModal()
-    expect(screen.getByText('Go to Connectors')).toBeInTheDocument()
+  it('stays open on a click inside the dialog', async () => {
+    const { user } = setup()
+    await user.click(screen.getByText('Go to Rules'))
+    expect(isOpen()).toBe(true)
   })
 
-  it('shows "Go to Incidents" shortcut', () => {
-    renderModal()
-    expect(screen.getByText('Go to Incidents')).toBeInTheDocument()
-  })
-
-  // ── Action shortcuts ─────────────────────────────────────────────────────────
-
-  it('shows "Focus search bar" shortcut', () => {
-    renderModal()
-    expect(screen.getByText('Focus search bar')).toBeInTheDocument()
-  })
-
-  it('shows "Show keyboard shortcuts" shortcut', () => {
-    renderModal()
-    expect(screen.getByText('Show keyboard shortcuts')).toBeInTheDocument()
-  })
-
-  it('shows "Close panel / modal" shortcut', () => {
-    renderModal()
-    expect(screen.getByText('Close panel / modal')).toBeInTheDocument()
-  })
-
-  // ── Key labels ───────────────────────────────────────────────────────────────
-
-  it('renders key labels inside <kbd> elements', () => {
-    renderModal()
-    const kbds = document.querySelectorAll('kbd')
-    expect(kbds.length).toBeGreaterThan(0)
-  })
-
-  it('renders "g" key label', () => {
-    renderModal()
-    const kbds = Array.from(document.querySelectorAll('kbd'))
-    expect(kbds.some(k => k.textContent === 'g')).toBe(true)
-  })
-
-  it('renders "Esc" key label', () => {
-    renderModal()
-    const kbds = Array.from(document.querySelectorAll('kbd'))
-    expect(kbds.some(k => k.textContent === 'Esc')).toBe(true)
-  })
-
-  // ── Close button ─────────────────────────────────────────────────────────────
-
-  it('renders a close button', () => {
-    renderModal()
-    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
-  })
-
-  it('clicking close button calls closeShortcutsModal', () => {
-    renderModal()
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(useUIStore.getState().showShortcutsModal).toBe(false)
-  })
-
-  // ── Backdrop click ───────────────────────────────────────────────────────────
-
-  it('clicking the backdrop calls closeShortcutsModal', () => {
-    renderModal()
-    // The backdrop is the aria-hidden overlay div
-    const backdrop = document.querySelector('[aria-hidden="true"]') as HTMLElement
-    expect(backdrop).toBeTruthy()
-    fireEvent.click(backdrop)
-    expect(useUIStore.getState().showShortcutsModal).toBe(false)
-  })
-
-  // ── Escape key ───────────────────────────────────────────────────────────────
-
-  it('pressing Escape closes the modal', () => {
-    renderModal()
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(useUIStore.getState().showShortcutsModal).toBe(false)
-  })
-
-  // ── Accessibility ────────────────────────────────────────────────────────────
-
-  it('dialog has aria-modal="true"', () => {
-    renderModal()
-    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
+  it('keeps keyboard focus inside the dialog', async () => {
+    const { user, dialog } = setup()
+    for (let i = 0; i < 3; i++) {
+      await user.tab()
+      expect(dialog).toContainElement(document.activeElement as HTMLElement)
+    }
   })
 })

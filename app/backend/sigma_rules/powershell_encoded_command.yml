@@ -19,3 +19,6 @@ tags:
   - attack.TA0002
 references:
   - https://attack.mitre.org/techniques/T1059/001/
+falsepositives:
+  - Management tools that pass scripts to PowerShell as an encoded command
+  - Command lines that contain '-e ' for an unrelated option

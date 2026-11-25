@@ -1,1239 +1,519 @@
 // vi.mock is hoisted before imports — declare all module mocks first.
 
-vi.mock('../../lib/api', () => ({
-  apiClient: {
-    get: vi.fn(),
-    post: vi.fn(),
-    patch: vi.fn(),
-  },
-}))
+vi.mock('../../lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof ApiModule>()
+  return {
+    ...actual,
+    rulesApi: {
+      list: vi.fn(),
+      stats: vi.fn(),
+      get: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      import: vi.fn(),
+      reload: vi.fn(),
+      testContent: vi.fn(),
+      test: vi.fn(),
+      markFalsePositive: vi.fn(),
+    },
+  }
+})
 
+// The real TopBar opens the alert WebSocket; the page frame only needs its slots.
 vi.mock('../../components/layout/TopBar', () => ({
-  TopBar: ({ crumb }: { crumb: string }) => (
-    <header data-testid="topbar">{crumb}</header>
+  TopBar: ({ crumb, actions }: { crumb: string; actions?: ReactNode }) => (
+    <header>
+      <h1>{crumb}</h1>
+      {actions}
+    </header>
   ),
 }))
 
-// Mock Monaco Editor — renders a plain textarea so existing tests can interact
-// with the YAML content via fireEvent.change without loading the real editor.
+// Monaco does not run in jsdom: a textarea stands in for the YAML editor.
 vi.mock('@monaco-editor/react', () => ({
-  default: ({
-    value,
-    onChange,
-  }: {
+  default: ({ value, onChange, theme, options }: {
     value?: string
     onChange?: (value: string | undefined) => void
-    onMount?: (editor: unknown, monaco: unknown) => void
-    [key: string]: unknown
+    theme?: string
+    options?: { readOnly?: boolean }
   }) => (
     <textarea
+      aria-label="Rule YAML"
+      data-theme={theme}
+      readOnly={options?.readOnly}
       value={value ?? ''}
       onChange={(e) => onChange?.(e.target.value)}
     />
   ),
 }))
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { ReactNode } from 'react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RulesPage } from '../../components/features/rules/RulesPage'
-import { apiClient } from '../../lib/api'
+import type * as ApiModule from '../../lib/api'
+import { rulesApi } from '../../lib/api'
+import { useAuthStore } from '../../stores/authStore'
+import { useUIStore } from '../../stores/uiStore'
+import type { Rule, RuleDetail } from '../../types/api'
+import { chooseOption } from '../mocks/radixSelect'
 
-// ---------------------------------------------------------------------------
-// Typed references to the mocked API
-// ---------------------------------------------------------------------------
+const api = vi.mocked(rulesApi)
 
-const mockGet   = apiClient.get   as ReturnType<typeof vi.fn>
-const mockPost  = apiClient.post  as ReturnType<typeof vi.fn>
-const mockPatch = apiClient.patch as ReturnType<typeof vi.fn>
+function makeRule(overrides: Partial<Rule> = {}): Rule {
+  return {
+    id: 'rule-lsass',
+    title: 'Suspicious LSASS memory access',
+    level: 'high',
+    status: 'experimental',
+    enabled: true,
+    technique_ids: ['T1003.001'],
+    tactic_ids: ['credential_access'],
+    logsource: { product: 'windows', category: 'process_access' },
+    hit_count: 42,
+    fp_count: 2,
+    ...overrides,
+  }
+}
 
-// ---------------------------------------------------------------------------
-// Fixture helpers
-// ---------------------------------------------------------------------------
+const RULES: Rule[] = [
+  makeRule(),
+  makeRule({
+    id: 'rule-ps',
+    title: 'Encoded PowerShell command',
+    level: 'critical',
+    enabled: false,
+    technique_ids: ['T1059.001', 'T1027', 'T1140'],
+    logsource: {},
+    hit_count: 0,
+    fp_count: 0,
+  }),
+]
 
-const makeRule = (overrides: Record<string, unknown> = {}) => ({
-  id:           'rule-001',
-  title:        'Suspicious LSASS Memory Access',
-  level:        'high',
-  status:       'experimental',
-  enabled:      true,
-  technique_ids: ['T1003.001'],
-  tactic_ids:   ['credential_access'],
-  hit_count:    42,
-  fp_count:     2,
-  ...overrides,
-})
+const STORED_YAML = 'title: Suspicious LSASS memory access\ndetection:\n  selection:\n    EventID: 10\n  condition: selection\nlevel: high\n'
 
-// ---------------------------------------------------------------------------
-// Render helper
-// ---------------------------------------------------------------------------
+const DETAIL: RuleDetail = { ...RULES[0], content: STORED_YAML, description: '', source: 'custom', created_by: null }
 
 function renderPage() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        // Prevent background refetches that pollute call-count assertions.
-        // Note: invalidateQueries() still forces a refetch even with staleTime:Infinity.
-        staleTime: Infinity,
-      },
-    },
-  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={client}>
       <RulesPage />
     </QueryClientProvider>,
   )
 }
 
-// ---------------------------------------------------------------------------
-// Helper: open the YAML editor modal
-// ---------------------------------------------------------------------------
-
-async function openEditor() {
-  fireEvent.click(await screen.findByRole('button', { name: '+ New Rule' }))
+async function renderLoaded() {
+  const view = renderPage()
+  await screen.findByText('Suspicious LSASS memory access')
+  return view
 }
 
-// ---------------------------------------------------------------------------
-// Helper: get the YAML textarea element (distinct from the search input)
-// ---------------------------------------------------------------------------
-
-function getEditorTextarea(): HTMLTextAreaElement {
-  return screen
-    .getAllByRole('textbox')
-    .find((el) => el.tagName.toLowerCase() === 'textarea') as HTMLTextAreaElement
+function setRole(role: string) {
+  useAuthStore.setState({ user: { email: 'user@mxtac.local', role } })
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+function notifications() {
+  return useUIStore.getState().notifications
+}
+
+function yamlEditor(): HTMLTextAreaElement {
+  return screen.getByLabelText('Rule YAML') as HTMLTextAreaElement
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  useUIStore.setState({ notifications: [], theme: 'dark' })
+  setRole('engineer')
+  api.list.mockResolvedValue(RULES)
+  api.stats.mockResolvedValue({ total: 2, enabled: 1, by_level: { high: 1, critical: 1 } })
+  api.get.mockResolvedValue(DETAIL)
+})
 
 describe('RulesPage', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    // Default: pending forever → loading state
-    mockGet.mockReturnValue(new Promise<never>(() => {}))
-    mockPost.mockReturnValue(new Promise<never>(() => {}))
-  })
-
-  // =========================================================================
-  // Loading state
-  // =========================================================================
-  describe('loading state', () => {
-    it('shows "Loading rules..." while the query is pending', () => {
+  describe('list', () => {
+    it('shows a loading skeleton while rules load', () => {
+      api.list.mockReturnValue(new Promise<Rule[]>(() => {}))
       renderPage()
-      expect(screen.getByText('Loading rules...')).toBeInTheDocument()
+      expect(screen.getByLabelText('Loading rules')).toBeInTheDocument()
+      expect(screen.queryByText('No rules yet')).not.toBeInTheDocument()
     })
 
-    it('does not show rule rows while loading', () => {
-      renderPage()
-      expect(screen.queryByText('Suspicious LSASS Memory Access')).not.toBeInTheDocument()
+    it('lists rules with level, techniques, log source and counters', async () => {
+      await renderLoaded()
+      const row = screen.getByText('Suspicious LSASS memory access').closest('tr') as HTMLElement
+      expect(within(row).getByText('rule-lsass')).toBeInTheDocument()
+      expect(within(row).getByText('high')).toBeInTheDocument()
+      expect(within(row).getByText('T1003.001')).toBeInTheDocument()
+      expect(within(row).getByText('windows / process_access')).toBeInTheDocument()
+      expect(within(row).getByText('42')).toBeInTheDocument()
     })
 
-    it('does not show the empty-state message while loading', () => {
-      renderPage()
-      expect(screen.queryByText('No rules loaded')).not.toBeInTheDocument()
-    })
-  })
-
-  // =========================================================================
-  // Success state — table rendering
-  // =========================================================================
-  describe('success state', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({ data: [makeRule()] })
+    it('names the techniques in the tooltips of the technique tags', async () => {
+      await renderLoaded()
+      const row = screen.getByText('Encoded PowerShell command').closest('tr') as HTMLElement
+      // From GET /attack/techniques (MSW handler); T1027 is not in the test table
+      await waitFor(() =>
+        expect(within(row).getByText('T1059.001')).toHaveAttribute('title', 'Command and Scripting Interpreter: PowerShell'))
+      expect(within(row).getByText('T1027')).not.toHaveAttribute('title')
     })
 
-    it('renders the rule title', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Suspicious LSASS Memory Access')).toBeInTheDocument()
-      })
+    it('shows two techniques and a count for the rest', async () => {
+      await renderLoaded()
+      const row = screen.getByText('Encoded PowerShell command').closest('tr') as HTMLElement
+      expect(within(row).getByText('T1059.001')).toBeInTheDocument()
+      expect(within(row).getByText('T1027')).toBeInTheDocument()
+      expect(within(row).queryByText('T1140')).not.toBeInTheDocument()
+      expect(within(row).getByText('+1')).toBeInTheDocument()
     })
 
-    it('renders the rule id as a sub-label', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('rule-001')).toBeInTheDocument()
-      })
+    it('shows totals from GET /rules/stats/summary', async () => {
+      await renderLoaded()
+      const card = (label: string) => screen.getByText(label, { selector: 'p' }).parentElement as HTMLElement
+      await waitFor(() => expect(within(card('Rules')).getByText('2')).toBeInTheDocument())
+      expect(within(card('Enabled')).getByText('1')).toBeInTheDocument()
+      expect(within(card('Critical')).getByText('1')).toBeInTheDocument()
     })
 
-    it('renders the rule level badge', async () => {
+    it('shows an empty state with a create action when there are no rules', async () => {
+      api.list.mockResolvedValue([])
       renderPage()
-      await waitFor(() => {
-        // Level badge is a <span> inside the row; column header "Level" is also present
-        expect(screen.getByText('high')).toBeInTheDocument()
-      })
+      expect(await screen.findByText('No rules yet')).toBeInTheDocument()
     })
 
-    it('renders the rule status', async () => {
+    it('shows an error with Retry when the request fails, and reloads on Retry', async () => {
+      api.list.mockRejectedValueOnce(new Error('boom'))
       renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('experimental')).toBeInTheDocument()
-      })
-    })
-
-    it('renders hit_count', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('42')).toBeInTheDocument()
-      })
-    })
-
-    it('renders fp_count', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('2')).toBeInTheDocument()
-      })
-    })
-
-    it('renders technique_ids', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('T1003.001')).toBeInTheDocument()
-      })
-    })
-
-    it('shows "+{n}" overflow indicator when technique_ids exceed 2', async () => {
-      mockGet.mockResolvedValue({
-        data: [makeRule({ technique_ids: ['T1003.001', 'T1055', 'T1059'] })],
-      })
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('+1')).toBeInTheDocument()
-      })
-    })
-
-    it('renders multiple rule rows', async () => {
-      mockGet.mockResolvedValue({
-        data: [
-          makeRule({ id: 'r1', title: 'Rule Alpha' }),
-          makeRule({ id: 'r2', title: 'Rule Beta' }),
-        ],
-      })
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Rule Alpha')).toBeInTheDocument()
-        expect(screen.getByText('Rule Beta')).toBeInTheDocument()
-      })
-    })
-
-    it('does not show "Loading rules..." in success state', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText('Loading rules...')).not.toBeInTheDocument()
-      })
-    })
-
-    it('does not show the empty-state message when rules are present', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.queryByText('No rules loaded')).not.toBeInTheDocument()
-      })
+      expect(await screen.findByText('Could not load rules.')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+      expect(await screen.findByText('Suspicious LSASS memory access')).toBeInTheDocument()
+      expect(api.list).toHaveBeenCalledTimes(2)
     })
   })
 
-  // =========================================================================
-  // Empty state
-  // =========================================================================
-  describe('empty state', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({ data: [] })
+  describe('search and filters', () => {
+    it('filters by title, and by technique ID', async () => {
+      await renderLoaded()
+      const search = screen.getByLabelText('Search rules')
+      fireEvent.change(search, { target: { value: 'powershell' } })
+      expect(screen.queryByText('Suspicious LSASS memory access')).not.toBeInTheDocument()
+      expect(screen.getByText('Encoded PowerShell command')).toBeInTheDocument()
+      expect(screen.getByText('1 of 2 rules')).toBeInTheDocument()
+
+      fireEvent.change(search, { target: { value: 't1003' } })
+      expect(screen.getByText('Suspicious LSASS memory access')).toBeInTheDocument()
+      expect(screen.queryByText('Encoded PowerShell command')).not.toBeInTheDocument()
     })
 
-    it('shows "No rules loaded" when the list is empty', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('No rules loaded')).toBeInTheDocument()
-      })
+    it('clears the search with the clear button and with Escape', async () => {
+      await renderLoaded()
+      const search = screen.getByLabelText('Search rules') as HTMLInputElement
+      fireEvent.change(search, { target: { value: 'zzz' } })
+      expect(screen.getByText('No rules match')).toBeInTheDocument()
+      fireEvent.click(screen.getByTitle('Clear search'))
+      expect(search.value).toBe('')
+
+      fireEvent.change(search, { target: { value: 'zzz' } })
+      fireEvent.keyDown(search, { key: 'Escape' })
+      expect(search.value).toBe('')
+      expect(screen.getByText('Encoded PowerShell command')).toBeInTheDocument()
     })
 
-    it('shows "Create your first rule" link in empty state', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('Create your first rule')).toBeInTheDocument()
-      })
-    })
-  })
-
-  // =========================================================================
-  // Stats counter
-  // =========================================================================
-  describe('stats counter', () => {
-    it('shows total and visible counts after data loads', async () => {
-      mockGet.mockResolvedValue({
-        data: [
-          makeRule({ id: 'r1' }),
-          makeRule({ id: 'r2' }),
-          makeRule({ id: 'r3' }),
-        ],
-      })
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('3 of 3 rules')).toBeInTheDocument()
-      })
+    it('filters by level', async () => {
+      await renderLoaded()
+      await chooseOption('Level', 'critical')
+      await waitFor(() => expect(screen.queryByText('Suspicious LSASS memory access')).not.toBeInTheDocument())
+      expect(screen.getByText('Encoded PowerShell command')).toBeInTheDocument()
     })
 
-    it('reflects filtered count after applying a level filter', async () => {
-      mockGet.mockResolvedValue({
-        data: [
-          makeRule({ id: 'r1', level: 'high' }),
-          makeRule({ id: 'r2', level: 'critical' }),
-        ],
-      })
-      renderPage()
-      await waitFor(() => expect(screen.getByText('2 of 2 rules')).toBeInTheDocument())
-
-      fireEvent.click(screen.getByRole('button', { name: 'critical' }))
-      await waitFor(() => {
-        expect(screen.getByText('1 of 2 rules')).toBeInTheDocument()
-      })
+    it('filters by enabled state', async () => {
+      await renderLoaded()
+      await chooseOption('State', 'Enabled')
+      await waitFor(() => expect(screen.queryByText('Encoded PowerShell command')).not.toBeInTheDocument())
+      expect(screen.getByText('Suspicious LSASS memory access')).toBeInTheDocument()
     })
   })
 
-  // =========================================================================
-  // Column headers
-  // =========================================================================
-  describe('column headers', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({ data: [] })
+  describe('row actions', () => {
+    it('disables a rule through PATCH /rules/{id}', async () => {
+      api.update.mockResolvedValue(makeRule({ enabled: false }))
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('switch', { name: 'Disable Suspicious LSASS memory access' }))
+      await waitFor(() => expect(api.update).toHaveBeenCalledWith('rule-lsass', { enabled: false }))
     })
 
-    it('renders "Rule Title" column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Rule Title')).toBeInTheDocument())
+    it('reports a failed toggle', async () => {
+      api.update.mockRejectedValue({ response: { data: { detail: 'Rule not found' } } })
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('switch', { name: 'Enable Encoded PowerShell command' }))
+      await waitFor(() => expect(notifications()).toHaveLength(1))
+      expect(notifications()[0]).toMatchObject({ type: 'error', message: 'Rule not found' })
     })
 
-    it('renders "Level" column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Level')).toBeInTheDocument())
+    it('deletes a rule after confirmation', async () => {
+      api.delete.mockResolvedValue(undefined)
+      await renderLoaded()
+      fireEvent.click(screen.getByTitle('Delete Suspicious LSASS memory access'))
+      expect(api.delete).not.toHaveBeenCalled()
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }))
+      await waitFor(() => expect(api.delete).toHaveBeenCalledWith('rule-lsass'))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     })
 
-    it('renders "Techniques" column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Techniques')).toBeInTheDocument())
+    it('keeps the rule when the delete dialog is cancelled', async () => {
+      await renderLoaded()
+      fireEvent.click(screen.getByTitle('Delete Suspicious LSASS memory access'))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(api.delete).not.toHaveBeenCalled()
     })
 
-    it('renders "Status" column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Status')).toBeInTheDocument())
+    it('records a false positive through POST /rules/{id}/mark_fp', async () => {
+      api.markFalsePositive.mockResolvedValue({ rule_id: 'rule-lsass', status: 'marked' })
+      await renderLoaded()
+      fireEvent.click(screen.getByTitle('Mark a false positive for Suspicious LSASS memory access'))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Mark false positive' }))
+      await waitFor(() => expect(api.markFalsePositive).toHaveBeenCalledWith('rule-lsass'))
+      await waitFor(() => expect(notifications()[0]).toMatchObject({ type: 'success' }))
     })
 
-    it('renders "Hits" column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Hits')).toBeInTheDocument())
-    })
-
-    it('renders "FP" column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('FP')).toBeInTheDocument())
-    })
-
-    it('renders "Active" column header', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Active')).toBeInTheDocument())
-    })
-  })
-
-  // =========================================================================
-  // Filter bar — static rendering
-  // =========================================================================
-  describe('filter bar', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({ data: [] })
-    })
-
-    it('renders the "critical" level filter button', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'critical' })).toBeInTheDocument()
-    })
-
-    it('renders the "high" level filter button', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'high' })).toBeInTheDocument()
-    })
-
-    it('renders the "medium" level filter button', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'medium' })).toBeInTheDocument()
-    })
-
-    it('renders the "low" level filter button', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'low' })).toBeInTheDocument()
-    })
-
-    it('renders the "Enabled only" filter button', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'Enabled only' })).toBeInTheDocument()
-    })
-
-    it('renders the search input', async () => {
-      renderPage()
-      expect(await screen.findByPlaceholderText('Search rules...')).toBeInTheDocument()
-    })
-
-    it('renders the "Import YAML" button', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: 'Import YAML' })).toBeInTheDocument()
-    })
-
-    it('renders the "+ New Rule" button', async () => {
-      renderPage()
-      expect(await screen.findByRole('button', { name: '+ New Rule' })).toBeInTheDocument()
+    it('tests a stored rule against a sample event', async () => {
+      api.test.mockResolvedValue({ matched: false, errors: [] })
+      await renderLoaded()
+      fireEvent.click(screen.getByTitle('Test Suspicious LSASS memory access'))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('Sample event (JSON)'), { target: { value: '{"EventID": 10}' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Run test' }))
+      await waitFor(() => expect(api.test).toHaveBeenCalledWith('rule-lsass', { EventID: 10 }))
+      expect(await within(dialog).findByText('No match')).toBeInTheDocument()
     })
   })
 
-  // =========================================================================
-  // Level filter — interaction
-  // =========================================================================
-  describe('level filter', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({
-        data: [
-          makeRule({ id: 'r1', title: 'Critical Rule', level: 'critical' }),
-          makeRule({ id: 'r2', title: 'High Rule',     level: 'high' }),
-          makeRule({ id: 'r3', title: 'Medium Rule',   level: 'medium' }),
-        ],
+  describe('engine reload and import', () => {
+    it('reloads the detection engine', async () => {
+      api.reload.mockResolvedValue({ reloaded: 2, total_rules: 2 })
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Reload engine' }))
+      await waitFor(() => expect(api.reload).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(notifications()[0]).toMatchObject({ type: 'success', message: '2 of 2 rules loaded' }))
+    })
+
+    it('imports pasted YAML through POST /rules/import', async () => {
+      api.import.mockResolvedValue({ imported: 2, total_rules: 4 })
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('YAML'), { target: { value: `${STORED_YAML}---\n${STORED_YAML}` } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }))
+      await waitFor(() => expect(api.import).toHaveBeenCalledWith(`${STORED_YAML}---\n${STORED_YAML}`))
+      await waitFor(() => expect(notifications()[0]).toMatchObject({ type: 'success', title: 'Imported 2 rules' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    })
+
+    it('does not send an empty import', async () => {
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }))
+      expect(within(dialog).getByRole('alert')).toHaveTextContent('Paste Sigma YAML or choose a file first.')
+      expect(api.import).not.toHaveBeenCalled()
+    })
+
+    it('keeps the dialog open when nothing was imported', async () => {
+      api.import.mockResolvedValue({ imported: 0, total_rules: 2 })
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('YAML'), { target: { value: 'not: a rule' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }))
+      expect(await within(dialog).findByText('No valid Sigma rules were found in this YAML.')).toBeInTheDocument()
+    })
+
+    it('shows why each skipped rule was refused and keeps the dialog open', async () => {
+      api.import.mockResolvedValue({
+        imported: 1,
+        total_rules: 3,
+        errors: ["Too Many Logins: aggregation expressions ('| count() ...', '| near ...') are not supported"],
       })
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('YAML'), { target: { value: `${STORED_YAML}---
+${STORED_YAML}` } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }))
+
+      const alert = await within(dialog).findByRole('alert')
+      expect(alert).toHaveTextContent('Imported 1 rule. Skipped 1:')
+      expect(alert).toHaveTextContent('Too Many Logins: aggregation expressions')
+      expect(notifications()[0]).toMatchObject({ type: 'warning', title: 'Imported 1 rule' })
+      // The imported rule shows in the list behind the dialog; the dialog is left with Done.
+      expect(within(dialog).getByRole('button', { name: 'Done' })).toBeInTheDocument()
+      expect(within(dialog).queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
     })
 
-    it('activates the level button when clicked (adds bg-blue class)', async () => {
-      renderPage()
-      const btn = await screen.findByRole('button', { name: 'critical' })
-      fireEvent.click(btn)
-      expect(btn).toHaveClass('bg-blue')
-    })
+    it('shows the reasons when every rule was refused', async () => {
+      api.import.mockResolvedValue({ imported: 0, total_rules: 2, errors: ["Only Title: rule has no 'detection' section"] })
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Import' }))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('YAML'), { target: { value: 'title: Only Title' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }))
 
-    it('deactivates the level button when clicked again (toggle off)', async () => {
-      renderPage()
-      const btn = await screen.findByRole('button', { name: 'critical' })
-      fireEvent.click(btn) // activate
-      fireEvent.click(btn) // deactivate
-      expect(btn).not.toHaveClass('bg-blue')
-    })
-
-    it('only one level button is active at a time', async () => {
-      renderPage()
-      const critBtn = await screen.findByRole('button', { name: 'critical' })
-      const highBtn = screen.getByRole('button', { name: 'high' })
-      fireEvent.click(critBtn)
-      fireEvent.click(highBtn)
-      expect(critBtn).not.toHaveClass('bg-blue')
-      expect(highBtn).toHaveClass('bg-blue')
-    })
-
-    it('hides rules that do not match the selected level', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Critical Rule')).toBeInTheDocument())
-      fireEvent.click(screen.getByRole('button', { name: 'critical' }))
-      await waitFor(() => {
-        expect(screen.getByText('Critical Rule')).toBeInTheDocument()
-        expect(screen.queryByText('High Rule')).not.toBeInTheDocument()
-        expect(screen.queryByText('Medium Rule')).not.toBeInTheDocument()
-      })
-    })
-
-    it('shows all rules again when the active level filter is deactivated', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Critical Rule')).toBeInTheDocument())
-      fireEvent.click(screen.getByRole('button', { name: 'critical' })) // activate
-      fireEvent.click(screen.getByRole('button', { name: 'critical' })) // deactivate
-      await waitFor(() => {
-        expect(screen.getByText('Critical Rule')).toBeInTheDocument()
-        expect(screen.getByText('High Rule')).toBeInTheDocument()
-        expect(screen.getByText('Medium Rule')).toBeInTheDocument()
-      })
-    })
-
-    it('does not trigger a new API call — filtering is client-side', async () => {
-      renderPage()
-      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1))
-      fireEvent.click(await screen.findByRole('button', { name: 'high' }))
-      expect(mockGet).toHaveBeenCalledTimes(1)
+      const alert = await within(dialog).findByRole('alert')
+      expect(alert).toHaveTextContent('Nothing was imported. Skipped 1:')
+      expect(alert).toHaveTextContent("Only Title: rule has no 'detection' section")
+      expect(within(dialog).queryByText('No valid Sigma rules were found in this YAML.')).not.toBeInTheDocument()
     })
   })
 
-  // =========================================================================
-  // Enabled filter — interaction
-  // =========================================================================
-  describe('enabled filter', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({
-        data: [
-          makeRule({ id: 'r1', title: 'Enabled Rule',  enabled: true }),
-          makeRule({ id: 'r2', title: 'Disabled Rule', enabled: false }),
-        ],
-      })
-    })
-
-    it('activates the "Enabled only" button when clicked', async () => {
-      renderPage()
-      const btn = await screen.findByRole('button', { name: 'Enabled only' })
-      fireEvent.click(btn)
-      expect(btn).toHaveClass('bg-blue')
-    })
-
-    it('deactivates the "Enabled only" button when clicked again', async () => {
-      renderPage()
-      const btn = await screen.findByRole('button', { name: 'Enabled only' })
-      fireEvent.click(btn)
-      fireEvent.click(btn)
-      expect(btn).not.toHaveClass('bg-blue')
-    })
-
-    it('hides disabled rules when "Enabled only" is active', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Disabled Rule')).toBeInTheDocument())
-      fireEvent.click(screen.getByRole('button', { name: 'Enabled only' }))
-      await waitFor(() => {
-        expect(screen.getByText('Enabled Rule')).toBeInTheDocument()
-        expect(screen.queryByText('Disabled Rule')).not.toBeInTheDocument()
-      })
-    })
-
-    it('shows all rules again when "Enabled only" is deactivated', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Disabled Rule')).toBeInTheDocument())
-      fireEvent.click(screen.getByRole('button', { name: 'Enabled only' })) // activate
-      fireEvent.click(screen.getByRole('button', { name: 'Enabled only' })) // deactivate
-      await waitFor(() => {
-        expect(screen.getByText('Enabled Rule')).toBeInTheDocument()
-        expect(screen.getByText('Disabled Rule')).toBeInTheDocument()
-      })
-    })
-  })
-
-  // =========================================================================
-  // Search — interaction
-  // =========================================================================
-  describe('search', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({
-        data: [
-          makeRule({ id: 'r1', title: 'LSASS Memory Dump' }),
-          makeRule({ id: 'r2', title: 'PowerShell Execution' }),
-        ],
-      })
-    })
-
-    it('updates the input value as the user types', async () => {
-      renderPage()
-      const input = await screen.findByPlaceholderText('Search rules...')
-      fireEvent.change(input, { target: { value: 'lsass' } })
-      expect(input).toHaveValue('lsass')
-    })
-
-    it('hides rules whose title does not contain the search term', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('LSASS Memory Dump')).toBeInTheDocument())
-      fireEvent.change(screen.getByPlaceholderText('Search rules...'), { target: { value: 'lsass' } })
-      await waitFor(() => {
-        expect(screen.getByText('LSASS Memory Dump')).toBeInTheDocument()
-        expect(screen.queryByText('PowerShell Execution')).not.toBeInTheDocument()
-      })
-    })
-
-    it('search is case-insensitive', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('PowerShell Execution')).toBeInTheDocument())
-      fireEvent.change(screen.getByPlaceholderText('Search rules...'), { target: { value: 'POWERSHELL' } })
-      await waitFor(() => {
-        expect(screen.getByText('PowerShell Execution')).toBeInTheDocument()
-        expect(screen.queryByText('LSASS Memory Dump')).not.toBeInTheDocument()
-      })
-    })
-
-    it('shows all rules again when the search input is cleared', async () => {
-      renderPage()
-      await waitFor(() => expect(screen.getByText('PowerShell Execution')).toBeInTheDocument())
-      const input = screen.getByPlaceholderText('Search rules...')
-      fireEvent.change(input, { target: { value: 'lsass' } })
-      fireEvent.change(input, { target: { value: '' } })
-      await waitFor(() => {
-        expect(screen.getByText('LSASS Memory Dump')).toBeInTheDocument()
-        expect(screen.getByText('PowerShell Execution')).toBeInTheDocument()
-      })
-    })
-
-    it('does not trigger a new API call — filtering is client-side', async () => {
-      renderPage()
-      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1))
-      fireEvent.change(await screen.findByPlaceholderText('Search rules...'), { target: { value: 'lsass' } })
-      expect(mockGet).toHaveBeenCalledTimes(1)
-    })
-  })
-
-  // =========================================================================
-  // Combined filters
-  // =========================================================================
-  describe('combined filters', () => {
-    it('applies level filter and search simultaneously', async () => {
-      mockGet.mockResolvedValue({
-        data: [
-          makeRule({ id: 'r1', title: 'Critical LSASS', level: 'critical' }),
-          makeRule({ id: 'r2', title: 'High LSASS',     level: 'high' }),
-          makeRule({ id: 'r3', title: 'Critical Other', level: 'critical' }),
-        ],
-      })
-      renderPage()
-      await waitFor(() => expect(screen.getByText('Critical LSASS')).toBeInTheDocument())
-      fireEvent.click(screen.getByRole('button', { name: 'critical' }))
-      fireEvent.change(screen.getByPlaceholderText('Search rules...'), { target: { value: 'lsass' } })
-      await waitFor(() => {
-        expect(screen.getByText('Critical LSASS')).toBeInTheDocument()
-        expect(screen.queryByText('High LSASS')).not.toBeInTheDocument()
-        expect(screen.queryByText('Critical Other')).not.toBeInTheDocument()
-      })
-    })
-  })
-
-  // =========================================================================
-  // Editor modal — open and close
-  // =========================================================================
-  describe('editor modal', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({ data: [] })
-    })
-
-    it('editor modal is not shown initially', async () => {
-      renderPage()
-      await waitFor(() => expect(mockGet).toHaveBeenCalled())
-      expect(screen.queryByText('New Sigma Rule')).not.toBeInTheDocument()
-    })
-
-    it('opens the editor when "+ New Rule" is clicked', async () => {
-      renderPage()
-      await openEditor()
-      expect(screen.getByText('New Sigma Rule')).toBeInTheDocument()
-    })
-
-    it('shows a YAML textarea inside the modal', async () => {
-      renderPage()
-      await openEditor()
-      expect(getEditorTextarea()).toBeInTheDocument()
-    })
-
-    it('pre-fills the textarea with the EXAMPLE_SIGMA template', async () => {
-      renderPage()
-      await openEditor()
-      expect(getEditorTextarea().value).toContain('title: Suspicious LSASS Memory Access')
-    })
-
-    it('template contains all three required Sigma fields', async () => {
-      renderPage()
-      await openEditor()
-      const value = getEditorTextarea().value
-      expect(value).toContain('title:')
-      expect(value).toContain('detection:')
-      expect(value).toContain('logsource:')
-    })
-
-    it('shows the "Save Rule" button', async () => {
-      renderPage()
-      await openEditor()
-      expect(screen.getByRole('button', { name: 'Save Rule' })).toBeInTheDocument()
-    })
-
-    it('shows the "Cancel" button', async () => {
-      renderPage()
-      await openEditor()
-      expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
-    })
-
-    it('shows the "Import file" button inside the modal', async () => {
-      renderPage()
-      await openEditor()
-      expect(screen.getByRole('button', { name: 'Import file' })).toBeInTheDocument()
-    })
-
-    it('closes the modal when "Cancel" is clicked', async () => {
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-      expect(screen.queryByText('New Sigma Rule')).not.toBeInTheDocument()
-    })
-
-    it('closes the modal when the "x" button is clicked', async () => {
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: '×' }))
-      expect(screen.queryByText('New Sigma Rule')).not.toBeInTheDocument()
-    })
-
-    it('clicking "Create your first rule" link opens the editor', async () => {
-      renderPage()
-      const link = await screen.findByText('Create your first rule')
-      fireEvent.click(link)
-      expect(screen.getByText('New Sigma Rule')).toBeInTheDocument()
-    })
-
-    it('reopening the modal resets the YAML to the template', async () => {
-      renderPage()
-      await openEditor()
-      // Modify the textarea
-      fireEvent.change(getEditorTextarea(), { target: { value: 'modified content' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-      // Reopen
-      fireEvent.click(screen.getByRole('button', { name: '+ New Rule' }))
-      expect(getEditorTextarea().value).toContain('title: Suspicious LSASS Memory Access')
-    })
-
-    it('reopening the modal clears any previous validation errors', async () => {
-      renderPage()
-      await openEditor()
-      fireEvent.change(getEditorTextarea(), { target: { value: '' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      expect(screen.getByText('YAML content is empty')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-      fireEvent.click(screen.getByRole('button', { name: '+ New Rule' }))
-      expect(screen.queryByText('YAML content is empty')).not.toBeInTheDocument()
-    })
-  })
-
-  // =========================================================================
-  // YAML validation
-  // =========================================================================
-  describe('YAML validation', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({ data: [] })
-    })
-
-    async function openModalWithYaml(yaml: string) {
-      await openEditor()
-      fireEvent.change(getEditorTextarea(), { target: { value: yaml } })
+  describe('editor', () => {
+    async function openNewRule() {
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'New rule' }))
+      return screen.findByRole('dialog')
     }
 
-    it('shows "YAML content is empty" when the textarea is blank', async () => {
-      renderPage()
-      await openModalWithYaml('')
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      expect(screen.getByText('YAML content is empty')).toBeInTheDocument()
+    it('opens with an example rule and creates it with the title from the YAML', async () => {
+      api.create.mockResolvedValue(makeRule({ id: 'rule-new' }))
+      const dialog = await openNewRule()
+      const content = yamlEditor().value
+      expect(content).toContain('title: Suspicious LSASS memory access')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Create rule' }))
+      await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
+      expect(api.create).toHaveBeenCalledWith({ title: 'Suspicious LSASS memory access', content, enabled: true })
     })
 
-    it('shows "YAML content is empty" for whitespace-only content', async () => {
-      renderPage()
-      await openModalWithYaml('   \n  ')
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      expect(screen.getByText('YAML content is empty')).toBeInTheDocument()
+    it('creates a disabled rule when "Enable after saving" is off', async () => {
+      api.create.mockResolvedValue(makeRule({ id: 'rule-new', enabled: false }))
+      const dialog = await openNewRule()
+      fireEvent.click(within(dialog).getByRole('switch', { name: 'Enable after saving' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Create rule' }))
+      await waitFor(() => expect(api.create).toHaveBeenCalledWith(expect.objectContaining({ enabled: false })))
     })
 
-    it('shows missing "title" error when the title field is absent', async () => {
-      renderPage()
-      await openModalWithYaml(
-        'detection:\n  selection:\n    x: y\n  condition: selection\nlogsource:\n  product: windows\n',
-      )
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      expect(screen.getByText('Missing required field: "title"')).toBeInTheDocument()
+    it('blocks saving a rule without a detection block', async () => {
+      const dialog = await openNewRule()
+      fireEvent.change(yamlEditor(), { target: { value: 'title: Only a title\nlevel: low\n' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Create rule' }))
+      expect(within(dialog).getByText('Missing required field: detection')).toBeInTheDocument()
+      expect(api.create).not.toHaveBeenCalled()
     })
 
-    it('shows missing "detection" error when the detection field is absent', async () => {
-      renderPage()
-      await openModalWithYaml('title: My Rule\nlogsource:\n  product: windows\n')
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      expect(screen.getByText('Missing required field: "detection"')).toBeInTheDocument()
+    it('blocks saving invalid YAML and names the line', async () => {
+      const dialog = await openNewRule()
+      fireEvent.change(yamlEditor(), { target: { value: 'title: Broken\ndetection: [unclosed\n' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Create rule' }))
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(/YAML syntax error \(line \d+\)/)
+      expect(api.create).not.toHaveBeenCalled()
     })
 
-    it('shows missing "logsource" error when the logsource field is absent', async () => {
-      renderPage()
-      await openModalWithYaml(
-        'title: My Rule\ndetection:\n  selection:\n    x: y\n  condition: selection\n',
-      )
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      expect(screen.getByText('Missing required field: "logsource"')).toBeInTheDocument()
+    it('shows the server message when saving fails', async () => {
+      api.create.mockRejectedValue({ response: { data: { detail: 'Invalid Sigma YAML' } } })
+      const dialog = await openNewRule()
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Create rule' }))
+      expect(await within(dialog).findByText('Invalid Sigma YAML')).toBeInTheDocument()
+      expect(notifications()[0]).toMatchObject({ type: 'error', title: 'Save failed' })
     })
 
-    it('shows multiple missing-field errors simultaneously', async () => {
-      renderPage()
-      await openModalWithYaml('title: My Rule\n')
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      expect(screen.getByText('Missing required field: "detection"')).toBeInTheDocument()
-      expect(screen.getByText('Missing required field: "logsource"')).toBeInTheDocument()
+    it('loads a stored rule and saves the edited YAML with PATCH', async () => {
+      api.update.mockResolvedValue(RULES[0])
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Suspicious LSASS memory access' }))
+      const dialog = await screen.findByRole('dialog')
+      await waitFor(() => expect(yamlEditor().value).toBe(STORED_YAML))
+      expect(api.get).toHaveBeenCalledWith('rule-lsass')
+
+      const edited = STORED_YAML.replace('level: high', 'level: critical')
+      fireEvent.change(yamlEditor(), { target: { value: edited } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save rule' }))
+      await waitFor(() => expect(api.update).toHaveBeenCalledWith('rule-lsass', { content: edited }))
     })
 
-    it('does not call apiClient.post when validation fails', async () => {
-      renderPage()
-      await openModalWithYaml('')
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      expect(mockPost).not.toHaveBeenCalled()
+    it('offers Retry when the stored rule cannot be loaded', async () => {
+      api.get.mockRejectedValueOnce(new Error('boom'))
+      await renderLoaded()
+      fireEvent.click(screen.getByTitle('Edit Suspicious LSASS memory access'))
+      const dialog = await screen.findByRole('dialog')
+      expect(await within(dialog).findByText('Could not load this rule.')).toBeInTheDocument()
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Retry' }))
+      await waitFor(() => expect(yamlEditor().value).toBe(STORED_YAML))
     })
 
-    it('clears validation errors as the user types in the textarea', async () => {
-      renderPage()
-      await openEditor()
-      fireEvent.change(getEditorTextarea(), { target: { value: '' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      expect(screen.getByText('YAML content is empty')).toBeInTheDocument()
-      // Type to clear
-      fireEvent.change(getEditorTextarea(), { target: { value: 'title: x' } })
-      expect(screen.queryByText('YAML content is empty')).not.toBeInTheDocument()
+    it('tests unsaved YAML against the sample event', async () => {
+      api.testContent.mockResolvedValue({ matched: true, errors: [] })
+      const dialog = await openNewRule()
+      fireEvent.change(within(dialog).getByLabelText('Sample event (JSON)'), { target: { value: '{"GrantedAccess": "0x1010"}' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Run test' }))
+      await waitFor(() => expect(api.testContent).toHaveBeenCalledWith(yamlEditor().value, { GrantedAccess: '0x1010' }))
+      expect(await within(dialog).findByText('Matched')).toBeInTheDocument()
     })
 
-    it('does not show validation errors for valid YAML (all required fields present)', async () => {
-      mockPost.mockResolvedValue({ data: { id: 'new-rule' } })
-      renderPage()
-      await openEditor()
-      // EXAMPLE_SIGMA is pre-filled and valid — click Save directly
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => {
-        expect(screen.queryByText('YAML content is empty')).not.toBeInTheDocument()
-        expect(screen.queryByText(/Missing required field/)).not.toBeInTheDocument()
-      })
+    it('shows rule errors returned by the test endpoint', async () => {
+      api.testContent.mockResolvedValue({ matched: false, errors: ["'detection' block is missing 'condition'"] })
+      const dialog = await openNewRule()
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Run test' }))
+      expect(await within(dialog).findByText('Rule error')).toBeInTheDocument()
+      expect(within(dialog).getByText("'detection' block is missing 'condition'")).toBeInTheDocument()
     })
 
-    it('ignores indented lines (does not treat nested keys as top-level)', async () => {
-      // YAML with all top-level keys present — nested "detection" inside a comment block
-      // should not satisfy the top-level "detection" requirement
-      renderPage()
-      await openModalWithYaml(
-        'title: My Rule\nlogsource:\n  product: windows\n  # detection: nested\n',
-      )
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      expect(screen.getByText('Missing required field: "detection"')).toBeInTheDocument()
-    })
-  })
+    it('rejects a sample event that is not a JSON object', async () => {
+      const dialog = await openNewRule()
+      const sample = within(dialog).getByLabelText('Sample event (JSON)')
+      fireEvent.change(sample, { target: { value: '{not json' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Run test' }))
+      expect(within(dialog).getByText('The sample event is not valid JSON')).toBeInTheDocument()
 
-  // =========================================================================
-  // Save mutation — success
-  // =========================================================================
-  describe('save mutation — success', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({ data: [] })
-      mockPost.mockResolvedValue({
-        data: { id: 'new-rule-id', title: 'Suspicious LSASS Memory Access' },
-      })
+      fireEvent.change(sample, { target: { value: '[1, 2]' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Run test' }))
+      expect(within(dialog).getByText('The sample event must be a JSON object')).toBeInTheDocument()
+      expect(api.testContent).not.toHaveBeenCalled()
     })
 
-    it('calls apiClient.post with the correct endpoint and payload', async () => {
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => {
-        expect(mockPost).toHaveBeenCalledWith(
-          '/rules',
-          expect.objectContaining({
-            title:   'Suspicious LSASS Memory Access',
-            content: expect.stringContaining('title: Suspicious LSASS Memory Access'),
-            enabled: true,
-          }),
-        )
-      })
+    it('re-indents the YAML with Format', async () => {
+      const dialog = await openNewRule()
+      fireEvent.change(yamlEditor(), { target: { value: 'title:    Spaced\ndetection:\n      condition:   selection\n' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Format' }))
+      expect(yamlEditor().value).toBe('title: Spaced\ndetection:\n  condition: selection\n')
     })
 
-    it('closes the modal on successful save', async () => {
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => {
-        expect(screen.queryByText('New Sigma Rule')).not.toBeInTheDocument()
-      })
+    it('uses the Monaco theme that matches the app theme', async () => {
+      useUIStore.setState({ theme: 'light' })
+      await openNewRule()
+      expect(yamlEditor()).toHaveAttribute('data-theme', 'vs')
     })
 
-    it('invalidates the rules query — triggers a refetch after save', async () => {
-      mockGet
-        .mockResolvedValueOnce({ data: [] })
-        .mockResolvedValue({ data: [makeRule()] })
-      renderPage()
-      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1))
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(2))
-    })
-
-    it('shows "Saving..." label while the mutation is in-flight', async () => {
-      // Never-resolving promise keeps the mutation in-flight for the duration of the test
-      mockPost.mockReturnValue(new Promise<never>(() => {}))
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      expect(await screen.findByRole('button', { name: 'Saving...' })).toBeInTheDocument()
-    })
-
-    it('disables the Save button while saving', async () => {
-      mockPost.mockReturnValue(new Promise<never>(() => {}))
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      const savingBtn = await screen.findByRole('button', { name: 'Saving...' })
-      expect(savingBtn).toBeDisabled()
-    })
-
-    it('extracts the title from the YAML for the API payload', async () => {
-      renderPage()
-      await openEditor()
-      fireEvent.change(getEditorTextarea(), {
-        target: {
-          value:
-            'title: My Custom Rule\ndetection:\n  selection:\n    x: y\n  condition: selection\nlogsource:\n  product: linux\n',
-        },
-      })
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => {
-        expect(mockPost).toHaveBeenCalledWith(
-          '/rules',
-          expect.objectContaining({ title: 'My Custom Rule' }),
-        )
-      })
-    })
-
-    it('falls back to "Untitled Rule" when the title value is empty', async () => {
-      renderPage()
-      await openEditor()
-      // "title:" with no value passes validation but has no extractable title
-      const emptyTitleYaml =
-        'title:\ndetection:\n  selection:\n    x: y\n  condition: selection\nlogsource:\n  product: linux\n'
-      fireEvent.change(getEditorTextarea(), { target: { value: emptyTitleYaml } })
-      // Confirm the state update took effect before clicking Save
-      await waitFor(() => expect(getEditorTextarea().value).toBe(emptyTitleYaml))
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      // Wait for the API to be called (any args), then verify the title fallback
-      await waitFor(() => expect(mockPost).toHaveBeenCalled())
-      const [endpoint, payload] = mockPost.mock.calls[0] as [string, Record<string, unknown>]
-      expect(endpoint).toBe('/rules')
-      expect(payload.title).toBe('Untitled Rule')
+    it('uses the dark Monaco theme in dark mode', async () => {
+      await openNewRule()
+      expect(yamlEditor()).toHaveAttribute('data-theme', 'vs-dark')
     })
   })
 
-  // =========================================================================
-  // Save mutation — error
-  // =========================================================================
-  describe('save mutation — error', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({ data: [] })
+  describe('read-only role', () => {
+    beforeEach(() => setRole('hunter'))
+
+    it('hides create, import, reload, edit and delete for a hunter', async () => {
+      await renderLoaded()
+      expect(screen.queryByRole('button', { name: 'New rule' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Import' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Reload engine' })).not.toBeInTheDocument()
+      expect(screen.queryByTitle('Delete Suspicious LSASS memory access')).not.toBeInTheDocument()
+      expect(screen.queryByTitle('Edit Suspicious LSASS memory access')).not.toBeInTheDocument()
+      expect(screen.getByRole('switch', { name: 'Disable Suspicious LSASS memory access' })).toBeDisabled()
     })
 
-    it('shows the API error detail when save fails with a structured error', async () => {
-      mockPost.mockRejectedValue({
-        response: { data: { detail: 'Invalid Sigma YAML syntax' } },
-      })
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => {
-        expect(screen.getByText('Invalid Sigma YAML syntax')).toBeInTheDocument()
-      })
-    })
-
-    it('shows "Failed to save rule" fallback when the error has no detail field', async () => {
-      mockPost.mockRejectedValue(new Error('Network error'))
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => {
-        expect(screen.getByText('Failed to save rule')).toBeInTheDocument()
-      })
-    })
-
-    it('keeps the modal open when save fails', async () => {
-      mockPost.mockRejectedValue(new Error('fail'))
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => {
-        expect(screen.getByText('Failed to save rule')).toBeInTheDocument()
-        expect(screen.getByText('New Sigma Rule')).toBeInTheDocument()
-      })
-    })
-
-    it('clears the API error when the user types in the textarea', async () => {
-      mockPost.mockRejectedValue(new Error('fail'))
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => expect(screen.getByText('Failed to save rule')).toBeInTheDocument())
-      fireEvent.change(getEditorTextarea(), { target: { value: 'new content' } })
-      expect(screen.queryByText('Failed to save rule')).not.toBeInTheDocument()
-    })
-  })
-
-  // =========================================================================
-  // TopBar
-  // =========================================================================
-  describe('TopBar', () => {
-    it('renders the TopBar with the "Sigma Rules" crumb', () => {
-      renderPage()
-      expect(screen.getByTestId('topbar')).toHaveTextContent('Sigma Rules')
-    })
-  })
-
-  // =========================================================================
-  // Monaco YAML editor
-  // =========================================================================
-  describe('Monaco YAML editor', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({ data: [] })
-    })
-
-    it('renders the YAML editor (mocked as textarea) inside the modal', async () => {
-      renderPage()
-      await openEditor()
-      expect(getEditorTextarea()).toBeInTheDocument()
-    })
-
-    it('pre-fills the editor with the EXAMPLE_SIGMA template', async () => {
-      renderPage()
-      await openEditor()
-      expect(getEditorTextarea().value).toContain('title: Suspicious LSASS Memory Access')
-    })
-
-    it('updates the editor value as the user types', async () => {
-      renderPage()
-      await openEditor()
-      fireEvent.change(getEditorTextarea(), { target: { value: 'title: My Rule' } })
-      expect(getEditorTextarea().value).toBe('title: My Rule')
-    })
-  })
-
-  // =========================================================================
-  // Format YAML button
-  // =========================================================================
-  describe('Format YAML button', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({ data: [] })
-    })
-
-    it('renders the "Format" button inside the modal', async () => {
-      renderPage()
-      await openEditor()
-      expect(screen.getByRole('button', { name: 'Format' })).toBeInTheDocument()
-    })
-
-    it('reformats valid YAML when "Format" is clicked', async () => {
-      renderPage()
-      await openEditor()
-      // Write unformatted but valid YAML
-      fireEvent.change(getEditorTextarea(), {
-        target: {
-          value:
-            'title: My Rule\ndetection:\n  selection:\n    x: y\n  condition: selection\nlogsource:\n  product: linux\n',
-        },
-      })
-      fireEvent.click(screen.getByRole('button', { name: 'Format' }))
-      // After formatting, the editor should still contain the key fields
-      await waitFor(() => {
-        const val = getEditorTextarea().value
-        expect(val).toContain('title:')
-        expect(val).toContain('detection:')
-        expect(val).toContain('logsource:')
-      })
-    })
-
-    it('does not throw when "Format" is clicked with invalid YAML', async () => {
-      renderPage()
-      await openEditor()
-      fireEvent.change(getEditorTextarea(), { target: { value: ': invalid: yaml:' } })
-      // Should not throw — invalid YAML is returned unchanged
-      expect(() => fireEvent.click(screen.getByRole('button', { name: 'Format' }))).not.toThrow()
-    })
-  })
-
-  // =========================================================================
-  // Test Rule button
-  // =========================================================================
-  describe('Test Rule button', () => {
-    beforeEach(() => {
-      mockGet.mockResolvedValue({ data: [] })
-    })
-
-    it('renders the "Test Rule" button inside the modal', async () => {
-      renderPage()
-      await openEditor()
-      expect(screen.getByRole('button', { name: 'Test Rule' })).toBeInTheDocument()
-    })
-
-    it('calls apiClient.post /rules/test with yaml content and empty sample_event', async () => {
-      mockPost.mockResolvedValue({ data: { matched: true, errors: [] } })
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
-      await waitFor(() => {
-        expect(mockPost).toHaveBeenCalledWith(
-          '/rules/test',
-          expect.objectContaining({
-            content: expect.stringContaining('title: Suspicious LSASS Memory Access'),
-            sample_event: {},
-          }),
-        )
-      })
-    })
-
-    it('shows "✓ Matched" when the test returns matched: true', async () => {
-      mockPost.mockResolvedValue({ data: { matched: true, errors: [] } })
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
-      await waitFor(() => {
-        expect(screen.getByText('✓ Matched')).toBeInTheDocument()
-      })
-    })
-
-    it('shows "✗ No match" when the test returns matched: false with no errors', async () => {
-      mockPost.mockResolvedValue({ data: { matched: false, errors: [] } })
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
-      await waitFor(() => {
-        expect(screen.getByText('✗ No match')).toBeInTheDocument()
-      })
-    })
-
-    it('shows "⚠ Error" with message when the test returns errors', async () => {
-      mockPost.mockResolvedValue({ data: { matched: false, errors: ['Invalid condition'] } })
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
-      await waitFor(() => {
-        expect(screen.getByText('⚠ Error')).toBeInTheDocument()
-        expect(screen.getByText('Invalid condition')).toBeInTheDocument()
-      })
-    })
-
-    it('shows error result when the test API call fails', async () => {
-      mockPost.mockRejectedValue({
-        response: { data: { detail: 'Rule engine error' } },
-      })
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
-      await waitFor(() => {
-        expect(screen.getByText('⚠ Error')).toBeInTheDocument()
-        expect(screen.getByText('Rule engine error')).toBeInTheDocument()
-      })
-    })
-
-    it('shows "Test failed" fallback when the error has no detail', async () => {
-      mockPost.mockRejectedValue(new Error('Network error'))
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
-      await waitFor(() => {
-        expect(screen.getByText('Test failed')).toBeInTheDocument()
-      })
-    })
-
-    it('shows "Testing..." and disables the button while in-flight', async () => {
-      mockPost.mockReturnValue(new Promise<never>(() => {}))
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
-      const testingBtn = await screen.findByRole('button', { name: 'Testing...' })
-      expect(testingBtn).toBeDisabled()
-    })
-
-    it('does not call /rules/test when YAML is invalid', async () => {
-      renderPage()
-      await openEditor()
-      fireEvent.change(getEditorTextarea(), { target: { value: '' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
-      expect(mockPost).not.toHaveBeenCalled()
-      expect(screen.getByText('YAML content is empty')).toBeInTheDocument()
-    })
-
-    it('clears the test result when the editor content changes', async () => {
-      mockPost.mockResolvedValue({ data: { matched: true, errors: [] } })
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
-      await waitFor(() => expect(screen.getByText('✓ Matched')).toBeInTheDocument())
-      // Edit the YAML — test result should disappear
-      fireEvent.change(getEditorTextarea(), { target: { value: 'title: changed' } })
-      expect(screen.queryByText('✓ Matched')).not.toBeInTheDocument()
-    })
-
-    it('clears the test result when the modal is closed and reopened', async () => {
-      mockPost.mockResolvedValue({ data: { matched: true, errors: [] } })
-      renderPage()
-      await openEditor()
-      fireEvent.click(screen.getByRole('button', { name: 'Test Rule' }))
-      await waitFor(() => expect(screen.getByText('✓ Matched')).toBeInTheDocument())
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-      fireEvent.click(screen.getByRole('button', { name: '+ New Rule' }))
-      expect(screen.queryByText('✓ Matched')).not.toBeInTheDocument()
-    })
-  })
-
-  // =========================================================================
-  // Edit mode — click a rule row to open it in the Monaco editor
-  // =========================================================================
-
-  // YAML content that passes client-side validation (has title, detection, logsource)
-  const EDIT_YAML =
-    'title: Suspicious LSASS Memory Access\ndetection:\n  selection:\n    key: value\n  condition: selection\nlogsource:\n  product: windows\n'
-
-  const makeRuleDetail = () => ({
-    ...makeRule(),
-    content: EDIT_YAML,
-    description: 'Detects LSASS credential dump',
-  })
-
-  describe('edit mode', () => {
-    beforeEach(() => {
-      // Override the default "pending forever" mockGet set by the outer beforeEach.
-      // Distinguish list calls (/rules) from detail calls (/rules/<id>).
-      mockGet.mockImplementation((url: string) => {
-        if (url === '/rules') return Promise.resolve({ data: [makeRule()] })
-        if (/^\/rules\//.test(url)) return Promise.resolve({ data: makeRuleDetail() })
-        return Promise.reject(new Error(`Unexpected GET: ${url}`))
-      })
-      // Default: PATCH resolves immediately (overridden per-test as needed)
-      mockPatch.mockResolvedValue({ data: makeRule() })
-    })
-
-    it('clicking a rule row fetches rule detail and opens the editor', async () => {
-      renderPage()
-      const titleEl = await screen.findByText('Suspicious LSASS Memory Access')
-      fireEvent.click(titleEl)
-      await waitFor(() => expect(screen.getByText('Edit Rule')).toBeInTheDocument())
-      expect(mockGet).toHaveBeenCalledWith('/rules/rule-001')
-    })
-
-    it('editor is pre-filled with the rule YAML content in edit mode', async () => {
-      renderPage()
-      fireEvent.click(await screen.findByText('Suspicious LSASS Memory Access'))
-      await waitFor(() => screen.getByText('Edit Rule'))
-      expect(getEditorTextarea().value).toBe(EDIT_YAML)
-    })
-
-    it('shows "Edit Rule" as modal title and not "New Sigma Rule"', async () => {
-      renderPage()
-      fireEvent.click(await screen.findByText('Suspicious LSASS Memory Access'))
-      await waitFor(() => screen.getByText('Edit Rule'))
-      expect(screen.queryByText('New Sigma Rule')).not.toBeInTheDocument()
-    })
-
-    it('save in edit mode calls PATCH /rules/{id} and not POST /rules', async () => {
-      renderPage()
-      fireEvent.click(await screen.findByText('Suspicious LSASS Memory Access'))
-      await waitFor(() => screen.getByText('Edit Rule'))
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() =>
-        expect(mockPatch).toHaveBeenCalledWith('/rules/rule-001', { content: EDIT_YAML }),
-      )
-      // POST /rules (create) must NOT have been called
-      expect(mockPost).not.toHaveBeenCalledWith(
-        '/rules',
-        expect.objectContaining({ content: expect.any(String) }),
-      )
-    })
-
-    it('modal closes after a successful PATCH', async () => {
-      renderPage()
-      fireEvent.click(await screen.findByText('Suspicious LSASS Memory Access'))
-      await waitFor(() => screen.getByText('Edit Rule'))
-      fireEvent.click(screen.getByRole('button', { name: 'Save Rule' }))
-      await waitFor(() => expect(screen.queryByText('Edit Rule')).not.toBeInTheDocument())
-    })
-
-    it('closing an edit modal then opening "+ New Rule" shows create mode title', async () => {
-      renderPage()
-      fireEvent.click(await screen.findByText('Suspicious LSASS Memory Access'))
-      await waitFor(() => screen.getByText('Edit Rule'))
-      // Close via Cancel
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-      // Re-open in create mode
-      fireEvent.click(screen.getByRole('button', { name: '+ New Rule' }))
-      expect(screen.getByText('New Sigma Rule')).toBeInTheDocument()
-      expect(screen.queryByText('Edit Rule')).not.toBeInTheDocument()
+    it('opens a rule read-only, still testable', async () => {
+      await renderLoaded()
+      fireEvent.click(screen.getByRole('button', { name: 'Suspicious LSASS memory access' }))
+      const dialog = await screen.findByRole('dialog')
+      await waitFor(() => expect(yamlEditor().value).toBe(STORED_YAML))
+      expect(yamlEditor()).toHaveAttribute('readonly')
+      expect(within(dialog).queryByRole('button', { name: 'Save rule' })).not.toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Run test' })).toBeInTheDocument()
     })
   })
 })

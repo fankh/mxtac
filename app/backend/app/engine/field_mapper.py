@@ -102,7 +102,7 @@ def ocsf_to_sigma_flat(
 ) -> dict[str, Any]:
     """Convert an OCSFEvent to a flat dict with Sigma-compatible field names.
 
-    The result contains five layers:
+    The result contains these layers:
 
     1. **Common fields** (always present):
        - ``_product``  — lowercase ``metadata_product``
@@ -117,6 +117,14 @@ def ocsf_to_sigma_flat(
     4. **Endpoint short names** — from ``event.src_endpoint`` (``hostname``,
        ``ip``, ``port``, ``domain``); added with *setdefault* so dot-notation
        keys take precedence if the same name appears in both.
+
+    4a. **Finding** — ``finding_info.title`` and ``finding_info.analytic.uid``
+       (name and ID of the Wazuh rule or Suricata signature that produced the
+       event), when the event carries a finding.
+
+    4b. **Extension fields** — every key of ``event.unmapped`` as
+       ``unmapped.<key>`` and, when the short name is still free, as ``<key>``
+       (for example ``message`` and ``app_name`` of a syslog event).
 
     5. **Category-specific Sigma aliases** — canonical Windows/Sysmon-style
        field names (``CommandLine``, ``Image``, ``DestinationIp`` …) derived
@@ -176,6 +184,17 @@ def ocsf_to_sigma_flat(
 
     # ── 4. src_endpoint short names (backwards-compat: hostname, ip, …) ──────
     for k, v in src.model_dump().items():
+        flat.setdefault(k, v)
+
+    # ── 4a. Finding of the source product (Wazuh rule, Suricata signature) ───
+    if event.finding_info is not None:
+        flat["finding_info.title"] = event.finding_info.title
+        analytic = event.finding_info.analytic
+        flat["finding_info.analytic.uid"] = analytic.uid if analytic else None
+
+    # ── 4b. Extension fields (message, app_name, source-specific keys) ───────
+    for k, v in event.unmapped.items():
+        flat[f"unmapped.{k}"] = v
         flat.setdefault(k, v)
 
     # ── 5. Category-specific Sigma aliases ────────────────────────────────────

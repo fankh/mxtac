@@ -14,12 +14,20 @@ services:
       - VALKEY_URL=redis://redis:6379/0
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
-      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
       - QUEUE_BACKEND=memory
       - CORS_ORIGINS=["http://localhost:15001","http://localhost:3000"]
+      # Optional, taken from the host environment or app/.env.
+      # INITIAL_ADMIN_PASSWORD: password of admin@mxtac.local on the first start.
+      #   Empty = a random one is generated and written once to the backend log.
+      # SEED_DEMO_DATA: true also creates demo accounts and invented sample data.
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+      - SEED_DEMO_DATA=${SEED_DEMO_DATA:-false}
     volumes:
       - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+    # Apply database migrations, then start the API. On an empty database the
+    # first start creates the account admin@mxtac.local and imports the bundled
+    # Sigma rules (see README, "First login").
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,7 +36,7 @@ services:
       opensearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ready', timeout=4)"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,11 +48,12 @@ services:
       dockerfile: Dockerfile.dev
     ports:
       - "15001:5173"
+    environment:
+      # Where the Vite dev server forwards /api (REST and WebSocket).
+      - VITE_PROXY_TARGET=http://backend:8080
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    environment:
-      - VITE_API_BASE_URL=http://localhost:15000
     depends_on:
       - backend
     command: npm run dev -- --host 0.0.0.0
@@ -160,36 +169,9 @@ services:
     profiles:
       - monitoring
 
-  # ─── Redpanda (Kafka-compatible) ──────────────────────────────────────────────
-  redpanda:
-    image: redpandadata/redpanda:v24.3.1
-    command:
-      - redpanda start
-      - --overprovisioned
-      - --smp 1
-      - --memory 512M
-      - --reserve-memory 0M
-      - --node-id 0
-      - --check=false
-      - --kafka-addr PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
-      - --advertise-kafka-addr PLAINTEXT://redpanda:9092,OUTSIDE://localhost:15007
-    ports:
-      - "15007:19092"
-      - "15008:9644"
-    volumes:
-      - redpanda_data:/var/lib/redpanda/data
-    healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy: true'"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-    profiles:
-      - kafka
-
 volumes:
   postgres_data:
   redis_data:
   opensearch_data:
-  redpanda_data:
   prometheus_data:
   grafana_data:

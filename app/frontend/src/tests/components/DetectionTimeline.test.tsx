@@ -1,153 +1,79 @@
+import type { ReactNode } from 'react'
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi, beforeAll } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { DetectionTimeline } from '../../components/features/overview/DetectionTimeline'
 import type { TimelinePoint } from '../../types/api'
 
-// Recharts' ResponsiveContainer uses ResizeObserver internally.
-// Provide a no-op implementation for jsdom.
-beforeAll(() => {
-  vi.stubGlobal(
-    'ResizeObserver',
-    vi.fn().mockImplementation(() => ({
-      observe: vi.fn(),
-      unobserve: vi.fn(),
-      disconnect: vi.fn(),
-    })),
-  )
-})
+// Recharts does not lay out in jsdom (ResponsiveContainer has zero size), so the chart
+// is replaced by markers that expose what it was given.
+vi.mock('recharts', () => ({
+  ResponsiveContainer: ({ children }: { children: ReactNode }) => <div data-testid="chart">{children}</div>,
+  BarChart: ({ data, children }: { data: unknown[]; children: ReactNode }) => (
+    <div data-testid="bar-chart" data-rows={JSON.stringify(data)}>{children}</div>
+  ),
+  Bar: ({ dataKey, name }: { dataKey: string; name: string }) => <div data-testid="bar" data-key={dataKey}>{name}</div>,
+  CartesianGrid: () => null,
+  Tooltip: () => null,
+  XAxis: () => null,
+  YAxis: () => null,
+}))
 
-// ---------------------------------------------------------------------------
-// Mock data
-// ---------------------------------------------------------------------------
-
-const mockData: TimelinePoint[] = [
-  { date: 'Mon', critical: 5,  high: 12, medium: 20, total: 37 },
-  { date: 'Tue', critical: 3,  high: 8,  medium: 15, total: 26 },
-  { date: 'Wed', critical: 7,  high: 14, medium: 22, total: 43 },
-  { date: 'Thu', critical: 2,  high: 6,  medium: 10, total: 18 },
-  { date: 'Fri', critical: 9,  high: 18, medium: 30, total: 57 },
-  { date: 'Sat', critical: 1,  high: 4,  medium: 8,  total: 13 },
-  { date: 'Sun', critical: 4,  high: 10, medium: 17, total: 31 },
+const data: TimelinePoint[] = [
+  { date: 'Mon', critical: 5, high: 12, medium: 20, total: 40 },
+  { date: 'Tue', critical: 3, high: 8, medium: 15, total: 26 },
 ]
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe('DetectionTimeline', () => {
-  // -------------------------------------------------------------------------
-  // Header
-  // -------------------------------------------------------------------------
-  describe('header', () => {
-    it('renders "Detection Timeline" heading', () => {
-      render(<DetectionTimeline data={mockData} />)
-      expect(screen.getByText('Detection Timeline')).toBeInTheDocument()
-    })
-
-    it('renders "Alerts over past 7 days" subtitle', () => {
-      render(<DetectionTimeline data={mockData} />)
-      expect(screen.getByText('Alerts over past 7 days')).toBeInTheDocument()
-    })
+  it('shows the heading and the selected range', () => {
+    render(<DetectionTimeline data={data} rangeLabel="last 7 days" />)
+    expect(screen.getByRole('heading', { name: 'Detections over time' })).toBeInTheDocument()
+    expect(screen.getByText('Per day, by severity, last 7 days')).toBeInTheDocument()
   })
 
-  // -------------------------------------------------------------------------
-  // Legend
-  // -------------------------------------------------------------------------
-  describe('legend', () => {
-    it('renders the "Critical" legend label', () => {
-      render(<DetectionTimeline data={mockData} />)
-      expect(screen.getByText('Critical')).toBeInTheDocument()
-    })
-
-    it('renders the "Other" legend label', () => {
-      render(<DetectionTimeline data={mockData} />)
-      expect(screen.getByText('Other')).toBeInTheDocument()
-    })
-
-    it('renders both legend items together', () => {
-      render(<DetectionTimeline data={mockData} />)
-      expect(screen.getByText('Critical')).toBeInTheDocument()
-      expect(screen.getByText('Other')).toBeInTheDocument()
-    })
+  it('draws one stacked series per severity', () => {
+    render(<DetectionTimeline data={data} rangeLabel="last 7 days" />)
+    const bars = screen.getAllByTestId('bar')
+    expect(bars.map((b) => b.textContent)).toEqual(['Critical', 'High', 'Medium', 'Low'])
+    expect(bars.map((b) => b.dataset.key)).toEqual(['critical', 'high', 'medium', 'other'])
   })
 
-  // -------------------------------------------------------------------------
-  // Chart rendering
-  // -------------------------------------------------------------------------
-  describe('chart rendering', () => {
-    it('renders without crashing with typical 7-day data', () => {
-      expect(() => render(<DetectionTimeline data={mockData} />)).not.toThrow()
-    })
-
-    it('renders without crashing with empty data', () => {
-      expect(() => render(<DetectionTimeline data={[]} />)).not.toThrow()
-    })
-
-    it('renders without crashing with a single data point', () => {
-      const single: TimelinePoint[] = [
-        { date: 'Mon', critical: 1, high: 2, medium: 3, total: 6 },
-      ]
-      expect(() => render(<DetectionTimeline data={single} />)).not.toThrow()
-    })
-
-    it('renders without crashing when all values are zero', () => {
-      const zeros: TimelinePoint[] = [
-        { date: 'Mon', critical: 0, high: 0, medium: 0, total: 0 },
-      ]
-      expect(() => render(<DetectionTimeline data={zeros} />)).not.toThrow()
-    })
-
-    it('renders without crashing with large values', () => {
-      const large: TimelinePoint[] = [
-        { date: 'Mon', critical: 10000, high: 50000, medium: 100000, total: 160000 },
-      ]
-      expect(() => render(<DetectionTimeline data={large} />)).not.toThrow()
-    })
+  it('charts the remainder of the total as the low series, never below zero', () => {
+    render(
+      <DetectionTimeline
+        data={[...data, { date: 'Wed', critical: 4, high: 4, medium: 4, total: 10 }]}
+        rangeLabel="last 7 days"
+      />,
+    )
+    const rows = JSON.parse(screen.getByTestId('bar-chart').dataset.rows ?? '[]') as { date: string; other: number }[]
+    expect(rows.map((r) => [r.date, r.other])).toEqual([['Mon', 3], ['Tue', 0], ['Wed', 0]])
   })
 
-  // -------------------------------------------------------------------------
-  // Layout structure
-  // -------------------------------------------------------------------------
-  describe('layout structure', () => {
-    it('renders the outer surface card container', () => {
-      const { container } = render(<DetectionTimeline data={mockData} />)
-      expect(container.querySelector('.bg-surface')).toBeInTheDocument()
-    })
-
-    it('renders the header flex row with heading and legend side-by-side', () => {
-      const { container } = render(<DetectionTimeline data={mockData} />)
-      const flexRow = container.querySelector('.flex.items-start.justify-between')
-      expect(flexRow).toBeInTheDocument()
-    })
-
-    it('heading and legend are both inside the flex header row', () => {
-      const { container } = render(<DetectionTimeline data={mockData} />)
-      const flexRow = container.querySelector('.flex.items-start.justify-between')
-      expect(flexRow).not.toBeNull()
-      expect(flexRow!.querySelector('h3')).toBeInTheDocument()
-    })
-
-    it('renders the chart wrapper div', () => {
-      const { container } = render(<DetectionTimeline data={mockData} />)
-      // ResponsiveContainer renders a div wrapper
-      expect(container.querySelector('.recharts-responsive-container')).toBeInTheDocument()
-    })
+  it('shows the legend in the empty state too', () => {
+    render(<DetectionTimeline data={[]} rangeLabel="last 24 hours" />)
+    for (const label of ['Critical', 'High', 'Medium', 'Low']) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
   })
 
-  // -------------------------------------------------------------------------
-  // Edge cases
-  // -------------------------------------------------------------------------
-  describe('edge cases', () => {
-    it('re-renders without error when data changes from empty to populated', () => {
-      const { rerender } = render(<DetectionTimeline data={[]} />)
-      expect(() => rerender(<DetectionTimeline data={mockData} />)).not.toThrow()
-      expect(screen.getByText('Detection Timeline')).toBeInTheDocument()
-    })
+  it('shows an empty state instead of the chart when there is no data', () => {
+    render(<DetectionTimeline data={[]} rangeLabel="last 24 hours" />)
+    expect(screen.getByText('No detections in this period')).toBeInTheDocument()
+    expect(screen.queryByTestId('chart')).not.toBeInTheDocument()
+  })
 
-    it('re-renders without error when data changes from populated to empty', () => {
-      const { rerender } = render(<DetectionTimeline data={mockData} />)
-      expect(() => rerender(<DetectionTimeline data={[]} />)).not.toThrow()
-      expect(screen.getByText('Detection Timeline')).toBeInTheDocument()
-    })
+  it('shows the empty state when every day has zero detections', () => {
+    render(
+      <DetectionTimeline
+        data={[{ date: 'Mon', critical: 0, high: 0, medium: 0, total: 0 }]}
+        rangeLabel="last 24 hours"
+      />,
+    )
+    expect(screen.getByText('No detections in this period')).toBeInTheDocument()
+  })
+
+  it('shows the chart and no empty state when there are detections', () => {
+    render(<DetectionTimeline data={data} rangeLabel="last 7 days" />)
+    expect(screen.getByTestId('chart')).toBeInTheDocument()
+    expect(screen.queryByText('No detections in this period')).not.toBeInTheDocument()
   })
 })

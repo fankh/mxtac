@@ -1,12 +1,8 @@
 import re
-from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from ..core.rbac import PERMISSIONS
 from ..core.validators import EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validate_password_complexity, validate_password_no_consecutive
-
-_VALID_SCOPES: frozenset[str] = frozenset(PERMISSIONS.keys())
 
 # Accepts any user@domain.tld format — including RFC 6762 .local names used
 # by internal service accounts (e.g. analyst@mxtac.local).
@@ -26,14 +22,15 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
+    # The refresh token is not part of the body: it is set as an HttpOnly
+    # cookie scoped to POST /auth/refresh, out of reach of page scripts.
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
     expires_in: int
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
+    # Identity of the signed-in account, so clients can apply role-based UI
+    # without decoding the JWT.
+    email: str
+    role: str
 
 
 class LogoutResponse(BaseModel):
@@ -97,16 +94,21 @@ class PasswordChangeRequiredResponse(BaseModel):
     password_change_token: str
 
 
-class ChangePasswordRequest(BaseModel):
-    password_change_token: str = Field(..., max_length=512)
+class _NewPasswordBody(BaseModel):
+    """Shared ``new_password`` field: length bounds plus the password policy."""
+
     new_password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
-    confirm_password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
 
     @field_validator("new_password")
     @classmethod
     def validate_new_password_policy(cls, v: str) -> str:
         validate_password_complexity(v)
         return validate_password_no_consecutive(v)
+
+
+class ChangePasswordRequest(_NewPasswordBody):
+    password_change_token: str = Field(..., max_length=512)
+    confirm_password: str = Field(..., min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
 
     @model_validator(mode="after")
     def passwords_match(self) -> "ChangePasswordRequest":
@@ -115,64 +117,6 @@ class ChangePasswordRequest(BaseModel):
         return self
 
 
-# ---------------------------------------------------------------------------
-# Feature 1.11 — Scoped API key management
-# Feature 3.9 — Scoped API keys (per-permission set)
-# ---------------------------------------------------------------------------
-
-
-class APIKeyCreate(BaseModel):
-    label: str = Field(..., min_length=1, max_length=255)
-    # Feature 3.9: either `scopes` or `permission_set_id` must be provided.
-    # Provide `scopes` for explicit per-permission control (Feature 1.11),
-    # or `permission_set_id` to derive scopes from a named PermissionSet.
-    scopes: list[str] | None = Field(None, min_length=1)
-    permission_set_id: str | None = None
-    expires_at: datetime | None = None
-
-    @field_validator("scopes")
-    @classmethod
-    def validate_scopes(cls, v: list[str] | None) -> list[str] | None:
-        if v is None:
-            return v
-        invalid = [s for s in v if s not in _VALID_SCOPES]
-        if invalid:
-            raise ValueError(f"Invalid scope(s): {', '.join(sorted(invalid))}")
-        # Deduplicate while preserving order
-        return list(dict.fromkeys(v))
-
-    @field_validator("expires_at")
-    @classmethod
-    def validate_expires_at(cls, v: datetime | None) -> datetime | None:
-        if v is not None:
-            # Ensure timezone-aware comparison
-            if v.tzinfo is None:
-                raise ValueError("expires_at must include timezone information")
-            if v <= datetime.now(timezone.utc):
-                raise ValueError("expires_at must be in the future")
-        return v
-
-    @model_validator(mode="after")
-    def require_scopes_or_permission_set(self) -> "APIKeyCreate":
-        if self.scopes is None and self.permission_set_id is None:
-            raise ValueError("Either 'scopes' or 'permission_set_id' must be provided")
-        if self.scopes is not None and self.permission_set_id is not None:
-            raise ValueError("Provide either 'scopes' or 'permission_set_id', not both")
-        return self
-
-
-class APIKeyResponse(BaseModel):
-    id: str
-    label: str | None
-    scopes: list[str]
-    # Feature 3.9: ID of the PermissionSet used at creation (None if created with explicit scopes)
-    permission_set_id: str | None = None
-    is_active: bool
-    created_at: datetime
-    expires_at: datetime | None = None
-    last_used_at: datetime | None = None
-
-
-class APIKeyCreateResponse(APIKeyResponse):
-    """Extends APIKeyResponse with the raw key — returned once on creation only."""
-    key: str
+# Signed-in user changing their own password (POST /auth/password)
+class SelfPasswordChangeRequest(_NewPasswordBody):
+    current_password: str = Field(..., min_length=1, max_length=PASSWORD_MAX_LENGTH)

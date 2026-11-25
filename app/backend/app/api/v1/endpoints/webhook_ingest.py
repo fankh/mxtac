@@ -1,8 +1,8 @@
 """Generic webhook ingest endpoint — Feature 35.3 (extends 6.21).
 
 Accepts arbitrary JSON payloads from registered "generic" connectors and
-publishes each event to a dynamic ``mxtac.raw.{source_name}`` topic for
-downstream normalizer processing.
+publishes each event to the ``mxtac.raw.webhook`` topic, tagged with the
+connector name in ``_webhook_source``, for the webhook normalizer.
 
 Authentication:
   X-MxTac-Source — registered connector name (must be type "generic"), required.
@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.valkey import check_webhook_source_rate_limit
-from ....pipeline.queue import MessageQueue, get_queue
+from ....pipeline.queue import MessageQueue, Topic, get_queue
 from ....repositories.connector_repo import ConnectorRepo
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -43,7 +43,8 @@ async def _resolve_connector(source_name: str, token: str, db: AsyncSession):
     """Look up a generic connector by name and validate its webhook token.
 
     Raises ``401 Unauthorized`` when the source is unknown, not a generic
-    connector, or the token does not match.
+    connector, or the token does not match, and ``403 Forbidden`` when the
+    source is disabled.
     """
     connector = await ConnectorRepo.get_by_name(db, source_name)
     if connector is None or connector.connector_type != "generic":
@@ -57,6 +58,11 @@ async def _resolve_connector(source_name: str, token: str, db: AsyncSession):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid webhook token",
+        )
+    if not connector.enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This source is disabled. Enable it on the Sources page to send events.",
         )
     return connector
 
@@ -88,7 +94,7 @@ async def webhook_ingest(
     """Generic webhook receiver — connector-authenticated JSON ingest.
 
     Validates the source connector (type must be "generic") and webhook token,
-    then publishes each event to ``mxtac.raw.{source_name}``.
+    then publishes each event to ``mxtac.raw.webhook``.
 
     Rate limited to 100 requests/minute per source (fail-open on Valkey outage
     so events are never silently dropped).
@@ -98,6 +104,7 @@ async def webhook_ingest(
     Errors:
       - ``400`` — body is not valid JSON, or not an object / array of objects.
       - ``401`` — unknown source, not a generic connector, or token mismatch.
+      - ``403`` — the source is disabled.
       - ``413`` — body exceeds the 5 MB limit.
       - ``429`` — rate limit exceeded (100 req/min per source).
     """
@@ -111,7 +118,7 @@ async def webhook_ingest(
         )
 
     # 2. Validate connector + token
-    await _resolve_connector(x_mxtac_source, x_mxtac_token, db)
+    connector = await _resolve_connector(x_mxtac_source, x_mxtac_token, db)
 
     # 3. Enforce 5 MB body limit — check Content-Length first for early rejection
     content_length = request.headers.get("Content-Length")
@@ -149,7 +156,6 @@ async def webhook_ingest(
         )
 
     # 6. Publish valid events; skip and count non-object array items
-    topic = f"mxtac.raw.{x_mxtac_source}"
     received_at = datetime.now(timezone.utc).isoformat()
     accepted = 0
     rejected = 0
@@ -158,11 +164,15 @@ async def webhook_ingest(
         if not isinstance(event, dict):
             rejected += 1
             continue
-        await queue.publish(topic, {
+        await queue.publish(Topic.RAW_WEBHOOK, {
             "_webhook_source": x_mxtac_source,
             "_received_at": received_at,
             **event,
         })
         accepted += 1
+
+    # 7. Count the events on the source, so the Sources page shows them
+    if accepted:
+        await ConnectorRepo.add_counters(db, connector.id, events=accepted, mark_active=True)
 
     return {"accepted": accepted, "rejected": rejected}

@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core import database
 from ..core.logging import get_logger
 from ..models.connector import Connector
 from ..pipeline.queue import MessageQueue
@@ -19,10 +20,7 @@ from .base import BaseConnector, ConnectorConfig
 from .wazuh import WazuhConnector
 from .zeek import ZeekConnector
 from .suricata import SuricataConnector
-from .prowler import ProwlerConnector
-from .opencti import OpenCTIConnector
 from .syslog import SyslogUDPConnector
-from .velociraptor import VelociraptorConnector
 
 logger = get_logger(__name__)
 
@@ -30,10 +28,7 @@ CONNECTOR_TYPES: dict[str, type[BaseConnector]] = {
     "wazuh": WazuhConnector,
     "zeek": ZeekConnector,
     "suricata": SuricataConnector,
-    "prowler": ProwlerConnector,
-    "opencti": OpenCTIConnector,
     "syslog": SyslogUDPConnector,
-    "velociraptor": VelociraptorConnector,
 }
 
 # ── Feature 6.10 / 6.17: connector offset state file helpers ──────────────────
@@ -100,101 +95,27 @@ def _save_suricata_position(state_file: Path, position: int) -> None:
         logger.warning("Failed to save Suricata state file=%s err=%s", state_file, exc)
 
 
-# ── Feature 6.19: Prowler timestamp state file helpers ────────────────────────
-
-
-def _prowler_state_file(connector_name: str) -> Path:
-    """Return the path of the JSON state file for a Prowler connector."""
-    return _STATE_DIR / f"prowler_timestamp_{connector_name}.json"
-
-
-def _load_prowler_timestamp(state_file: Path) -> datetime | None:
-    """Load persisted ISO timestamp from *state_file*. Returns None on any error."""
-    try:
-        if state_file.exists():
-            data = json.loads(state_file.read_text())
-            if isinstance(data, str):
-                return datetime.fromisoformat(data)
-    except Exception as exc:
-        logger.warning("Failed to load Prowler state file=%s err=%s", state_file, exc)
-    return None
-
-
-def _save_prowler_timestamp(state_file: Path, ts: datetime) -> None:
-    """Atomically write *ts* ISO string to *state_file* (write-then-rename)."""
-    try:
-        state_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp = state_file.with_suffix(".tmp")
-        tmp.write_text(json.dumps(ts.isoformat()))
-        tmp.rename(state_file)
-    except Exception as exc:
-        logger.warning("Failed to save Prowler state file=%s err=%s", state_file, exc)
-
-
-# ── Feature 6.20: OpenCTI timestamp state file helpers ────────────────────────
-
-
-def _opencti_state_file(connector_name: str) -> Path:
-    """Return the path of the JSON state file for an OpenCTI connector."""
-    return _STATE_DIR / f"opencti_timestamp_{connector_name}.json"
-
-
-def _load_opencti_timestamp(state_file: Path) -> datetime | None:
-    """Load persisted ISO timestamp from *state_file*. Returns None on any error."""
-    try:
-        if state_file.exists():
-            data = json.loads(state_file.read_text())
-            if isinstance(data, str):
-                return datetime.fromisoformat(data)
-    except Exception as exc:
-        logger.warning("Failed to load OpenCTI state file=%s err=%s", state_file, exc)
-    return None
-
-
-def _save_opencti_timestamp(state_file: Path, ts: datetime) -> None:
-    """Atomically write *ts* ISO string to *state_file* (write-then-rename)."""
-    try:
-        state_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp = state_file.with_suffix(".tmp")
-        tmp.write_text(json.dumps(ts.isoformat()))
-        tmp.rename(state_file)
-    except Exception as exc:
-        logger.warning("Failed to save OpenCTI state file=%s err=%s", state_file, exc)
-
-
-# ── Feature 6.23: Velociraptor timestamp state file helpers ───────────────────
-
-
-def _velociraptor_state_file(connector_name: str) -> Path:
-    """Return the path of the JSON state file for a Velociraptor connector."""
-    return _STATE_DIR / f"velociraptor_timestamp_{connector_name}.json"
-
-
-def _load_velociraptor_timestamp(state_file: Path) -> datetime | None:
-    """Load persisted ISO timestamp from *state_file*. Returns None on any error."""
-    try:
-        if state_file.exists():
-            data = json.loads(state_file.read_text())
-            if isinstance(data, str):
-                return datetime.fromisoformat(data)
-    except Exception as exc:
-        logger.warning("Failed to load Velociraptor state file=%s err=%s", state_file, exc)
-    return None
-
-
-def _save_velociraptor_timestamp(state_file: Path, ts: datetime) -> None:
-    """Atomically write *ts* ISO string to *state_file* (write-then-rename)."""
-    try:
-        state_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp = state_file.with_suffix(".tmp")
-        tmp.write_text(json.dumps(ts.isoformat()))
-        tmp.rename(state_file)
-    except Exception as exc:
-        logger.warning("Failed to save Velociraptor state file=%s err=%s", state_file, exc)
-
-
 def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | None:
-    """Create a connector instance from a DB connector row."""
+    """Create a connector instance from a DB connector row.
+
+    The instance persists its event and error totals through
+    ``counters_callback`` (see ``BaseConnector._flush_counters``).
+    """
+    connector = _build_connector(db_conn, queue)
+    if connector is not None:
+        connector_id = db_conn.id
+
+        async def _counters_cb(events: int, errors: int, _id: str = connector_id) -> None:
+            async with database.AsyncSessionLocal() as session:
+                await ConnectorRepo.add_counters(session, _id, events=events, errors=errors)
+                await session.commit()
+
+        connector.counters_callback = _counters_cb
+    return connector
+
+
+def _build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | None:
+    """Create the connector instance for *db_conn* with its status and checkpoint callbacks."""
     cls = CONNECTOR_TYPES.get(db_conn.connector_type)
     if not cls:
         logger.warning("Unknown connector type=%s name=%s", db_conn.connector_type, db_conn.name)
@@ -287,63 +208,6 @@ def build_connector(db_conn: Connector, queue: MessageQueue) -> BaseConnector | 
             status_callback=_status_cb,
         )
 
-    if cls is ProwlerConnector:
-        # Feature 6.19: persist fetch timestamp so restarts do not re-ingest findings
-        state_file = _prowler_state_file(db_conn.name)
-        initial_ts = _load_prowler_timestamp(state_file)
-
-        async def _prowler_checkpoint(
-            ts: datetime,
-            _sf: Path = state_file,
-        ) -> None:
-            _save_prowler_timestamp(_sf, ts)
-
-        return ProwlerConnector(
-            config,
-            queue,
-            initial_last_fetched_at=initial_ts,
-            checkpoint_callback=_prowler_checkpoint,
-            status_callback=_status_cb,
-        )
-
-    if cls is OpenCTIConnector:
-        # Feature 6.20: persist fetch timestamp so restarts do not re-ingest objects
-        state_file = _opencti_state_file(db_conn.name)
-        initial_ts = _load_opencti_timestamp(state_file)
-
-        async def _opencti_checkpoint(
-            ts: datetime,
-            _sf: Path = state_file,
-        ) -> None:
-            _save_opencti_timestamp(_sf, ts)
-
-        return OpenCTIConnector(
-            config,
-            queue,
-            initial_last_fetched_at=initial_ts,
-            checkpoint_callback=_opencti_checkpoint,
-            status_callback=_status_cb,
-        )
-
-    if cls is VelociraptorConnector:
-        # Feature 6.23: persist fetch timestamp so restarts do not re-ingest artifacts
-        state_file = _velociraptor_state_file(db_conn.name)
-        initial_ts = _load_velociraptor_timestamp(state_file)
-
-        async def _velociraptor_checkpoint(
-            ts: datetime,
-            _sf: Path = state_file,
-        ) -> None:
-            _save_velociraptor_timestamp(_sf, ts)
-
-        return VelociraptorConnector(
-            config,
-            queue,
-            initial_last_fetched_at=initial_ts,
-            checkpoint_callback=_velociraptor_checkpoint,
-            status_callback=_status_cb,
-        )
-
     return cls(config, queue, status_callback=_status_cb)
 
 
@@ -364,6 +228,9 @@ async def start_connectors_from_db(
     connectors: dict[str, BaseConnector] = {}
     skipped = 0
     for db_conn in db_connectors:
+        if db_conn.connector_type == "generic":
+            # A webhook source has nothing to run: POST /ingest serves it.
+            continue
         try:
             conn = build_connector(db_conn, queue)
             if conn:

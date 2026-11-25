@@ -20,3 +20,5 @@ tags:
   - attack.TA0006
 references:
   - https://attack.mitre.org/techniques/T1003/001/
+falsepositives:
+  - Endpoint protection and backup agents that are not in the filter list

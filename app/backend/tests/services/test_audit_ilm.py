@@ -20,13 +20,11 @@ Coverage:
       · AUDIT_MAPPING fields are included
       · exception does not crash ensure_indices()
   - AuditLogger.log() — monthly rollover index
-  - AuditLogger.search() — wildcard search across mxtac-audit-*
 """
 
 from __future__ import annotations
 
 import re
-import sys
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -640,56 +638,3 @@ async def test_audit_logger_log_passes_refresh_true() -> None:
 
     kw = mock_client.index.call_args.kwargs
     assert kw.get("refresh") == "true"
-
-
-# ---------------------------------------------------------------------------
-# AuditLogger.search() — wildcard across mxtac-audit-*
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_audit_logger_search_targets_audit_wildcard_index() -> None:
-    """search() queries mxtac-audit-* to cover all monthly audit indices."""
-    audit = AuditLogger()
-    mock_client = MagicMock()
-    mock_client.search = AsyncMock(return_value={
-        "hits": {"total": {"value": 0}, "hits": []}
-    })
-    audit._client = mock_client
-
-    await audit.search()
-
-    call = mock_client.search.call_args
-    index_arg = call.kwargs.get("index") or call.args[0]
-    assert index_arg == "mxtac-audit-*"
-
-
-@pytest.mark.asyncio
-async def test_audit_logger_search_does_not_target_single_static_index() -> None:
-    """search() must not target the old single static 'mxtac-audit' index."""
-    audit = AuditLogger()
-    mock_client = MagicMock()
-    mock_client.search = AsyncMock(return_value={
-        "hits": {"total": {"value": 0}, "hits": []}
-    })
-    audit._client = mock_client
-
-    await audit.search()
-
-    call = mock_client.search.call_args
-    index_arg = call.kwargs.get("index") or call.args[0]
-    # Exact equality to "mxtac-audit" (no wildcard) would be the old broken behaviour
-    assert index_arg != "mxtac-audit", (
-        "search() must use mxtac-audit-* (wildcard) not the single static index"
-    )
-
-
-@pytest.mark.asyncio
-async def test_audit_logger_search_returns_empty_when_unavailable() -> None:
-    """search() returns empty dict when no client is available."""
-    audit = AuditLogger()
-    # _client is None — _ensure_client() will be called but opensearchpy not installed
-    with patch.dict(sys.modules, {"opensearchpy": None}):
-        result = await audit.search()
-
-    assert result == {"total": 0, "items": []}

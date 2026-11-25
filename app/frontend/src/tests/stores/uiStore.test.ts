@@ -1,331 +1,149 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { useUIStore } from '../../stores/uiStore'
 
+const root = document.documentElement
+const stored = () => JSON.parse(localStorage.getItem('mxtac-ui') || '{}')?.state
+
 describe('uiStore', () => {
   beforeEach(() => {
+    localStorage.clear()
+    useUIStore.getState().setTheme('light')
     useUIStore.setState({
-      theme: 'light',
       sidebarCollapsed: false,
       notifications: [],
-      globalError: null,
+      showShortcutsModal: false,
     })
   })
 
-  // ---------------------------------------------------------------------------
-  // Initial state
-  // ---------------------------------------------------------------------------
-  describe('default state', () => {
-    it('theme is "light" after explicit reset', () => {
-      expect(useUIStore.getState().theme).toBe('light')
-    })
-
-    it('sidebarCollapsed defaults to false', () => {
-      expect(useUIStore.getState().sidebarCollapsed).toBe(false)
-    })
-
-    it('notifications defaults to an empty array', () => {
-      expect(useUIStore.getState().notifications).toEqual([])
-    })
-
-    it('globalError defaults to null', () => {
-      expect(useUIStore.getState().globalError).toBeNull()
-    })
-  })
-
-  // ---------------------------------------------------------------------------
-  // setTheme
-  // ---------------------------------------------------------------------------
-  describe('setTheme', () => {
-    it('updates theme to "dark"', () => {
+  describe('theme', () => {
+    it('setTheme("dark") stores the theme and marks <html> as dark', () => {
       useUIStore.getState().setTheme('dark')
       expect(useUIStore.getState().theme).toBe('dark')
+      expect(root).toHaveClass('dark')
+      expect(root).toHaveAttribute('data-theme', 'dark')
     })
 
-    it('updates theme to "matrix"', () => {
-      useUIStore.getState().setTheme('matrix')
-      expect(useUIStore.getState().theme).toBe('matrix')
-    })
-
-    it('updates theme back to "light"', () => {
+    it('setTheme("light") removes the dark class from <html>', () => {
       useUIStore.getState().setTheme('dark')
       useUIStore.getState().setTheme('light')
       expect(useUIStore.getState().theme).toBe('light')
+      expect(root).not.toHaveClass('dark')
+      expect(root).toHaveAttribute('data-theme', 'light')
     })
 
-    it('applies data-theme attribute to document.documentElement', () => {
-      useUIStore.getState().setTheme('matrix')
-      expect(document.documentElement.getAttribute('data-theme')).toBe('matrix')
-    })
+    it('toggleTheme switches between light and dark', () => {
+      useUIStore.getState().toggleTheme()
+      expect(useUIStore.getState().theme).toBe('dark')
+      expect(root).toHaveClass('dark')
 
-    it('overwrites previous data-theme when changed', () => {
-      useUIStore.getState().setTheme('dark')
-      useUIStore.getState().setTheme('light')
-      expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+      useUIStore.getState().toggleTheme()
+      expect(useUIStore.getState().theme).toBe('light')
+      expect(root).not.toHaveClass('dark')
     })
   })
 
-  // ---------------------------------------------------------------------------
-  // toggleTheme
-  // ---------------------------------------------------------------------------
-  describe('toggleTheme', () => {
-    it('toggles from light to dark', () => {
-      useUIStore.setState({ theme: 'light' })
-      useUIStore.getState().toggleTheme()
-      expect(useUIStore.getState().theme).toBe('dark')
-    })
-
-    it('toggles from dark to light', () => {
-      useUIStore.setState({ theme: 'dark' })
-      useUIStore.getState().toggleTheme()
-      expect(useUIStore.getState().theme).toBe('light')
-    })
-
-    it('matrix theme toggles to dark', () => {
-      useUIStore.setState({ theme: 'matrix' })
-      useUIStore.getState().toggleTheme()
-      expect(useUIStore.getState().theme).toBe('dark')
-    })
-
-    it('applies data-theme attribute when toggled', () => {
-      useUIStore.setState({ theme: 'light' })
-      useUIStore.getState().toggleTheme()
-      expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
-    })
-
-    it('two consecutive toggles return to original light state', () => {
-      useUIStore.setState({ theme: 'light' })
-      useUIStore.getState().toggleTheme()
-      useUIStore.getState().toggleTheme()
-      expect(useUIStore.getState().theme).toBe('light')
-    })
-
-    it('two consecutive toggles return to original dark state', () => {
-      useUIStore.setState({ theme: 'dark' })
-      useUIStore.getState().toggleTheme()
-      useUIStore.getState().toggleTheme()
-      expect(useUIStore.getState().theme).toBe('dark')
-    })
-
-    it('persists toggled theme to localStorage', () => {
-      useUIStore.setState({ theme: 'light' })
-      useUIStore.getState().toggleTheme()
-      const raw = localStorage.getItem('mxtac-ui')
-      expect(raw).not.toBeNull()
-      expect(JSON.parse(raw!)?.state?.theme).toBe('dark')
-    })
-  })
-
-  // ---------------------------------------------------------------------------
-  // toggleSidebar
-  // ---------------------------------------------------------------------------
-  describe('toggleSidebar', () => {
-    it('toggles sidebarCollapsed from false to true', () => {
+  describe('sidebar', () => {
+    it('toggleSidebar collapses and expands', () => {
       useUIStore.getState().toggleSidebar()
       expect(useUIStore.getState().sidebarCollapsed).toBe(true)
-    })
-
-    it('toggles sidebarCollapsed from true to false', () => {
-      useUIStore.setState({ sidebarCollapsed: true })
-      useUIStore.getState().toggleSidebar()
-      expect(useUIStore.getState().sidebarCollapsed).toBe(false)
-    })
-
-    it('two consecutive toggles return to original state', () => {
-      useUIStore.getState().toggleSidebar()
       useUIStore.getState().toggleSidebar()
       expect(useUIStore.getState().sidebarCollapsed).toBe(false)
     })
   })
 
-  // ---------------------------------------------------------------------------
-  // addNotification / removeNotification
-  // ---------------------------------------------------------------------------
+  describe('shortcuts modal', () => {
+    it('opens and closes', () => {
+      useUIStore.getState().openShortcutsModal()
+      expect(useUIStore.getState().showShortcutsModal).toBe(true)
+      useUIStore.getState().closeShortcutsModal()
+      expect(useUIStore.getState().showShortcutsModal).toBe(false)
+    })
+  })
+
   describe('notifications', () => {
-    it('addNotification appends a notification with an auto-generated id', () => {
-      useUIStore.getState().addNotification({ type: 'info', title: 'Test alert' })
+    beforeEach(() => { vi.useFakeTimers() })
+    afterEach(() => { vi.useRealTimers() })
+
+    const add = (title: string) => useUIStore.getState().addNotification({ type: 'info', title })
+
+    it('addNotification appends the notification with a generated id', () => {
+      useUIStore.getState().addNotification({ type: 'error', title: 'Save failed', message: 'Try again' })
       const { notifications } = useUIStore.getState()
       expect(notifications).toHaveLength(1)
-      expect(notifications[0].title).toBe('Test alert')
-      expect(notifications[0].type).toBe('info')
-      expect(notifications[0].id).toBeDefined()
-      expect(typeof notifications[0].id).toBe('string')
+      expect(notifications[0]).toMatchObject({ type: 'error', title: 'Save failed', message: 'Try again' })
+      expect(notifications[0].id).toBeTruthy()
     })
 
-    it('addNotification includes optional message field when provided', () => {
-      useUIStore.getState().addNotification({
-        type: 'success',
-        title: 'Saved',
-        message: 'Changes saved successfully',
-      })
-      expect(useUIStore.getState().notifications[0].message).toBe('Changes saved successfully')
-    })
-
-    it('addNotification works without a message field', () => {
-      useUIStore.getState().addNotification({ type: 'warning', title: 'No message' })
-      expect(useUIStore.getState().notifications[0].message).toBeUndefined()
-    })
-
-    it('each of the four notification types can be added', () => {
-      const types = ['info', 'success', 'warning', 'error'] as const
-      types.forEach((type) =>
-        useUIStore.getState().addNotification({ type, title: `${type} alert` }),
-      )
+    it('keeps notifications in order and gives each a unique id', () => {
+      add('First')
+      add('Second')
       const { notifications } = useUIStore.getState()
-      expect(notifications).toHaveLength(4)
-      types.forEach((type, i) => {
-        expect(notifications[i].type).toBe(type)
-      })
-    })
-
-    it('multiple notifications accumulate in order', () => {
-      useUIStore.getState().addNotification({ type: 'info', title: 'First' })
-      useUIStore.getState().addNotification({ type: 'error', title: 'Second' })
-      const { notifications } = useUIStore.getState()
-      expect(notifications).toHaveLength(2)
-      expect(notifications[0].title).toBe('First')
-      expect(notifications[1].title).toBe('Second')
-    })
-
-    it('each notification receives a unique id', () => {
-      useUIStore.getState().addNotification({ type: 'info', title: 'A' })
-      useUIStore.getState().addNotification({ type: 'info', title: 'B' })
-      const { notifications } = useUIStore.getState()
+      expect(notifications.map((n) => n.title)).toEqual(['First', 'Second'])
       expect(notifications[0].id).not.toBe(notifications[1].id)
     })
 
-    it('removeNotification removes the matching notification', () => {
-      useUIStore.getState().addNotification({ type: 'info', title: 'Remove me' })
-      const id = useUIStore.getState().notifications[0].id
-      useUIStore.getState().removeNotification(id)
-      expect(useUIStore.getState().notifications).toHaveLength(0)
+    it('removeNotification removes only the matching notification', () => {
+      add('First')
+      add('Second')
+      useUIStore.getState().removeNotification(useUIStore.getState().notifications[0].id)
+      expect(useUIStore.getState().notifications.map((n) => n.title)).toEqual(['Second'])
     })
 
-    it('removeNotification leaves other notifications untouched', () => {
-      useUIStore.getState().addNotification({ type: 'info', title: 'Keep me' })
-      useUIStore.getState().addNotification({ type: 'error', title: 'Remove me' })
-      const idToRemove = useUIStore.getState().notifications[1].id
-      useUIStore.getState().removeNotification(idToRemove)
-
-      const { notifications } = useUIStore.getState()
-      expect(notifications).toHaveLength(1)
-      expect(notifications[0].title).toBe('Keep me')
-    })
-
-    it('removeNotification with an unknown id is a no-op', () => {
-      useUIStore.getState().addNotification({ type: 'info', title: 'Stay' })
-      useUIStore.getState().removeNotification('nonexistent-id')
+    it('removeNotification with an unknown id changes nothing', () => {
+      add('First')
+      useUIStore.getState().removeNotification('no-such-id')
       expect(useUIStore.getState().notifications).toHaveLength(1)
     })
 
-    describe('auto-dismiss', () => {
-      beforeEach(() => { vi.useFakeTimers() })
-      afterEach(() => { vi.useRealTimers() })
+    it('dismisses a notification after 5 seconds, and not before', () => {
+      add('First')
+      vi.advanceTimersByTime(4999)
+      expect(useUIStore.getState().notifications).toHaveLength(1)
+      vi.advanceTimersByTime(1)
+      expect(useUIStore.getState().notifications).toHaveLength(0)
+    })
 
-      it('notification is auto-dismissed after 5 000 ms', () => {
-        useUIStore.getState().addNotification({ type: 'info', title: 'Temp' })
-        expect(useUIStore.getState().notifications).toHaveLength(1)
-
-        vi.advanceTimersByTime(5000)
-        expect(useUIStore.getState().notifications).toHaveLength(0)
-      })
-
-      it('notification is still present before 5 000 ms elapses', () => {
-        useUIStore.getState().addNotification({ type: 'info', title: 'Still here' })
-        vi.advanceTimersByTime(4999)
-        expect(useUIStore.getState().notifications).toHaveLength(1)
-      })
-
-      it('auto-dismiss only removes its own notification, not others', () => {
-        useUIStore.getState().addNotification({ type: 'info', title: 'First' })
-        // Add a second notification 2.5 s later
-        vi.advanceTimersByTime(2500)
-        useUIStore.getState().addNotification({ type: 'error', title: 'Second' })
-
-        // First notification's 5 s timer fires here
-        vi.advanceTimersByTime(2500)
-        const { notifications } = useUIStore.getState()
-        expect(notifications).toHaveLength(1)
-        expect(notifications[0].title).toBe('Second')
-      })
+    it('auto-dismiss removes only its own notification', () => {
+      add('First')
+      vi.advanceTimersByTime(3000)
+      add('Second')
+      vi.advanceTimersByTime(2000)
+      expect(useUIStore.getState().notifications.map((n) => n.title)).toEqual(['Second'])
     })
   })
 
-  // ---------------------------------------------------------------------------
-  // localStorage persistence (Zustand persist middleware)
-  // ---------------------------------------------------------------------------
-  describe('localStorage persistence', () => {
-    beforeEach(() => {
-      localStorage.clear()
-      useUIStore.setState({
-        theme: 'light',
-        sidebarCollapsed: false,
-        notifications: [],
-        globalError: null,
-      })
-    })
-
-    afterEach(() => {
-      localStorage.clear()
-    })
-
-    it('persists theme to localStorage under the "mxtac-ui" key', () => {
+  describe('persistence', () => {
+    it('saves the theme and the sidebar state under "mxtac-ui"', () => {
       useUIStore.getState().setTheme('dark')
-      const raw = localStorage.getItem('mxtac-ui')
-      expect(raw).not.toBeNull()
-      expect(JSON.parse(raw!)?.state?.theme).toBe('dark')
+      useUIStore.getState().toggleSidebar()
+      expect(stored()).toEqual({ theme: 'dark', sidebarCollapsed: true })
     })
 
-    it('persists sidebarCollapsed to localStorage', () => {
-      useUIStore.getState().toggleSidebar() // false → true
-      const stored = JSON.parse(localStorage.getItem('mxtac-ui') || '{}')
-      expect(stored?.state?.sidebarCollapsed).toBe(true)
+    it('does not save transient state', () => {
+      useUIStore.getState().addNotification({ type: 'error', title: 'err' })
+      useUIStore.getState().openShortcutsModal()
+      expect(Object.keys(stored()).sort()).toEqual(['sidebarCollapsed', 'theme'])
     })
 
-    it('only stores theme and sidebarCollapsed (partialize)', () => {
-      useUIStore.getState().setGlobalError('err')
-      const stored = JSON.parse(localStorage.getItem('mxtac-ui') || '{}')
-      expect(stored?.state).toHaveProperty('theme')
-      expect(stored?.state).toHaveProperty('sidebarCollapsed')
-      expect(stored?.state?.globalError).toBeUndefined()
-      expect(stored?.state?.notifications).toBeUndefined()
+    it.each(['light', 'dark'] as const)('restores a saved %s theme and applies it to <html>', async (theme) => {
+      useUIStore.getState().setTheme(theme === 'light' ? 'dark' : 'light')
+      localStorage.setItem('mxtac-ui', JSON.stringify({ state: { theme, sidebarCollapsed: true }, version: 0 }))
+
+      await useUIStore.persist.rehydrate()
+
+      expect(useUIStore.getState().theme).toBe(theme)
+      expect(useUIStore.getState().sidebarCollapsed).toBe(true)
+      expect(root.classList.contains('dark')).toBe(theme === 'dark')
+      expect(root).toHaveAttribute('data-theme', theme)
     })
 
-    it('updates localStorage when theme changes again', () => {
-      useUIStore.getState().setTheme('matrix')
-      expect(JSON.parse(localStorage.getItem('mxtac-ui') || '{}')?.state?.theme).toBe('matrix')
+    it('shows a saved theme that no longer exists (the removed "matrix") as dark', async () => {
+      localStorage.setItem('mxtac-ui', JSON.stringify({ state: { theme: 'matrix', sidebarCollapsed: false }, version: 0 }))
 
-      useUIStore.getState().setTheme('light')
-      expect(JSON.parse(localStorage.getItem('mxtac-ui') || '{}')?.state?.theme).toBe('light')
-    })
+      await useUIStore.persist.rehydrate()
 
-    it('persists all three themes correctly', () => {
-      ;(['light', 'dark', 'matrix'] as const).forEach((theme) => {
-        useUIStore.getState().setTheme(theme)
-        const stored = JSON.parse(localStorage.getItem('mxtac-ui') || '{}')
-        expect(stored?.state?.theme).toBe(theme)
-      })
-    })
-  })
-
-  // ---------------------------------------------------------------------------
-  // globalError
-  // ---------------------------------------------------------------------------
-  describe('globalError', () => {
-    it('setGlobalError stores an error message', () => {
-      useUIStore.getState().setGlobalError('Something went wrong')
-      expect(useUIStore.getState().globalError).toBe('Something went wrong')
-    })
-
-    it('setGlobalError with null clears the error', () => {
-      useUIStore.getState().setGlobalError('Some error')
-      useUIStore.getState().setGlobalError(null)
-      expect(useUIStore.getState().globalError).toBeNull()
-    })
-
-    it('setGlobalError overwrites a previous error message', () => {
-      useUIStore.getState().setGlobalError('First error')
-      useUIStore.getState().setGlobalError('Second error')
-      expect(useUIStore.getState().globalError).toBe('Second error')
+      expect(root).toHaveClass('dark')
+      expect(root).toHaveAttribute('data-theme', 'dark')
     })
   })
 })

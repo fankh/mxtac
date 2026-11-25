@@ -18,7 +18,7 @@ Coverage:
     - reachable=False when EVE file does not exist
 
   Unsupported connector type
-    - reachable=False with 'not supported' message for velociraptor, osquery, generic, etc.
+    - reachable=False with 'not supported' message for syslog and generic.
 
   Database persistence
     - status set to 'active' in DB after successful connection test
@@ -82,9 +82,9 @@ _SURICATA_PAYLOAD = {
     "enabled": True,
 }
 
-_PROWLER_PAYLOAD = {
-    "name": "prowler-test",
-    "connector_type": "prowler",
+_GENERIC_PAYLOAD = {
+    "name": "generic-test",
+    "connector_type": "generic",
     "config": {},
     "enabled": True,
 }
@@ -280,7 +280,7 @@ async def test_suricata_test_not_reachable_when_eve_file_missing(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("connector_type", ["osquery", "generic"])
+@pytest.mark.parametrize("connector_type", ["syslog", "generic"])
 async def test_unsupported_type_returns_not_reachable(
     client: AsyncClient, engineer_headers: dict, connector_type: str
 ) -> None:
@@ -446,7 +446,7 @@ async def test_response_contains_required_fields(
     client: AsyncClient, engineer_headers: dict
 ) -> None:
     """POST /connectors/{id}/test response always contains connector_id, reachable, message."""
-    conn = await _create(client, engineer_headers, _PROWLER_PAYLOAD)
+    conn = await _create(client, engineer_headers, _GENERIC_PAYLOAD)
 
     resp = await client.post(f"{BASE_URL}/{conn['id']}/test", headers=engineer_headers)
 
@@ -465,7 +465,7 @@ async def test_response_connector_id_matches(
     client: AsyncClient, engineer_headers: dict
 ) -> None:
     """connector_id in the response matches the requested connector's ID."""
-    conn = await _create(client, engineer_headers, _PROWLER_PAYLOAD)
+    conn = await _create(client, engineer_headers, _GENERIC_PAYLOAD)
 
     resp = await client.post(f"{BASE_URL}/{conn['id']}/test", headers=engineer_headers)
 
@@ -497,7 +497,7 @@ async def test_viewer_cannot_trigger_test(
     client: AsyncClient, engineer_headers: dict, viewer_headers: dict
 ) -> None:
     """Viewer role is denied POST /connectors/{id}/test (requires connectors:write)."""
-    conn = await _create(client, engineer_headers, _PROWLER_PAYLOAD)
+    conn = await _create(client, engineer_headers, _GENERIC_PAYLOAD)
     resp = await client.post(f"{BASE_URL}/{conn['id']}/test", headers=viewer_headers)
     assert resp.status_code == 403
 
@@ -507,7 +507,7 @@ async def test_engineer_can_trigger_test(
     client: AsyncClient, engineer_headers: dict
 ) -> None:
     """Engineer role can POST /connectors/{id}/test."""
-    conn = await _create(client, engineer_headers, _PROWLER_PAYLOAD)
+    conn = await _create(client, engineer_headers, _GENERIC_PAYLOAD)
     resp = await client.post(f"{BASE_URL}/{conn['id']}/test", headers=engineer_headers)
     assert resp.status_code == 200
 
@@ -517,6 +517,6 @@ async def test_admin_can_trigger_test(
     client: AsyncClient, admin_headers: dict
 ) -> None:
     """Admin role can POST /connectors/{id}/test."""
-    conn = await _create(client, admin_headers, _PROWLER_PAYLOAD)
+    conn = await _create(client, admin_headers, _GENERIC_PAYLOAD)
     resp = await client.post(f"{BASE_URL}/{conn['id']}/test", headers=admin_headers)
     assert resp.status_code == 200

@@ -1,440 +1,381 @@
-import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { TopBar } from '../../layout/TopBar'
-import { Wifi, Shield, Monitor, Cloud, Server, Plus, Check, AlertTriangle, X } from 'lucide-react'
-import type { ComponentType } from 'react'
-import type { LucideProps } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Database, Pencil, Play, PlugZap, Plus, RefreshCw, Search, Square, Trash2, X } from 'lucide-react'
+import { Page } from '@/components/layout/Page'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { apiErrorMessage, connectorsApi } from '@/lib/api'
+import { cn, fmtNum } from '@/lib/utils'
+import { useUIStore } from '@/stores/uiStore'
+import type { Connector } from '@/types/api'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { RoleNotice } from '@/components/shared/RoleNotice'
+import { canManageSources } from '@/lib/roles'
+import { useAuthStore } from '@/stores/authStore'
+import { ConnectorDetailSheet } from './ConnectorDetailSheet'
+import { ConnectorFormDialog } from './ConnectorFormDialog'
+import { IngestHelpCard } from './IngestHelpCard'
+import { CONNECTOR_TYPES, connectorStatus, connectorTypeInfo, formatLastSeen } from './connectorTypes'
 
-interface ConfigField {
-  key: string
-  label: string
-  type: 'text' | 'password' | 'url' | 'number'
-  placeholder: string
-  required?: boolean
-}
+const RUNNING = new Set(['active', 'connecting'])
 
-interface DataSource {
-  id: string
-  name: string
-  type: 'ndr' | 'edr' | 'siem' | 'cloud'
-  Icon: ComponentType<LucideProps>
-  description: string
-  fields: ConfigField[]
-  builtin?: boolean
-  status: 'connected' | 'disconnected' | 'error'
-  eventsPerMin?: number
-  lastSeen?: string
-  agentCount?: number
-}
+type FormState = { mode: 'add' } | { mode: 'edit'; connector: Connector } | null
 
-const SOURCE_TEMPLATES: Omit<DataSource, 'status' | 'eventsPerMin' | 'lastSeen'>[] = [
-  // Built-in MxTac Agents (always first)
-  { id: 'mxwatch', name: 'MxWatch', type: 'ndr', Icon: Wifi,
-    description: 'Built-in MxTac NDR agent — packet capture, protocol parsing, flow extraction',
-    fields: [], builtin: true },
-  { id: 'mxguard', name: 'MxGuard', type: 'edr', Icon: Monitor,
-    description: 'Built-in MxTac EDR agent — process monitoring, file integrity, auth tracking',
-    fields: [], builtin: true },
-  // NDR Sources
-  { id: 'zeek', name: 'Zeek', type: 'ndr', Icon: Wifi,
-    description: 'Network security monitoring — local logs or remote ELK index',
-    fields: [
-      { key: 'input_mode', label: 'Input Mode', type: 'text', placeholder: 'local or elk', required: true },
-      { key: 'log_directory', label: 'Log Directory (local mode)', type: 'text', placeholder: '/opt/zeek/logs/current' },
-      { key: 'poll_interval', label: 'Poll Interval (sec)', type: 'number', placeholder: '10' },
-      { key: 'elasticsearch_url', label: 'Elasticsearch URL (ELK mode)', type: 'url', placeholder: 'https://elk.company.com:9200' },
-      { key: 'index_pattern', label: 'Index Pattern (ELK mode)', type: 'text', placeholder: 'filebeat-zeek-*' },
-      { key: 'elk_username', label: 'Username (ELK mode)', type: 'text', placeholder: 'mxtac-reader' },
-      { key: 'elk_password', label: 'Password (ELK mode)', type: 'password', placeholder: '••••••••' },
-    ] },
-  { id: 'suricata', name: 'Suricata', type: 'ndr', Icon: Shield,
-    description: 'IDS/IPS — local EVE JSON or remote ELK index',
-    fields: [
-      { key: 'input_mode', label: 'Input Mode', type: 'text', placeholder: 'local or elk', required: true },
-      { key: 'eve_json_path', label: 'EVE JSON Path (local mode)', type: 'text', placeholder: '/var/log/suricata/eve.json' },
-      { key: 'elasticsearch_url', label: 'Elasticsearch URL (ELK mode)', type: 'url', placeholder: 'https://elk.company.com:9200' },
-      { key: 'index_pattern', label: 'Index Pattern (ELK mode)', type: 'text', placeholder: 'filebeat-suricata-*' },
-      { key: 'elk_username', label: 'Username (ELK mode)', type: 'text', placeholder: 'mxtac-reader' },
-      { key: 'elk_password', label: 'Password (ELK mode)', type: 'password', placeholder: '••••••••' },
-    ] },
-  // EDR Sources
-  { id: 'wazuh', name: 'Wazuh', type: 'edr', Icon: Monitor,
-    description: 'Endpoint security — file integrity, rootkit detection, compliance',
-    fields: [
-      { key: 'manager_url', label: 'Wazuh Manager URL', type: 'url', placeholder: 'https://wazuh-manager:55000', required: true },
-      { key: 'username', label: 'Username', type: 'text', placeholder: 'wazuh-wui', required: true },
-      { key: 'password', label: 'Password', type: 'password', placeholder: '••••••••', required: true },
-    ] },
-  { id: 'velociraptor', name: 'Velociraptor', type: 'edr', Icon: Monitor,
-    description: 'Endpoint investigation — artifact collection, live forensics',
-    fields: [
-      { key: 'server_url', label: 'Server URL', type: 'url', placeholder: 'https://velociraptor:8889', required: true },
-      { key: 'api_key', label: 'API Key', type: 'password', placeholder: 'vr-api-...', required: true },
-    ] },
-  // SIEM Sources
-  { id: 'elastic', name: 'Elastic SIEM', type: 'siem', Icon: Server,
-    description: 'Elasticsearch-based SIEM — forward alerts and events',
-    fields: [
-      { key: 'cluster_url', label: 'Cluster URL', type: 'url', placeholder: 'https://elasticsearch:9200', required: true },
-      { key: 'username', label: 'Username', type: 'text', placeholder: 'elastic' },
-      { key: 'password', label: 'Password', type: 'password', placeholder: '••••••••' },
-      { key: 'index_pattern', label: 'Index Pattern', type: 'text', placeholder: 'filebeat-*' },
-    ] },
-  { id: 'opensearch', name: 'OpenSearch', type: 'siem', Icon: Server,
-    description: 'OpenSearch cluster — direct log ingestion and search',
-    fields: [
-      { key: 'cluster_url', label: 'Cluster URL', type: 'url', placeholder: 'https://opensearch:9200', required: true },
-      { key: 'username', label: 'Username', type: 'text', placeholder: 'admin' },
-      { key: 'password', label: 'Password', type: 'password', placeholder: '••••••••' },
-    ] },
-  // Cloud Sources
-  { id: 'prowler', name: 'Prowler', type: 'cloud', Icon: Cloud,
-    description: 'AWS/Azure/GCP security — compliance and misconfiguration findings',
-    fields: [
-      { key: 'aws_region', label: 'AWS Region', type: 'text', placeholder: 'ap-northeast-2', required: true },
-      { key: 'aws_profile', label: 'AWS Profile', type: 'text', placeholder: 'default' },
-      { key: 'scan_interval', label: 'Scan Interval (hours)', type: 'number', placeholder: '24' },
-    ] },
-  { id: 'cloudtrail', name: 'CloudTrail', type: 'cloud', Icon: Cloud,
-    description: 'AWS API audit trail — IAM, S3, EC2 activity logs',
-    fields: [
-      { key: 's3_bucket', label: 'S3 Bucket', type: 'text', placeholder: 'my-cloudtrail-logs', required: true },
-      { key: 'aws_region', label: 'AWS Region', type: 'text', placeholder: 'ap-northeast-2', required: true },
-      { key: 'aws_access_key', label: 'Access Key ID', type: 'text', placeholder: 'AKIA...' },
-      { key: 'aws_secret_key', label: 'Secret Access Key', type: 'password', placeholder: '••••••••' },
-    ] },
-]
+const TITLE = 'Data sources'
+const DESCRIPTION = 'Connectors that bring events into MxTac'
 
-const TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  ndr: { label: 'NDR', color: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
-  edr: { label: 'EDR', color: 'bg-green-500/10 text-green-600 border-green-500/20' },
-  siem: { label: 'SIEM', color: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
-  cloud: { label: 'Cloud', color: 'bg-orange-500/10 text-orange-600 border-orange-500/20' },
-}
-
-const STATUS_ICON: Record<string, { Icon: ComponentType<LucideProps>; color: string }> = {
-  connected: { Icon: Check, color: 'text-green-500' },
-  disconnected: { Icon: X, color: 'text-text-muted' },
-  error: { Icon: AlertTriangle, color: 'text-red-500' },
-}
-
+/** Source management. The backend limits connectors to engineer and admin. */
 export function SourcesPage() {
+  const role = useAuthStore((s) => s.user?.role)
+
+  if (role && !canManageSources(role)) {
+    return (
+      <Page title={TITLE} description={DESCRIPTION}>
+        <RoleNotice
+          title="Data sources need the engineer role"
+          description="Engineer and admin accounts can add, change and start sources. The Overview page shows their status to everyone."
+        />
+      </Page>
+    )
+  }
+  return <SourcesWorkspace />
+}
+
+function SourcesWorkspace() {
   const queryClient = useQueryClient()
-  const [filter, setFilter] = useState<string>('all')
-  const [configOpen, setConfigOpen] = useState<string | null>(null)
-  const [configValues, setConfigValues] = useState<Record<string, string>>({})
-  const [configSaving, setConfigSaving] = useState(false)
-  const [configError, setConfigError] = useState('')
+  const addNotification = useUIStore((s) => s.addNotification)
 
-  const openConfig = (sourceId: string) => {
-    setConfigOpen(sourceId)
-    setConfigValues({})
-    setConfigError('')
-  }
+  const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState<string | null>(null)
+  const [form, setForm] = useState<FormState>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Connector | null>(null)
 
-  const handleConnect = async () => {
-    if (!configOpen) return
-    const source = SOURCE_TEMPLATES.find(s => s.id === configOpen)
-    if (!source) return
-
-    // Validate required fields
-    const missing = source.fields.filter(f => f.required && !configValues[f.key]?.trim())
-    if (missing.length > 0) {
-      setConfigError(`Required: ${missing.map(f => f.label).join(', ')}`)
-      return
-    }
-
-    setConfigSaving(true)
-    setConfigError('')
-    try {
-      const token = localStorage.getItem('access_token')
-      const config: Record<string, string> = {}
-      for (const field of source.fields) {
-        const val = configValues[field.key]?.trim()
-        if (val) config[field.key] = val
-      }
-      const resp = await fetch('/api/v1/connectors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          name: source.name,
-          connector_type: source.id,
-          config,
-          enabled: true,
-        }),
-      })
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ detail: 'Connection failed' }))
-        throw new Error(err.detail || `HTTP ${resp.status}`)
-      }
-      queryClient.invalidateQueries({ queryKey: ['connectors'] })
-      setConfigOpen(null)
-      setConfigValues({})
-    } catch (e) {
-      setConfigError(e instanceof Error ? e.message : 'Connection failed')
-    } finally {
-      setConfigSaving(false)
-    }
-  }
-
-  // Fetch connected sources from backend
-  const { data: connectors } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['connectors'],
-    queryFn: async () => {
-      const token = localStorage.getItem('access_token')
-      if (!token) return []
-      const resp = await fetch('/api/v1/connectors', { headers: { Authorization: `Bearer ${token}` } })
-      if (!resp.ok) return []
-      return resp.json()
+    queryFn: connectorsApi.list,
+    refetchInterval: 30_000,
+  })
+  const connectors = useMemo(() => data ?? [], [data])
+
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['connectors'] })
+    queryClient.invalidateQueries({ queryKey: ['connector-health'] })
+  }
+  const fail = (title: string, fallback: string) => (err: unknown) =>
+    addNotification({ type: 'error', title, message: apiErrorMessage(err, fallback) })
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => connectorsApi.update(id, { enabled }),
+    onSuccess: refresh,
+    onError: fail('Update failed', 'Could not change the enabled setting'),
+  })
+
+  const startMutation = useMutation({
+    mutationFn: (c: Connector) => connectorsApi.start(c.id),
+    onSuccess: (c) => {
+      refresh()
+      addNotification({ type: 'success', title: 'Source started', message: c.name })
     },
-    staleTime: 30_000,
+    onError: fail('Start failed', 'Could not start the source'),
   })
 
-  // Fetch registered agents for built-in sources
-  const { data: agents } = useQuery({
-    queryKey: ['agents'],
-    queryFn: async () => {
-      const token = localStorage.getItem('access_token')
-      if (!token) return []
-      const resp = await fetch('/api/v1/agents', { headers: { Authorization: `Bearer ${token}` } })
-      if (!resp.ok) return []
-      return resp.json()
+  const stopMutation = useMutation({
+    mutationFn: (c: Connector) => connectorsApi.stop(c.id),
+    onSuccess: (c) => {
+      refresh()
+      addNotification({ type: 'success', title: 'Source stopped', message: c.name })
     },
-    staleTime: 30_000,
+    onError: fail('Stop failed', 'Could not stop the source'),
   })
 
-  // Merge templates with live connector/agent status
-  const sources: DataSource[] = SOURCE_TEMPLATES.map(tpl => {
-    if (tpl.builtin) {
-      // Built-in agents: check agent registrations
-      const agentType = tpl.id // 'mxwatch' or 'mxguard'
-      const registered = Array.isArray(agents)
-        ? agents.filter((a: Record<string, unknown>) => (a.agent_type as string) === agentType)
-        : []
-      const online = registered.filter((a: Record<string, unknown>) => a.status === 'online')
-      return {
-        ...tpl,
-        status: online.length > 0 ? 'connected' as const : registered.length > 0 ? 'error' as const : 'disconnected' as const,
-        agentCount: registered.length,
-        lastSeen: online[0]?.last_heartbeat as string | undefined,
-      } as DataSource
-    }
-    const live = Array.isArray(connectors)
-      ? connectors.find((c: Record<string, unknown>) =>
-          (c.connector_type as string)?.toLowerCase() === tpl.id || (c.name as string)?.toLowerCase() === tpl.id
-        )
-      : undefined
-    return {
-      ...tpl,
-      status: live ? (live.status === 'active' || live.enabled ? 'connected' : 'error') : 'disconnected',
-      eventsPerMin: live?.events_total ? Math.round(Number(live.events_total) / 60) : undefined,
-      lastSeen: live?.last_seen_at as string | undefined,
-    } as DataSource
+  const testMutation = useMutation({
+    mutationFn: (c: Connector) => connectorsApi.test(c.id),
+    onSuccess: (result, c) => {
+      refresh()
+      addNotification({
+        type: result.reachable ? 'success' : 'warning',
+        title: result.reachable ? `${c.name} is reachable` : `${c.name} is not reachable`,
+        message: result.message,
+      })
+    },
+    onError: fail('Test failed', 'Could not run the connection test'),
   })
 
-  const filtered = filter === 'all' ? sources
-    : filter.startsWith('search:') ? sources.filter(s => s.name.toLowerCase().includes(filter.slice(7)) || s.description.toLowerCase().includes(filter.slice(7)))
-    : sources.filter(s => s.type === filter)
-  const connectedCount = sources.filter(s => s.status === 'connected').length
+  const deleteMutation = useMutation({
+    // DELETE only removes the record, so a running source is stopped first.
+    mutationFn: async (c: Connector) => {
+      if (RUNNING.has(c.status) && connectorTypeInfo(c.connector_type)?.canRun) await connectorsApi.stop(c.id)
+      return connectorsApi.delete(c.id)
+    },
+    onSuccess: (_, c) => {
+      refresh()
+      setDeleteTarget(null)
+      if (detailId === c.id) setDetailId(null)
+      addNotification({ type: 'success', title: 'Source deleted', message: c.name })
+    },
+    onError: fail('Delete failed', 'Could not delete the source'),
+  })
+
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return connectors.filter((c) => {
+      if (typeFilter && c.connector_type !== typeFilter) return false
+      if (!q) return true
+      return c.name.toLowerCase().includes(q) || c.connector_type.toLowerCase().includes(q)
+    })
+  }, [connectors, search, typeFilter])
+
+  const stats = useMemo(() => ({
+    total: connectors.length,
+    running: connectors.filter((c) => RUNNING.has(c.status)).length,
+    errors: connectors.filter((c) => c.status === 'error').length,
+    events: connectors.reduce((sum, c) => sum + c.events_total, 0),
+  }), [connectors])
+
+  const genericSources = useMemo(() => connectors.filter((c) => c.connector_type === 'generic'), [connectors])
+  const detail = connectors.find((c) => c.id === detailId) ?? null
 
   return (
-    <>
-      <TopBar crumb="Data Sources" />
-      <div className="pt-[46px] px-5 pb-6 space-y-4">
-        {/* Search bar + filter chips — matches Hunt/NDR layout */}
-        <div className="flex items-center gap-2 py-3 flex-wrap">
-          <div className="relative flex-1 min-w-[280px]">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-[13px] select-none">⌕</span>
-            <input
-              type="text"
-              placeholder="Search sources — e.g. Zeek, Wazuh, CloudTrail"
-              className="w-full h-[32px] pl-8 pr-3 text-[12px] border border-border rounded-md bg-surface text-text-primary placeholder-text-muted focus:outline-none focus:border-blue"
-              onChange={e => {
-                const q = e.target.value.toLowerCase()
-                setFilter(q ? 'search:' + q : 'all')
-              }}
-            />
-          </div>
-          <div className="flex items-center border border-border rounded-md overflow-hidden">
-          {[
-            { value: 'all', label: 'All' },
-            { value: 'ndr', label: 'NDR' },
-            { value: 'edr', label: 'EDR' },
-            { value: 'siem', label: 'SIEM' },
-            { value: 'cloud', label: 'Cloud' },
-          ].map(tab => (
-            <button
-              key={tab.value}
-              onClick={() => setFilter(tab.value)}
-              className={`px-3 h-[32px] text-[11px] font-medium border-r border-border last:border-r-0 transition-colors ${
-                filter === tab.value
-                  ? 'bg-blue text-white'
-                  : 'bg-surface text-text-secondary hover:bg-page'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-          </div>
-        </div>
-
-        {/* Stats bar */}
-        <div className="flex items-center gap-3 text-[11px] text-text-muted mb-3">
-          <span><strong className={connectedCount > 0 ? 'text-status-ok' : 'text-text-muted'}>{connectedCount}</strong> connected</span>
-          <span>·</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'ndr').length}</strong> NDR</span>
-          <span>·</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'edr').length}</strong> EDR</span>
-          <span>·</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'siem').length}</strong> SIEM</span>
-          <span>·</span>
-          <span><strong className="text-text-primary">{sources.filter(s => s.type === 'cloud').length}</strong> Cloud</span>
-          <span>·</span>
-          <span><strong className="text-text-primary">{sources.length}</strong> total</span>
-        </div>
-
-        {/* Source cards */}
-        <div className="grid grid-cols-2 gap-3">
-          {filtered.map(source => {
-            const typeInfo = TYPE_LABELS[source.type]
-            const statusInfo = STATUS_ICON[source.status]
-            const StatusIcon = statusInfo.Icon
-
-            return (
-              <div
-                key={source.id}
-                className={`bg-surface border rounded-lg p-4 transition-colors hover:border-blue/30 ${
-                  source.status === 'connected' ? 'border-green-500/30' : 'border-border'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                      source.status === 'connected' ? 'bg-green-500/10' : 'bg-section'
-                    }`}>
-                      <source.Icon className={`w-[18px] h-[18px] ${
-                        source.status === 'connected' ? 'text-green-500' : 'text-text-muted'
-                      }`} strokeWidth={1.8} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">{source.name}</span>
-                        <span className={`px-1.5 py-0 text-[9px] font-bold rounded border ${typeInfo.color}`}>
-                          {typeInfo.label}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-text-muted mt-0.5 max-w-[300px]">{source.description}</p>
-                    </div>
-                  </div>
-                  {!source.builtin && (
-                    <div className="flex items-center gap-1.5">
-                      <StatusIcon className={`w-3.5 h-3.5 ${statusInfo.color}`} />
-                      <span className={`text-[10px] font-medium ${statusInfo.color}`}>
-                        {source.status === 'connected' ? 'Connected' : source.status === 'error' ? 'Error' : 'Not configured'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {source.status === 'connected' && source.eventsPerMin != null && (
-                  <div className="mt-3 pt-3 border-t border-border flex items-center gap-4 text-[10px] text-text-muted">
-                    <span>{source.eventsPerMin.toLocaleString()} events/min</span>
-                    {source.lastSeen && <span>Last seen: {new Date(source.lastSeen).toLocaleTimeString()}</span>}
-                  </div>
-                )}
-
-                {source.builtin ? (
-                  <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-medium text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">Built-in</span>
-                      <button
-                        onClick={() => {
-                          const key = `mxtac_source_${source.id}_enabled`
-                          const current = localStorage.getItem(key) !== 'false'
-                          localStorage.setItem(key, current ? 'false' : 'true')
-                          queryClient.invalidateQueries({ queryKey: ['connectors'] })
-                        }}
-                        className={`text-[10px] font-medium px-2 py-0.5 rounded border transition-colors ${
-                          localStorage.getItem(`mxtac_source_${source.id}_enabled`) !== 'false'
-                            ? 'bg-green-500/10 text-green-600 border-green-500/20'
-                            : 'bg-page text-text-muted border-border'
-                        }`}
-                      >
-                        {localStorage.getItem(`mxtac_source_${source.id}_enabled`) !== 'false' ? 'Enabled' : 'Disabled'}
-                      </button>
-                    </div>
-                    {source.agentCount != null && source.agentCount > 0 ? (
-                      <span className="text-[10px] text-text-muted">{source.agentCount} agent{source.agentCount > 1 ? 's' : ''}</span>
-                    ) : (
-                      <span className="text-[10px] text-text-muted">deploy: <code className="bg-page px-1 rounded">mxtac/{source.id}</code></span>
-                    )}
-                  </div>
-                ) : source.status === 'disconnected' ? (
-                  <div className="mt-3 pt-3 border-t border-border">
-                    <button
-                      onClick={() => openConfig(source.id)}
-                      className="flex items-center gap-1 text-[11px] text-blue hover:text-blue/80 font-medium transition-colors"
-                    >
-                      <Plus className="w-3 h-3" />
-                      Configure
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Config modal — dynamic fields per source type */}
-        {configOpen && (() => {
-          const source = SOURCE_TEMPLATES.find(s => s.id === configOpen)
-          if (!source) return null
-          return (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => { setConfigOpen(null); setConfigError('') }}>
-              <div className="bg-surface border border-border rounded-lg p-6 w-[480px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center gap-2 mb-1">
-                  <source.Icon className="w-4 h-4 text-blue" />
-                  <h3 className="text-sm font-bold">Configure {source.name}</h3>
-                  <span className={`px-1.5 py-0 text-[9px] font-bold rounded border ${TYPE_LABELS[source.type].color}`}>
-                    {TYPE_LABELS[source.type].label}
-                  </span>
-                </div>
-                <p className="text-[10px] text-text-muted mb-4">{source.description}</p>
-                <div className="space-y-3">
-                  {source.fields.map(field => (
-                    <div key={field.key}>
-                      <label className="text-[11px] font-medium text-text-muted">
-                        {field.label}{field.required && <span className="text-red-500 ml-0.5">*</span>}
-                      </label>
-                      <input
-                        type={field.type}
-                        value={configValues[field.key] || ''}
-                        onChange={e => setConfigValues(prev => ({ ...prev, [field.key]: e.target.value }))}
-                        placeholder={field.placeholder}
-                        autoComplete="off"
-                        className="w-full mt-1 h-8 px-3 text-xs bg-page border border-border rounded focus:outline-none focus:border-blue"
-                      />
-                    </div>
-                  ))}
-                  {configError && (
-                    <p className="text-[11px] text-red-500">{configError}</p>
-                  )}
-                </div>
-                <div className="flex justify-end gap-2 mt-4">
-                  <button onClick={() => { setConfigOpen(null); setConfigError('') }} className="px-3 py-1.5 text-xs border border-border rounded hover:bg-hover transition-colors">Cancel</button>
-                  <button
-                    onClick={handleConnect}
-                    disabled={configSaving}
-                    className="px-3 py-1.5 text-xs bg-blue text-white rounded hover:bg-blue/90 transition-colors disabled:opacity-50"
-                  >
-                    {configSaving ? 'Connecting...' : 'Connect'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )
-        })()}
+    <Page
+      title={TITLE}
+      description={DESCRIPTION}
+      actions={
+        <Button className="gap-1.5" onClick={() => setForm({ mode: 'add' })}>
+          <Plus className="h-3.5 w-3.5" />
+          Add source
+        </Button>
+      }
+    >
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {[
+          { label: 'Sources', value: stats.total },
+          { label: 'Running', value: stats.running },
+          { label: 'In error', value: stats.errors },
+          { label: 'Events received', value: stats.events },
+        ].map((s) => (
+          <Card key={s.label}>
+            <CardContent className="p-4">
+              <p className="text-[11px] text-muted-foreground">{s.label}</p>
+              {isLoading
+                ? <Skeleton className="mt-1 h-6 w-16" />
+                : <p className="text-lg font-bold text-foreground">{isError ? '–' : fmtNum(s.value)}</p>}
+            </CardContent>
+          </Card>
+        ))}
       </div>
-    </>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="h-8 pl-8 pr-8"
+            placeholder="Search sources"
+            aria-label="Search sources"
+            data-shortcut-search=""
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setSearch('') }}
+          />
+          {search && (
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Clear search"
+              className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2"
+              onClick={() => setSearch('')}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <Button
+            variant={typeFilter === null ? 'secondary' : 'ghost'}
+            aria-pressed={typeFilter === null}
+            onClick={() => setTypeFilter(null)}
+          >
+            All
+          </Button>
+          {CONNECTOR_TYPES.map((t) => (
+            <Button
+              key={t.type}
+              variant={typeFilter === t.type ? 'secondary' : 'ghost'}
+              aria-pressed={typeFilter === t.type}
+              onClick={() => setTypeFilter(typeFilter === t.type ? null : t.type)}
+            >
+              {t.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          {isLoading && (
+            <div className="space-y-2 p-4" aria-label="Loading sources">
+              {[0, 1, 2].map((i) => <Skeleton key={i} className="h-8 w-full" />)}
+            </div>
+          )}
+
+          {isError && (
+            <div className="flex flex-col items-center gap-3 p-8 text-center">
+              <p className="text-[12px] text-destructive">Could not load data sources.</p>
+              <Button variant="outline" className="gap-1.5" onClick={() => refetch()}>
+                <RefreshCw className="h-3.5 w-3.5" />
+                Retry
+              </Button>
+            </div>
+          )}
+
+          {!isLoading && !isError && connectors.length === 0 && (
+            <EmptyState
+              icon={Database}
+              title="No data sources yet"
+              description="Add Wazuh, Zeek, Suricata, syslog or a generic webhook to start receiving events."
+              action={<Button onClick={() => setForm({ mode: 'add' })}>Add source</Button>}
+            />
+          )}
+
+          {!isLoading && !isError && connectors.length > 0 && visible.length === 0 && (
+            <EmptyState icon={Search} title="No sources match" description="Change the search text or the type filter." />
+          )}
+
+          {!isLoading && !isError && visible.length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Events</TableHead>
+                  <TableHead className="text-right">Errors</TableHead>
+                  <TableHead>Last seen</TableHead>
+                  <TableHead>Enabled</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visible.map((c) => {
+                  const info = connectorTypeInfo(c.connector_type)
+                  const status = connectorStatus(c.status)
+                  const running = RUNNING.has(c.status)
+                  const Icon = info?.icon ?? Database
+                  return (
+                    <TableRow key={c.id}>
+                      <TableCell className="text-[12px]">
+                        <div className="flex items-center gap-2">
+                          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0">
+                            <Button
+                              variant="link"
+                              className="h-auto p-0 text-[12px] font-medium text-foreground"
+                              onClick={() => setDetailId(c.id)}
+                            >
+                              {c.name}
+                            </Button>
+                            <p className="text-[11px] text-muted-foreground">{info?.label ?? c.connector_type}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-[12px]">
+                        <span
+                          title={c.error_message ?? undefined}
+                          className={cn('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium', status.cls)}
+                        >
+                          {status.label}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right text-[12px] tabular-nums">{fmtNum(c.events_total)}</TableCell>
+                      <TableCell className={cn('text-right text-[12px] tabular-nums', c.errors_total > 0 && 'text-destructive')}>
+                        {fmtNum(c.errors_total)}
+                      </TableCell>
+                      <TableCell className="text-[12px] text-muted-foreground">{formatLastSeen(c.last_seen_at)}</TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={c.enabled}
+                          aria-label={`${c.enabled ? 'Disable' : 'Enable'} ${c.name}`}
+                          disabled={toggleMutation.isPending}
+                          onCheckedChange={(enabled) => toggleMutation.mutate({ id: c.id, enabled })}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-0.5">
+                          {info?.canRun && (running ? (
+                            <Button
+                              variant="ghost" size="icon" title={`Stop ${c.name}`}
+                              disabled={stopMutation.isPending}
+                              onClick={() => stopMutation.mutate(c)}
+                            >
+                              <Square className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost" size="icon" title={`Start ${c.name}`}
+                              disabled={startMutation.isPending}
+                              onClick={() => startMutation.mutate(c)}
+                            >
+                              <Play className="h-3.5 w-3.5" />
+                            </Button>
+                          ))}
+                          {info?.canTest && (
+                            <Button
+                              variant="ghost" size="icon" title={`Test connection to ${c.name}`}
+                              disabled={testMutation.isPending}
+                              onClick={() => testMutation.mutate(c)}
+                            >
+                              <PlugZap className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost" size="icon" title={`Edit ${c.name}`}
+                            onClick={() => setForm({ mode: 'edit', connector: c })}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost" size="icon" title={`Delete ${c.name}`}
+                            className="hover:text-destructive"
+                            onClick={() => setDeleteTarget(c)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {!isLoading && !isError && <IngestHelpCard sources={genericSources} />}
+
+      {form && (
+        <ConnectorFormDialog
+          connector={form.mode === 'edit' ? form.connector : undefined}
+          onClose={() => setForm(null)}
+        />
+      )}
+
+      <ConnectorDetailSheet connector={detail} onClose={() => setDetailId(null)} />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete data source"
+        description={`${deleteTarget?.name ?? 'This source'} will be removed. Events already received are kept.`}
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        pending={deleteMutation.isPending}
+        onConfirm={() => { if (deleteTarget) deleteMutation.mutate(deleteTarget) }}
+        onCancel={() => setDeleteTarget(null)}
+      />
+    </Page>
   )
 }

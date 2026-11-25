@@ -10,9 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ....core.database import get_db
 from ....core.rbac import require_permission
+from ....engine.sigma_engine import tactic_name
 from ....schemas.detection import Detection, DetectionUpdate, SeverityLevel, DetectionStatus, BulkStatusUpdate, BulkUpdateResult
 from ....schemas.common import PaginatedResponse, Pagination
 from ....repositories.detection_repo import DetectionRepo
+from ....services.attack_techniques import resolve_technique_name
 
 router = APIRouter(prefix="/detections", tags=["detections"])
 
@@ -26,10 +28,10 @@ def _detection_to_schema(d) -> dict:
         "score": d.score,
         "severity": d.severity,
         "technique_id": d.technique_id,
-        "technique_name": d.technique_name,
+        "technique_name": resolve_technique_name(d.technique_id, d.technique_name),
         "name": d.name,
         "host": d.host,
-        "tactic": d.tactic,
+        "tactic": tactic_name(d.tactic),
         "status": d.status,
         "time": d.time,
         "user": d.user,
@@ -132,7 +134,7 @@ async def export_detections(
                 d.id,
                 d.name,
                 d.severity,
-                d.tactic,
+                tactic_name(d.tactic),
                 d.technique_id,
                 d.host,
                 d.status,

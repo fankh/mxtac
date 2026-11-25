@@ -1,6 +1,6 @@
 """ATT&CK Coverage endpoints."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -12,9 +12,6 @@ from ....core.rbac import require_permission
 from ....repositories.coverage_snapshot_repo import CoverageSnapshotRepo
 from ....repositories.coverage_target_repo import CoverageTargetRepo
 from ....repositories.rule_repo import RuleRepo
-from ....core.logging import get_logger
-
-logger = get_logger(__name__)
 from ....schemas.overview import (
     CoverageByDataSource,
     CoverageGaps,
@@ -24,7 +21,6 @@ from ....schemas.overview import (
     CoverageTargetRead,
     CoverageTargetUpdate,
 )
-from ....services.mock_data import COVERAGE_SUMMARY
 
 router = APIRouter(prefix="/coverage", tags=["coverage"])
 
@@ -39,12 +35,9 @@ async def get_coverage(
     Coverage is calculated from active (enabled) Sigma rules: counts the distinct
     ATT&CK technique IDs referenced by all enabled rules versus the total techniques
     tracked in the 9-tactic heatmap scope (ATT&CK v14, 105 techniques).
-    Falls back to mock data when no enabled rules with technique mappings exist.
+    Returns 0 % / 0 covered when no enabled rules with technique mappings exist.
     """
-    summary = await RuleRepo.get_coverage_summary(db)
-    if summary is None:
-        return COVERAGE_SUMMARY
-    return CoverageSummary(**summary)
+    return CoverageSummary(**await RuleRepo.get_coverage_summary(db))
 
 
 @router.get("/gaps", response_model=CoverageGaps)
@@ -169,7 +162,9 @@ async def get_coverage_trend(
 
     Automatically captures today's coverage as a snapshot (upsert) before
     returning the historical trend, so the chart always includes the latest
-    state without requiring a separate scheduled job.
+    state without requiring a separate scheduled job.  Nothing is captured
+    while no enabled rule maps to a technique, so a fresh install returns an
+    empty series.
 
     Returns points ordered ascending by date (oldest first) so the frontend
     can render a left-to-right trend line directly.
@@ -179,7 +174,7 @@ async def get_coverage_trend(
     """
     # Auto-capture today's snapshot from the live rule state
     summary = await RuleRepo.get_coverage_summary(db)
-    if summary is not None:
+    if summary["covered_count"] > 0:
         await CoverageSnapshotRepo.upsert(
             db,
             snapshot_date=date.today(),
@@ -189,27 +184,6 @@ async def get_coverage_trend(
         )
 
     snapshots = await CoverageSnapshotRepo.get_trend(db, days=days)
-
-    # Seed synthetic historical snapshots if none exist (first access)
-    if len(snapshots) <= 1:
-        import random
-        base_pct = (summary or {}).get("coverage_pct", 0.0) or 5.0
-        base_covered = (summary or {}).get("covered_count", 0) or 5
-        total = (summary or {}).get("total_count", 420) or 420
-        try:
-            for d in range(days, 0, -1):
-                snap_date = date.today() - timedelta(days=d)
-                age_factor = max(0.3, 1.0 - (d * 0.02))
-                pct = round(base_pct * age_factor + random.uniform(-1.0, 0.5), 1)
-                pct = max(0.0, min(100.0, pct))
-                covered = max(0, int(base_covered * age_factor))
-                await CoverageSnapshotRepo.upsert(db, snapshot_date=snap_date,
-                                                   coverage_pct=pct, covered_count=covered, total_count=total)
-            await db.commit()
-            snapshots = await CoverageSnapshotRepo.get_trend(db, days=days)
-        except Exception as e:
-            logger.warning("Coverage trend seed failed: %s", e)
-            await db.rollback()
 
     points = [
         CoverageTrendPoint(
@@ -227,8 +201,6 @@ async def get_coverage_trend(
 async def _get_current_pct(db: AsyncSession) -> float:
     """Return the live coverage percentage from enabled rules (0.0 when no rules)."""
     summary = await RuleRepo.get_coverage_summary(db)
-    if summary is None:
-        return COVERAGE_SUMMARY.coverage_pct
     return summary["coverage_pct"]
 
 

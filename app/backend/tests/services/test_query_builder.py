@@ -51,7 +51,7 @@ class TestFilterToLucene:
         )
 
     def test_eq_string_no_spaces(self) -> None:
-        assert _filter_to_lucene("source", "eq", "wazuh") == "metadata_product:wazuh"
+        assert _filter_to_lucene("source", "eq", "wazuh") == "source:wazuh"
 
     def test_ne_integer(self) -> None:
         assert _filter_to_lucene("severity_id", "ne", 1) == "NOT severity_id:1"
@@ -62,13 +62,12 @@ class TestFilterToLucene:
 
     def test_contains(self) -> None:
         result = _filter_to_lucene("hostname", "contains", "dc-")
-        # hostname → src_endpoint.hostname; '-' is a Lucene special char so escaped
-        assert result == r"src_endpoint.hostname:*dc\-*"
+        # '-' is a Lucene special char so escaped
+        assert result == r"hostname:*dc\-*"
 
     def test_contains_field_mapping(self) -> None:
         result = _filter_to_lucene("username", "contains", "admin")
-        # username → actor_user.name
-        assert result == "actor_user.name:*admin*"
+        assert result == "username:*admin*"
 
     def test_gt(self) -> None:
         result = _filter_to_lucene("severity_id", "gt", 3)
@@ -87,26 +86,26 @@ class TestFilterToLucene:
         assert result == "severity_id:[* TO 4]"
 
     def test_flat_alias_src_ip(self) -> None:
-        """Flat column alias 'src_ip' maps to 'src_endpoint.ip'."""
+        """Flat column 'src_ip' is the document field."""
         result = _filter_to_lucene("src_ip", "eq", "10.0.0.1")
-        assert result == "src_endpoint.ip:10.0.0.1"
+        assert result == "src_ip:10.0.0.1"
 
     def test_flat_alias_dst_ip(self) -> None:
         result = _filter_to_lucene("dst_ip", "eq", "10.0.0.2")
-        assert result == "dst_endpoint.ip:10.0.0.2"
+        assert result == "dst_ip:10.0.0.2"
 
     def test_flat_alias_process_hash(self) -> None:
         result = _filter_to_lucene("process_hash", "eq", "abc123")
-        assert result == "process.hash_sha256:abc123"
+        assert result == "process_hash:abc123"
 
     def test_nested_path_passthrough(self) -> None:
-        """Nested OCSF paths pass through unchanged."""
+        """Nested OCSF paths map to the flat document field."""
         result = _filter_to_lucene("actor_user.name", "eq", "root")
-        assert result == "actor_user.name:root"
+        assert result == "username:root"
 
     def test_nested_path_dst_hostname(self) -> None:
         result = _filter_to_lucene("dst_endpoint.hostname", "contains", "srv")
-        assert result == "dst_endpoint.hostname:*srv*"
+        assert result == "hostname:*srv*"
 
     def test_unknown_field_returns_none(self) -> None:
         assert _filter_to_lucene("nonexistent_field", "eq", "value") is None
@@ -118,7 +117,7 @@ class TestFilterToLucene:
         """Lucene special characters in values are escaped."""
         result = _filter_to_lucene("hostname", "eq", "host:prod")
         # colon must be escaped
-        assert result == r"src_endpoint.hostname:host\:prod"
+        assert result == r"hostname:host\:prod"
 
     def test_special_chars_escaped_in_ne(self) -> None:
         result = _filter_to_lucene("class_name", "ne", "proc(exec)")
@@ -133,7 +132,7 @@ class TestFilterToLucene:
     def test_contains_preserves_wildcard_in_value(self) -> None:
         """A '*' inside a contains value is passed through as a wildcard."""
         result = _filter_to_lucene("hostname", "contains", "srv*01")
-        assert result == "src_endpoint.hostname:*srv*01*"
+        assert result == "hostname:*srv*01*"
 
     # --- Feature 33.3: Lucene injection prevention ---
 
@@ -216,7 +215,7 @@ class TestBuildLuceneQuery:
     def test_single_filter_contains(self) -> None:
         filters = [_Filter("hostname", "contains", "dc-")]
         result = build_lucene_query(None, filters, "now-24h", "now")
-        assert result == r"src_endpoint.hostname:*dc\-* AND time:[now-24h TO now]"
+        assert result == r"hostname:*dc\-* AND time:[now-24h TO now]"
 
     def test_multiple_filters_joined_with_and(self) -> None:
         filters = [
@@ -225,7 +224,7 @@ class TestBuildLuceneQuery:
         ]
         result = build_lucene_query(None, filters, "now-7d", "now")
         assert result == (
-            "severity_id:[3 TO *] AND src_endpoint.ip:10.0.0.1 AND time:[now-7d TO now]"
+            "severity_id:[3 TO *] AND src_ip:10.0.0.1 AND time:[now-7d TO now]"
         )
 
     def test_query_and_filters_combined(self) -> None:
@@ -275,7 +274,7 @@ class TestBuildLuceneQuery:
     def test_ne_operator(self) -> None:
         filters = [_Filter("source", "ne", "wazuh")]
         result = build_lucene_query(None, filters, "now-1d", "now")
-        assert result == "NOT metadata_product:wazuh AND time:[now-1d TO now]"
+        assert result == "NOT source:wazuh AND time:[now-1d TO now]"
 
     def test_gt_and_lte_range(self) -> None:
         filters = [
@@ -300,7 +299,7 @@ class TestBuildLuceneQuery:
         assert result == (
             "lsass"
             " AND severity_id:[4 TO *]"
-            " AND src_endpoint.hostname:*workstation*"
+            " AND hostname:*workstation*"
             ' AND class_name:"Process Activity"'
             " AND time:[now-24h TO now]"
         )

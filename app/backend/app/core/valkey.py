@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import valkey.asyncio as aioredis
 
@@ -11,6 +12,18 @@ from .config import settings
 logger = logging.getLogger(__name__)
 
 _client: aioredis.Valkey | None = None
+
+# Connection options for a pub/sub subscriber.  The asyncio client defaults to
+# a 5-second socket timeout, which also applies to the blocking read of
+# ``pubsub.listen()``: an idle subscription raises TimeoutError every 5 seconds
+# and misses what is published while it reconnects.  A subscriber therefore
+# waits for messages without a read timeout; TCP keepalive detects a dead peer.
+SUBSCRIBER_OPTIONS: dict[str, Any] = {
+    "decode_responses": True,
+    "socket_timeout": None,
+    "socket_connect_timeout": 5,
+    "socket_keepalive": True,
+}
 
 
 async def get_valkey_client() -> aioredis.Valkey:
@@ -49,6 +62,24 @@ async def blacklist_token(jti: str, ttl_seconds: int) -> None:
         )
 
 
+async def consume_token(jti: str, ttl_seconds: int) -> bool:
+    """Mark a single-use token as used; return False when it was used before.
+
+    One atomic ``SET NX`` puts the JTI on the revocation list, so of two
+    requests presenting the same token only one gets True.  Fails open
+    (returns True) when Valkey is unreachable, like the other checks here.
+    """
+    try:
+        client = await get_valkey_client()
+        stored = await client.set(f"blacklist:{jti}", "1", nx=True, ex=max(ttl_seconds, 1))
+        return bool(stored)
+    except Exception:
+        logger.warning(
+            "Valkey unavailable — single use of token jti=%s could not be enforced", jti
+        )
+        return True
+
+
 # ── MFA attempt rate limiting ─────────────────────────────────────────────────
 
 
@@ -70,7 +101,7 @@ async def increment_mfa_attempts(jti: str) -> int:
         return 0  # fail-open
 
 
-# ── Distributed ingest rate limiting ─────────────────────────────────────────
+# ── Fixed-window rate limit counter (webhook ingest) ─────────────────────────
 # Atomic fixed-window counter: INCRBY the key by n, set EXPIRE only on creation
 # so the window resets automatically.  Single round-trip via Lua eval.
 _RATE_LIMIT_LUA = """
@@ -83,32 +114,6 @@ if current == n then
 end
 return current
 """
-
-
-async def check_ingest_rate_limit(
-    api_key_id: str,
-    n_events: int,
-    limit: int = 10_000,
-    window_secs: int = 60,
-) -> bool:
-    """Return True if the ingest request is within the rate limit, False if exceeded.
-
-    Uses a Valkey fixed-window counter shared across all API replicas so the
-    limit is enforced consistently in a horizontally-scaled deployment.
-
-    Falls back to allowing requests (fail-open) when Valkey is unavailable —
-    availability is preferred over strict enforcement during a Valkey outage.
-    """
-    try:
-        client = await get_valkey_client()
-        key = f"rate_limit:ingest:{api_key_id}"
-        current = await client.eval(_RATE_LIMIT_LUA, 1, key, n_events, window_secs)
-        return int(current) <= limit
-    except Exception:
-        logger.debug(
-            "Valkey unavailable — skipping rate limit check for api_key_id=%s", api_key_id
-        )
-        return True  # fail-open: prefer availability over strict enforcement
 
 
 # ── Account lockout ───────────────────────────────────────────────────────────
@@ -156,41 +161,6 @@ async def clear_login_attempts(email: str) -> None:
         await client.delete(f"login_attempts:{email}")
     except Exception:
         logger.debug("Valkey unavailable — could not clear login attempts for %s", email)
-
-
-# ── OIDC state (CSRF) ────────────────────────────────────────────────────────
-# State tokens are short-lived and stored in Valkey with a 10-minute TTL.
-# An in-memory dict acts as a fail-safe when Valkey is unavailable.
-_oidc_state_store: dict[str, str] = {}
-OIDC_STATE_TTL = 600  # 10 minutes
-
-
-async def store_oidc_state(state: str, provider_name: str) -> None:
-    """Persist an OIDC state token mapped to its provider_name."""
-    try:
-        client = await get_valkey_client()
-        await client.setex(f"oidc:state:{state}", OIDC_STATE_TTL, provider_name)
-    except Exception:
-        logger.debug("Valkey unavailable — storing OIDC state in-memory")
-        _oidc_state_store[state] = provider_name
-
-
-async def validate_and_consume_oidc_state(state: str) -> str | None:
-    """Return the provider_name for *state* and delete it (one-time use).
-
-    Returns None if the state is unknown or expired.
-    """
-    try:
-        client = await get_valkey_client()
-        key = f"oidc:state:{state}"
-        value = await client.getdel(key)
-        if value is not None:
-            return value
-        # Fall through to in-memory store on cache miss (Valkey was down when stored)
-    except Exception:
-        logger.debug("Valkey unavailable — checking in-memory OIDC state store")
-
-    return _oidc_state_store.pop(state, None)
 
 
 # ── Webhook source rate limiting ──────────────────────────────────────────────

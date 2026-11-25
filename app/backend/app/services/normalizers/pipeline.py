@@ -3,21 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import ValidationError
 
 from ...core.logging import get_logger
+from ...models.base import new_uuid
 from ...pipeline.queue import MessageQueue, Topic
 from .field_mapping import FieldMappingConfig
+from .ocsf import EVENT_ID_KEY, OCSFEvent
 from .wazuh import WazuhNormalizer
 from .zeek import ZeekNormalizer
 from .suricata import SuricataNormalizer
-from .prowler import ProwlerNormalizer
-from .velociraptor import VelociraptorNormalizer
-
-if TYPE_CHECKING:
-    from ..auto_discovery import AssetDiscovery
+from .syslog import SyslogNormalizer
+from .webhook import WebhookNormalizer
 
 logger = get_logger(__name__)
 
@@ -43,27 +42,21 @@ def _extract_field_mapping(raw: dict[str, Any]) -> tuple[dict[str, Any], FieldMa
 class NormalizerPipeline:
     """Consumes raw events from all source topics, normalizes to OCSF, publishes to mxtac.normalized."""
 
-    def __init__(
-        self,
-        queue: MessageQueue,
-        discovery: AssetDiscovery | None = None,
-    ) -> None:
+    def __init__(self, queue: MessageQueue) -> None:
         self._queue = queue
         self._wazuh = WazuhNormalizer()
         self._zeek = ZeekNormalizer()
         self._suricata = SuricataNormalizer()
-        self._prowler = ProwlerNormalizer()
-        self._velociraptor = VelociraptorNormalizer()
-        # Feature 30.5: optional asset auto-discovery hook
-        self._discovery = discovery
+        self._syslog = SyslogNormalizer()
+        self._webhook = WebhookNormalizer()
 
     async def start(self) -> None:
         """Subscribe to all raw topics."""
         await self._queue.subscribe(Topic.RAW_WAZUH, "normalizer", self._handle_wazuh)
         await self._queue.subscribe(Topic.RAW_ZEEK, "normalizer", self._handle_zeek)
         await self._queue.subscribe(Topic.RAW_SURICATA, "normalizer", self._handle_suricata)
-        await self._queue.subscribe(Topic.RAW_PROWLER, "normalizer", self._handle_prowler)
-        await self._queue.subscribe(Topic.RAW_VELOCIRAPTOR, "normalizer", self._handle_velociraptor)
+        await self._queue.subscribe(Topic.RAW_SYSLOG, "normalizer", self._handle_syslog)
+        await self._queue.subscribe(Topic.RAW_WEBHOOK, "normalizer", self._handle_webhook)
         logger.info("NormalizerPipeline subscribed to raw topics")
 
     async def _send_to_dlq(
@@ -89,16 +82,24 @@ class NormalizerPipeline:
             exc,
         )
 
+    async def _publish_normalized(self, event: OCSFEvent) -> None:
+        """Publish *event* on ``mxtac.normalized`` together with a new event ID.
+
+        The ID is assigned here, before the event is stored, so that the
+        persister and the Sigma consumer (which read the same message
+        independently) agree on it and a detection can name its event.
+        """
+        message = event.model_dump(mode="json")
+        message[EVENT_ID_KEY] = new_uuid()
+        await self._queue.publish(Topic.NORMALIZED, message)
+
     async def _handle_wazuh(self, raw: dict[str, Any]) -> None:
         # Feature 7.15: strip internal field mapping key before passing to normaliser
         clean_raw, field_mapping = _extract_field_mapping(raw)
         try:
             event = self._wazuh.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
-            # Feature 30.5: auto-discover asset from Wazuh agent info
-            if self._discovery is not None:
-                await self._discovery.process_event(event, "wazuh")
-            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+            await self._publish_normalized(event)
         except ValidationError as exc:
             logger.warning("Wazuh schema validation error: %s", exc)
             await self._send_to_dlq("wazuh", clean_raw, exc, "schema_validation")
@@ -112,10 +113,7 @@ class NormalizerPipeline:
         try:
             event = self._zeek.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
-            # Feature 30.5: auto-discover assets from Zeek src/dst IPs
-            if self._discovery is not None:
-                await self._discovery.process_event(event, "zeek")
-            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+            await self._publish_normalized(event)
         except ValidationError as exc:
             logger.warning("Zeek schema validation error: %s", exc)
             await self._send_to_dlq("zeek", clean_raw, exc, "schema_validation")
@@ -129,10 +127,7 @@ class NormalizerPipeline:
         try:
             event = self._suricata.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
-            # Feature 30.5: auto-discover assets from Suricata src/dst IPs
-            if self._discovery is not None:
-                await self._discovery.process_event(event, "suricata")
-            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+            await self._publish_normalized(event)
         except ValidationError as exc:
             logger.warning("Suricata schema validation error: %s", exc)
             await self._send_to_dlq("suricata", clean_raw, exc, "schema_validation")
@@ -140,30 +135,30 @@ class NormalizerPipeline:
             logger.exception("Suricata normalization error")
             await self._send_to_dlq("suricata", clean_raw, exc, "normalization_error")
 
-    async def _handle_prowler(self, raw: dict[str, Any]) -> None:
-        # Feature 35.1: strip internal field mapping key before passing to normaliser
+    async def _handle_syslog(self, raw: dict[str, Any]) -> None:
+        # Feature 7.15: strip internal field mapping key before passing to normaliser
         clean_raw, field_mapping = _extract_field_mapping(raw)
         try:
-            event = self._prowler.normalize(clean_raw)
+            event = self._syslog.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
-            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+            await self._publish_normalized(event)
         except ValidationError as exc:
-            logger.warning("Prowler schema validation error: %s", exc)
-            await self._send_to_dlq("prowler", clean_raw, exc, "schema_validation")
+            logger.warning("Syslog schema validation error: %s", exc)
+            await self._send_to_dlq("syslog", clean_raw, exc, "schema_validation")
         except Exception as exc:
-            logger.exception("Prowler normalization error")
-            await self._send_to_dlq("prowler", clean_raw, exc, "normalization_error")
+            logger.exception("Syslog normalization error")
+            await self._send_to_dlq("syslog", clean_raw, exc, "normalization_error")
 
-    async def _handle_velociraptor(self, raw: dict[str, Any]) -> None:
-        # Feature 35.2: strip internal field mapping key before passing to normaliser
+    async def _handle_webhook(self, raw: dict[str, Any]) -> None:
+        # Feature 7.15: strip internal field mapping key before passing to normaliser
         clean_raw, field_mapping = _extract_field_mapping(raw)
         try:
-            event = self._velociraptor.normalize(clean_raw)
+            event = self._webhook.normalize(clean_raw)
             event = field_mapping.apply(event, clean_raw)
-            await self._queue.publish(Topic.NORMALIZED, event.model_dump(mode="json"))
+            await self._publish_normalized(event)
         except ValidationError as exc:
-            logger.warning("Velociraptor schema validation error: %s", exc)
-            await self._send_to_dlq("velociraptor", clean_raw, exc, "schema_validation")
+            logger.warning("Webhook schema validation error: %s", exc)
+            await self._send_to_dlq("webhook", clean_raw, exc, "schema_validation")
         except Exception as exc:
-            logger.exception("Velociraptor normalization error")
-            await self._send_to_dlq("velociraptor", clean_raw, exc, "normalization_error")
+            logger.exception("Webhook normalization error")
+            await self._send_to_dlq("webhook", clean_raw, exc, "normalization_error")

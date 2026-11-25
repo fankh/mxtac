@@ -14,3 +14,6 @@ tags:
   - attack.TA0011
 references:
   - https://attack.mitre.org/techniques/T1071/004/
+falsepositives:
+  - Content delivery networks and anti-malware lookups that encode data in long host names
+  - DNS-based service discovery

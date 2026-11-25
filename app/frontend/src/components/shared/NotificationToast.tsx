@@ -1,7 +1,7 @@
 import { useUIStore } from '../../stores/uiStore'
 
 const TYPE_STYLES = {
-  info:    'border-blue bg-blue-light text-blue',
+  info:    'border-primary bg-primary/10 text-primary',
   success: 'border-status-ok bg-status-ok-bg text-status-ok-text',
   warning: 'border-status-warn bg-status-warn-bg text-status-warn-text',
   error:   'border-crit-text bg-crit-bg text-crit-text',
@@ -13,11 +13,11 @@ export function NotificationToast() {
   if (notifications.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-[320px]">
+    <div className="fixed bottom-4 right-4 z-50 flex w-[320px] max-w-[calc(100vw-2rem)] flex-col gap-2">
       {notifications.map((n) => (
         <div
           key={n.id}
-          className={`rounded-md border px-4 py-3 shadow-panel flex items-start gap-2 ${TYPE_STYLES[n.type]}`}
+          className={`rounded-md border px-4 py-3 shadow-xl flex items-start gap-2 ${TYPE_STYLES[n.type]}`}
         >
           <div className="flex-1 min-w-0">
             <div className="text-[12px] font-semibold">{n.title}</div>

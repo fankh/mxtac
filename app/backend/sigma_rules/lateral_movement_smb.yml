@@ -21,3 +21,6 @@ tags:
   - attack.TA0008
 references:
   - https://attack.mitre.org/techniques/T1021/002/
+falsepositives:
+  - Administrators using PsExec for remote maintenance
+  - Software deployment tools built on PsExec

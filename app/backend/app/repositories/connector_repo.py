@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.connector import Connector
@@ -66,6 +66,38 @@ class ConnectorRepo:
         conn.error_message = error_message
         await session.flush()
         return conn
+
+    @staticmethod
+    async def add_counters(
+        session: AsyncSession,
+        connector_id: str,
+        *,
+        events: int = 0,
+        errors: int = 0,
+        mark_active: bool = False,
+    ) -> None:
+        """Add *events* and *errors* to the stored totals of a connector.
+
+        The increment runs in the database, so concurrent writers do not lose
+        counts.  New events set ``last_seen_at`` to now.  With *mark_active*
+        the connector is also set to ``active`` (a push source that just
+        delivered events).
+        """
+        values: dict = {}
+        if events:
+            values["events_total"] = Connector.events_total + events
+            values["last_seen_at"] = datetime.now(timezone.utc).isoformat()
+        if errors:
+            values["errors_total"] = Connector.errors_total + errors
+        if mark_active:
+            values["status"] = "active"
+            values["error_message"] = None
+        if not values:
+            return
+        await session.execute(
+            update(Connector).where(Connector.id == connector_id).values(**values)
+        )
+        await session.flush()
 
     @staticmethod
     async def delete(session: AsyncSession, connector_id: str) -> bool:

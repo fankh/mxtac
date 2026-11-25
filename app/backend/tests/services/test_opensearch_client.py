@@ -26,10 +26,27 @@ from app.services.opensearch_client import (
     ILM_POLICY_NAME,
     ILM_RETENTION_DAYS,
     RULES_MAPPING,
+    OpenSearchConnectionError,
+    OpenSearchQueryError,
     OpenSearchService,
     _daily_index,
     filter_to_dsl,
 )
+
+
+def _free_text_clauses(must: list[dict], text: str) -> list[dict]:
+    """The clauses in *must* that match *text* as a substring of the text fields."""
+    expected = {"value": f"*{text}*", "case_insensitive": True}
+    return [
+        c for c in must
+        if "bool" in c
+        and c["bool"].get("minimum_should_match") == 1
+        and {f for w in c["bool"]["should"] for f in w["wildcard"]} == {
+            "summary", "class_name", "hostname", "username",
+            "src_ip", "dst_ip", "process.cmd_line",
+        }
+        and all(spec == expected for w in c["bool"]["should"] for spec in w["wildcard"].values())
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -44,13 +61,17 @@ def test_filter_to_dsl_eq() -> None:
 
 def test_filter_to_dsl_ne() -> None:
     clause = filter_to_dsl("class_name", "ne", "Network Activity")
-    assert clause == {"bool": {"must_not": [{"term": {"class_name": "Network Activity"}}]}}
+    # Like SQL "<>": only events that have a value in the field
+    assert clause == {"bool": {
+        "must":     [{"exists": {"field": "class_name"}}],
+        "must_not": [{"term": {"class_name": "Network Activity"}}],
+    }}
 
 
 def test_filter_to_dsl_contains() -> None:
     clause = filter_to_dsl("hostname", "contains", "dc-")
-    # hostname maps to src_endpoint.hostname in OS
-    assert clause == {"wildcard": {"src_endpoint.hostname": "*dc-*"}}
+    # Case-insensitive substring of the flat hostname field
+    assert clause == {"wildcard": {"hostname": {"value": "*dc-*", "case_insensitive": True}}}
 
 
 def test_filter_to_dsl_gt() -> None:
@@ -74,15 +95,15 @@ def test_filter_to_dsl_lte() -> None:
 
 
 def test_filter_to_dsl_flat_alias_src_ip() -> None:
-    """Flat column alias 'src_ip' maps to nested 'src_endpoint.ip'."""
+    """Flat column 'src_ip' is the document field."""
     clause = filter_to_dsl("src_ip", "eq", "192.168.1.1")
-    assert clause == {"term": {"src_endpoint.ip": "192.168.1.1"}}
+    assert clause == {"term": {"src_ip": "192.168.1.1"}}
 
 
 def test_filter_to_dsl_nested_path_passthrough() -> None:
-    """Nested OpenSearch paths pass through unchanged."""
+    """Nested OCSF paths are aliases of the flat document fields."""
     clause = filter_to_dsl("actor_user.name", "eq", "admin")
-    assert clause == {"term": {"actor_user.name": "admin"}}
+    assert clause == {"term": {"username": "admin"}}
 
 
 def test_filter_to_dsl_unknown_field_returns_none() -> None:
@@ -161,8 +182,9 @@ async def test_search_events_delegates_to_client() -> None:
     body = call_kwargs.kwargs.get("body") or call_kwargs.args[0]
     must_clauses = body["query"]["bool"]["must"]
 
-    # simple_query_string clause for free-text query (injection-safe, feature 33.3)
-    assert any("simple_query_string" in c for c in must_clauses)
+    # free-text clause: substring match over the text fields (no query syntax
+    # is interpreted, so the input cannot inject Lucene operators)
+    assert _free_text_clauses(must_clauses, "mimikatz")
     # structured filter clause
     assert {"term": {"severity_id": 4}} in must_clauses
     # time range clause always added
@@ -192,15 +214,15 @@ async def test_search_events_no_query_no_filters() -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_events_exception_returns_empty() -> None:
-    """An exception from the OS client is caught; empty hits dict returned."""
+async def test_search_events_exception_raises_query_error() -> None:
+    """A failed search raises OpenSearchQueryError (the caller falls back to PostgreSQL)."""
     svc = OpenSearchService()
     mock_client = MagicMock()
     mock_client.search = AsyncMock(side_effect=Exception("connection refused"))
     svc._client = mock_client
 
-    result = await svc.search_events(query="anything")
-    assert result == {"hits": {"total": {"value": 0}, "hits": []}}
+    with pytest.raises(OpenSearchQueryError, match="connection refused"):
+        await svc.search_events(query="anything")
 
 
 # ---------------------------------------------------------------------------
@@ -318,8 +340,8 @@ async def test_index_event_index_name_matches_daily_pattern() -> None:
     await svc.index_event({"class_name": "Network Activity"})
 
     idx = mock_client.index.call_args.kwargs["index"]
-    assert re.fullmatch(r"mxtac-events-\d{4}\.\d{2}\.\d{2}", idx), (
-        f"Expected mxtac-events-YYYY.MM.DD, got {idx!r}"
+    assert re.fullmatch(r"mxtac-events-v2-\d{4}\.\d{2}\.\d{2}", idx), (
+        f"Expected mxtac-events-v2-YYYY.MM.DD, got {idx!r}"
     )
 
 
@@ -337,7 +359,7 @@ async def test_index_event_index_name_uses_utc_today() -> None:
 
     idx = mock_client.index.call_args.kwargs["index"]
     today = datetime.now(timezone.utc).strftime("%Y.%m.%d")
-    assert idx == f"mxtac-events-{today}"
+    assert idx == f"mxtac-events-v2-{today}"
 
 
 @pytest.mark.asyncio
@@ -356,7 +378,7 @@ async def test_index_event_index_name_frozen_date() -> None:
         await svc.index_event({"class_name": "Process Activity"})
 
     idx = mock_client.index.call_args.kwargs["index"]
-    assert idx == "mxtac-events-2026.02.20"
+    assert idx == "mxtac-events-v2-2026.02.20"
 
 
 @pytest.mark.asyncio
@@ -1043,7 +1065,7 @@ async def test_ensure_indices_creates_events_template() -> None:
 
 @pytest.mark.asyncio
 async def test_ensure_indices_events_template_uses_correct_index_pattern() -> None:
-    """The events template must target the mxtac-events-* index pattern."""
+    """The events template must target the mxtac-events-v2-* index pattern."""
     svc = OpenSearchService()
     mock_client = MagicMock()
     mock_client.indices = _make_indices_client(rules_exist=True)
@@ -1056,7 +1078,7 @@ async def test_ensure_indices_events_template_uses_correct_index_pattern() -> No
         for c in mock_client.indices.put_index_template.call_args_list
     }
     body = calls.get("mxtac-events-template", {})
-    assert body.get("index_patterns") == ["mxtac-events-*"]
+    assert body.get("index_patterns") == ["mxtac-events-v2-*"]
 
 
 @pytest.mark.asyncio
@@ -1139,8 +1161,8 @@ async def test_ensure_indices_events_template_has_time_date_field() -> None:
         for c in mock_client.indices.put_index_template.call_args_list
     }
     props = calls["mxtac-events-template"]["template"]["mappings"]["properties"]
-    assert props["time"] == {"type": "date"}
-    assert props["severity_id"] == {"type": "integer"}
+    assert props["time"] == {"type": "date_nanos"}
+    assert props["severity_id"]["type"] == "integer"
     assert props["src_endpoint"]["properties"]["ip"] == {"type": "ip"}
 
 
@@ -1233,7 +1255,7 @@ def _get_search_body(mock_client: MagicMock) -> dict:
 
 @pytest.mark.asyncio
 async def test_search_events_query_string_value_matches_input() -> None:
-    """The simple_query_string clause carries the exact query text passed in."""
+    """The free-text clause matches the exact query text as one substring."""
     svc = OpenSearchService()
     svc._client = _make_search_client()
 
@@ -1241,14 +1263,12 @@ async def test_search_events_query_string_value_matches_input() -> None:
 
     body = _get_search_body(svc._client)
     must = body["query"]["bool"]["must"]
-    qs_clauses = [c for c in must if "simple_query_string" in c]
-    assert len(qs_clauses) == 1
-    assert qs_clauses[0]["simple_query_string"]["query"] == "mimikatz lsass"
+    assert len(_free_text_clauses(must, "mimikatz lsass")) == 1
 
 
 @pytest.mark.asyncio
 async def test_search_events_query_only_has_two_must_clauses() -> None:
-    """With a query but no filters, must has exactly: simple_query_string + time range."""
+    """With a query but no filters, must has exactly: free-text clause + time range."""
     svc = OpenSearchService()
     svc._client = _make_search_client()
 
@@ -1257,7 +1277,7 @@ async def test_search_events_query_only_has_two_must_clauses() -> None:
     body = _get_search_body(svc._client)
     must = body["query"]["bool"]["must"]
     assert len(must) == 2
-    assert any("simple_query_string" in c for c in must)
+    assert _free_text_clauses(must, "powershell")
     assert any("range" in c for c in must)
 
 
@@ -1329,14 +1349,14 @@ async def test_search_events_empty_filters_list_not_added() -> None:
 
 @pytest.mark.asyncio
 async def test_search_events_sort_is_time_descending() -> None:
-    """The sort field is time in descending order (newest-first)."""
+    """Sorted by time descending (newest first), then by id as tie-breaker."""
     svc = OpenSearchService()
     svc._client = _make_search_client()
 
     await svc.search_events()
 
     body = _get_search_body(svc._client)
-    assert body["sort"] == [{"time": {"order": "desc"}}]
+    assert body["sort"] == [{"time": {"order": "desc"}}, {"id": {"order": "desc"}}]
 
 
 @pytest.mark.asyncio
@@ -1451,7 +1471,7 @@ async def test_search_events_default_time_from_is_now_minus_7d() -> None:
 
 @pytest.mark.asyncio
 async def test_search_events_targets_events_wildcard_index() -> None:
-    """search_events() searches across mxtac-events-* (all daily indices)."""
+    """search_events() searches across mxtac-events-v2-* (all daily indices)."""
     svc = OpenSearchService()
     svc._client = _make_search_client()
 
@@ -1459,7 +1479,7 @@ async def test_search_events_targets_events_wildcard_index() -> None:
 
     call = svc._client.search.call_args
     index_arg = call.kwargs.get("index") or call.args[0]
-    assert index_arg == "mxtac-events-*"
+    assert index_arg == "mxtac-events-v2-*"
 
 
 @pytest.mark.asyncio
@@ -1520,31 +1540,30 @@ async def test_search_events_logs_error_on_exception(
     mock_client.search = AsyncMock(side_effect=Exception("cluster not reachable"))
     svc._client = mock_client
 
-    with caplog.at_level(logging.ERROR):
-        result = await svc.search_events(query="anything")
+    with caplog.at_level(logging.ERROR), pytest.raises(OpenSearchQueryError):
+        await svc.search_events(query="anything")
 
-    assert result == {"hits": {"total": {"value": 0}, "hits": []}}
     assert "cluster not reachable" in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_search_events_combined_query_and_multiple_filters() -> None:
-    """With query + 2 filters, must has: query_string + 2 filters + time range = 4 clauses."""
+    """With query + 2 filters, must has: free text + 2 filters + time range = 4 clauses."""
     svc = OpenSearchService()
     svc._client = _make_search_client()
 
     filters = [
         {"term": {"severity_id": 5}},
-        {"wildcard": {"src_endpoint.hostname": "*dc*"}},
+        {"wildcard": {"hostname": {"value": "*dc*", "case_insensitive": True}}},
     ]
     await svc.search_events(query="lsass", filters=filters)
 
     body = _get_search_body(svc._client)
     must = body["query"]["bool"]["must"]
-    assert len(must) == 4  # simple_query_string + 2 filters + time range
-    assert any("simple_query_string" in c for c in must)
+    assert len(must) == 4  # free text + 2 filters + time range
+    assert _free_text_clauses(must, "lsass")
     assert {"term": {"severity_id": 5}} in must
-    assert {"wildcard": {"src_endpoint.hostname": "*dc*"}} in must
+    assert {"wildcard": {"hostname": {"value": "*dc*", "case_insensitive": True}}} in must
     assert any("range" in c and "time" in c["range"] for c in must)
 
 
@@ -1554,27 +1573,27 @@ async def test_search_events_combined_query_and_multiple_filters() -> None:
 
 
 def test_filter_to_dsl_dst_ip_maps_to_nested_field() -> None:
-    """'dst_ip' flat alias maps to 'dst_endpoint.ip' in OpenSearch."""
+    """'dst_ip' is the flat document field."""
     clause = filter_to_dsl("dst_ip", "eq", "10.0.0.1")
-    assert clause == {"term": {"dst_endpoint.ip": "10.0.0.1"}}
+    assert clause == {"term": {"dst_ip": "10.0.0.1"}}
 
 
 def test_filter_to_dsl_username_maps_to_actor_user_name() -> None:
-    """'username' flat alias maps to 'actor_user.name'."""
+    """'username' is the flat document field."""
     clause = filter_to_dsl("username", "eq", "CORP\\admin")
-    assert clause == {"term": {"actor_user.name": "CORP\\admin"}}
+    assert clause == {"term": {"username": "CORP\\admin"}}
 
 
 def test_filter_to_dsl_process_hash_maps_to_hash_sha256() -> None:
-    """'process_hash' flat alias maps to 'process.hash_sha256'."""
+    """'process_hash' is the flat document field."""
     clause = filter_to_dsl("process_hash", "eq", "abc123def456")
-    assert clause == {"term": {"process.hash_sha256": "abc123def456"}}
+    assert clause == {"term": {"process_hash": "abc123def456"}}
 
 
 def test_filter_to_dsl_source_maps_to_metadata_product() -> None:
-    """'source' flat alias maps to 'metadata_product'."""
+    """'source' is the flat document field."""
     clause = filter_to_dsl("source", "eq", "wazuh")
-    assert clause == {"term": {"metadata_product": "wazuh"}}
+    assert clause == {"term": {"source": "wazuh"}}
 
 
 def test_filter_to_dsl_class_uid_maps_to_itself() -> None:
@@ -1584,28 +1603,30 @@ def test_filter_to_dsl_class_uid_maps_to_itself() -> None:
 
 
 def test_filter_to_dsl_dst_endpoint_hostname_passthrough() -> None:
-    """'dst_endpoint.hostname' nested path passes through unchanged."""
+    """'dst_endpoint.hostname' nested path is an alias of 'hostname'."""
     clause = filter_to_dsl("dst_endpoint.hostname", "eq", "server-01")
-    assert clause == {"term": {"dst_endpoint.hostname": "server-01"}}
+    assert clause == {"term": {"hostname": "server-01"}}
 
 
 def test_filter_to_dsl_dst_endpoint_ip_passthrough() -> None:
-    """'dst_endpoint.ip' nested path passes through unchanged."""
+    """'dst_endpoint.ip' nested path is an alias of 'dst_ip'."""
     clause = filter_to_dsl("dst_endpoint.ip", "eq", "172.16.0.1")
-    assert clause == {"term": {"dst_endpoint.ip": "172.16.0.1"}}
+    assert clause == {"term": {"dst_ip": "172.16.0.1"}}
 
 
 def test_filter_to_dsl_process_hash_sha256_passthrough() -> None:
-    """'process.hash_sha256' nested path passes through unchanged."""
+    """'process.hash_sha256' nested path is an alias of 'process_hash'."""
     clause = filter_to_dsl("process.hash_sha256", "eq", "deadbeef")
-    assert clause == {"term": {"process.hash_sha256": "deadbeef"}}
+    assert clause == {"term": {"process_hash": "deadbeef"}}
 
 
 def test_filter_to_dsl_contains_wraps_value_with_wildcards() -> None:
     """'contains' operator wraps the value with leading and trailing wildcards."""
     clause = filter_to_dsl("username", "contains", "admin")
     assert clause is not None
-    wc_field, wc_pattern = next(iter(clause["wildcard"].items()))
+    wc_field, wc_spec = next(iter(clause["wildcard"].items()))
+    wc_pattern = wc_spec["value"]
+    assert wc_spec["case_insensitive"] is True
     assert wc_pattern.startswith("*"), "wildcard pattern must start with *"
     assert wc_pattern.endswith("*"), "wildcard pattern must end with *"
     assert "admin" in wc_pattern
@@ -1623,9 +1644,12 @@ def test_filter_to_dsl_ne_generates_bool_must_not_structure() -> None:
 
 
 def test_filter_to_dsl_ne_with_nested_field() -> None:
-    """'ne' with a nested-path field generates a correct bool/must_not."""
+    """'ne' with a nested-path alias generates a correct bool/must_not."""
     clause = filter_to_dsl("actor_user.name", "ne", "SYSTEM")
-    assert clause == {"bool": {"must_not": [{"term": {"actor_user.name": "SYSTEM"}}]}}
+    assert clause == {"bool": {
+        "must":     [{"exists": {"field": "username"}}],
+        "must_not": [{"term": {"username": "SYSTEM"}}],
+    }}
 
 
 def test_filter_to_dsl_range_operators_with_string_value() -> None:
@@ -1638,9 +1662,9 @@ def test_filter_to_dsl_range_operators_with_string_value() -> None:
 
 
 def test_filter_to_dsl_src_endpoint_ip_passthrough() -> None:
-    """'src_endpoint.ip' nested path passes through unchanged."""
+    """'src_endpoint.ip' nested path is an alias of 'src_ip'."""
     clause = filter_to_dsl("src_endpoint.ip", "eq", "192.168.1.1")
-    assert clause == {"term": {"src_endpoint.ip": "192.168.1.1"}}
+    assert clause == {"term": {"src_ip": "192.168.1.1"}}
 
 
 # ---------------------------------------------------------------------------
@@ -1686,7 +1710,7 @@ async def test_get_event_passes_id_to_client() -> None:
 
 @pytest.mark.asyncio
 async def test_get_event_default_index_is_wildcard_events() -> None:
-    """When no index is specified, get_event() searches across mxtac-events-*."""
+    """When no index is specified, get_event() searches across mxtac-events-v2-*."""
     svc = OpenSearchService()
     mock_client = MagicMock()
     mock_client.get = AsyncMock(return_value={"_source": {}})
@@ -1695,7 +1719,7 @@ async def test_get_event_default_index_is_wildcard_events() -> None:
     await svc.get_event("some-id")
 
     call_kwargs = mock_client.get.call_args.kwargs
-    assert call_kwargs.get("index") == "mxtac-events-*"
+    assert call_kwargs.get("index") == "mxtac-events-v2-*"
 
 
 @pytest.mark.asyncio
@@ -1913,7 +1937,7 @@ async def test_aggregate_terms_builds_correct_dsl() -> None:
 
 @pytest.mark.asyncio
 async def test_aggregate_terms_maps_flat_alias_to_os_field() -> None:
-    """aggregate(terms) on 'src_ip' maps to 'src_endpoint.ip' in the DSL."""
+    """aggregate(terms) on the alias 'src_endpoint.ip' uses the flat field 'src_ip'."""
     svc = OpenSearchService()
     mock_client = MagicMock()
     mock_client.search = AsyncMock(return_value={
@@ -1921,10 +1945,12 @@ async def test_aggregate_terms_maps_flat_alias_to_os_field() -> None:
     })
     svc._client = mock_client
 
-    await svc.aggregate("terms", field="src_ip", size=5)
+    await svc.aggregate("terms", field="src_endpoint.ip", size=5)
 
     body = mock_client.search.call_args.kwargs.get("body") or mock_client.search.call_args.args[0]
-    assert body["aggs"]["terms_agg"]["terms"]["field"] == "src_endpoint.ip"
+    assert body["aggs"]["terms_agg"]["terms"]["field"] == "src_ip"
+    # Events without a value are counted by a sibling "missing" aggregation
+    assert body["aggs"]["missing_agg"] == {"missing": {"field": "src_ip"}}
 
 
 @pytest.mark.asyncio
@@ -1951,15 +1977,88 @@ async def test_aggregate_terms_result_keys_are_strings() -> None:
 
 
 @pytest.mark.asyncio
-async def test_aggregate_terms_exception_returns_empty() -> None:
-    """An exception from the OS client is caught; [] is returned."""
+async def test_aggregate_terms_exception_raises_query_error() -> None:
+    """A failed aggregation raises OpenSearchQueryError (the caller falls back to PostgreSQL)."""
     svc = OpenSearchService()
     mock_client = MagicMock()
     mock_client.search = AsyncMock(side_effect=Exception("connection refused"))
     svc._client = mock_client
 
-    result = await svc.aggregate("terms", field="class_name")
-    assert result == []
+    with pytest.raises(OpenSearchQueryError):
+        await svc.aggregate("terms", field="class_name")
+
+
+@pytest.mark.asyncio
+async def test_unreachable_opensearch_pauses_queries() -> None:
+    """After a connection failure, the next queries fail at once without a request, then resume."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(
+        side_effect=OpenSearchConnectionError("N/A", "connection refused", Exception("refused"))
+    )
+    svc._client = mock_client
+
+    with pytest.raises(OpenSearchQueryError):
+        await svc.search_events(query="anything")
+    assert mock_client.search.await_count == 1
+
+    # Within the pause: no request is sent, for searches and aggregations alike
+    with pytest.raises(OpenSearchQueryError):
+        await svc.search_events(query="anything")
+    with pytest.raises(OpenSearchQueryError):
+        await svc.aggregate("terms", field="hostname")
+    with pytest.raises(OpenSearchQueryError):
+        await svc.aggregate("date_histogram", interval="1h")
+    assert mock_client.search.await_count == 1
+
+    # After the pause the cluster is tried again
+    mock_client.search = AsyncMock(return_value={"hits": {"total": {"value": 0}, "hits": []}})
+    with patch("app.services.opensearch_client.time.monotonic",
+               return_value=svc._skip_queries_until + 1):
+        result = await svc.search_events(query="anything")
+    assert result["hits"]["hits"] == []
+    assert mock_client.search.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_rejected_query_does_not_pause_opensearch_queries() -> None:
+    """A query OpenSearch rejects (not a connection failure) does not pause the next ones."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(side_effect=Exception("parse_exception: bad date"))
+    svc._client = mock_client
+
+    with pytest.raises(OpenSearchQueryError):
+        await svc.search_events(time_from="tomorrowish")
+    with pytest.raises(OpenSearchQueryError):
+        await svc.search_events(time_from="tomorrowish")
+    assert mock_client.search.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_aggregate_terms_adds_bucket_for_events_without_value() -> None:
+    """Events without a value are one bucket with an empty key, ordered by count."""
+    svc = OpenSearchService()
+    mock_client = MagicMock()
+    mock_client.search = AsyncMock(return_value={
+        "aggregations": {
+            "terms_agg": {"buckets": [
+                {"key": "web01", "doc_count": 7},
+                {"key": "db01", "doc_count": 3},
+                {"key": "mail01", "doc_count": 1},
+            ]},
+            "missing_agg": {"doc_count": 3},
+        }
+    })
+    svc._client = mock_client
+
+    result = await svc.aggregate("terms", field="hostname", size=3)
+
+    assert result == [
+        {"key": "web01", "count": 7},
+        {"key": "db01", "count": 3},
+        {"key": "", "count": 3},
+    ]
 
 
 @pytest.mark.asyncio
@@ -1971,8 +2070,8 @@ async def test_aggregate_date_histogram_builds_correct_dsl() -> None:
         "aggregations": {
             "histogram_agg": {
                 "buckets": [
-                    {"key_as_string": "2026-02-20T12:00:00.000Z", "doc_count": 8},
-                    {"key_as_string": "2026-02-20T13:00:00.000Z", "doc_count": 5},
+                    {"key": 1771588800000, "key_as_string": "2026-02-20T12:00:00.000Z", "doc_count": 8},
+                    {"key": 1771592400000, "key_as_string": "2026-02-20T13:00:00.000Z", "doc_count": 5},
                 ]
             }
         }
@@ -1995,10 +2094,11 @@ async def test_aggregate_date_histogram_builds_correct_dsl() -> None:
     assert hist_agg["calendar_interval"] == "hour"
     assert hist_agg["min_doc_count"] == 1
 
-    # Response is normalized to {"key": key_as_string, "count": int}
+    # Response is normalized to {"key": ISO 8601 UTC, "count": int} — the same
+    # key format as the PostgreSQL histogram
     assert result == [
-        {"key": "2026-02-20T12:00:00.000Z", "count": 8},
-        {"key": "2026-02-20T13:00:00.000Z", "count": 5},
+        {"key": "2026-02-20T12:00:00+00:00", "count": 8},
+        {"key": "2026-02-20T13:00:00+00:00", "count": 5},
     ]
 
 
@@ -2032,15 +2132,15 @@ async def test_aggregate_date_histogram_interval_mapping(interval: str, expected
 
 
 @pytest.mark.asyncio
-async def test_aggregate_date_histogram_exception_returns_empty() -> None:
-    """An exception from the OS client during date_histogram is caught; [] returned."""
+async def test_aggregate_date_histogram_exception_raises_query_error() -> None:
+    """A failed date_histogram raises OpenSearchQueryError."""
     svc = OpenSearchService()
     mock_client = MagicMock()
     mock_client.search = AsyncMock(side_effect=Exception("timeout"))
     svc._client = mock_client
 
-    result = await svc.aggregate("date_histogram", interval="1h")
-    assert result == []
+    with pytest.raises(OpenSearchQueryError):
+        await svc.aggregate("date_histogram", interval="1h")
 
 
 @pytest.mark.asyncio
@@ -2059,7 +2159,7 @@ async def test_aggregate_terms_empty_buckets() -> None:
 
 @pytest.mark.asyncio
 async def test_aggregate_queries_events_index_wildcard() -> None:
-    """aggregate() always targets the mxtac-events-* wildcard, not alerts or rules."""
+    """aggregate() always targets the mxtac-events-v2-* wildcard, not alerts or rules."""
     svc = OpenSearchService()
     mock_client = MagicMock()
     mock_client.search = AsyncMock(return_value={
@@ -2070,7 +2170,7 @@ async def test_aggregate_queries_events_index_wildcard() -> None:
     await svc.aggregate("terms", field="class_name")
 
     index_arg = mock_client.search.call_args.kwargs.get("index")
-    assert index_arg == "mxtac-events-*"
+    assert index_arg == "mxtac-events-v2-*"
     assert "alerts" not in index_arg
 
 
@@ -2373,8 +2473,12 @@ def test_events_mapping_dst_endpoint_ip_is_ip_type() -> None:
 
 
 def test_events_mapping_time_is_date_type() -> None:
-    """'time' must be mapped as 'date' for range queries and sorting."""
-    assert _get_prop(EVENTS_MAPPING, "time") == {"type": "date"}
+    """'time' must be a date type for range queries and sorting.
+
+    ``date_nanos`` keeps the microseconds of the PostgreSQL column, so both
+    stores sort events of the same millisecond in the same order.
+    """
+    assert _get_prop(EVENTS_MAPPING, "time") == {"type": "date_nanos"}
 
 
 def test_events_mapping_file_created_time_is_date_type() -> None:
@@ -2948,8 +3052,8 @@ async def test_get_storage_metrics_returns_events_per_day() -> None:
             return {
                 "_all": {"total": {"store": {"size_in_bytes": 0}}},
                 "indices": {
-                    "mxtac-events-2024.01.15": {"total": {"docs": {"count": 1500}}},
-                    "mxtac-events-2024.01.16": {"total": {"docs": {"count": 2300}}},
+                    "mxtac-events-v2-2024.01.15": {"total": {"docs": {"count": 1500}}},
+                    "mxtac-events-v2-2024.01.16": {"total": {"docs": {"count": 2300}}},
                 },
             }
         return {"_all": {"total": {"store": {"size_in_bytes": 0}}}, "indices": {}}

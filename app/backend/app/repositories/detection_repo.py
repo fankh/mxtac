@@ -6,11 +6,18 @@ from datetime import datetime, timedelta, timezone
 from math import ceil
 
 from sqlalchemy import case, func, select, update as sa_update
-from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.validators import escape_like
+from ..engine.sigma_engine import TACTIC_ID_TO_NAME, tactic_name
 from ..models.detection import Detection
+
+# Severity rank for sorting: descending puts the most severe first.
+_SEVERITY_RANK = case(
+    {"critical": 4, "high": 3, "medium": 2, "low": 1},
+    value=Detection.severity,
+    else_=0,
+)
 
 # ---------------------------------------------------------------------------
 # Heatmap constants
@@ -35,8 +42,22 @@ _TACTIC_TOTALS: dict[str, int] = {
     "PERS": 12, "PRIV": 11, "DEF-E": 17, "CRED": 14, "DISC": 13,
 }
 
-_HEATMAP_ORDERED_LABELS = ["RECON", "RES", "INIT", "EXEC", "PERS", "PRIV", "DEF-E", "CRED", "DISC"]
+# Ordered heatmap column labels (also served by GET /overview/coverage/tactic-labels)
+TACTIC_LABELS = ["RECON", "RES", "INIT", "EXEC", "PERS", "PRIV", "DEF-E", "CRED", "DISC"]
 _HEATMAP_TECHNIQUE_FAMILIES = ["T1059", "T1003", "T1021", "T1078"]
+
+
+def _count_by_tactic_name(rows) -> dict[str, int]:
+    """Sum ``(tactic, count)`` rows per tactic name.
+
+    Rows written by older versions hold the tactic ID (``TA0006``); they are
+    counted under the tactic name, together with the rows that hold the name.
+    """
+    counts: dict[str, int] = {}
+    for row in rows:
+        name = tactic_name(row.tactic)
+        counts[name] = counts.get(name, 0) + int(row.count)
+    return counts
 
 
 class DetectionRepo:
@@ -63,7 +84,16 @@ class DetectionRepo:
         if status:
             q = q.where(Detection.status.in_(status))
         if tactic:
-            q = q.where(Detection.tactic.ilike(f"%{escape_like(tactic)}%", escape="\\"))
+            # Rows written by older versions hold the tactic ID instead of the
+            # name; match them through the IDs whose name contains the filter.
+            legacy_ids = [
+                tid for tid, name in TACTIC_ID_TO_NAME.items()
+                if tactic.strip().lower() in name.lower()
+            ]
+            q = q.where(
+                Detection.tactic.ilike(f"%{escape_like(tactic)}%", escape="\\")
+                | Detection.tactic.in_(legacy_ids)
+            )
         if host:
             q = q.where(Detection.host.ilike(f"%{escape_like(host)}%", escape="\\"))
         if search:
@@ -80,8 +110,14 @@ class DetectionRepo:
         total = await session.scalar(count_q) or 0
 
         # Sort
-        sort_col = getattr(Detection, sort, Detection.time)
-        q = q.order_by(sort_col.desc() if order == "desc" else sort_col.asc())
+        # Severity is sorted by rank, not by its name ("high" < "low" < "medium").
+        # Time and ID break ties, so rows keep one order across pages.
+        sort_col = _SEVERITY_RANK if sort == "severity" else getattr(Detection, sort, Detection.time)
+        q = q.order_by(
+            sort_col.desc() if order == "desc" else sort_col.asc(),
+            Detection.time.desc(),
+            Detection.id,
+        )
 
         # Paginate
         offset = (page - 1) * page_size
@@ -180,7 +216,7 @@ class DetectionRepo:
             .order_by(func.count().desc())
         )
         current_result = await session.execute(current_q)
-        current_rows = {row.tactic: int(row.count) for row in current_result.all()}
+        current_rows = _count_by_tactic_name(current_result.all())
 
         if not current_rows:
             return []
@@ -195,7 +231,7 @@ class DetectionRepo:
             .group_by(Detection.tactic)
         )
         prev_result = await session.execute(prev_q)
-        prev_rows = {row.tactic: int(row.count) for row in prev_result.all()}
+        prev_rows = _count_by_tactic_name(prev_result.all())
 
         result = []
         for tactic, count in sorted(current_rows.items(), key=lambda x: -x[1]):
@@ -266,7 +302,7 @@ class DetectionRepo:
         """Return overall ATT&CK coverage: distinct technique_ids detected vs. total in scope.
 
         total_count is the sum of all sub-technique slots tracked across the 9 heatmap tactics
-        (ATT&CK v14 scope = 105). Returns None when no detections exist (caller falls back to mock).
+        (ATT&CK v14 scope = 105). Returns None when no detections exist.
         """
         total_count = sum(_TACTIC_TOTALS.values())  # 105
 
@@ -289,14 +325,15 @@ class DetectionRepo:
         }
 
     @staticmethod
-    async def get_heatmap(session: AsyncSession) -> list[dict] | None:
+    async def get_heatmap(session: AsyncSession) -> list[dict]:
         """Build heatmap coverage from distinct (technique_id, tactic) detection pairs.
 
         For each of the 4 top technique families × 9 tactic columns:
           covered = # distinct sub-technique IDs detected for that family+tactic
           total   = fixed ATT&CK v14 sub-technique count for that tactic column
 
-        Returns None when no detections exist (caller should fall back to mock).
+        Always returns the full 4 × 9 grid; every cell has ``covered == 0`` when
+        no detections exist.
         """
         q = (
             select(Detection.technique_id, Detection.tactic)
@@ -307,17 +344,14 @@ class DetectionRepo:
         result = await session.execute(q)
         rows = result.all()
 
-        if not rows:
-            return None
-
         # Build coverage sets: {family: {label: set_of_covered_technique_ids}}
         coverage: dict[str, dict[str, set]] = {
-            family: {label: set() for label in _HEATMAP_ORDERED_LABELS}
+            family: {label: set() for label in TACTIC_LABELS}
             for family in _HEATMAP_TECHNIQUE_FAMILIES
         }
 
         for technique_id, tactic in rows:
-            label = _TACTIC_LABEL_MAP.get(tactic)
+            label = _TACTIC_LABEL_MAP.get(tactic_name(tactic))
             if not label:
                 continue
             for family in _HEATMAP_TECHNIQUE_FAMILIES:
@@ -332,67 +366,11 @@ class DetectionRepo:
                     "covered": min(len(coverage[family][label]), _TACTIC_TOTALS.get(label, 10)),
                     "total": _TACTIC_TOTALS.get(label, 10),
                 }
-                for label in _HEATMAP_ORDERED_LABELS
+                for label in TACTIC_LABELS
             ]
             heatmap.append({"technique_id": family, "row": row_idx, "cells": cells})
 
         return heatmap
-
-    @staticmethod
-    async def get_technique_activity(
-        session: AsyncSession,
-        *,
-        from_date: datetime,
-        limit: int = 20,
-    ) -> list[dict]:
-        """Return per-technique detection counts within a time window.
-
-        Used by the hunt suggestions engine to identify trending techniques
-        that analysts should investigate further.
-
-        Each dict has keys:
-            technique_id    — ATT&CK technique ID (e.g. "T1003.006")
-            technique_name  — human-readable name
-            tactic          — parent tactic name
-            tactic_id       — ATT&CK tactic ID (may be empty string)
-            count           — total detections in the window
-            critical        — critical-severity detections
-            high            — high-severity detections
-        """
-        q = (
-            select(
-                Detection.technique_id,
-                Detection.technique_name,
-                Detection.tactic,
-                Detection.tactic_id,
-                func.count().label("count"),
-                func.sum(case((Detection.severity == "critical", 1), else_=0)).label("critical"),
-                func.sum(case((Detection.severity == "high", 1), else_=0)).label("high"),
-            )
-            .where(Detection.time >= from_date)
-            .where(Detection.technique_id.is_not(None))
-            .group_by(
-                Detection.technique_id,
-                Detection.technique_name,
-                Detection.tactic,
-                Detection.tactic_id,
-            )
-            .order_by(func.count().desc())
-            .limit(limit)
-        )
-        result = await session.execute(q)
-        return [
-            {
-                "technique_id": row.technique_id,
-                "technique_name": row.technique_name,
-                "tactic": row.tactic,
-                "tactic_id": row.tactic_id or "",
-                "count": int(row.count),
-                "critical": int(row.critical or 0),
-                "high": int(row.high or 0),
-            }
-            for row in result.all()
-        ]
 
     @staticmethod
     async def count_recent_by_rule_host(
@@ -417,64 +395,6 @@ class DetectionRepo:
             .where(Detection.time >= from_time)
         )
         return int(result or 0)
-
-    @staticmethod
-    async def find_stale_active_detections(
-        session: AsyncSession,
-        no_recurrence_hours: int,
-    ) -> list[Detection]:
-        """Return active detections where no detection with the same (rule_name, host)
-        has occurred within the last *no_recurrence_hours*.
-
-        A detection is eligible for auto-close when the entire (rule_name, host)
-        cluster has gone quiet — i.e. the most-recent detection for that pair is
-        older than the configured window.  Detections with a NULL rule_name are
-        excluded because they cannot be meaningfully grouped.
-
-        Used by the alert auto-closer background task (feature 9.12).
-        """
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=no_recurrence_hours)
-
-        # Correlated subquery: does any detection with the same (rule_name, host)
-        # have a time >= cutoff?  If yes, the cluster is still active.
-        D2 = aliased(Detection, name="d2")
-        has_recent = (
-            select(D2.id)
-            .where(D2.rule_name == Detection.rule_name)
-            .where(D2.host == Detection.host)
-            .where(D2.time >= cutoff)
-            .correlate(Detection)
-            .exists()
-        )
-
-        q = (
-            select(Detection)
-            .where(Detection.status == "active")
-            .where(Detection.rule_name.is_not(None))
-            .where(~has_recent)
-        )
-        result = await session.execute(q)
-        return list(result.scalars().all())
-
-    @staticmethod
-    async def auto_close_by_ids(
-        session: AsyncSession,
-        ids: list[str],
-    ) -> int:
-        """Bulk-set status='closed' for the given detection IDs.
-
-        Returns the number of detections updated.  Uses a single UPDATE statement
-        for efficiency.  Callers are responsible for committing the session.
-        """
-        if not ids:
-            return 0
-        await session.execute(
-            sa_update(Detection)
-            .where(Detection.id.in_(ids))
-            .values(status="closed")
-        )
-        await session.flush()
-        return len(ids)
 
     @staticmethod
     async def get_timeline(

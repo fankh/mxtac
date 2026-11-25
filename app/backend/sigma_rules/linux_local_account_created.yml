@@ -1,0 +1,22 @@
+title: Local User Account Created
+id: 81243a74-ed6f-4ed0-99f8-1aff10059845
+status: test
+description: Detects the creation of a local user account with useradd. Attackers create accounts to keep access to a host.
+author: MxTac
+date: 2026-11-24
+references:
+  - https://attack.mitre.org/techniques/T1136/001/
+tags:
+  - attack.persistence
+  - attack.t1136.001
+logsource:
+  product: linux
+detection:
+  selection:
+    app_name: 'useradd'
+    message|startswith: 'new user: name='
+  condition: selection
+falsepositives:
+  - Planned account provisioning
+  - Package installation that creates a service account
+level: medium

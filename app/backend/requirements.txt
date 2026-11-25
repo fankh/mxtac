@@ -12,11 +12,6 @@ pydantic-settings==2.6.1
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 pyotp==2.9.0
-# SAML 2.0 SSO (feature 1.10) — requires libxmlsec1 system library
-python3-saml==1.16.0
-# Form data parsing — required for SAML ACS endpoint (HTTP-POST binding)
-# python-multipart 0.0.22 fixes CVE-2026-24486.
-python-multipart==0.0.22
 
 # ── Database ──────────────────────────────────────────────────────────────────
 sqlalchemy[asyncio]==2.0.36
@@ -29,7 +24,6 @@ httpx==0.28.1
 aiohttp==3.13.3
 
 # ── Email ─────────────────────────────────────────────────────────────────────
-aiosmtplib==3.0.2
 
 # ── YAML / Sigma ──────────────────────────────────────────────────────────────
 pyyaml==6.0.3
@@ -44,17 +38,9 @@ prometheus-client==0.24.1
 
 # ── Message Queue ─────────────────────────────────────────────────────────────
 valkey==6.1.1
-# aiokafka is an optional dependency required only for the Kafka queue backend.
-# Install separately: pip install aiokafka==0.12.0
-# aiokafka==0.12.0
 
-# ── Cron Scheduling ───────────────────────────────────────────────────────────
-croniter==6.0.0
-
-# ── Search / Analytics ────────────────────────────────────────────────────────
+# ── Search ────────────────────────────────────────────────────────────────────
 opensearch-py[async]==3.1.0
-duckdb==1.4.4
-pytz==2025.2
 
 # ── GeoIP Enrichment ──────────────────────────────────────────────────────────
 # MaxMind GeoIP2 reader for offline mmdb lookups (feature 9.8).

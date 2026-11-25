@@ -1,4 +1,4 @@
-"""Tests for feature 8.21 — Bundled example rules — 5 default detections.
+"""Tests for feature 8.21 — the five original bundled example rules.
 
 Verifies that every rule in sigma_rules/ is:
   1. Present on disk with the expected filename
@@ -141,10 +141,11 @@ class TestBundledRulesExist:
     def test_dns_tunneling_long_query_exists(self) -> None:
         assert _RULE_FILES["dns_tunneling_long_query"].is_file()
 
-    async def test_sigma_rules_dir_loads_exactly_five(self) -> None:
+    async def test_sigma_rules_dir_loads_every_file(self) -> None:
+        """Every bundled file parses; the whole set is covered in test_bundled_rule_set.py."""
         engine = SigmaEngine()
         count = await engine.load_rules_from_dir(str(_SIGMA_RULES_DIR))
-        assert count == 5, f"Expected 5 bundled rules, got {count}"
+        assert count == len(list(_SIGMA_RULES_DIR.glob("*.yml"))) >= 5
 
 
 # ===========================================================================

@@ -433,7 +433,7 @@ class TestConnectorDetailPanel:
 
     @pytest.mark.parametrize(
         "connector_type",
-        ["wazuh", "zeek", "suricata", "prowler", "opencti", "velociraptor", "osquery", "generic"],
+        ["wazuh", "zeek", "suricata", "syslog", "generic"],
     )
     @pytest.mark.asyncio
     async def test_detail_connector_type_round_trips(
@@ -736,18 +736,15 @@ class TestConnectorCardCount:
         assert len(data) == 0
 
     @pytest.mark.asyncio
-    async def test_grid_count_after_eight_connectors(
+    async def test_grid_count_with_one_connector_per_type(
         self, client: AsyncClient, engineer_headers: dict
     ) -> None:
-        """When 8 connectors exist, the placeholder is hidden (8 = max grid)."""
-        connector_types = [
-            "wazuh", "zeek", "suricata", "prowler",
-            "opencti", "velociraptor", "osquery", "generic",
-        ]
+        """One connector of every supported type is listed."""
+        connector_types = ["wazuh", "zeek", "suricata", "syslog", "generic"]
         for ct in connector_types:
             await _create(client, engineer_headers, name=f"{ct}-grid", connector_type=ct)
         data = (await client.get(BASE_URL, headers=engineer_headers)).json()
-        assert len(data) == 8
+        assert len(data) == len(connector_types)
 
     @pytest.mark.asyncio
     async def test_deleted_connector_reduces_count(

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, JSON, String
+from sqlalchemy import Boolean, DateTime, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, TimestampMixin, new_uuid
@@ -42,6 +42,14 @@ class User(Base, TimestampMixin):
     # Stores up to 1 previous hashed password (the one before the current).
     # Together with the current hashed_password, this enforces a "last 2" no-reuse window.
     password_history: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+
+    # Session invalidation: every access and refresh token carries the value
+    # this had when the token was issued ("tv" claim) and is rejected once the
+    # value has moved on.  Incremented on every password change, which ends
+    # all sessions of the account.
+    token_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
     def __repr__(self) -> str:
         return f"<User {self.email} role={self.role}>"

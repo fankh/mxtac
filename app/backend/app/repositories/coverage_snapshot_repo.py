@@ -73,3 +73,17 @@ class CoverageSnapshotRepo:
             .order_by(CoverageSnapshot.snapshot_date.asc())
         )
         return list(result.scalars().all())
+
+    @staticmethod
+    async def get_latest_on_or_before(
+        session: AsyncSession,
+        snapshot_date: date,
+    ) -> CoverageSnapshot | None:
+        """Return the most recent snapshot taken on or before ``snapshot_date``."""
+        result = await session.execute(
+            select(CoverageSnapshot)
+            .where(CoverageSnapshot.snapshot_date <= snapshot_date)
+            .order_by(CoverageSnapshot.snapshot_date.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
