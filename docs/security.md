@@ -1,6 +1,6 @@
 # Security model
 
-This document describes the security controls implemented in the backend. Each item names the file that implements it, relative to `app/backend/app/`. To report a vulnerability, see [SECURITY.md](../SECURITY.md).
+This document describes the security controls implemented in the backend. Each item names the file that implements it, relative to `app/backend/app/`. To report a vulnerability, see [SECURITY.md](../.github/SECURITY.md).
 
 ## First account
 

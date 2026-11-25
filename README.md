@@ -73,7 +73,7 @@ You need Docker with Compose v2 and Git. The stack starts five containers: backe
 
 Stop the stack with `docker compose down`. Add `-v` to delete the data volumes as well.
 
-`app/docker-compose.yml` is a development setup: debug mode is on, the signing key and database password are fixed development values, OpenSearch runs without authentication, and every service port is published on the host. Use it on a trusted machine only. For anything else, read [docs/deployment.md](docs/deployment.md).
+`app/docker-compose.yml` is a development setup: debug mode is on, the signing key and database password are fixed development values, OpenSearch runs without authentication, and every service port is published on the host. Use it on a trusted machine only. For anything else, read [docs/installation.md](docs/installation.md#deployment).
 
 ### First login
 
@@ -159,7 +159,7 @@ Inside the backend, an event moves through these steps:
 5. The alert manager drops duplicates (same rule and host within 5 minutes), scores the alert, stores it as a detection, and may open or extend an incident.
 6. The detection is pushed to signed-in browsers over a WebSocket.
 
-More detail: [docs/architecture.md](docs/architecture.md).
+More detail: [docs/development.md](docs/development.md#architecture).
 
 ## Configuration
 
@@ -195,17 +195,13 @@ Set `VITE_PROXY_TARGET` to forward `/api` to another backend address, for exampl
 
 | Document | Content |
 |----------|---------|
-| [docs/installation.md](docs/installation.md) | Installation and upgrade steps |
-| [docs/configuration.md](docs/configuration.md) | Environment variables |
-| [docs/architecture.md](docs/architecture.md) | Components and the event pipeline |
-| [docs/api.md](docs/api.md) | REST API routes and required permissions |
-| [docs/sigma-engine.md](docs/sigma-engine.md) | Supported Sigma features and the bundled rules |
-| [docs/attack-coverage.md](docs/attack-coverage.md) | How coverage is calculated |
-| [docs/integration-guide.md](docs/integration-guide.md) | Connecting Wazuh, Zeek, Suricata, syslog and webhooks |
-| [docs/ui.md](docs/ui.md) | Pages and the UI token system |
-| [docs/security.md](docs/security.md) | Authentication, roles, password policy, headers |
-| [docs/deployment.md](docs/deployment.md) | Deployment files in this repository |
-| [docs/development.md](docs/development.md) | Development workflow |
+| [Installation and deployment](docs/installation.md) | Requirements, Docker Compose install, first login, production setup, upgrades, troubleshooting |
+| [Configuration](docs/configuration.md) | Every environment variable, with defaults |
+| [User guide](docs/user-guide.md) | The pages, connecting Wazuh, Zeek, Suricata, syslog and webhooks, how ATT&CK coverage is calculated |
+| [Sigma rules](docs/sigma-rules.md) | Supported Sigma syntax, the bundled rules, testing a rule |
+| [Security](docs/security.md) | Sign-in, sessions, MFA, roles and permissions, known limitations |
+| [Development](docs/development.md) | Local setup, tests, architecture and the event pipeline |
+| [API reference](docs/api.md) | REST and WebSocket routes with the permission each one needs |
 
 ## MxTac and KYRA MDR
 
@@ -229,9 +225,9 @@ More about the managed service: <https://kyramdr.com/en/?utm_source=mxtac&utm_me
 
 Each item was checked against the code at the time of writing.
 
-- **Sigma support is a subset.** Selections, the common value modifiers, wildcards and boolean conditions with `1 of` / `all of` work. Aggregations (`| count()`, `| near`), `timeframe` and correlation rules are rejected with an error when a rule is created, imported or tested. Rules are evaluated one event at a time. See [docs/sigma-engine.md](docs/sigma-engine.md).
-- **Events ingested while OpenSearch is down are missing from Hunt once it is back.** During the outage Hunt answers from PostgreSQL, which has every event. Afterwards it answers from OpenSearch again, which did not index those events. See [docs/architecture.md](docs/architecture.md#current-limitations).
-- **Coverage uses a fixed scope** of 105 techniques across 9 tactics, not the full ATT&CK matrix. The Overview heatmap shows four technique families of that scope. See [docs/attack-coverage.md](docs/attack-coverage.md).
+- **Sigma support is a subset.** Selections, the common value modifiers, wildcards and boolean conditions with `1 of` / `all of` work. Aggregations (`| count()`, `| near`), `timeframe` and correlation rules are rejected with an error when a rule is created, imported or tested. Rules are evaluated one event at a time. See [docs/sigma-rules.md](docs/sigma-rules.md).
+- **Events ingested while OpenSearch is down are missing from Hunt once it is back.** During the outage Hunt answers from PostgreSQL, which has every event. Afterwards it answers from OpenSearch again, which did not index those events. See [docs/development.md](docs/development.md#current-limitations).
+- **Coverage uses a fixed scope** of 105 techniques across 9 tactics, not the full ATT&CK matrix. The Overview heatmap shows four technique families of that scope. See [docs/user-guide.md](docs/user-guide.md#attck-coverage).
 - **No password reset.** A lost first password cannot be recovered (see [First login](#first-login)). An administrator cannot set a new password for an existing user; a user who forgot the password needs a new account under another email address.
 - **Changing a password does not end other sessions.** Tokens that were issued before the change stay valid until they expire (60 minutes for access tokens, 7 days for refresh tokens by default).
 - **The default queue is in memory.** Events that are in the queue are lost when the backend stops, and the queue works with one backend process only. Use `QUEUE_BACKEND=redis` otherwise.
@@ -246,8 +242,7 @@ MxTac is licensed under the GNU Affero General Public License v3.0. See [LICENSE
 
 ## Contributing and security
 
-The documentation index is [docs/README.md](docs/README.md). Questions and bug reports: [SUPPORT.md](SUPPORT.md). Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
-- Contributions: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Reporting a vulnerability: [SECURITY.md](SECURITY.md)
+- Contributing: [CONTRIBUTING.md](.github/CONTRIBUTING.md) and the [code of conduct](.github/CODE_OF_CONDUCT.md)
+- Questions and bug reports: [SUPPORT.md](.github/SUPPORT.md)
+- Reporting a vulnerability: [SECURITY.md](.github/SECURITY.md)
 - Release notes: [CHANGELOG.md](CHANGELOG.md)

@@ -205,7 +205,7 @@ The UI shows these messages in the rule editor, the import dialog and the test p
 
 ## Output
 
-A match produces an alert with the rule ID and title, level, technique and tactic IDs, the host (destination hostname or IP of the event), the event time and a snapshot of the flattened event. The alert manager then deduplicates, scores and stores it as a detection. See [architecture.md](architecture.md).
+A match produces an alert with the rule ID and title, level, technique and tactic IDs, the host (destination hostname or IP of the event), the event time and a snapshot of the flattened event. The alert manager then deduplicates, scores and stores it as a detection. See [development.md](development.md#architecture).
 
 ## Testing a rule
 

@@ -10,7 +10,7 @@ Before you start a large feature, open an issue and describe it. Features outsid
 
 Good first contributions:
 
-- Fixes for the items under "Current limitations" in [README.md](README.md), for example the OpenSearch path of the event search.
+- Fixes for the items under "Current limitations" in [README.md](../README.md), for example the OpenSearch path of the event search.
 - More message families in the syslog normalizer (`app/backend/app/services/normalizers/syslog.py`).
 - Sigma engine improvements, with tests.
 - Additional Sigma rules in `app/backend/sigma_rules/`. A bundled rule needs an `id` and must load in the engine; a file without an `id` or with unsupported syntax is skipped at startup with a warning. Regenerate the rule table with `python scripts/gen_rule_table.py --write`.
@@ -49,7 +49,7 @@ Good first contributions:
 
 2. Make one focused change per pull request. Do not mix unrelated refactoring with feature work.
 3. Run the checks listed under [Checks](#checks).
-4. Update the documentation when behaviour, API routes or settings change. `docs/api.md` must match the routes the backend registers (regenerate it with `python scripts/gen_api_docs.py`), `ENV-REFERENCE.md` must match `app/backend/app/core/config.py`, and the rule table in `docs/sigma-engine.md` must match `app/backend/sigma_rules/` (`python scripts/gen_rule_table.py --write`).
+4. Update the documentation when behaviour, API routes or settings change. `docs/api.md` must match the routes the backend registers (regenerate it with `python scripts/gen_api_docs.py`), `ENV-REFERENCE.md` must match `app/backend/app/core/config.py`, and the rule table in `docs/sigma-rules.md` must match `app/backend/sigma_rules/` (`python scripts/gen_rule_table.py --write`).
 5. Add an entry to `CHANGELOG.md` under `[Unreleased]`.
 6. Open a pull request. Describe what changed, why, and how you tested it. Link the related issue.
 
@@ -114,7 +114,7 @@ After a change to a Compose file, run `docker compose -f <file> config -q`.
 ### Frontend
 
 - TypeScript strict mode is on. `@typescript-eslint/no-explicit-any` is an error.
-- Use the components in `src/components/ui/` and the color tokens in `src/index.css`. Do not hard-code colors in page components. See [docs/ui.md](docs/ui.md).
+- Use the components in `src/components/ui/` and the color tokens in `src/index.css`. Do not hard-code colors in page components. See [docs/user-guide.md](../docs/user-guide.md#user-interface).
 - Every change in behaviour needs a Vitest test.
 
 ### Versions and dependencies
@@ -137,4 +137,4 @@ The [code of conduct](CODE_OF_CONDUCT.md) applies. Be respectful and constructiv
 
 ## License
 
-MxTac is licensed under the GNU Affero General Public License v3.0 ([LICENSE](LICENSE)). By submitting a contribution you agree that it is licensed under the same terms.
+MxTac is licensed under the GNU Affero General Public License v3.0 ([LICENSE](../LICENSE)). By submitting a contribution you agree that it is licensed under the same terms.

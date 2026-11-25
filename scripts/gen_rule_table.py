@@ -1,9 +1,9 @@
-"""Generate the table of bundled Sigma rules in docs/sigma-engine.md.
+"""Generate the table of bundled Sigma rules in docs/sigma-rules.md.
 
 Usage (from the repository root, with the backend dependencies installed):
 
     python scripts/gen_rule_table.py            # print the table
-    python scripts/gen_rule_table.py --write    # replace the table in docs/sigma-engine.md
+    python scripts/gen_rule_table.py --write    # replace the table in docs/sigma-rules.md
 
 The table is built from the YAML files in app/backend/sigma_rules/. ATT&CK tags
 are parsed with the same function the Sigma engine uses. The "Applies to"
@@ -19,7 +19,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RULES_DIR = REPO_ROOT / "app" / "backend" / "sigma_rules"
-DOC = REPO_ROOT / "docs" / "sigma-engine.md"
+DOC = REPO_ROOT / "docs" / "sigma-rules.md"
 START = "<!-- bundled-rules:start -->"
 END = "<!-- bundled-rules:end -->"
 

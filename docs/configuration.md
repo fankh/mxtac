@@ -83,7 +83,7 @@ These two settings are only read while the `users` table is empty. See [First lo
 | `SYSLOG_PROTOCOL` | `udp` | `udp`, `tcp` or `both` |
 | `SYSLOG_MAX_MESSAGE_SIZE` | `65535` | Maximum message size in bytes |
 
-Received messages are normalized, stored and evaluated by Sigma rules. See [docs/integration-guide.md](integration-guide.md#syslog).
+Received messages are normalized, stored and evaluated by Sigma rules. See [docs/user-guide.md](user-guide.md#syslog).
 
 ## Detection pipeline
 

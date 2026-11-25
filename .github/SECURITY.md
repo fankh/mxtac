@@ -25,11 +25,11 @@ Security fixes are made on the `main` branch. There are no maintained release br
 
 ## Security model and known limitations
 
-[docs/security.md](docs/security.md) describes authentication, MFA, roles, the password policy and HTTP protections. It also lists the current limitations. Read it before you expose an instance to a network.
+[docs/security.md](../docs/security.md) describes authentication, MFA, roles, the password policy and HTTP protections. It also lists the current limitations. Read it before you expose an instance to a network.
 
 Points that matter most for a new installation:
 
-- There is no built-in password. The first account, `admin@mxtac.local`, gets a random password that is written once to the backend log, or the value of `INITIAL_ADMIN_PASSWORD`. It must be replaced at the first sign-in. See [First login](README.md#first-login).
+- There is no built-in password. The first account, `admin@mxtac.local`, gets a random password that is written once to the backend log, or the value of `INITIAL_ADMIN_PASSWORD`. It must be replaced at the first sign-in. See [First login](../README.md#first-login).
 - `app/docker-compose.yml` is a development setup with a fixed signing key and database password. Do not expose it to a network.
 - Leave `SEED_DEMO_DATA` at `false`. It creates additional accounts and invented findings.
 
